@@ -1,0 +1,114 @@
+{
+  "version": "2",
+  "createdAt": "2026-09-30T13:20:52.179Z",
+  "updatedAt": "2026-09-30T13:20:52.179Z",
+  "provenance": {
+    "state": "verified",
+    "createdWith": {
+      "cli": "2.6.8",
+      "generator": "2.6.8",
+      "templateSet": "2.6.8",
+      "schema": "1"
+    },
+    "current": {
+      "cli": "2.6.8",
+      "generator": "2.6.8",
+      "templateSet": "2.6.8",
+      "schema": "1"
+    }
+  },
+  "history": [
+    {
+      "id": "43c5b1836255d5c04d02e6a5",
+      "operation": "create",
+      "completedAt": "2026-09-30T13:20:52.179Z",
+      "source": null,
+      "target": {
+        "cli": "2.6.8",
+        "generator": "2.6.8",
+        "templateSet": "2.6.8",
+        "schema": "1"
+      },
+      "changes": {
+        "added": 33,
+        "patched": 0,
+        "merged": 0,
+        "removed": 0,
+        "manual": 0
+      }
+    }
+  ],
+  "hashes": {
+    ".env.example": "8e17e97f132faa4312747805723cab779efae79dff836c2a7c0b6040cdc7b61a",
+    ".gitignore": "c6c99d0da8377ab0e5f8d74fb051f927d45f8fd0de2925060947e7289c6c9810",
+    ".golangci.yml": "fa7388e94ed237f3cef688515d7bcfde7f3563fa1d0b7c502fe6cd9618585a07",
+    "AGENTS.md": "6f511858419937735b91a8d2ad11858a441abd1e6203c667a3bed61782992329",
+    "buf.gen.yaml": "7441280e1109629588f489ca74d8a1bdc868576223406ad3eca21fcff0f1ceee",
+    "buf.yaml": "bda68586bbdf808b33c348d4c11029efaedf23a94b5e078208337606e24cd1ce",
+    "CLAUDE.md": "3657249b82bf6cd28f81b8798c0faf47e5997fae050ccad382d3e65c7d38a158",
+    "cmd/server/main.go": "86db969dddb7e9578a1e6e6d216cb6448c03859069aa342b2c79aab95808c26b",
+    "cmd/tui/main.go": "662951bd35303c6c1f6477615688a65ebd765da99c9994f1e5fead567742175a",
+    "go.mod": "a596778cf3654c5f349e1afe7a7512a9e1acd3af384fdcb365a13a5bc824287b",
+    "internal/app/container.go": "9e04033fdd698a96cf2e82644cf4260b2114818f079fb03cd62975ec968a9e30",
+    "internal/cache/goredis.go": "1bdda76f57d787a65b125668cce92f0736d780222dd5078e41270bf02b770981",
+    "internal/config/config.go": "71099dec6598a49c93a73ef56fb74bc22c9f5e5b46baae2f75815e9f1972c819",
+    "internal/database/database.go": "4bfaebf163aabcdcb4c4681491c9c90c3677aba3138bf723b96f65c0a46536f3",
+    "internal/handlers/handlers.go": "3389249ccc28da4eaaf87183c66886a0cc2d6b43214459ef5f68d40845ab5fb8",
+    "internal/messaging/asynq.go": "eebad9049de755fc277503ed7cd85a64ccc7923a1bf55c8761b5d51fc12f01af",
+    "internal/migrations/migrations.go": "11aeb356020c283dcaea322814969d902090d53fd61d9d6816d6aad0f9b1fc73",
+    "internal/models/models.go": "7d6d96c70fc6688e2793ddf5af228a0023bd9900ced0de23f3ca7939bf4842b5",
+    "internal/observability/otel.go": "e10c029ab1003b6933a10994c0054ffa238b6c18ca1d898eb50a1a654962bdad",
+    "internal/realtime/centrifuge.go": "7a784600018213f29c67bd516e35fa97bfb1055c5f4233ac38d59fb91dec50ad",
+    "internal/testsupport/testcontainers_test.go": "2a14f87972ee5007e6fa327a52146d436c4ad8769b473d4f0251a8a5a2c3f318",
+    "internal/testsupport/testsupport_test.go": "34e29c69df6cba69afe3fb1568c8e1d675b0e6c01f1f0dd02d88d67d9da6977a",
+    "internal/testsupport/testsupport.go": "ef8b7af4142d7457aa87193b71ca0ac9a5af79aa99b6230aa7a7c2a945e90dae",
+    "internal/validation/validation.go": "48e006c89faa7b9c2a3005bb48f30564abc7b1864729ee6b6f12af8064103d61",
+    "migrations/000001_create_users.down.sql": "1dac01d8cc0cd480fb701c83c9ddff728bf13d354de769a25e25bbad223dd211",
+    "migrations/000001_create_users.up.sql": "99a55d575141d141cf0e0f2aff21963a0e048d3a61f50da2379548cc6c8f5d62",
+    "proto/greeter_grpc.pb.go": "c75a3f31bc7daf4977c45d7a759c1ae2582887c3aecd4ded677009875f9f2631",
+    "proto/greeter_test.go": "14e219cd301bad42eaffe1e608023a37e677a6a4cf2b16230640a51607519c11",
+    "proto/greeter.go": "46ca1c2714b2fe126d2db95ed352e759aeb201a5f22e538326e25f15dda12a25",
+    "proto/greeter.pb.go": "7b5d195817f1031985f68dfde78e20dfb856442b4b95e7abbf2a1fe93a1c9943",
+    "proto/greeter.proto": "761eba5843339b62a3a0d1ac86a2c9e1c1f080d2db484889069dae09b76711d8",
+    "README.md": "427317a270eff36601cff1edcacb9509ad154c4ba8f069dc35cd4222b264f720",
+    "tools.go": "d70e2f83d1db3ad3991c462e39eda2b18cb5dc7348cb59f3e09da1d057993b2e"
+  },
+  "modes": {
+    ".env.example": 420,
+    ".gitignore": 420,
+    ".golangci.yml": 420,
+    "AGENTS.md": 420,
+    "buf.gen.yaml": 420,
+    "buf.yaml": 420,
+    "CLAUDE.md": 420,
+    "cmd/server/main.go": 420,
+    "cmd/tui/main.go": 420,
+    "go.mod": 420,
+    "internal/app/container.go": 420,
+    "internal/cache/goredis.go": 420,
+    "internal/config/config.go": 420,
+    "internal/database/database.go": 420,
+    "internal/handlers/handlers.go": 420,
+    "internal/messaging/asynq.go": 420,
+    "internal/migrations/migrations.go": 420,
+    "internal/models/models.go": 420,
+    "internal/observability/otel.go": 420,
+    "internal/realtime/centrifuge.go": 420,
+    "internal/testsupport/testcontainers_test.go": 420,
+    "internal/testsupport/testsupport_test.go": 420,
+    "internal/testsupport/testsupport.go": 420,
+    "internal/validation/validation.go": 420,
+    "migrations/000001_create_users.down.sql": 420,
+    "migrations/000001_create_users.up.sql": 420,
+    "proto/greeter_grpc.pb.go": 420,
+    "proto/greeter_test.go": 420,
+    "proto/greeter.go": 420,
+    "proto/greeter.pb.go": 420,
+    "proto/greeter.proto": 420,
+    "README.md": 420,
+    "tools.go": 420
+  },
+  "baselines": {
+    ".env.example": "# Application settings\nHOST=0.0.0.0\nPORT=8080\n\n# Allowed web origin for CORS (unset or empty = allow any origin)\nCORS_ORIGIN=http://localhost:3001\n\n# Database settings (if using GORM, sqlc, Ent, Bun, or sqlx)\nDATABASE_URL=file:../../local.db\n\n# gRPC settings (if using gRPC)\nGRPC_PORT=50051\n\n# Logging level\nLOG_LEVEL=debug\n\n# go-redis settings\nREDIS_URL=redis://127.0.0.1:6379\n\n# Asynq Redis settings\nREDIS_ADDR=127.0.0.1:6379\n\n# OpenTelemetry settings\nOTEL_SERVICE_NAME=AskCore\nOTEL_EXPORTER_OTLP_ENDPOINT=http://localhost:4318"
+  }
+}

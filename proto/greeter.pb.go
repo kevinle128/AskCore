@@ -1,0 +1,46 @@
+// Minimal protobuf message definitions for the generated Greeter example.
+// Run `protoc` to replace these definitions after changing greeter.proto.
+//
+// To generate Go code from the proto file, run:
+//   protoc --go_out=. --go_opt=paths=source_relative \
+//     --go-grpc_out=. --go-grpc_opt=paths=source_relative \
+//     proto/greeter.proto
+//
+// Install protoc and the Go plugins:
+//   brew install protobuf
+//   go install google.golang.org/protobuf/cmd/protoc-gen-go@latest
+//   go install google.golang.org/grpc/cmd/protoc-gen-go-grpc@latest
+
+package proto
+
+// HelloRequest is the request message for SayHello
+type HelloRequest struct {
+	Name string `protobuf:"bytes,1,opt,name=name,proto3" json:"name,omitempty"`
+}
+
+func (x *HelloRequest) Reset()         { *x = HelloRequest{} }
+func (x *HelloRequest) String() string { return x.GetName() }
+func (*HelloRequest) ProtoMessage()    {}
+
+func (x *HelloRequest) GetName() string {
+	if x != nil {
+		return x.Name
+	}
+	return ""
+}
+
+// HelloReply is the response message for SayHello
+type HelloReply struct {
+	Message string `protobuf:"bytes,1,opt,name=message,proto3" json:"message,omitempty"`
+}
+
+func (x *HelloReply) Reset()         { *x = HelloReply{} }
+func (x *HelloReply) String() string { return x.GetMessage() }
+func (*HelloReply) ProtoMessage()    {}
+
+func (x *HelloReply) GetMessage() string {
+	if x != nil {
+		return x.Message
+	}
+	return ""
+}
