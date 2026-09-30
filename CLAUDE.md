@@ -22,22 +22,47 @@ This file provides context about the project for AI assistants.
 - Protobuf Tooling: buf
 - Dependency Injection: fx
 
+## Architecture
+
+Ask (this repository) is an agent harness that runs as a local daemon or as a remote agent in the cloud. It follows the dewee package model (one package for each capability) plus the Ask import rules. Read these before you add code:
+
+- `docs/ask-architecture-reference.md`: design, import rules, "where to put new code"
+- `internal/README.md`: package map
+- `README.md` in each package: what belongs there, file names, allowed imports
+
+The users/posts demo is the reference example for a new entity (see design section 11). Front-end and web UI are out of scope.
+
 ## Project Structure
 
 ```
 AskCore/
-├── go.mod           # Module definition
 ├── cmd/
-│   └── server/      # Server entry point
-├── internal/        # Internal packages
-├── proto/           # Protocol buffers
+│   ├── server/            # Daemon: HTTP + gRPC; `-migrate` applies migrations and exits
+│   └── tui/               # Terminal client; imports no internal/* package
+├── internal/
+│   ├── app/               # Composition root (fx)
+│   ├── config/  logs/     # Config (viper) and zap logger
+│   ├── gateway/           # HTTP (echo) and gRPC servers, gRPC services; methods/ for WS RPC
+│   ├── http/              # REST handlers (import alias httpapi)
+│   ├── agent/ pipeline/ scheduler/ bus/ sessions/ workspace/ cron/   # Runtime core (scaffold)
+│   ├── providers/ tools/ mcp/ skills/ memory/ bootstrap/ hooks/      # Capabilities (scaffold)
+│   ├── permissions/ sandbox/ crypto/ channels/ tracing/              # (scaffold)
+│   ├── store/             # Models + store interfaces; gormstore/ = GORM implementation
+│   ├── migrations/        # Migration runner
+│   └── cache/ messaging/ realtime/ validation/ testsupport/
+├── migrations/            # SQL files (SQLite), embedded into the binary
+├── pkg/protocol/          # WS wire contract
+├── proto/                 # gRPC definitions and bindings
+└── docs/  plans/
 ```
 
 ## Common Commands
 
 - `go mod tidy` - Install dependencies
-- `go run cmd/server/main.go` - Start server
+- `go run ./cmd/server` - Start the server (applies pending migrations first)
+- `go run ./cmd/server -migrate` - Apply migrations and exit
 - `go test ./...` - Run tests
+- `go run github.com/golangci/golangci-lint/v2/cmd/golangci-lint run ./...` - Lint, including the depguard import rules
 - `go fmt ./...` - Format code
 
 ## Better Fullstack project context

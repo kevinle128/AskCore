@@ -1,21 +1,30 @@
 // Package config loads application configuration with Viper.
 //
-// Reads config.yaml from the working directory (optional) and overlays
-// environment variables, so APP_SERVER_PORT overrides server.port.
+// It reads config.yaml from the working directory (optional) and overlays
+// environment variables. The environment variable names are the upper-case
+// keys, the same names as in .env.example (for example PORT, GRPC_PORT,
+// DATABASE_URL).
+//
+// Only internal/app and cmd/* import this package. Other packages receive
+// typed values through their constructors.
 package config
 
 import (
-	"strings"
+	"errors"
 
 	"github.com/spf13/viper"
 )
 
 // Config holds the application settings.
 type Config struct {
-	Server struct {
-		Host string `mapstructure:"host"`
-		Port int    `mapstructure:"port"`
-	} `mapstructure:"server"`
+	Host        string `mapstructure:"host"`
+	Port        int    `mapstructure:"port"`
+	GRPCPort    int    `mapstructure:"grpc_port"`
+	DatabaseURL string `mapstructure:"database_url"`
+	LogLevel    string `mapstructure:"log_level"`
+	CORSOrigin  string `mapstructure:"cors_origin"`
+	RedisURL    string `mapstructure:"redis_url"`
+	RedisAddr   string `mapstructure:"redis_addr"`
 }
 
 // Load reads config.yaml (if present) and environment variables.
@@ -24,16 +33,23 @@ func Load() (*Config, error) {
 	v.SetConfigName("config")
 	v.SetConfigType("yaml")
 	v.AddConfigPath(".")
-	v.SetEnvPrefix("APP")
-	v.SetEnvKeyReplacer(strings.NewReplacer(".", "_"))
+	// Key "grpc_port" reads the environment variable GRPC_PORT.
 	v.AutomaticEnv()
 
-	v.SetDefault("server.host", "0.0.0.0")
-	v.SetDefault("server.port", 3000)
+	// Every key needs a default, so that Unmarshal sees environment values.
+	v.SetDefault("host", "0.0.0.0")
+	v.SetDefault("port", 8080)
+	v.SetDefault("grpc_port", 50051)
+	v.SetDefault("database_url", "app.db")
+	v.SetDefault("log_level", "")
+	v.SetDefault("cors_origin", "*")
+	v.SetDefault("redis_url", "")
+	v.SetDefault("redis_addr", "")
 
 	if err := v.ReadInConfig(); err != nil {
 		// A missing config file is fine; env vars and defaults still apply.
-		if _, ok := err.(viper.ConfigFileNotFoundError); !ok {
+		var notFound viper.ConfigFileNotFoundError
+		if !errors.As(err, &notFound) {
 			return nil, err
 		}
 	}

@@ -1,0 +1,143 @@
+package otelexport
+
+import (
+	"context"
+	"errors"
+	"net/http"
+	"os"
+	"os/signal"
+	"sync"
+	"syscall"
+	"time"
+
+	"go.opentelemetry.io/contrib/instrumentation/net/http/otelhttp"
+	"go.opentelemetry.io/otel"
+	"go.opentelemetry.io/otel/attribute"
+	"go.opentelemetry.io/otel/codes"
+	"go.opentelemetry.io/otel/exporters/otlp/otlptrace/otlptracehttp"
+	"go.opentelemetry.io/otel/propagation"
+	sdkresource "go.opentelemetry.io/otel/sdk/resource"
+	sdktrace "go.opentelemetry.io/otel/sdk/trace"
+	semconv "go.opentelemetry.io/otel/semconv/v1.26.0"
+	"go.opentelemetry.io/otel/trace"
+)
+
+// InitTracing installs a global OTLP/HTTP tracer provider and returns a
+// shutdown function that flushes pending spans.
+func InitTracing(ctx context.Context) (func(context.Context) error, error) {
+	exporter, err := otlptracehttp.New(ctx)
+	if err != nil {
+		return nil, err
+	}
+
+	serviceName := os.Getenv("OTEL_SERVICE_NAME")
+	if serviceName == "" {
+		serviceName = "AskCore"
+	}
+
+	res, err := sdkresource.Merge(
+		sdkresource.Default(),
+		sdkresource.NewWithAttributes(
+			semconv.SchemaURL,
+			semconv.ServiceName(serviceName),
+		),
+	)
+	if err != nil {
+		return nil, err
+	}
+
+	provider := sdktrace.NewTracerProvider(
+		sdktrace.WithBatcher(exporter),
+		sdktrace.WithResource(res),
+	)
+	otel.SetTracerProvider(provider)
+	otel.SetTextMapPropagator(propagation.NewCompositeTextMapPropagator(
+		propagation.TraceContext{},
+		propagation.Baggage{},
+	))
+	_, startupSpan := provider.Tracer("AskCore/startup").Start(ctx, "application.startup")
+	startupSpan.End()
+
+	var shutdownOnce sync.Once
+	var shutdownErr error
+	shutdown := func(ctx context.Context) error {
+		shutdownOnce.Do(func() {
+			shutdownErr = provider.Shutdown(ctx)
+		})
+		return shutdownErr
+	}
+
+	return shutdown, nil
+}
+
+// TraceHTTP records propagator-aware server spans and HTTP response status.
+func TraceHTTP(next http.Handler) http.Handler {
+	return otelhttp.NewHandler(next, "http.server")
+}
+
+// StartHTTPSpan provides equivalent W3C propagation for fetch-style Go servers
+// such as Fiber, whose request type is not compatible with net/http middleware.
+func StartHTTPSpan(
+	ctx context.Context,
+	headers http.Header,
+	method string,
+	path string,
+) (context.Context, func(int, error)) {
+	parentCtx := otel.GetTextMapPropagator().Extract(ctx, propagation.HeaderCarrier(headers))
+	requestCtx, span := otel.Tracer("AskCore/http").Start(
+		parentCtx,
+		method+" "+path,
+		trace.WithSpanKind(trace.SpanKindServer),
+		trace.WithAttributes(
+			attribute.String("http.request.method", method),
+			attribute.String("url.path", path),
+		),
+	)
+
+	finish := func(statusCode int, requestErr error) {
+		span.SetAttributes(attribute.Int("http.response.status_code", statusCode))
+		if requestErr != nil {
+			span.RecordError(requestErr)
+			span.SetStatus(codes.Error, requestErr.Error())
+		} else if statusCode >= http.StatusInternalServerError {
+			span.SetStatus(codes.Error, http.StatusText(statusCode))
+		}
+		span.End()
+	}
+
+	return requestCtx, finish
+}
+
+// RunWithGracefulShutdown stops accepting requests and flushes telemetry on
+// SIGINT/SIGTERM before the process exits.
+func RunWithGracefulShutdown(
+	runServer func() error,
+	shutdownServer func(context.Context) error,
+	shutdownTracing func(context.Context) error,
+) error {
+	serverErrors := make(chan error, 1)
+	go func() {
+		serverErrors <- runServer()
+	}()
+
+	shutdownSignals := make(chan os.Signal, 1)
+	signal.Notify(shutdownSignals, syscall.SIGINT, syscall.SIGTERM)
+	defer signal.Stop(shutdownSignals)
+
+	select {
+	case err := <-serverErrors:
+		return err
+	case <-shutdownSignals:
+		serverCtx, cancelServer := context.WithTimeout(context.Background(), 10*time.Second)
+		serverErr := shutdownServer(serverCtx)
+		cancelServer()
+
+		// Give telemetry its own deadline so a slow server drain cannot consume
+		// the time reserved for flushing the final spans and metrics.
+		tracingCtx, cancelTracing := context.WithTimeout(context.Background(), 10*time.Second)
+		tracingErr := shutdownTracing(tracingCtx)
+		cancelTracing()
+
+		return errors.Join(serverErr, tracingErr)
+	}
+}

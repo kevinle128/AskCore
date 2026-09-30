@@ -2,11 +2,100 @@ version: "2"
 linters:
   default: standard
   enable:
+    - depguard
     - errcheck
     - govet
     - ineffassign
     - staticcheck
     - unused
+  exclusions:
+    paths:
+      # Protobuf bindings. The current files have no "Code generated" header, so
+      # the default generated-file filter does not skip them. Regenerate with buf.
+      - proto/.*\.pb\.go$
+  settings:
+    # Import rules from docs/ask-architecture-reference.md section 8.
+    # A deny entry is a package path prefix.
+    depguard:
+      rules:
+        core-no-agent:
+          list-mode: lax
+          files:
+            - "**/internal/tools/**"
+            - "**/internal/pipeline/**"
+            - "**/internal/providers/**"
+            - "**/internal/store/**"
+          deny:
+            - pkg: AskCore/internal/agent
+              desc: core packages must not import the agent package; agent adapts itself into their dependencies
+        core-no-transport:
+          list-mode: lax
+          files:
+            - "**/internal/agent/**"
+            - "**/internal/pipeline/**"
+            - "**/internal/tools/**"
+            - "**/internal/providers/**"
+            - "**/internal/store/**"
+          deny:
+            - pkg: AskCore/internal/gateway
+              desc: core packages must not import transport
+            - pkg: AskCore/internal/http
+              desc: core packages must not import transport
+            - pkg: AskCore/internal/channels/
+              desc: core packages must not import a chat platform package
+        providers-no-tools:
+          list-mode: lax
+          files:
+            - "**/internal/providers/**"
+          deny:
+            - pkg: AskCore/internal/tools
+              desc: tools may import providers, not the reverse
+        store-no-implementation:
+          list-mode: lax
+          files:
+            - "**/internal/store/*.go"
+          deny:
+            - pkg: AskCore/internal/store/gormstore
+              desc: store interfaces must not depend on their implementation
+        handlers-no-db:
+          list-mode: lax
+          files:
+            - "**/internal/http/**"
+            - "**/internal/gateway/**"
+          deny:
+            - pkg: AskCore/internal/store/gormstore
+              desc: handlers call store interfaces only
+            - pkg: gorm.io
+              desc: handlers call store interfaces only
+            - pkg: database/sql
+              desc: handlers call store interfaces only
+        gormstore-only-in-root:
+          list-mode: lax
+          files:
+            - "$all"
+            - "!**/internal/app/**"
+            - "!**/cmd/server/**"
+            - "!**/internal/store/gormstore/**"
+          deny:
+            - pkg: AskCore/internal/store/gormstore
+              desc: only internal/app and cmd/server import the store implementation
+        config-only-in-root:
+          list-mode: lax
+          files:
+            - "$all"
+            - "!**/internal/app/**"
+            - "!**/cmd/**"
+            - "!**/internal/config/**"
+          deny:
+            - pkg: AskCore/internal/config
+              desc: receive typed config through the constructor; only internal/app and cmd read config
+        tui-is-client:
+          list-mode: lax
+          files:
+            - "**/cmd/tui/**"
+          deny:
+            - pkg: AskCore/internal
+              desc: the TUI talks to the daemon over gRPC or WS; use pkg/protocol and proto only
 formatters:
   enable:
     - gofmt
