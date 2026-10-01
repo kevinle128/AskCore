@@ -28,7 +28,7 @@ AskCore (the "Ask agent" harness) has the dewee package layout (packages by capa
 |---|---|---|
 | 0 | Architecture | B: dewee model (packages by capability) plus Ask import rules. No Clean Architecture layers. Clean Architecture was chosen first, then withdrawn by the user. |
 | 0b | Models | One shared model with `json`/`gorm` tags. DTO or separate type + mapper only when the data is really different. |
-| 0c | Out of scope | Front-end and web UI. |
+| 0c | Out of scope | Front-end and web UI. Narrowed by the user on 2026-09-30: a read-only local monitoring dashboard is allowed (see `plans/260930-2254-pi-feature-inventory-go-roadmap/plan.md`). |
 | 1 | Existing boilerplate | C: rewrite users/posts demo in the new layout as a working example. |
 | 2 | Entry points | A: keep `cmd/server` (daemon) and `cmd/tui` (client). |
 | 3 | Soft delete | Confirmed (user, 2026-09-30): keep soft delete, no mapper; the `store` model uses `gorm.DeletedAt` with `json:"-"` (design section 6 exception). The `observability` → `tracing/otelexport` move is also confirmed. |

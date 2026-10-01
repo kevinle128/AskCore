@@ -1,6 +1,6 @@
 # `internal/permissions`
 
-Role-based access decisions for gateway methods, HTTP endpoints and tools.
+Role-based access decisions for gateway methods and HTTP endpoints. It does not decide whether a tool may run, and it does not hold the project trust store.
 
 ## What belongs here
 
@@ -11,7 +11,8 @@ Role-based access decisions for gateway methods, HTTP endpoints and tools.
 | Code | Put it in |
 |---|---|
 | Authentication | `internal/gateway` |
-| Tool allow/deny policy | `internal/tools` (`policy.go`) |
+| Tool allow/deny policy | No built-in policy. A user extension handles `tool_call` |
+| Project trust store | `internal/workspace` |
 
 ## Main interfaces
 
@@ -24,7 +25,7 @@ Role-based access decisions for gateway methods, HTTP endpoints and tools.
 ## Imports
 
 - Allowed: `store`
-- Denied: `internal/agent`; `internal/gateway`, `internal/http`, `internal/channels/<vendor>` (core packages do not import transport)
+- Denied: `internal/agent`; `internal/gateway`, `internal/http`, `internal/channels/<vendor>` (core packages do not import transport); `internal/acp`, `internal/leader` (adapters wrap the core, never the reverse)
 
 ## Rules
 

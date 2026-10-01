@@ -1,17 +1,20 @@
 # `internal/hooks`
 
-Hook dispatcher: sync hooks can block or change input; async hooks run in a worker pool. Timeouts are fail-closed.
+Event dispatch for the lifecycle of a turn. A sync hook can block or change its input. A notify hook only observes, and it runs in a worker pool. Only `tool_call` and `user_bash` fail closed. All other events fail open: an error is logged and the run continues.
 
 ## What belongs here
 
-- `Dispatcher`, `Handler`, event types, matchers, audit
+- `Dispatcher`, `Handler`, matchers and audit
+- The split between sync events and notify events
+- The deadline for out-of-process handlers. A compiled-in Go handler has no deadline. When the deadline of an out-of-process handler expires, `tool_call` and `user_bash` fail closed and the dispatcher only logs the other events
 
 ## What does not belong here
 
 | Code | Put it in |
 |---|---|
 | Concrete command and HTTP handlers | `internal/hooks/handlers` |
-| Hook config at rest | `internal/store` |
+| Event and content types | `pkg/protocol` |
+| Hook config at rest | `internal/store` or `internal/settings` |
 
 ## Main interfaces
 
@@ -23,8 +26,8 @@ Hook dispatcher: sync hooks can block or change input; async hooks run in a work
 
 ## Imports
 
-- Allowed: `store`, `tracing`
-- Denied: `internal/agent`; `internal/gateway`, `internal/http`, `internal/channels/<vendor>` (core packages do not import transport); `internal/config`
+- Allowed: `pkg/protocol` (event and content types), `store`, `tracing`
+- Denied: `internal/agent`; `internal/gateway`, `internal/http`, `internal/channels/<vendor>` (core packages do not import transport); `internal/acp`, `internal/leader` (adapters wrap the core, never the reverse); `internal/config`
 
 ## Rules
 

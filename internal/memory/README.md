@@ -1,33 +1,30 @@
 # `internal/memory`
 
-Agent memory: admission of new facts, recall queries (keyword and vector), auto-injection into the prompt and flush at the end of a run.
+Parked. Ask has no long-term memory now. Pi has none, and auto-injection into the prompt would break the byte-stable prompt prefix that the provider caches. The package holds only its `doc.go` until a feature needs it.
 
 ## What belongs here
 
-- Recall and admission logic
-- Embedding provider interface
-- Auto-injector
+- Nothing now. If memory comes back, it injects only as a named section outside the cached prefix
 
 ## What does not belong here
 
 | Code | Put it in |
 |---|---|
-| `memory_search` / `memory_get` tools | `internal/tools` |
+| `memory_search` / `memory_get` tools | `internal/tools` (when memory comes back) |
 | Memory rows at rest | `internal/store` |
 
 ## Main interfaces
 
-- `AutoInjector` (dewee `internal/memory/auto_injector.go:10`)
-- `EmbeddingProvider` (dewee `internal/memory/embeddings.go:130`)
+- None required
 
 ## File names
 
-`recall*.go`, `admission.go`, `embeddings.go`, `auto_injector*.go`
+None now
 
 ## Imports
 
-- Allowed: `store`, `providers` (embeddings)
-- Denied: `internal/agent`; `internal/gateway`, `internal/http`, `internal/channels/<vendor>` (core packages do not import transport); `internal/config`
+- Allowed: `store`, `providers` (embeddings), when the package is used
+- Denied: `internal/agent`; `internal/gateway`, `internal/http`, `internal/channels/<vendor>` (core packages do not import transport); `internal/acp`, `internal/leader` (adapters wrap the core, never the reverse); `internal/config`
 
 ## Rules
 

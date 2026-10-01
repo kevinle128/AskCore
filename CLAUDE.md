@@ -30,15 +30,15 @@ Ask (this repository) is an agent harness that runs as a local daemon or as a re
 - `internal/README.md`: package map
 - `README.md` in each package: what belongs there, file names, allowed imports
 
-The users/posts demo is the reference example for a new entity (see design section 11). Front-end and web UI are out of scope.
+The users/posts demo is the reference example for a new entity (see design section 11). Front-end and web UI for chat and control are out of scope. One exception: a read-only local monitoring dashboard ("Watch it think"). The daemon serves it as embedded static files, bound to localhost with a token. It only reads the harness event stream.
 
 ## Project Structure
 
 ```
 AskCore/
 ├── cmd/
-│   ├── server/            # Daemon: HTTP + gRPC; `-migrate` applies migrations and exits
-│   └── tui/               # Terminal client; imports no internal/* package
+│   ├── server/            # Daemon: HTTP/gRPC/WS gateway, dashboard; ACP client of the leader; `-migrate` applies migrations and exits
+│   └── tui/               # `ask` binary: TUI (ACP client of the leader), headless `ask -p` (agent in process), `ask leader`. See docs section 7.3
 ├── internal/
 │   ├── app/               # Composition root (fx)
 │   ├── config/  logs/     # Config (viper) and zap logger

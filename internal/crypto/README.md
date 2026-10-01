@@ -1,16 +1,17 @@
 # `internal/crypto`
 
-Encryption and decryption of API keys and other secrets before they go to the database.
+Parked for credentials. Ask keeps credentials in `~/.ask/auth.json` (see `internal/settings`), as Pi does, so nothing needs encryption before it goes to the database. The AES-256-GCM helpers stay for a later feature that needs encryption at rest (for example cloud mode with per-tenant secrets).
 
 ## What belongs here
 
-- AES-256-GCM helpers, key loading
+- AES-256-GCM helpers, key loading (when a feature needs them)
 
 ## What does not belong here
 
 | Code | Put it in |
 |---|---|
-| Secret storage | `internal/store` |
+| Credential storage | `internal/settings` |
+| Secret storage in the database | `internal/store` |
 
 ## Main interfaces
 

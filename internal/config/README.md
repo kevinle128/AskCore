@@ -1,16 +1,22 @@
 # `internal/config`
 
-Configuration: viper loads `config.yaml` (optional) and environment variables. The environment variable names are the upper-case keys, the same as in `.env.example` (`HOST`, `PORT`, `GRPC_PORT`, `DATABASE_URL`, `LOG_LEVEL`, `CORS_ORIGIN`, `REDIS_URL`, `REDIS_ADDR`). A `daemon`/`cloud` mode setting is added when the first feature needs it.
+Start-up configuration of the processes: viper loads `config.yaml` (optional) and environment variables. The environment variable names are the upper-case keys, the same as in `.env.example` (`HOST`, `PORT`, `GRPC_PORT`, `DATABASE_URL`, `LOG_LEVEL`, `CORS_ORIGIN`, `REDIS_URL`, `REDIS_ADDR`). A `daemon`/`cloud` mode setting is added when the first feature needs it. User settings and credentials are not here. They are files that `internal/settings` owns.
 
 ## What belongs here
 
 - `Config` struct, loading, defaults
+- Typed defaults that `internal/settings` uses for runtime settings (passed through `internal/app`)
 
 ## What does not belong here
 
 | Code | Put it in |
 |---|---|
-| Secrets in files | environment variables only |
+| Credentials (`auth.json`) and runtime settings files | `internal/settings` |
+| Secrets in config files | environment variables only |
+
+## Main interfaces
+
+- None
 
 ## File names
 

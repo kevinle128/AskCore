@@ -1,0 +1,666 @@
+# Ask roadmap: rebuild the Pi harness in Go
+
+Date: 2026-09-30, revision 3 (the review and its re-check are applied). The review in `plans/reports/code-reviewer-260930-2254-roadmap-review.md` is applied; section 8 maps each finding to its fix.
+Reference: Pi 0.99.1, commit `2bbfcca4`, at `/Users/dale/Desktop/workspace/opensources/pi`.
+Inputs: `inventory-harness.md` (H-*), `inventory-extensions.md` (E-*), `inventory-tui.md` (T-*), `timeline.md`, the edge-case report `plans/reports/researcher-260930-2254-pi-edge-cases.md` (E§N; the top-30 list is E§24#N), and the waku report `plans/reports/researcher-260930-2254-waku-watch-it-think.md`.
+
+## 0. How to read this roadmap
+
+- **Goal of the user:** learn how to build an agent harness. The harness comes first. Each harness phase teaches **one concept** and ends with a **runnable, testable result**.
+- **Milestones:** see section 0b. M1 is must-have; M2 is nice-to-have.
+- **Order (M1 first, then M2):**
+  1. M1: Phase 0, then H1 to H13, then W1, H14, H15 and X1, then T1. T0 (the inline prototype) runs in parallel from H2 on, because it lives in a scratch module.
+  2. M2: H16, X2, H17, T2, X3 and the built-in permission policy, in any order the user picks.
+- **Each phase lists:** the decisions it waits on, the concept, the Pi files to read, the inventory ids it owns, its tests (edge cases), what it must not rebuild, and its exit.
+- **Ownership rule:** each P0 inventory row is owned by exactly one phase. Other phases may use a row, but they do not own it. A P1 row that a P0 exit needs is pulled forward and marked "(P1, pulled)". Section 6 places or defers all other P1 rows.
+- **Pi path shorthand:** `A:` = `packages/agent/src/`, `AI:` = `packages/ai/src/`, `C:` = `packages/coding-agent/src/`, `CD:` = `packages/coding-agent/docs/`.
+
+## 0b. Milestones (user rule: must-have first, every nice-to-have later)
+
+| Milestone | Phases | Decided |
+|---|---|---|
+| **M1: must-have** | Phase 0, H1 to H13, H14 (session tree), H15 (skills, templates, `/reload`), W1 (web monitoring dashboard), X1 (external Go extensions), T0 (inline prototype gate), T1 (TUI core, inline only) | User, 2026-10-01. W1 and H14 were chosen as must-have. |
+| **M2: nice-to-have** | `/login` and `/logout` (API key and OAuth), extension UI dialogs in the TUI, built-in permission policy (allow, deny, ask), H16 (MCP client), X2 (shell hooks), H17 (more providers, OAuth, proxy), T2 (overlays, images, TUI inspector, fullscreen), X3 (packages), Windows | User, 2026-10-01: MCP and shell hooks are not must-have. |
+
+Rule for M1 work: when a phase has a P0 part and a P1 part, M1 builds the P0 part and the P1 parts that an M1 exit needs. Every other P1 or P2 row waits for M2.
+
+## 1. Decisions, in the order they block phases
+
+The user answers these one per turn, in this order. Each blocked phase starts with a "Waits on" line.
+
+| # | Decision | Blocks | Options | Recommendation |
+|---|---|---|---|---|
+| D1 | Runtime model inside the confirmed dewee package model | Phase 0 | The scaffold plan's confirmed decision 0 says: "B: dewee model (packages by capability) plus Ask import rules." The packages stay. The question is what the `agent`, `pipeline`, `sessions`, `scheduler` and `hooks` READMEs describe. **A:** Pi semantics. `agent` owns a two-level loop. `pipeline` becomes the ordered hook points of one turn (or is removed). Sessions become an entry tree. The queues become steer/follow-up. **B:** keep the dewee 8-stage pipeline and map Pi onto it. | **Decided (user, 2026-10-01): A, Pi semantics.** The dewee packages stay. `pipeline` holds the turn's hook points. |
+| D2 | Credential and runtime-settings storage | Phase 0 (README text), H6, H7 | **Credentials:** a file with a lock (Pi's `auth.json`) or a SQLite row encrypted with `crypto` (as `internal/providers/README.md` says). **Runtime settings:** the depguard rule `config-only-in-root` lets only `app` and `cmd/*` import `config`, so the per-project, trust-gated, writable settings need a new loader. That loader lives in `workspace` or in a new `settings` package and gets typed defaults from `config`. **Also decide:** is multi-tenant (credentials per tenant) a real requirement? | **Decided (user, 2026-10-01): B, files as in Pi.** Credentials in `~/.ask/auth.json` (mode 0600, file lock, read-merge-write). Settings in `~/.ask/settings.json` and the project `.ask/settings.json` (after trust). A new `internal/settings` package owns both files, because `config` may be imported only by `app` and `cmd/*`. Cloud mode keeps the file on the server. |
+| D3 | Permission layer for tools | Phase 0 (README text), H5 (stance) | **A:** Pi's stance: no approval, and blocking happens only through `tool_call` hooks (H-SEC-03). **B:** a policy (allow, deny, ask) from day 1. | **Decided (user, 2026-10-01): as Pi, no permission popups and no built-in policy in M1.** Tools run without approval. A user who wants to block a command writes an external extension (X1) that handles `tool_call`. A built-in allow/deny/ask policy handler is M2. (History: the user chose A, then changed to "no permission popups, not now", then removed the whole policy handler from M1.) |
+| D4 | Hook deadlines | Phase 0 (README text), H11 (scope), X1 (mechanism) | Pi has no hook timeouts (removed in 0.31.0). The proposal is a deliberate departure: a deadline only for out-of-process (tier B, X1) calls. When the deadline expires, `tool_call` and `user_bash` fail closed and the other events are logged. Compiled-in (tier A) handlers get no deadline. | **Decided (user, 2026-10-01): A.** Only out-of-process hooks (X1) get a deadline. On expiry, `tool_call`/`user_bash` fail closed and other events are logged. Compiled-in Go handlers get no deadline. The default value is set in X1. |
+| D5 | How `ask` runs the harness | H2 | `cmd/tui` is the `ask` binary with three modes: interactive TUI (ACP client of the leader), headless `ask -p` / `--mode json` (agent in process, direct Go API), `ask leader` (holds one agent). `cmd/server` (daemon) is also an ACP client of the leader. | **Decided (user, 2026-10-01), Grok model.** See `docs/ask-architecture-reference.md` section 7.3. H2 exit is `ask -p` in process, with no leader and no socket. The leader comes in H13. The old rule "`cmd/tui` imports no `internal/*`" was Claude's inference, not a user decision, and is removed. |
+| D6 | Minimum provider set for launch | H4 (Anthropic is in every option, so the first provider phase does not wait) | **A:** Anthropic + OpenAI-compatible. **B:** A + OpenAI Responses. **C:** more. | **Decided (user, 2026-10-01): B.** `anthropic-messages` (H3), `openai-completions` with the compat record and `openai-responses` (H4). Google, Bedrock and Mistral stay in H17. |
+| D7 | Ask names: config dir, project dir, env prefix | H5 (child env names), H6 | Suggested: `~/.ask/`, `.ask/` in the project, `ASK_*` | **Decided (user, 2026-10-01):** `~/.ask/` (override `ASK_HOME`), project `.ask/`, env prefix `ASK_*`, binaries `ask` (`cmd/tui`) and `ask-server` (`cmd/server`). |
+| D8 | Windows and WSL at launch | H5, T1 | Yes or no | **Decided (user rule "must have first", 2026-10-01): no.** Unix only at launch (macOS, Linux). Windows, WSL and PowerShell are later. |
+| D9 | Anthropic OAuth with Claude Code identity headers | H7 (precedence), H17 (flows) | **A:** API keys only. **B:** copy Pi's OAuth identity. | **Decided (must have first): A, API keys only.** Anthropic OAuth with Claude Code identity is not built. |
+| D10 | Crash-resume in the middle of a turn | H8 | **A:** no (Pi's shipping behavior). **B:** yes (Pi's experimental v4 and `durable`). | **Decided (must have first): A, no crash-resume.** Keep the session schema open for it. |
+| D11 | Retry jitter | H9 | **A:** copy Pi (no jitter, `AI:utils/retry.ts:122-126`). **B:** full jitter. | **Decided (must have first): A, copy Pi (no jitter)** for now; add jitter when many sessions share one daemon. |
+| D12 | "Watch it think" (from waku-agent) | H12, W1, T2 | **Decided (user, 2026-09-30):** a read-only web monitoring dashboard served by the daemon, plus a TUI inspector and OTel export. The web has no chat and no control. | Done. The docs rule is narrowed. |
+| D13 | External-extension runtime (internal extensions are compiled-in Go, decided) | X1 | **A:** stdio JSON-RPC subprocess in any language. **B:** Go source that Ask builds on load into a separate binary, cached, over stdio (needs the Go toolchain). **C:** TypeScript through esbuild (Go library) + goja, in process (closest to Pi; no Node APIs, no isolation). **D:** WASM (wazero), sandboxed. Options can be layered. | **Decided (user, 2026-10-01): B only.** External extensions are Go source. Ask builds each one on load (`go build`, cached by content hash) into a separate binary and runs it as a child process over stdio. The stdio protocol exists as the transport, but Go through the `pkg/` SDK is the only supported way to write one. TypeScript (C) and WASM (D) are not planned. A machine without the Go toolchain gets no external extensions; skills, templates, MCP and shell hooks still work there. |
+| D14 | bubbletea v2.0.10 pin with a repo-wide Go 1.26.0; how inline scrollback is written | T1 | **Pin:** A: v2. B: stay on v1. **Committer route**, if the T0 gate needs more than the five kiln-class fixes: (a) a raw-write scrollback committer, or (b) a vendored bubbletea/ultraviolet fork. | Open. v2 is a recommendation, not a pin, until the M1 T0 gate (G1, G2, G3, G6) passes. |
+| D15 | Fullscreen (alt-screen) in the first TUI milestone | T1, T2 | Inline only first, or both | **Decided (must have first): inline only** in the first TUI milestone. Fullscreen is later. |
+| D16 | External agent protocol | H13 | **Decided (user, 2026-10-01): ACP** (Agent Client Protocol, JSON-RPC 2.0, JSON) plus `_ask/*` extension methods and `_meta` is the only protocol between the agent process and anything outside it (leader socket, remote agent over WebSocket, editors over stdio). Inside the process and in headless mode: direct Go calls. No protobuf on ACP links; protobuf/gRPC only for internal service APIs and OTLP (Grok does the same: `plans/reports/researcher-261001-0117-grok-protobuf-usage.md`). | Done. |
+| D17 | ACP Go SDK | H13 | **A:** `coder/acp-go-sdk` v0.13.5 (no release or maintainer reply since June 2026, per a fork's README). **B:** the fork `lx-wnk/acp-go-sdk` v1.21.0, tracks ACP schema 1.21.0, same module path (needs `replace`). **C:** `caelis-labs/acp-go-sdk` v1.4.0. **D:** generate our own types from the ACP JSON schema. | Keep open until a conformance check passes at H13a: pin the SDK and the ACP schema version separately; prove custom `_ask/*` methods, preserved `_meta`, notifications and `session/cancel` through the leader; map each M1 Go API call to ACP. Note: an ACP `session/prompt` response ends the turn and carries a stop reason, while Pi's `prompt` response only means "accepted"; define when the ACP response is sent relative to `agent_settled` (after retries and compaction). Check the current ACP schema for standard usage updates before adding `_ask/*` usage methods. The same Go API tests run against the direct and the remote client. |
+
+## 2. Phase 0: architecture alignment (documentation only)
+
+Status: done (2026-10-01).
+
+- **Waits on:** D1, D2, D3, D4.
+- **Why:** the scaffold READMEs describe a dewee chat-bot runtime. Every later phase builds on these contracts, so fix them first.
+
+| Package or doc | Scaffold text | Pi evidence | Change if D1 = A |
+|---|---|---|---|
+| `agent` + `pipeline` | 8 stateless stages: context, history, prompt, think, act, observe, memory, summarize. `Router` resolves an agent by key. | Two-level loop with the hooks `transformContext`, `prepareRequest`, `beforeToolCall`, `afterToolCall`, `finishTurn` (H-LOOP-02, H-LOOP-14, `A:agent-loop.ts:163-330`). One agent per session. | `agent` owns the loop (`loop_*.go`). `pipeline` holds the ordered hook points of one turn. Summarize becomes compaction (H10). `Router` is not needed until multi-agent routing is. |
+| `sessions` + `store` | Key `agent:{agentId}:{channel}:direct:{peerId}`. `sessions` imports only `store`. | A tree of typed entries with `parentId`, fork and branch. Context is a projection of the log (H-SESS-03, H-SESS-06). | `sessions` owns the entry log and the context builder, and may import the message types. `store` gets `session` + `session_entry` tables. A channel key can map to a session id later. |
+| `scheduler` | Queue modes `queue`, `followup`, `interrupt` | Steer (delivered after the whole tool batch) and follow-up (delivered at idle). Modes are `all` or `one-at-a-time` (H-LOOP-03..05). Pi fixed "skip the remaining tools" in 0.58.4. | The queue semantics move into `agent`. `scheduler` keeps lanes and concurrency limits. `interrupt` is removed; abort is a separate call. |
+| `hooks`, `hooks/handlers` | Sync hooks block or change input; async hooks run in a pool. "Timeouts are fail-closed." Imports are `store`, `tracing`, `crypto`, `sandbox`. | 19 of 41 events are sync and 22 are notify (this matches). Only `tool_call` and `user_bash` fail closed. Pi has no timeouts. | Keep the sync/async split. Fail-closed applies only to the two events above. Deadlines follow D4. Handlers may import the event and content types. |
+| `bus` | Inbound and outbound messages, and events that notify subscribers. Stdlib only. | 41 events, one stream, many watchers (H11, H12, waku report 7(b)) | One owner rule: event types live in `pkg/protocol`, the publisher and bounded fan-out live in `bus`, sync dispatch lives in `hooks`. |
+| `tools` / `permissions` | `tools` has "policy: allow, deny, approval". `permissions` is role-based access. | Pi has no permission system (H-SEC-03). Project trust is a separate concept (H-SEC-01). | No built-in tool policy in M1 (D3): the `policy.go` line in the `tools` README is removed. `permissions` keeps role-based access for the gateway. The trust store is not role-based access: it goes to `workspace` or `settings` (D2). |
+| `memory` | Auto-injection into the prompt; flush at the end of the run | Pi has no memory. Auto-injection breaks the byte-stable prompt (H-PROMPT-09). | Parked. If it comes back, it injects only as a named section outside the cached prefix. |
+| `skills` | BM25 and embedding search; hot reload (`watcher.go`) | Only metadata goes into the prompt. Reload is explicit (`/reload`). There is no watcher (E-LD-11). | Metadata discovery plus explicit reload. Search and the watcher are parked. |
+| `bootstrap` | Seeding for a new agent or user; truncation | `AGENTS.md` is discovered from cwd and its ancestors (H-PROMPT-04) | `bootstrap` owns context-file discovery. Seeding is parked. |
+| `providers`, `crypto`, `config` | `providers`: "API keys at rest -> `internal/crypto` + `internal/store`". `crypto`: encrypts keys "before they go to the database". `config`: "Secrets in files -> environment variables only". | Pi keeps credentials in `auth.json` with a lock (H-AUTH-02, H-AUTH-03). | Per D2: credentials live in `~/.ask/auth.json`, owned by the new `internal/settings` package. Update the three READMEs. `crypto` is parked for credentials. |
+| `workspace` | Resolver for each run kind | Every tool and trust decision needs an explicit session cwd and a canonical project root (H-TOOL-19, H-SEC-01) | `workspace` owns the session cwd, the project root and (per D2) the project trust store. |
+| `providers` | `Provider`, `ProviderAdapter`, `ThinkingCapable`; "retry and error classification" | Api, Provider and Model are separate, with a compat record as data (H-PROV-01). Agent-level retry lives in the agent (H9). | Describe the Api/Provider/Model split. `providers` keeps provider-level retry and error classification. |
+| `docs/ask-architecture-reference.md` | Sections 2, 3, 4 (`pipeline.Stage`), 7.2 (runtime flow), 9 ("a new pipeline stage"), 10 (entry points) | as above | Align all six sections with section 7.3. |
+
+- **Exit:** the READMEs and the architecture doc are updated, and `golangci-lint` passes. Depguard changes only where the table above says so.
+
+## 3. Dependency order
+
+```
+P0 ─► H1 events ─► H2 loop ─► H3 first provider ─► H4 more providers ─► H5 tools ─► H6 settings+trust+prompt
+                                                                                            │
+      H7 models+credentials ◄──────────────────────────────────────────────────────────────┘
+          │
+          ▼
+      H8 session log ─► H9 queues+retry ─► H10 compaction ─► H11 bus+hooks ─► H12 observability ─► H13 gateway
+                                                                                                    │
+            ┌────────────────────┬────────────────────────┬─────────────────────────────────────────┤
+            ▼                    ▼                        ▼                                         ▼
+       W1 web dashboard    H14 session tree ─► H15 commands ─► H16 MCP ─► H17 auth+providers    X1 extension protocol ─► X2, X3
+                                                                                                    
+T0 inline prototype (scratch module, parallel from H2) ─► T1 TUI core (after H13) ─► T2 TUI P1 + inspector (also after W1 and X1)
+```
+
+Rules behind this order (all checked by the review):
+- The faux provider and the partial-JSON parser (H1) come before the loop (H2).
+- H2 runs in memory (`--no-session` semantics) behind a context-source interface. H8 swaps in the session projection without a rewrite.
+- The settings (H6) come before the catalog, credentials and resolution (H7). Tools (H5) use hard-coded defaults until H6 wires the settings.
+- The session log (H8) comes before retry (H9) and compaction (H10), because both use `context_edit`.
+- Agent-core events come in H1. Session events (`agent_settled`, `queue_update`, `compaction_*`, `auto_retry_*`, `entry_appended`) come in the phase that emits them.
+- The bus (H11) comes before the observability core (H12). The gateway event feed (H13) comes before W1 and the T2 inspector.
+
+## 4. Harness track
+
+### H1: Messages, agent-core events and a fake model
+
+- **Concept:** a harness is a message log plus a stream of events.
+- **Read in Pi:** `AI:types.ts:389-610`, `A:types.ts:514-529` (the 10 agent-core events), `C:core/agent-session.ts:180-200` (the session events, for later phases), `CD:json.md`, `AI:providers/faux.ts`, `AI:utils/json-parse.ts`.
+- **Owns:**
+  - H-SESS-04 (message roles and `convertToLlm`).
+  - H-SESS-05 (the assistant message record).
+  - H-MODE-05 (delta-only `message_update`).
+  - H-LOOP-16 (the stream-function contract).
+  - H-PROV-09 (the faux provider).
+  - H-PROV-11 (stream completeness and the tolerant partial-JSON parser).
+  - H-MODE-04, agent-core part.
+- **Also builds:**
+  - The `Usage` type in micro-USD integers. H9 owns H-RETRY-07.
+  - The event envelope `seq`, `ts`, `sessionId`, `runId`, `type`, in `pkg/protocol`. `message_end` carries `usage`, `model` and `provider`. Changing the envelope later breaks every subscriber (waku report 7(a)).
+  - An SSE reader without `bufio.Scanner`.
+- **Packages:** `providers` (types, SSE reader, faux provider), `pkg/protocol`.
+- **Tests:**
+  - A stream without a terminal event is an error (E§24#4).
+  - Malformed partial JSON is tolerated.
+  - A line longer than 64 KB passes (E§25).
+- **Do not rebuild:** cumulative `message`/`partial` in updates (removed in 0.84.0).
+- **Exit:** a scripted faux stream becomes a correct event sequence and a final message in a unit test.
+
+### H2: The agent loop, plus print and JSON mode (in memory)
+
+- **Waits on:** D5.
+- **Concept:** call the model, run the tool calls, feed the results back, and stop when the model stops.
+- **Read in Pi:** `A:agent-loop.ts` (940 lines), `A:agent.ts:230-410`, `C:modes/print-mode.ts`.
+- **Owns:**
+  - H-LOOP-01 (entry points), H-LOOP-02 (two-level loop).
+  - H-LOOP-08 (abort through `context.Context`).
+  - H-LOOP-09 (parallel and sequential modes, ordering rules).
+  - H-LOOP-10 (the tool pipeline).
+  - H-LOOP-11 (the truncated-output guard).
+  - H-LOOP-13 (error ends the run).
+  - H-LOOP-14 (the core hook set: `transformContext`, `convertToLlm`, `getApiKey`, `prepareRequest`, `finishTurn`, `beforeToolCall`, `afterToolCall`; the rest in H11).
+  - H-LOOP-17, part: state, ordered listeners and `WaitForIdle`. The queues are in H9.
+  - H-TOOL-12 (argument coercion), H-TOOL-13 (the result shape).
+  - H-TOOL-21, loop part: exactly one result per call, even after abort or truncation.
+  - H-MODE-01 (mode selection), H-MODE-02 (print mode), H-MODE-03 (JSON mode; P1, pulled; the session header record is added in H8).
+  - H-CONF-09, basic flags: `-p`, `--mode`, `--provider`, `--model`, `--api-key`, `--thinking`.
+- **Also builds:**
+  - One tool-context struct: ctx, cwd, abort signal, update callback (timeline lesson 5).
+  - `SourceInfo` provenance on tools (lesson 6).
+  - A context-source interface with an in-memory log.
+- **Packages:** `agent`, `pipeline` (hook points, per D1), `tools` (interface, registry, a test `echo` tool), `cmd/tui` (headless `ask -p`, per D5).
+- **Tests:**
+  - The pairing invariant after abort and after length truncation (E§24#1).
+  - Result order versus event order.
+  - A goroutine-leak test with `goleak` (E§24#19).
+  - JSON-mode LF framing with no line limit (E§24#29).
+  - Print mode opens no network listener.
+- **Do not rebuild:**
+  - `shouldStopAfterTurn` (removed in 0.87.0).
+  - Agent state as the history. This is temporary here and replaced by the log in H8.
+- **Exit:** `ask -p "hello"` and `ask --mode json` run in process against the faux provider and the echo tool, with the right exit codes.
+
+### H3: The first real provider (Anthropic)
+
+- **Concept:** one internal message model, one adapter for each wire API.
+- **Read in Pi:** `AI:types.ts:1056-1143`, `AI:api/anthropic-messages.ts`, `AI:env-api-keys.ts`, `AI:api/simple-options.ts`.
+- **Owns:**
+  - H-PROV-01 (the Api/Provider/Model layers).
+  - H-PROV-02 (`anthropic-messages`).
+  - H-PROV-07 (common request options, with the `maxTokens` clamp).
+  - H-PROV-12 (thinking levels and clamp).
+  - H-PROV-14 (Anthropic prompt caching).
+  - H-PROV-18 (the Model struct). H3 to H6 use one hard-coded model record for each provider. H7 replaces it with the catalog.
+  - H-PROV-25 (idle timeout, not a total timeout).
+  - H-PROV-26 (the Anthropic quirk data).
+  - H-AUTH-05 (the Anthropic env key).
+  - H-AUTH-08 (per-request auth).
+- **Packages:** `providers`.
+- **Tests:**
+  - Thinking signatures round-trip unchanged (E§24#2).
+  - An idle stream times out, but a long active stream does not.
+- **Exit:** `-p` works against a real Anthropic model.
+
+### H4: More wire APIs and cross-provider replay
+
+- **Waits on:** D6.
+- **Concept:** "compatible" APIs hide real differences. Keep the quirks as data. Replay history across vendors.
+- **Read in Pi:** `AI:api/openai-completions.ts`, `AI:api/openai-responses.ts`, `AI:api/transform-messages.ts`.
+- **Owns:**
+  - H-PROV-03 (`openai-completions` with the compat record).
+  - H-PROV-04 (`openai-responses`).
+  - H-PROV-10 (cross-provider replay).
+  - H-PROV-27 (image input and the non-vision placeholder).
+  - H-TOOL-21, replay part (synthesize missing results).
+  - H-PROV-21, in memory (switch model mid-conversation).
+- **Tests:**
+  - Replay across all chosen APIs (E§24#2, E§24#3).
+  - Stream completeness for each protocol (E§24#4).
+- **Do not rebuild:**
+  - `reasoningEffortMap` and `sendSessionIdHeader`.
+  - Per-thinking-level model variants.
+  - The Gemini CLI and Antigravity providers.
+- **Exit:** one in-memory conversation switches between Anthropic and OpenAI with correct thinking replay.
+
+### H5: Built-in tools
+
+- **Waits on:** D3 (stance), D7 (child env names), D8.
+- **Concept:** most of a coding agent's quality is in its tools: limits, truncation, process control and safe edits.
+- **Read in Pi:** `C:core/tools/` (read, write, edit, edit-diff, bash, grep, find, ls, truncate, path-utils, file-mutation-queue), `C:utils/shell.ts`, `C:core/exec.ts`.
+- **Owns:**
+  - H-TOOL-01 to H-TOOL-07 (the seven tools, with the 2000-line / 50 KB limits).
+  - H-TOOL-11 (prompt snippets).
+  - H-TOOL-19 (path handling).
+  - H-TOOL-22 (shell and child env; Unix only if D8 = no).
+  - H-TOOL-23 (process-tree kill with `Setpgid` and `WaitDelay`).
+  - H-SEC-03 (the no-approval stance, per D3).
+- **Configuration:** hard-coded defaults here. H6 wires the settings.
+- **Packages:** `tools` (`filesystem_*`, `shell*`, `search_*`), `sandbox` (local implementation), `workspace` (session cwd).
+- **Tests:**
+  - E§24#12, #13 (process kill, bash output).
+  - E§24#15, #16, #17, #18 (edit normalization, write serialization, paths, content sniffing).
+- **Do not rebuild:**
+  - The `glob` and `think` tools.
+  - The single-shape edit.
+  - An ambient cwd.
+  - Native image libraries.
+- **Exit:** in print mode the agent reads a repo, edits a file and runs its tests.
+
+### H6: Settings, trust, system prompt, context files and skills
+
+- **Waits on:** D2 (settings loader), D7 (names).
+- **Concept:** the system prompt is assembled from named sections, and project-local config is untrusted input.
+- **Read in Pi:** `C:core/settings-manager.ts`, `C:core/trust-manager.ts`, `C:core/project-trust.ts`, `C:core/system-prompt.ts:120-216`, `C:core/resource-loader.ts:184-268`, `C:core/skills.ts`, `CD:settings.md`, `CD:security.md`.
+- **Owns:**
+  - H-CONF-01 (layering), H-CONF-02 (write policy).
+  - H-CONF-03 to H-CONF-06 (the key groups).
+  - H-CONF-09 (the remaining flags), H-CONF-12 (env vars), H-CONF-14 (config files).
+  - H-SEC-01, H-SEC-02 (the trust gate), H-SEC-05 (hygiene).
+  - H-PROMPT-01 (named sections), H-PROMPT-02 (`SYSTEM.md`, `APPEND_SYSTEM.md`), H-PROMPT-04 (context files), H-PROMPT-05 (skills), H-PROMPT-09 (prompt stability).
+  - H-PROMPT-10 (P1, pulled; self-extension level 1, user decision 2026-10-01): a `docs` prompt section that points to Ask's own docs and examples (skills, templates, MCP, shell hooks, external extensions, settings), so Ask can extend itself as Pi does (`C:core/system-prompt.ts:153-160`). Read only when the user asks about Ask itself.
+  - H-PROMPT-08 (the input chain; the `input` and `before_agent_start` slots are no-op stubs until H11).
+  - H-TOOL-10 (tool selection with `defaultTools`).
+- **Packages:** `settings` (new, per D2), `workspace` (session cwd, project root, trust store), `bootstrap`, `skills`, `agent` (`systemprompt*.go`).
+- **Tests:**
+  - E§24#22 (config value resolution).
+  - A corrupt settings file is never overwritten.
+  - No project skill loads before trust.
+  - The system prompt is byte-identical across two runs.
+- **Do not rebuild:**
+  - Any `*.md` file as a skill.
+  - The `{baseDir}` placeholder.
+  - A pre-trust read of `sessionDir`.
+- **Exit:** an `AGENTS.md` file and a skill change the agent's behavior, and an untrusted project's `.ask/` config is ignored.
+
+### H7: Model catalog, resolution and credentials
+
+- **Waits on:** D2 (credential store), D9 (precedence without OAuth).
+- **Concept:** model data is data. Credentials have one write path, protected by a lock.
+- **Read in Pi:** `C:core/model-resolver.ts`, `C:core/model-config.ts`, `C:core/auth-storage.ts`, `CD:models.md`.
+- **Owns:**
+  - H-PROV-16 (bundled catalog; P1, pulled; the remote refresh is later).
+  - H-PROV-17 (`models.json`).
+  - H-PROV-19 (resolution and patterns; the session restore part is in H8).
+  - H-AUTH-01 (precedence).
+  - H-AUTH-02, H-AUTH-03 (`~/.ask/auth.json` with mode 0600, a cross-process file lock and read-merge-write, per D2).
+- **Packages:** `providers`, `settings`.
+- **Tests:**
+  - A model-id parsing table.
+  - Credential concurrency from two processes (E§24#20).
+  - E§24#30 (data files with overrides).
+- **Do not rebuild:** API keys in the settings.
+- **Exit:** `--model anthropic/<id>:high` resolves, and a key saved in `auth.json` is used.
+
+### H8: The session log
+
+- **Waits on:** D10.
+- **Concept:** an append-only, typed entry tree is the only source of truth. The provider context is a projection of it.
+- **Read in Pi:** `C:core/session-manager.ts`, `CD:session-format.md`, `C:core/agent-session.ts:1096-1125`.
+- **Owns:**
+  - H-SESS-03 (entry types).
+  - H-SESS-06 (the context builder).
+  - H-SESS-07 (single-writer ordering).
+  - H-SESS-10, P0 part (`-c`, `--session`).
+  - H-SESS-15 (a lock across processes: a SQLite lease row, so headless `ask -p` and the leader cannot write one session together). The lease contract:
+    - Acquire, renew and release are explicit. Each lease has an ownership generation.
+    - Every write transaction checks the generation, so a paused process that resumes after its lease expired cannot write after a new owner took the session.
+    - When a process loses ownership, it stops the run.
+    - Every database-owning mode (headless, leader, daemon) uses the same bounded busy timeout for SQLite, and one serialized migration path at startup (today migrations run only from the server module: `internal/app/app.go:43-44,87-88`).
+  - H-SESS-01, H-SESS-02 (P1, pulled: entry types kept, SQLite storage, schema version).
+  - H-COMPACT-13 (`context_edit`).
+  - H-LOOP-15 (P1, pulled: system-section and tool-declaration entries, which H10's checkpoint needs).
+  - H-PROV-19, session restore part.
+  - The session header record in JSON mode.
+- **Packages:** `sessions`, `store`, `store/gormstore`, `migrations`.
+- **Tests:**
+  - Write ordering (E§24#10).
+  - Resume restores the model and thinking level.
+  - `context_edit` omits an entry from context and keeps it in history.
+  - Two processes cannot write one session.
+  - A paused writer whose lease expired cannot write after a new owner took the lease.
+  - Two processes write two different sessions at the same time without SQLite busy errors.
+  - Two processes start on a fresh database at the same time, and migrations run once.
+  - After headless changes an API key in `auth.json`, a running leader uses the new key on its next request.
+  - Schema migration.
+- **Do not rebuild:**
+  - `agent.state.messages` as the history (removed in 0.87.0).
+  - The v4 lane store.
+- **Exit:** kill the process after a turn, resume with `-c`, and continue with the same model.
+
+### H9: Queues, abort, retry, usage
+
+- **Waits on:** D11.
+- **Concept:** one run is a state machine. Steering, follow-ups, abort and retry are its transitions.
+- **Read in Pi:** `A:agent.ts:299-304`, `C:core/agent-session.ts:1883-1940` (prompt), `:2317-2380` (`clearQueue` and `abort`), `:3611-3712` (retry), `AI:utils/retry.ts`, `AI:utils/overflow.ts`, `C:core/usage-totals.ts`.
+- **Owns:**
+  - H-LOOP-03 to H-LOOP-07 (the queues, with ids instead of text matching).
+  - H-LOOP-17, queue part.
+  - H-LOOP-21 (`agent_settled` and the session events).
+  - H-RETRY-01 to H-RETRY-04 (retry, with the patterns as data).
+  - H-RETRY-06 (overflow detection).
+  - H-RETRY-07 (usage and cost with tiers).
+  - H-RETRY-08, H-RETRY-09 (totals and the context-usage estimate).
+  - H-RETRY-10 (P1, pulled: usage entries).
+- **Packages:** `agent`, `providers` (error classification), `scheduler` (lanes only).
+- **Tests:**
+  - E§24#28 (steer waits for the tool batch).
+  - E§24#5, #6, #8 (classification, retry, usage).
+  - A 429 is not classified as overflow.
+- **Do not rebuild:**
+  - `queueMessage` and `queueMode`.
+  - Allowing `prompt()` while streaming.
+- **Exit:** a faux provider that returns 429 twice and then succeeds gives one turn, correct `auto_retry_*` events and a correct cost.
+
+### H10: Compaction
+
+- **Concept:** context is finite. Summarize at a safe cut point, record the summary as an entry, and rebuild context from the latest compaction.
+- **Read in Pi:** `C:core/compaction/compaction.ts`, `C:core/compaction/utils.ts`, `CD:compaction.md`, `C:core/agent-session.ts:2862-3000`.
+- **Owns:**
+  - H-COMPACT-01 to H-COMPACT-09.
+  - H-COMPACT-11 (events).
+  - H-COMPACT-14 (P1, pulled: serialized summaries).
+  - H-RETRY-05 (P1, pulled: retry for summaries).
+  - H-SLASH-01 (`/compact`, as `Session.Compact()`; H13 wires the RPC).
+- **Hook points:** `session_before_compact` and `session_compact` are no-op stubs here. H11 wires them (H-COMPACT-12).
+- **Packages:** `agent` (`compaction_*.go`), `sessions`.
+- **Tests:**
+  - E§24#7 (the compaction state machine).
+  - A 429 never triggers compaction.
+  - The pairing invariant holds after compaction.
+  - A second overflow gives the fixed error text.
+- **Do not rebuild:**
+  - Proactive mid-turn compaction.
+  - A separate turn-prefix summary store.
+- **Exit:** a long faux session crosses the threshold, compacts, and continues with the correct context and totals.
+
+### H11: Event bus and internal extensions (compiled-in Go)
+
+- **Waits on:** D4.
+- **Concept:** every extension point is an event. Some events only notify. Others must answer before the harness continues.
+- **Read in Pi:** `C:core/extensions/types.ts:1545-1612`, `C:core/extensions/runner.ts`, `CD:extensions.md`, `inventory-extensions.md` section 4.
+- **Build:**
+  - The 41-event taxonomy.
+  - The sync/notify split (19/22) with the merge rules.
+  - Fail-closed on `tool_call`; `user_bash` gets only its type and policy here and is tested in H15.
+  - The rest of the H-LOOP-14 hooks.
+  - No deadline for these compiled-in handlers (D4). The deadline mechanism for out-of-process calls is built in X1 and documented as a departure from Pi 0.31.0.
+- **Owns (P1, pulled):**
+  - H-LOOP-12 (early termination).
+  - H-COMPACT-12 (compaction hooks).
+  - H-PROMPT-03 (`forceSystemPrompt`).
+- **Packages:** `hooks`, `hooks/handlers`, `bus`.
+- **Tests:**
+  - A blocking handler stops the tool, and the model sees the reason.
+  - A panic on a notify event does not stop the run.
+  - A panic on `tool_call` blocks the call.
+  - Handlers run in load order.
+- **Do not rebuild:** system messages inside the `context` event (removed in 0.87.0).
+- **Exit:** a test-only handler (not shipped) that denies `rm -rf` blocks the call in print mode, and the model sees the reason.
+
+### H12: Observability core ("Watch it think", part 1)
+
+- **Waits on:** D12 (decided).
+- **Concept:** one event stream, many watchers. The loop never knows who watches. This is the waku pattern (`waku/app.py:63`, `waku/ops/tracing.py:161-167`).
+- **Read:** the waku report, sections 4, 5 and 7.
+- **Build:**
+  - Bus fan-out with one bounded queue for each subscriber and a drop counter.
+  - Redaction and bounded previews before publish.
+  - A tracing collector with real-duration spans (run, then turn, then tool attempt), exported through `tracing/otelexport`.
+  - Hang detection.
+- **Owns (P1, pulled):**
+  - H-TELEM-04 (telemetry spans).
+  - H-SEC-07 (secrets stay out of logs).
+- **Packages:** `bus`, `tracing`, `tracing/otelexport`, `app`.
+- **Tests:**
+  - A blocked subscriber does not slow a faux run.
+  - A secret never reaches a subscriber.
+  - Queue overflow, then reconnect during a run: replay has no gap and no duplicate.
+  - A cursor older than the buffer, and a leader restart (new epoch), both give `resync` plus a snapshot.
+  - Spans have real durations.
+- **Do not copy:**
+  - Waku's per-event file writes, its line-count cursor and its unredacted traces.
+  - Anything under `waku/ops/static/` or `hosted/`.
+- **Replay contract (needed by H13 and W1):**
+  - `seq` is monotonic per leader process. A leader `epoch` (new on each start) goes with it, so a client can tell a restart.
+  - The bus keeps a bounded replay buffer **before** fan-out. A slow live subscriber may drop events, but a reconnecting client replays from the buffer, and the switch from replay to live is atomic (no gap, no duplicate).
+  - A cursor older than the buffer, or from another epoch, gets an explicit `resync` answer plus a state snapshot. It never gets a silent gap.
+  - Replay covers events only. Commands are never resubmitted.
+- **Exit:** a print-mode run exports a trace tree to a local OTel viewer, and a test subscriber sees every event in `seq` order.
+
+### H13: Leader, ACP adapter and gateway (Pi's RPC mode, multi-client)
+
+- **Waits on:** D16 (decided), D17.
+- **Concept:** the agent gets one external protocol, ACP. The leader (`ask leader`) holds one agent and routes many ACP clients to it (id rewrite, per-session subscribers, driver client), as Grok's leader does. The daemon is one more ACP client and adds the network gateway. Design: `docs/ask-architecture-reference.md` section 7.3.
+- **Split into three steps, each with its own runnable exit:**
+  - **H13a ACP adapter over stdio.** `internal/acp` over the agent's Go API, plus the `_ask/*` methods. Exit: `ask acp` works with a scripted ACP client over stdio (prompt, cancel, one `_ask/*` method), and starts no network listener.
+  - **H13b Leader over the Unix socket.** `internal/leader`: handshake with a hard version gate, id rewrite, per-session subscribers and driver, `ConnectOrSpawn`, flock, pid, log, 0700/0600 permissions, peer-UID check. Exit: two `ask` TUI stubs share one auto-started leader.
+  - **H13c Daemon over ACP plus the network gateway.** `cmd/server` becomes an ACP client of the leader and adds the network gateway (security rules below). Exit: an authenticated remote WS client runs a prompt through the daemon.
+  - Each fx composition (headless, leader, editor `ask acp`, daemon) gets its own `fx.ValidateApp` test. Headless and editor modes must start no network listener.
+- **External protocol rule (D16):** external agent links carry ACP JSON-RPC only: the leader socket, the remote WS link, and editor stdio. The Pi RPC response envelope stops at this boundary. gRPC stays for internal service APIs only (for example health and admin), never for prompting or tool execution. The X1 extension stdio link is a separate extension-host contract, not an agent link.
+- **Sessions and drivers in one agent (from Grok's per-session subscribers):**
+  - The one agent in the leader holds many sessions. Each client creates a session or attaches to one.
+  - The client that creates or explicitly takes a session is its driver. Other clients are subscribers.
+  - `/new` and session switch act on the calling client's view only; they never replace another client's session. A switch on a busy session the caller does not drive is rejected.
+  - The multiplexer keeps each client's `initialize` state (capabilities, cwd) and passes only the driver's capabilities for that session to the adapter.
+  - Reverse calls go only to eligible clients (driver, or all subscribers for shared questions). When the driver disconnects during a question, the question is cancelled; late or duplicate answers are ignored.
+- **Spawn from two binaries (Grok uses one binary, so this part is new):** `ConnectOrSpawn` must start `ask leader` even when `ask-server` calls it. It finds `ask` next to its own executable first, then on `PATH`, checks the version before the spawn, and fails with a clear message when `ask` is absent or incompatible. Connect and readiness waits are bounded, including a live lock holder that has no usable socket.
+- **Version mismatch:** reject by default with an upgrade hint. Restart a client-spawned leader automatically only after a verified idle shutdown handshake and the lock release. Before any pid-based signal, check that the pid still belongs to an `ask leader` process.
+- **Read in Pi:** `CD:rpc.md`, `CD:rpc-commands.md`, `C:modes/rpc/rpc-types.ts:22-74`, `CD:sdk.md`.
+- **Security first (review B1):** the scaffold defaults `host=0.0.0.0` and `cors_origin=*` (`internal/config/config.go:40,45`). Prompting means `bash`, so:
+  - Agent methods bind to loopback by default.
+  - Every WS connection (and every gRPC admin connection) needs a client token, stored in a 0600 file in the Ask config dir, or mTLS in cloud mode.
+  - WS upgrades need an `Origin` allow-list, never `*`.
+- **Owns:**
+  - H-MODE-06 (framing semantics mapped to ACP over the leader socket and WS; no gRPC agent API).
+  - H-MODE-07, P0 part (prompting, state, `set_model`, `get_available_models`, thinking level, compact). `cycle_model` comes in H17 with scoped models.
+  - H-MODE-08, for the commands above. The `bash` semantics come in H15 and the `get_entries` cursor in H14.
+  - H-MODE-09 (closes Pi's gaps: auth, multi-client).
+  - H-MODE-13 (stateless SDK rules).
+  - H-SLASH-02 (`/new`) with H-SESS-18 (P1, pulled: session replacement).
+  - H-SLASH-03 (`/model`, `/thinking`).
+- **Also builds:** the live event feed with `after=<seq>` resume over WS and SSE. `seq` and `runId` travel in ACP `_meta`. `ask acp` (ACP over stdio for editors) comes free with the adapter.
+- **Packages:** `acp` (new), `leader` (new), `gateway`, `gateway/methods`, `pkg/protocol`, `cmd/tui` (`ask leader`), `cmd/server`.
+- **Tests:**
+  - An unauthenticated client is rejected.
+  - A cross-origin WS upgrade is rejected.
+  - E§24#29 (protocol hygiene).
+  - Stale frames are fenced after re-attach, with no auto-replay after reconnect and one writer for each session (timeline section 6).
+  - `seq` resume has no gaps.
+- **Do not rebuild:** the removed slash-command names. Fix the names before the protocol ships.
+- **Tests (leader):** two TUIs share one leader and see the same session updates; two clients with different cwd and capabilities create different sessions; a driver disconnects during a question; `ask-server` starts first from another cwd, and with `ask` missing from `PATH`; a version mismatch arrives while another client runs a tool; a stale, reused pid is not signalled; ids of two clients never collide; a client of a different protocol version is rejected; a peer with another UID is rejected; a stale socket is replaced by the leader that wins the flock; a client disconnect does not cancel the run.
+- **Exit (all of H13):** `ask` (TUI stub) and `cmd/server` both connect to one auto-started leader over ACP and run prompt, steer, abort, compact and new session, and receive `agent_settled`. An authenticated remote WS client does the same through the daemon.
+
+### W1: Web monitoring dashboard ("Watch it think", part 2)
+
+- **Waits on:** D12 (decided).
+- **Scope (user, 2026-09-30):** monitoring only, read-only, no chat and no control. It is the one allowed web UI (`docs/ask-architecture-reference.md:9`).
+- **Depends on:** H1 (envelope), H12 (bus and redaction), H13 (event feed and token).
+- **Build:**
+  - Embedded static files (`go:embed`) served by `gateway` on a separate `127.0.0.1` listener, with a token and `Host`/`Origin` checks (waku has none).
+  - Plain HTML, CSS and JS with no build step. This is a recommendation.
+  - SSE `GET /events?after=<seq>`.
+- **Views:**
+  - Overview: a harness diagram. Each stage lights up for its event (model call, tool, hook, compaction, retry), with a minimum display time. The mapping is one table with a test.
+  - Runs: each turn with its model calls, tokens, cost and tool previews.
+  - Hang alerts.
+  - Session list and cost totals.
+- **Packages:** `gateway` (`dashboard*.go` plus assets), `bus`.
+- **Tests:**
+  - Wrong token, `Host` or `Origin` is rejected.
+  - Reconnect has no gaps.
+  - A closed tab does not slow the loop.
+  - The stage table covers every event type.
+- **Do not copy:**
+  - Waku's static files, name or look (brand license).
+  - Its 450 ms whole-file polling.
+  - Its SQL console.
+- **Exit:** open the dashboard, run a prompt, and watch the stages light up with correct tokens and cost.
+
+### H14: Session tree
+
+- **Concept:** a session is a tree, not a list. Branches, forks and summaries of abandoned branches are operations on the entry log.
+- **Read in Pi:** `C:core/session-manager.ts:1579-1750,1856-1861`, `C:core/agent-session-runtime.ts`, `C:core/compaction/branch-summarization.ts`, `CD:sessions.md`.
+- **Owns:**
+  - H-SESS-08 (navigation), H-SESS-09 (fork, clone), H-SESS-11 (session dir), H-SESS-12 (names, labels), H-SESS-16 (robustness), H-SESS-17 (custom state), H-SESS-20 (stats).
+  - H-COMPACT-10 (branch summary).
+  - H-SLASH-04 (session commands).
+  - H-MODE-07, session commands, including the `get_entries{since}` cursor.
+- **Tests:**
+  - E§24#11 (fork and branch correctness).
+  - The pairing invariant after a fork.
+- **Exit:** fork, clone, resume and a branch summary work over the gateway.
+
+### H15: Commands and resources
+
+- **Concept:** user input is expanded before it reaches the model. Skills, templates and `!cmd` are input transforms, and project resources pass the trust gate first.
+- **Read in Pi:** `C:core/agent-session.ts:1883-2062,3745-3843`, `CD:skills.md`, `CD:prompt-templates.md`, `CD:usage.md`, `CD:configuration.md`.
+- **Owns:**
+  - H-PROMPT-06 (`/skill:name`), H-PROMPT-07 (templates).
+  - H-TOOL-24 (`!cmd`).
+  - H-SEC-06 (`user_bash` fail-closed test).
+  - H-SLASH-06, H-SLASH-08 (`/trust`), H-SLASH-09 (`/reload`).
+  - H-CONF-07 (resource keys).
+  - Self-extension level 1 (user decision, 2026-10-01): `/reload` also reloads external extensions (after X1), and in M2 also MCP config (H16) and shell hooks (X2), so a resource that Ask writes for itself works without a restart. This includes Go code: Ask can write an external extension in Go under `~/.ask/extensions/<name>/`, and `/reload` builds it (D13 auto-build) and loads it. Only the extension is built, never Ask itself (level 2 is out). Test (M1): Ask writes a skill, runs `/reload`, and uses it in the same session. Test (M2, with H16): the same with an MCP config. After X1: Ask writes a Go extension that registers a tool, runs `/reload`, and calls that tool in the same session.
+  - A settings get/set gateway method. This closes the "settings changes" gap of H-MODE-09.
+- **Tests:**
+  - Template argument expansion (`$1`, `$@`, `${1:-default}`).
+  - A failing `user_bash` handler blocks the command.
+  - `!!cmd` output stays out of context.
+  - `/reload` picks up a new skill without losing the session.
+- **Exit:** a template and a skill command expand in print mode and over the gateway.
+
+### H16: MCP client
+
+- **Concept:** external tool servers become tools with a namespace. Their config is project input, so it passes the trust gate.
+- **Read in Pi:** `CD:mcp.md`, `C:core/mcp-servers.ts`, `packages/mcp/src`.
+- **Owns:**
+  - H-TOOL-18 (stdio and HTTP, `mcp.json` after trust, official go-sdk).
+  - H-SLASH-07 (`/mcp`).
+  - H-TOOL-15, `direct` exposure only.
+- **Tests:**
+  - A 60 s tool timeout.
+  - Text over 20 KB is cut and spilled to a temp file.
+  - MCP tool calls are never retried.
+  - An untrusted project `mcp.json` does not load.
+- **Exit:** an MCP server's tools are callable, and an untrusted project's `mcp.json` is ignored.
+
+### H17: Provider breadth, auth flows and network
+
+- **Waits on:** D9.
+- **Concept:** breadth is data plus flows. Each new vendor is a compat record and quirk data. Each login is a flow with timeouts and fallbacks.
+- **Read in Pi:** `AI:auth/oauth/pkce.ts`, `AI:auth/oauth/callback-server.ts`, `AI:auth/oauth/device-code.ts`, `AI:api/bedrock-converse-stream.ts`, `AI:api/google-generative-ai.ts`, `CD:providers.md`.
+- **Owns:**
+  - H-PROV-05 (Bedrock, Google, Mistral), H-PROV-13 (thinking budgets), H-PROV-14 (other vendors), H-PROV-20 (scoped models and the `cycle_model` RPC).
+  - H-AUTH-04 (command keys), H-AUTH-05 (the other vendors), H-AUTH-06 (the P1 subset: ChatGPT and Copilot, plus Anthropic only if D9 = B; not legacy Codex), H-AUTH-07 (flow mechanics), H-AUTH-10 and H-SLASH-10 (`/login`, `/logout` as a gateway method, which T1 `/login` needs), H-AUTH-12 (proxy).
+  - H-TOOL-20 (image resize).
+  - H-PKG-05 (offline mode).
+- **Tests:**
+  - E§24#21 (OAuth flows).
+  - Cross-provider replay for each new vendor.
+  - Offline mode makes no network call.
+- **Exit:** OAuth login through the gateway, and a request through a proxy.
+
+## 5. Extension track and TUI track
+
+### X1: External extensions (loaded at run time, no Ask rebuild)
+
+- **Waits on:** D13 (runtime), D4.
+- **Model (user, 2026-10-01):** two kinds of extension share one event contract. Internal extensions are Go code compiled into Ask (H11). External extensions are loaded at run time without rebuilding Ask; end users write them, and Ask writes them for itself. An external extension goes through an adapter that speaks the same contract, so it can later be promoted to an internal one without a logic rewrite.
+- **Runtime (D13 = B):** Go source in `~/.ask/extensions/<name>/` (and the project `.ask/extensions/`, after trust). On load or `/reload`, Ask runs `go build`, caches the binary by content hash, and starts it as a child process over stdio. Build errors are shown to the user and the model; an old cached binary is never used for changed source.
+- **SDK:** a public Go package in `pkg/` (for example `pkg/askext`), because code outside the module cannot import `internal/`. It hides the stdio framing and shares the event and content types with internal extensions (from `pkg/protocol`).
+- **Build input contract (needed on a user machine with no Ask checkout):**
+  - The module path is `AskCore` today (`go.mod:1`), which an extension cannot fetch. Either publish the SDK under a fetchable module path, or ship the pinned SDK source inside the Ask install and point the build at it with a generated `replace`.
+  - An extension is a small Go module (`go.mod` + `main.go`). Ask states the supported Go version.
+  - The cache key covers the extension source, its `go.mod`/`go.sum`, the SDK version, the Go version and the target platform.
+- **Reload contract:**
+  - Reload happens at a safe boundary: after the current tool call finishes. A reload asked for by an extension command is queued, never awaited inside that command.
+  - Each child has a generation number. Replies from an older generation are dropped. Pending calls to a stopping child are cancelled.
+  - New registrations replace old ones only after the new child is ready.
+  - A configured fail-closed hook whose child is not running (crash, build error) stays in an error state, and `tool_call` stays blocked. It is never treated as an unsubscribe.
+- **Build:**
+  - A handshake with an API version, event subscriptions and `tool_call` tool-name filters.
+  - Tool, command and keybinding registration **and unregistration**.
+  - Hook methods for the 19 sync events, with deadlines.
+  - Droppable notify delivery.
+  - The RPC extension UI subset as the wire contract (defined in M1 so the protocol does not break later; rendered in the TUI only in M2, T2).
+  - Provider registration (H-PROV-23).
+  - Discovery gated by trust.
+  - Reload by restarting the child.
+- **Read:** `CD:extensions.md`, `CD:rpc-extension-ui.md`, `inventory-extensions.md` sections 1-6 and 10.
+- **Lesson:** Pi rebuilt hooks three times in four weeks. Freeze one versioned protocol before the first external author.
+- **Tests:**
+  - Unchanged source is not rebuilt; changed source is.
+  - A build error is reported and the extension stays unloaded.
+  - A crash on `tool_call` blocks the call; a crash on a notify event is logged.
+  - A hook that passes its deadline (D4) is handled per D4.
+  - A project extension does not load before trust.
+  - Reload during a `tool_call`, reload asked by an extension command, a late reply from an old child, and a build failure after a loaded guard (the guard keeps blocking).
+  - A clean machine with no Ask checkout, with Go missing, with an unsupported Go version, and with an unreachable dependency. Skills and templates keep working in each case.
+- **M1 scope (user, 2026-10-01):** extensions register tools and commands and handle hooks. Extension UI dialogs (`confirm`, `select`, `input`, `notify`) are M2, with T2; in M1 a dialog request gets a documented default answer (for example `confirm` = false) and a log line.
+- **Exit:** drop `safe-bash/main.go` into `~/.ask/extensions/`, run `/reload`, and see it register `todo_list` and block `rm -rf`, with no Ask rebuild.
+
+### X2: Shell hooks (tier C)
+
+- **Build:** a thin adapter that maps `tool_call`, `tool_result`, `input` and `session_*` to commands.
+- **Tests:** exit codes, timeouts, and malformed output.
+- **Exit:** a shell script blocks a command by its pattern.
+
+### X3: Later
+
+- Package sources and install.
+- Skill and prompt packages.
+- Each item gets its own exit when it is scheduled.
+
+### T0: Inline prototype gate (parallel from H2)
+
+- **Where:** a scratch Go module outside the repo `go.mod`, so it needs neither Go 1.26.0 nor D14 first. This is a deliberate change from `inventory-tui.md` section 3, which puts the testkit in `cmd/tui/internal/testkit/`. The testkit moves there in T1.
+- **Tests (M1 gate):** G1, G2, G3 and G6 (`inventory-tui.md` section 3). G4 (Kitty image in scrollback) and G5 (fullscreen switch) are M2 checks: record their result, but they do not block D14 or T1.
+- **Exit:** the M1 gate result decides D14, including the committer route.
+
+### T1: TUI core
+
+- **Waits on:** H13, D14, D15, D8.
+- **Build:** the P0 rows of `inventory-tui.md`:
+  - the scrollback committer and the live area;
+  - the custom editor core with undo, kill ring and paste markers;
+  - markdown and syntax highlighting;
+  - footer and status;
+  - selectors;
+  - keybindings;
+  - themes;
+  - width and Unicode handling.
+- **Harness rows that T1 commands need:** H-SESS-18 (H13), H-SESS-20 (H14) and the H-SESS-10 picker (built in T1), H-AUTH-10 (H17). `/session` and `/resume` are enabled when their phase is done. **`/login` is M2** (user, 2026-10-01): in M1 the user sets an API key with an environment variable (for example `ANTHROPIC_API_KEY`) or in `~/.ask/auth.json`, and the TUI shows that hint when no key is found.
+- **Constraint:** the TUI uses one `AgentClient` interface: `remote` (ACP to the leader, or to a remote agent) and `direct` (in-process Go API, the fallback when no leader is reachable). Headless mode uses `direct` (D5).
+- **Tests:** E§24#23 to #27.
+- **Exit:** a full session in the terminal works: prompt, stream, steer, abort, compact, and resume. The terminal is restored on every exit path.
+
+### T2: TUI P1 and the inspector
+
+- **Waits on:** D12 (decided), D15. Needs W1 (the shared stage table) and X1 (the extension UI subset).
+- **Build:**
+  - Overlays, images (Kitty placeholders), and the extension UI subset.
+  - Optional alt-screen mode (D15).
+  - The "Watch it think" TUI inspector: a view over the gateway event feed with the same stage table as W1.
+- **Exit:** the inspector and the web dashboard show the same run with the same stages.
+
+## 6. P1 rows not placed above, and later or skip items
+
+| Row or item | Placement | Reason |
+|---|---|---|
+| H-PROV-23 (provider extension point) | X1 | Needs the extension protocol. |
+| H-SESS-10 (picker) | T1 | UI only. |
+| H-MODE-12 (SDK as an importable Go package) | After H13, on demand | The gateway covers external clients. |
+| H-TOOL-15 exposure modes other than `direct` | With codemode (wait) | Only needed for large tool sets. |
+| Harness v4 lanes, `durable`, `sqlite-node`, `pi server`/`client`, `protocol`, `chord` | skip / wait | Experimental and not in Pi's build. The gateway fills the server/client role. |
+| Codemode, `tool_search` | wait | One day old in Pi (0.99.0) and redesigned the next day. Needs `sandbox` and `permissions` first. |
+| Virtual and classifier models | skip | Experimental. |
+| Cache warming timers | P2 | Keep only the prompt-stability invariant. |
+| llama.cpp router, `pi-messages`, deferred requests, image APIs | skip | Niche. Local servers work through the OpenAI-compatible `models.json`. |
+| Share, bug report, HTML export, `/debug` | P2 / skip | Structured logs replace `/debug`. |
+| Telemetry pings, version check, self-update, npm packaging | skip | A Go static binary, and no telemetry by default. |
+| Windows, PowerShell, Termux, Nix | per D8 | |
+| oh-my-pi comparison | later | Deferred by the user. |
+| Self-upgrade (level 2): Ask edits its own source, rebuilds, swaps the binary, rolls back | skip | User decision, 2026-10-01: level 1 yes, level 2 no. Ask's source is changed by developers, who build it as usual. |
+
+## 7. Acceptance of this roadmap
+
+- Every P0 row of `inventory-harness.md` has exactly one owner phase. When a row has a P0 part and a P1 part, each part names its phase (for example H-MODE-07: P0 commands in H13, session commands in H14). Checked by script: 110 of 110 P0 rows are placed, and all 47 P1 rows are placed or listed in section 6. P1 rows are either "(P1, pulled)" in a phase or listed in section 6.
+- No phase builds an item from the do-not-rebuild lists. The one deliberate departure (hook deadlines, D4) is documented.
+- Each harness phase names its concept, its Pi files, its tests and a runnable exit.
+- Decisions are listed in the order of the phase they block. Each blocked phase starts with "Waits on".
+
+## 8. Review findings and their fixes
+
+| Finding | Fix in this revision |
+|---|---|
+| B1: unauthenticated gateway | H13 "Security first", plus the print-mode no-listener test in H2 |
+| B2: P0 coverage | Ownership rule in section 0. H-LOOP-14 (H2, H11), H-TOOL-21 (H2, H4), H-PROV-26 (H3), H-CONF-14 (H6), H-SLASH-01..03 (H10, H13), H-SEC-03 (H5). H-RETRY-07 is owned by H9 and H-SESS-04/05 by H1. |
+| B3: H9b stale | H12 and W1 filled in from the waku report. D12 decided by the user. The envelope is in H1. |
+| M1: forward dependencies | New phase order: settings before catalog and credentials; in-memory H2; two event layers; stubs in H6; the 429 test split between H9 and H10 |
+| M2: decision order | Section 1 renumbered by the phase each decision blocks. "Waits on" lines added. |
+| M3: storage decision | D2 added |
+| M4: missing README conflicts | Phase 0 table extended to 12 rows |
+| M5: phases too big | Old H3 split into H3, H4 and H7. Old H10 split into H13 to H17. |
+| M6: P1 placement | "(P1, pulled)" marks, plus section 6 |
+| M7: T1 depends on harness P1 | The T1 "harness rows" line |
+| M8: D1 claim | D1 quotes confirmed decision 0. `pipeline` is kept. |
+| M9: deadline versus Pi | D4 scopes the departure |
+| Minor 1-12 | Applied: E§3 citation, abort range, session-event read, T0 location note, OAuth subset, tool unregister, server/client rules, tool-context struct, Ask names (D7), exits for X/T, cross-process session lock, pairing tests after compaction and fork |

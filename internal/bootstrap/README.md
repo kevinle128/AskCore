@@ -1,11 +1,11 @@
 # `internal/bootstrap`
 
-Prompt context files: embedded default templates, seeding for a new agent or user, loading and truncation.
+Prompt context files. The loader finds `AGENTS.md` in the session cwd and in each ancestor folder, and returns the files in a fixed order. Seeding of files for a new agent or user is parked.
 
 ## What belongs here
 
-- Load and seed logic (`files.go`, `seed*.go`, `load*.go`)
-- Truncation of long context files
+- `AGENTS.md` discovery from the cwd up to the project root and the user folder (`discover*.go`)
+- Loading and truncation of long context files (`load*.go`, `truncate.go`)
 - Embedded templates in `templates/`
 
 ## What does not belong here
@@ -13,6 +13,8 @@ Prompt context files: embedded default templates, seeding for a new agent or use
 | Code | Put it in |
 |---|---|
 | Final prompt assembly | `internal/agent` (`systemprompt*.go`) |
+| Seeding for a new agent or user | Parked |
+| Project trust check | `internal/workspace` |
 
 ## Main interfaces
 
@@ -20,12 +22,12 @@ Prompt context files: embedded default templates, seeding for a new agent or use
 
 ## File names
 
-`seed*.go`, `load*.go`, `truncate.go`; templates in `templates/<NAME>.md`
+`discover*.go`, `load*.go`, `truncate.go`; templates in `templates/<NAME>.md`
 
 ## Imports
 
-- Allowed: `store`
-- Denied: `internal/agent`; `internal/gateway`, `internal/http`, `internal/channels/<vendor>` (core packages do not import transport); `internal/config`
+- Allowed: `workspace`, `store`
+- Denied: `internal/agent`; `internal/gateway`, `internal/http`, `internal/channels/<vendor>` (core packages do not import transport); `internal/acp`, `internal/leader` (adapters wrap the core, never the reverse); `internal/config`
 
 ## Rules
 

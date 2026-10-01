@@ -1,32 +1,34 @@
 # `internal/skills`
 
-Skill loader (skill folders with SKILL.md), search (BM25 and optional embeddings) and hot reload.
+Skill discovery. The loader finds skill folders with a `SKILL.md` file and returns their metadata (name and description). Only metadata goes into the system prompt. The full skill text is read when the agent needs it. The skill list changes only on an explicit `/reload`.
 
 ## What belongs here
 
-- Loader and folder hierarchy
-- Search index
-- File watcher for hot reload
+- Loader and folder hierarchy (user and project skill folders)
+- Metadata parsing of `SKILL.md`
+- An explicit `Reload` call that rescans the folders
 
 ## What does not belong here
 
 | Code | Put it in |
 |---|---|
-| The `skill_search` / `use_skill` tools | `internal/tools` |
-| Skill metadata at rest | `internal/store` |
+| File watcher for hot reload | Not built. Reload is explicit |
+| BM25 and embedding search | Parked |
+| The tools that read a skill | `internal/tools` |
+| Project trust check | `internal/workspace` |
 
 ## Main interfaces
 
-- `SkillEmbedder` (dewee `internal/skills/search.go:36`)
+- None required
 
 ## File names
 
-`loader*.go`, `search*.go`, `watcher.go`
+`loader*.go`
 
 ## Imports
 
-- Allowed: `store`
-- Denied: `internal/agent`; `internal/gateway`, `internal/http`, `internal/channels/<vendor>` (core packages do not import transport); `internal/config`
+- Allowed: `workspace`, `tracing`
+- Denied: `internal/agent`; `internal/gateway`, `internal/http`, `internal/channels/<vendor>` (core packages do not import transport); `internal/acp`, `internal/leader` (adapters wrap the core, never the reverse); `internal/config`
 
 ## Rules
 

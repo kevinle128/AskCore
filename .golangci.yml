@@ -43,6 +43,22 @@ linters:
               desc: core packages must not import transport
             - pkg: AskCore/internal/channels/
               desc: core packages must not import a chat platform package
+        core-no-adapters:
+          list-mode: lax
+          files:
+            - "**/internal/agent/**"
+            - "**/internal/pipeline/**"
+            - "**/internal/tools/**"
+            - "**/internal/providers/**"
+            - "**/internal/store/**"
+            - "**/internal/sessions/**"
+            - "**/internal/hooks/**"
+            - "**/internal/bus/**"
+          deny:
+            - pkg: AskCore/internal/acp
+              desc: the ACP adapter wraps the agent; core packages must not import it
+            - pkg: AskCore/internal/leader
+              desc: the leader routes bytes to the agent; core packages must not import it
         providers-no-tools:
           list-mode: lax
           files:
@@ -89,13 +105,6 @@ linters:
           deny:
             - pkg: AskCore/internal/config
               desc: receive typed config through the constructor; only internal/app and cmd read config
-        tui-is-client:
-          list-mode: lax
-          files:
-            - "**/cmd/tui/**"
-          deny:
-            - pkg: AskCore/internal
-              desc: the TUI talks to the daemon over gRPC or WS; use pkg/protocol and proto only
 formatters:
   enable:
     - gofmt

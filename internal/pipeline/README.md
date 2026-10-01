@@ -1,40 +1,43 @@
 # `internal/pipeline`
 
-The stage-based run pipeline: context → history → prompt → think → act → observe → memory → summarize. Stages are stateless; all mutable state is in `RunState`.
+The ordered hook points of one turn. The hook points are `transformContext`, `prepareRequest`, `beforeToolCall`, `afterToolCall` and `finishTurn`. `internal/agent` runs the loop and calls each hook point at its place. `pipeline` decides what runs at each hook point and in which order. Summarizing old context is compaction, and it runs at a hook point.
 
 ## What belongs here
 
-- `Pipeline` and `NewDefaultPipeline` (`pipeline.go`)
-- `RunState` (`run_state.go`)
-- `Stage` and `StageWithResult` interfaces (`stage.go`)
-- One file for each stage (`<name>_stage.go`)
-- `PipelineDeps`, the dependency bundle that stages receive (`deps.go`)
+- The ordered hook point list and the code that runs the registered steps of one hook point (`pipeline.go`)
+- `TurnState`, the data that the steps of one turn share (`turn_state.go`)
+- The `Step` interface for one hook-point step (`step.go`)
+- One file for each step (`<name>_step.go`), for example context transform, request preparation and compaction
+- `PipelineDeps`, the dependency bundle that steps receive (`deps.go`)
 
 ## What does not belong here
 
 | Code | Put it in |
 |---|---|
-| The agent loop and router | `internal/agent` |
-| LLM calls | `internal/providers` (stages receive a provider) |
+| The two-level loop, queues and abort | `internal/agent` |
+| LLM calls | `internal/providers` (steps receive a provider) |
 | Tool execution code | `internal/tools` |
+| Event dispatch to extensions | `internal/hooks` |
 
 ## Main interfaces
 
-- `Stage`, `StageWithResult` (dewee `internal/pipeline/stage.go:20-33`)
+- `Step` (`step.go`)
 
 ## File names
 
-`<name>_stage.go` for each stage, `pipeline.go`, `run_state.go`, `deps.go`
+`pipeline.go`, `turn_state.go`, `step.go`, `deps.go`, `<name>_step.go`
 
 ## Imports
 
-- Allowed: `providers`, `tools`, `store`, `hooks`, `tracing`, `bootstrap`, `workspace`
-- Denied: `internal/agent` (the agent adapts itself into `PipelineDeps`); `internal/gateway`, `internal/http`, `internal/channels/<vendor>` (core packages do not import transport); `internal/config`
+- Allowed: `providers`, `tools`, `sessions`, `store`, `hooks`, `tracing`, `bootstrap`, `workspace`
+- Denied: `internal/agent` (the agent adapts itself into `PipelineDeps`); `internal/gateway`, `internal/http`, `internal/channels/<vendor>` (core packages do not import transport); `internal/acp`, `internal/leader` (adapters wrap the core, never the reverse); `internal/config`
 
 ## Rules
 
 - One model is shared everywhere. Add a DTO or a separate type with a mapper only when the data is really different (design section 6).
 - Receive dependencies and typed config through constructors. `internal/app` wires them with fx.
 - Create an interface only when there is a second implementation or a test seam.
+- A step is stateless. All mutable state of a turn is in `TurnState`.
+- `pipeline` does not run the loop. It does not own the order of model calls and tool calls.
 
 Design reference: [docs/ask-architecture-reference.md](../../docs/ask-architecture-reference.md)

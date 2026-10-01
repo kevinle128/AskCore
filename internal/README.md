@@ -9,9 +9,11 @@ Full design: [docs/ask-architecture-reference.md](../docs/ask-architecture-refer
 | Group | Packages |
 |---|---|
 | Composition root | `app` (fx), `config`, `logs` |
+| Files under `~/.ask` | `settings` (`auth.json`, `settings.json`) |
 | Transport | `gateway` (+ `methods`), `http`, `channels` |
-| Runtime core | `bus`, `scheduler`, `agent`, `pipeline`, `sessions`, `workspace`, `cron` |
-| Capabilities | `providers` (+ `acp`), `tools`, `mcp`, `skills`, `memory`, `bootstrap`, `hooks` (+ `handlers`), `permissions`, `sandbox`, `crypto`, `tracing` (+ `otelexport`) |
+| Runtime core | `agent` (two-level loop, queues), `pipeline` (hook points of one turn), `sessions` (entry tree), `scheduler` (lanes), `bus` (event fan-out), `workspace` (cwd, project root, trust), `cron` |
+| Process model | `leader` (local router and client), `acp` (ACP adapter over the agent) |
+| Capabilities | `providers` (+ `acp`: subprocess agents), `tools`, `mcp`, `skills`, `bootstrap`, `hooks` (+ `handlers`), `permissions` (gateway RBAC), `sandbox`, `tracing` (+ `otelexport`). Parked: `memory`, `crypto` |
 | Storage | `store` (models + interfaces), `store/gormstore` (GORM implementation), `migrations` (runner) |
 | Infrastructure clients | `cache` (Redis), `messaging` (asynq), `realtime` (centrifuge), `validation` |
 | Tests | `testsupport` |
@@ -26,12 +28,12 @@ Wire contract: `pkg/protocol` (WS) and `proto/` (gRPC, generated code only).
 |---|---|
 | Core does not import `agent` | `tools`, `pipeline`, `providers`, `store` must not import `agent` |
 | Core does not import transport | `agent`, `pipeline`, `tools`, `providers`, `store` must not import `gateway`, `http`, `channels/<vendor>` |
+| Core does not import adapters | `agent`, `pipeline`, `tools`, `providers`, `store`, `sessions`, `hooks`, `bus` must not import `acp`, `leader` |
 | `providers` does not import `tools` | `tools` may import `providers` |
 | `store` does not import `store/gormstore` | Interfaces never depend on their implementation |
 | Handlers call store interfaces only | `http`, `gateway`, `gateway/methods` must not import `store/gormstore`, `gorm.io`, `database/sql` |
 | One composition root | Only `app` and `cmd/server` import `store/gormstore` |
-| Config through constructors | Only `app` and `cmd/*` import `config` |
-| The TUI is a client | `cmd/tui` imports no `internal/*` package |
+| Config through constructors | Only `app` and `cmd/*` import `config`. Runtime settings and credentials are files that `settings` owns |
 
 ## Where to put new code
 
@@ -41,8 +43,15 @@ Wire contract: `pkg/protocol` (WS) and `proto/` (gRPC, generated code only).
 | A tool backend by vendor | `tools/<tool>_<vendor>.go` |
 | An LLM vendor | `providers/<vendor>*.go` |
 | A chat platform | `channels/<vendor>/` |
-| A pipeline stage | `pipeline/<name>_stage.go` |
-| A persisted entity | `store/<entity>_store.go` + `store/gormstore/<entity>.go` + SQL in `migrations/` |
+| A hook-point step of a turn | `pipeline/<name>_step.go` |
+| A session entry type | `sessions/entry.go` |
+| An event type | `pkg/protocol` (publisher in `bus`, sync dispatch in `hooks`) |
+| A user setting or the credentials file | `settings/` |
+| An ACP method or `session/update` mapping | `acp/` (types in `pkg/protocol`) |
+| Leader socket, lock or spawn code | `leader/` |
+| Project trust or cwd rules | `workspace/` |
+| An `AGENTS.md` discovery rule | `bootstrap/` |
+| A persisted entity (database) | `store/<entity>_store.go` + `store/gormstore/<entity>.go` + SQL in `migrations/` |
 | A REST endpoint | `http/<resource>.go` |
 | A WS RPC method | `pkg/protocol` + `gateway/methods/<resource>.go` |
 | A gRPC service | `proto/` + `gateway/grpc_<service>.go` |

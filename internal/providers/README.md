@@ -1,22 +1,25 @@
 # `internal/providers`
 
-One implementation of `Provider` for each LLM vendor, plus the registry that selects a provider by name. OpenAI-compatible vendors share one adapter.
+LLM access. The package keeps three things apart. An **Api** is a wire protocol (for example `anthropic-messages`, `openai-completions`, `openai-responses`). A **Provider** is a vendor endpoint that speaks one Api. A **Model** is one model of a provider, with its limits and prices. A vendor quirk of an Api is a compat record kept as data, not as code branches. OpenAI-compatible vendors share one adapter.
 
 ## What belongs here
 
 - The `Provider` interface and chat request/response types (`types.go`)
+- The Api, Provider and Model types and the model catalog (`api.go`, `model.go`, `catalog.go`)
+- The compat record (`compat.go`)
 - Optional capability interfaces (`ThinkingCapable`, `CapabilitiesAware`)
 - Vendor implementations (`anthropic*.go`, `openai*.go`, …)
 - Provider registry and adapter registry
-- Shared SSE stream reader, retry and error classification
+- Shared SSE stream reader, provider-level retry and error classification
 
 ## What does not belong here
 
 | Code | Put it in |
 |---|---|
+| Agent-level retry of a turn | `internal/agent` |
 | Subprocess agents over ACP | `internal/providers/acp` |
 | Tools | `internal/tools` |
-| API keys at rest | `internal/crypto` + `internal/store` |
+| Reading `auth.json` and settings | `internal/settings` (a constructor receives a credential resolver function) |
 
 ## Main interfaces
 
@@ -26,17 +29,18 @@ One implementation of `Provider` for each LLM vendor, plus the registry that sel
 
 ## File names
 
-`<vendor>.go`, `<vendor>_<topic>.go`, `adapter_<vendor>.go`, `registry.go`, `types.go`
+`<vendor>.go`, `<vendor>_<topic>.go`, `adapter_<vendor>.go`, `api.go`, `model.go`, `compat.go`, `registry.go`, `types.go`
 
 ## Imports
 
-- Allowed: `store` (read provider settings), `tracing`, third-party vendor SDKs
-- Denied: `internal/tools`, `internal/agent`; `internal/gateway`, `internal/http`, `internal/channels/<vendor>` (core packages do not import transport); `internal/config`
+- Allowed: `tracing`, third-party vendor SDKs
+- Denied: `internal/tools`, `internal/agent`, `internal/settings` (receive the credential through a resolver function); `internal/gateway`, `internal/http`, `internal/channels/<vendor>` (core packages do not import transport); `internal/acp`, `internal/leader` (adapters wrap the core, never the reverse); `internal/config`
 
 ## Rules
 
 - One model is shared everywhere. Add a DTO or a separate type with a mapper only when the data is really different (design section 6).
 - Receive dependencies and typed config through constructors. `internal/app` wires them with fx.
 - Create an interface only when there is a second implementation or a test seam.
+- Credentials come from the caller. This package never reads `auth.json` and never stores a key.
 
 Design reference: [docs/ask-architecture-reference.md](../../docs/ask-architecture-reference.md)
