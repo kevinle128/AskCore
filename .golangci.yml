@@ -25,6 +25,7 @@ linters:
             - "**/internal/pipeline/**"
             - "**/internal/providers/**"
             - "**/internal/store/**"
+            - "**/internal/sessions/**"
           deny:
             - pkg: AskCore/internal/agent
               desc: core packages must not import the agent package; agent adapts itself into their dependencies
