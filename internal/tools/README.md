@@ -4,9 +4,10 @@ Everything an agent can call as a tool. The package is flat: a filename prefix g
 
 ## What belongs here
 
-- The `Tool` interface, optional capability interfaces and `Result` (`types.go`, `result.go`)
-- `Registry` (`registry.go`)
-- Builtin tools, one prefix for each family: `filesystem_*`, `shell*`, `web_fetch*`, `web_search*`, `subagent_*`, `skill_*`, …
+- The `Tool` interface, the optional `Sequential` and `ArgumentPreparer` interfaces, and the per-call `Context` (`types.go`). A tool returns `protocol.ToolExecutionResult`.
+- `SourceInfo`, where a registered tool came from (`source.go`)
+- `Registry` (`registry.go`), argument coercion (`coerce.go`) and validation with the model-facing error text (`validate.go`)
+- Builtin tools, one prefix for each family: `echo` (`echo.go`), `filesystem_*`, `shell*`, `web_fetch*`, `web_search*`, `subagent_*`, `skill_*`, …
 - Tool backends by vendor: `<tool>_<vendor>.go` (for example `web_search_brave.go`)
 
 ## What does not belong here
@@ -20,13 +21,21 @@ Everything an agent can call as a tool. The package is flat: a filename prefix g
 
 ## Main interfaces
 
-- `Tool` (dewee `internal/tools/types.go:15`)
-- Optional capability interfaces, for example `AsyncTool` (dewee `internal/tools/types.go:43`). Pass dependencies through the constructor, not through dewee-style `*Aware` setters.
+- `Tool`: `Decl()` and `Execute(ctx, Context, args)`. `ctx` is the abort signal.
+- Optional capability interfaces: `Sequential` (one such tool makes its whole batch sequential) and `ArgumentPreparer` (rewrites raw arguments before validation). Pass dependencies through the constructor, not through dewee-style `*Aware` setters.
 - Tool backend interfaces, for example `SearchProvider` (dewee `internal/tools/web_search.go:44`)
 
 ## File names
 
 `<family>_<topic>.go`; vendor backend `<tool>_<vendor>.go`; add each tool to the fx value group `tools`
+
+## Registry rules
+
+- `Register` rejects a tool with no name, no parameters schema, a schema that does not compile, or a name that is taken. The schema compiles once, at `Register`. A `$ref` to a file or URL is rejected.
+- `Lookup` is exact and case-sensitive. `Decls` returns declarations in registration order.
+- `Prepare` returns the arguments `Execute` sees. Missing or `null` input becomes `{}`. Then a non-required `null` property is removed when its schema rejects `null`, values are coerced, and the result is validated.
+- Coercion is one table for every schema (roadmap D21, Pi's `AI:utils/validation.ts:59-131`). A string becomes a number or integer, `"true"`/`"false"`/`1`/`0` become booleans, a number or boolean becomes a string, `null` becomes the zero value of a required field. `"5.7"` is never truncated to an integer. With several types the first listed type that changes the value wins. An `anyOf` or `oneOf` arm that already validates keeps the value.
+- A validation error uses Pi's text and TypeBox's messages, with the raw arguments echoed and capped at 2 KiB plus `... (truncated)`.
 
 ## Imports
 
