@@ -9,10 +9,14 @@ The agent runtime. `Run` and `Continue` run Pi's two-level loop: the outer loop 
 - The loop (`loop_run.go`): `Run`, `Continue`, `LoopConfig`, the two loops, the steer and follow-up poll points, and `FinishTurn`
 - One model call (`loop_stream.go`): context transform, conversion, API key, stream, and the partial message that the final message replaces
 - One tool batch (`loop_tools.go`): parallel or sequential execution, preflight, `BeforeToolCall` and `AfterToolCall`, the output-length guard, and abort
-- Tests (`loop_*_test.go`) on the faux provider, with a goroutine-leak check in `loop_helpers_test.go`
+- The `Agent` wrapper (`agent.go`): one active run, `Prompt`, `Continue`, `Abort`, `WaitForIdle`, `Reset`, `State`, and the run-failure path that turns a returned error or a panic of the loop into an error assistant message, `agent_end` and `agent_settled`
+- Event dispatch (`emit.go`): the envelope (`seq` across runs, `runId` per run, `ts`, `sessionId`) and the listeners, called in subscribe order on the run goroutine
+- `ContextSource` and the `PrepareRequest` projection of it into every request (`context_source.go`); `sessions.MemoryLog` is the in-memory source
+- `Config`, `State`, `Status` and `ErrBusy` (`types.go`)
+- Tests (`loop_*_test.go`, `agent_test.go`) on the faux provider, with a goroutine-leak check in `loop_helpers_test.go`
 - The steer and follow-up queues of one session (`queue.go`). Steer messages are delivered after the current tool batch. Follow-up messages are delivered when the agent is idle. Each queue has the mode `all` or `one-at-a-time`
-- System prompt assembly (`systemprompt*.go`)
-- The `Agent` interface, the typed Go API, and the run request and result types (`types.go`). Headless mode and the ACP adapter both call this API
+- System prompt assembly (`systemprompt*.go`). In H2 it is Pi's initial system message: the prompt and every registry tool, timestamp 0, fixed for the run
+- The typed Go API that headless mode and the ACP adapter both call (`agent.go`, `types.go`)
 
 ## What does not belong here
 
@@ -29,12 +33,12 @@ The agent runtime. `Run` and `Continue` run Pi's two-level loop: the outer loop 
 ## Main interfaces
 
 - `Run`, `Continue`, `LoopConfig` and `Emit` (`loop_run.go`)
-- `Agent` and the run request/result types (`types.go`)
+- `Agent`, `New`, `Config` and `ContextSource` (`agent.go`, `types.go`, `context_source.go`)
 - Hook points are the fields of `pipeline.Hooks`. The loop calls them in order
 
 ## File names
 
-`loop_<topic>.go`, `queue*.go`, `systemprompt*.go`, `types.go`
+`agent.go`, `emit.go`, `context_source.go`, `loop_<topic>.go`, `queue*.go`, `systemprompt*.go`, `types.go`
 
 ## Imports
 

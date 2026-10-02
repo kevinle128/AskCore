@@ -112,7 +112,7 @@ func TestBuilderSeedWithoutStopReasonIsPending(t *testing.T) {
 }
 
 func TestRawEventEnvelopeChangesAreWrittenBack(t *testing.T) {
-	ev, err := DecodeEvent([]byte(`{"seq":1,"ts":5,"sessionId":"s","runId":"r","type":"agent_settled","extra":{"k":[1,2]}}`))
+	ev, err := DecodeEvent([]byte(`{"seq":1,"ts":5,"sessionId":"s","runId":"r","type":"queue_update","extra":{"k":[1,2]}}`))
 	require.NoError(t, err)
 	env := ev.Env()
 	env.Seq = 42
@@ -126,6 +126,6 @@ func TestRawEventEnvelopeChangesAreWrittenBack(t *testing.T) {
 	require.Equal(t, uint64(42), raw.Seq)
 	require.Equal(t, "r2", raw.RunID)
 	require.Equal(t, "s", raw.SessionID)
-	require.Equal(t, "agent_settled", raw.Type)
+	require.Equal(t, "queue_update", raw.Type)
 	require.Contains(t, string(out), `"extra":{"k":[1,2]}`)
 }

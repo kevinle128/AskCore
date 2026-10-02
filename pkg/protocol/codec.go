@@ -17,7 +17,7 @@ func EncodeEvent(ev Event) ([]byte, error) {
 	switch e := ev.(type) {
 	case nil:
 		return nil, errors.New("protocol: event is nil")
-	case *AgentStart, *TurnStart:
+	case *AgentStart, *AgentSettled, *TurnStart:
 		return marshalJSON(struct{ envelopeWire }{newEnvelopeWire(e.Env(), e.EventType())})
 	case *AgentEnd:
 		msgs := make([]anyMessage, len(e.Messages))
@@ -188,6 +188,8 @@ func DecodeEvent(data []byte) (Event, error) {
 	switch head.Type {
 	case TypeAgentStart:
 		return &AgentStart{Envelope: env}, nil
+	case TypeAgentSettled:
+		return &AgentSettled{Envelope: env}, nil
 	case TypeTurnStart:
 		return &TurnStart{Envelope: env}, nil
 	case TypeAgentEnd:

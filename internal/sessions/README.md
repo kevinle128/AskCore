@@ -8,6 +8,7 @@ The session log. A session is a tree of typed entries. Each entry has an `id` an
 - The context builder. It projects the path from a leaf to the root into the message list for the model, and it applies compaction entries (`context.go`)
 - The session manager: create, open, resume and list (`manager.go`)
 - The session id and the mapping from a channel key to a session id, when a channel needs it (`key.go`)
+- `MemoryLog`, the in-memory message log of a run without a session file (`memory.go`). It satisfies `agent.ContextSource` by shape; this package never imports `agent`
 
 ## What does not belong here
 
@@ -23,7 +24,7 @@ The session log. A session is a tree of typed entries. Each entry has an `id` an
 
 ## File names
 
-`entry.go`, `tree.go`, `context.go`, `manager.go`, `key.go`
+`entry.go`, `tree.go`, `context.go`, `manager.go`, `key.go`, `memory.go`
 
 ## Imports
 

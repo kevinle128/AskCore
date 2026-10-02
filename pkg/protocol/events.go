@@ -6,6 +6,7 @@ import "encoding/json"
 const (
 	TypeAgentStart          = "agent_start"
 	TypeAgentEnd            = "agent_end"
+	TypeAgentSettled        = "agent_settled"
 	TypeTurnStart           = "turn_start"
 	TypeTurnEnd             = "turn_end"
 	TypeMessageStart        = "message_start"
@@ -45,6 +46,10 @@ type AgentEnd struct {
 	Envelope
 	Messages []Message
 }
+
+// AgentSettled is the last event of a prompt. It follows agent_end, and a
+// reader of the stream waits for it before it sends the next prompt.
+type AgentSettled struct{ Envelope }
 
 // TurnStart opens one model response and its tool calls.
 type TurnStart struct{ Envelope }
@@ -115,6 +120,7 @@ type RawEvent struct {
 // EventType returns the discriminator.
 func (*AgentStart) EventType() string          { return TypeAgentStart }
 func (*AgentEnd) EventType() string            { return TypeAgentEnd }
+func (*AgentSettled) EventType() string        { return TypeAgentSettled }
 func (*TurnStart) EventType() string           { return TypeTurnStart }
 func (*TurnEnd) EventType() string             { return TypeTurnEnd }
 func (*MessageStart) EventType() string        { return TypeMessageStart }

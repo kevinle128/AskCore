@@ -6,7 +6,7 @@ Shared with clients such as `cmd/tui`. Frames are `req`, `res` and `event`; the 
 
 - Frame types, method name constants, event names, error codes
 - Message, content block, usage and tool declaration types (`message.go`, `content.go`, `usage.go`, `tool.go`)
-- Provider stream events (`stream_events.go`), agent events and the event envelope (`events.go`)
+- Provider stream events (`stream_events.go`), agent events and the event envelope (`events.go`). `agent_settled` is the last event of each prompt and follows `agent_end`
 - The message builder that rebuilds a message from stream events (`builder.go`), and the JSON and JSONL codec (`codec.go`)
 
 ## What does not belong here

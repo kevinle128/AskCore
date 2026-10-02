@@ -1,7 +1,9 @@
 package protocol
 
 import (
+	"bytes"
 	"encoding/json"
+	"io"
 	"testing"
 
 	"github.com/stretchr/testify/assert"
@@ -36,7 +38,28 @@ func allEvents() []Event {
 			ToolResults: []ToolResultMessage{{ToolCallID: "a", ToolName: "echo", Content: []UserBlock{Text{Text: "done"}}}}},
 		&AgentEnd{Envelope: env(11), Messages: []Message{UserMessage{Content: []UserBlock{}}, finalAssistant(),
 			RawMessage{RoleName: "custom", Data: json.RawMessage(`{"role":"custom"}`)}}},
+		&AgentSettled{Envelope: env(12)},
 	}
+}
+
+func TestAgentSettledJSONLRoundTrip(t *testing.T) {
+	var buf bytes.Buffer
+	w := NewJSONLWriter(&buf)
+	require.NoError(t, w.Write(&AgentEnd{Envelope: env(1)}))
+	require.NoError(t, w.Write(&AgentSettled{Envelope: env(2)}))
+	assert.Equal(t, `{"seq":1,"ts":1700000000001,"sessionId":"s1","runId":"r1","type":"agent_end","messages":[]}`+"\n"+
+		`{"seq":2,"ts":1700000000002,"sessionId":"s1","runId":"r1","type":"agent_settled"}`+"\n", buf.String())
+
+	r := NewJSONLReader(&buf)
+	_, err := r.Next()
+	require.NoError(t, err)
+	line, err := r.Next()
+	require.NoError(t, err)
+	ev, err := DecodeEvent(line)
+	require.NoError(t, err)
+	assert.Equal(t, &AgentSettled{Envelope: env(2)}, ev)
+	_, err = r.Next()
+	require.ErrorIs(t, err, io.EOF)
 }
 
 func TestEventRoundTripAllTypes(t *testing.T) {
