@@ -1,6 +1,6 @@
 module AskCore
 
-go 1.25.10
+go 1.27.0
 
 require (
 	github.com/bufbuild/buf v1.71.0
@@ -13,6 +13,7 @@ require (
 	github.com/hibiken/asynq v0.26.0
 	github.com/joho/godotenv v1.5.1
 	github.com/labstack/echo/v4 v4.15.1
+	github.com/mattn/go-sqlite3 v1.14.22
 	github.com/redis/go-redis/v9 v9.19.0
 	github.com/spf13/viper v1.21.0
 	github.com/stretchr/testify v1.11.1
@@ -23,6 +24,7 @@ require (
 	go.opentelemetry.io/otel/sdk v1.44.0
 	go.opentelemetry.io/otel/trace v1.44.0
 	go.uber.org/fx v1.24.0
+	go.uber.org/goleak v1.3.0
 	go.uber.org/mock v0.6.0
 	go.uber.org/zap v1.28.0
 	google.golang.org/grpc v1.83.1
@@ -226,7 +228,6 @@ require (
 	github.com/mattn/go-isatty v0.0.22 // indirect
 	github.com/mattn/go-localereader v0.0.1 // indirect
 	github.com/mattn/go-runewidth v0.0.23 // indirect
-	github.com/mattn/go-sqlite3 v1.14.22
 	github.com/maypok86/otter v1.2.4 // indirect
 	github.com/mgechev/revive v1.15.0 // indirect
 	github.com/mitchellh/go-homedir v1.1.0 // indirect

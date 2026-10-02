@@ -4,7 +4,8 @@ LLM access. The package keeps three things apart. An **Api** is a wire protocol 
 
 ## What belongs here
 
-- The `Provider` interface and chat request/response types (`types.go`)
+- The `Provider` interface, the request types and the stream function (`types.go`)
+- The provider stream with one settled result (`stream.go`), the shared message assembler (`assembler.go`), request normalization and the default role filter (`convert.go`), stream errors (`errors.go`)
 - The Api, Provider and Model types and the model catalog (`api.go`, `model.go`, `catalog.go`)
 - The compat record (`compat.go`)
 - Optional capability interfaces (`ThinkingCapable`, `CapabilitiesAware`)
@@ -29,11 +30,13 @@ LLM access. The package keeps three things apart. An **Api** is a wire protocol 
 
 ## File names
 
-`<vendor>.go`, `<vendor>_<topic>.go`, `adapter_<vendor>.go`, `api.go`, `model.go`, `compat.go`, `registry.go`, `types.go`
+`<vendor>.go`, `<vendor>_<topic>.go`, `adapter_<vendor>.go`, `api.go`, `model.go`, `compat.go`, `registry.go`, `types.go`, `stream.go`, `assembler.go`, `convert.go`, `errors.go`
+
+Sub-packages: `faux/` (scripted fake provider for tests of every package), `sse/` (Server-Sent Events reader), `partialjson/` (tolerant parser for streamed tool arguments)
 
 ## Imports
 
-- Allowed: `tracing`, third-party vendor SDKs
+- Allowed: `pkg/protocol` (message, content, usage and stream event types), `tracing`, third-party vendor SDKs
 - Denied: `internal/tools`, `internal/agent`, `internal/settings` (receive the credential through a resolver function); `internal/gateway`, `internal/http`, `internal/channels/<vendor>` (core packages do not import transport); `internal/acp`, `internal/leader` (adapters wrap the core, never the reverse); `internal/config`
 
 ## Rules

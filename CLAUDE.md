@@ -13,7 +13,7 @@ This file provides context about the project for AI assistants.
 - API: grpc-go
 - CLI: bubbletea
 - Logging: zap
-- Testing: gomock, testcontainers, testify
+- Testing: gomock, testcontainers, testify, goleak
 - Messaging: asynq
 - Observability: opentelemetry
 - Validation: validator

@@ -27,7 +27,7 @@ The session log. A session is a tree of typed entries. Each entry has an `id` an
 
 ## Imports
 
-- Allowed: `store`, `providers` (message types only)
+- Allowed: `store`, `pkg/protocol` (message, content and event types)
 - Denied: `internal/agent`; `internal/gateway`, `internal/http`, `internal/channels/<vendor>` (core packages do not import transport); `internal/acp`, `internal/leader` (adapters wrap the core, never the reverse); `internal/config`
 
 ## Rules

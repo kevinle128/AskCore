@@ -77,6 +77,7 @@ Each lane scans its area in rings. It goes to the next ring only after the curre
 | 2026-10-01 | Milestone M1 (must-have): Phase 0, H1-H13, H14 session tree, H15, W1 dashboard, X1 external Go extensions, T0, T1. M2 (nice-to-have): H16 MCP, X2 shell hooks, H17, T2, X3, Windows. The user picked W1 and H14 as must-have; MCP and shell hooks were not picked. |
 | 2026-10-01 | D3 changed again: no permission popups ("PI No permission popups, Chúng ta cũng sẽ chưa làm nhé") and no built-in policy handler in M1. To block a command, write an external extension. The policy handler moves to M2. |
 | 2026-10-01 | Codex review blocker B1: keep M1 small. `/login` (API key and OAuth) and extension UI dialogs are M2. In M1 the API key comes from an env var or `~/.ask/auth.json`; X1's M1 exit drops the `confirm` dialog. |
+| 2026-10-01 | `transformMessages` = option C: the pure function, H-PROV-27 and the replay part of H-TOOL-21 move from H4 to H3, because the H3 Anthropic adapter is the first caller (`AI:api/anthropic-messages.ts:1057`). H4 keeps the per-vendor tool-call id rules and the cross-API replay tests. Source: `plans/261001-0836-h1-messages-events-faux/plan.md` section 6. |
 | 2026-09-30 | The user's goal is to learn how to build a harness. The roadmap puts harness features first. Extension and TUI phases come after the harness core. Each harness phase must teach one harness concept and end with a working, testable result. |
 
 ## Verified findings (lock)
