@@ -11,7 +11,8 @@ import (
 // after the last prompt. Only the last message counts. An assistant reply
 // writes each text block and a newline to stdout and gives 0. An error or
 // aborted reply writes its error text to stderr and gives 1. Anything else
-// writes nothing and gives 0.
+// writes nothing and gives 0. A failed stdout write gives 1; the caller
+// reports it.
 func printReply(msgs []protocol.Message, stdout, stderr io.Writer) int {
 	if len(msgs) == 0 {
 		return 0
@@ -31,7 +32,6 @@ func printReply(msgs []protocol.Message, stdout, stderr io.Writer) int {
 	for _, b := range last.Content {
 		if t, ok := b.(protocol.Text); ok {
 			if _, err := fmt.Fprintln(stdout, t.Text); err != nil {
-				report(stderr, err)
 				return 1
 			}
 		}

@@ -101,6 +101,7 @@ AskCore/
 - `go test ./...`: Run all tests
 - `go fmt ./...`: Format code
 - `go vet ./...`: Run static analysis
-- `go run cmd/tui/main.go`: Run the TUI application
+- `go run ./cmd/tui`: Run the TUI application
+- `go run ./cmd/tui -p "hello"`: Run one prompt headless and print the reply (`--mode json` streams every event as JSONL)
 - `protoc --go_out=. --go-grpc_out=. proto/*.proto`: Regenerate protobuf code
 - `go run github.com/bufbuild/buf/cmd/buf generate`: Generate protobuf code

@@ -27,8 +27,9 @@ const (
 	modeJSON
 )
 
-// signalExitCodes are the exit codes of print mode per signal. Pi has no
-// SIGINT handler; Ask aborts the run and exits 130, the shell's code for it.
+// signalExitCodes are the exit codes of print and JSON mode per signal. Pi
+// has no SIGINT handler; Ask aborts the run and exits 130, the shell's code
+// for it.
 var signalExitCodes = map[os.Signal]int{
 	os.Interrupt:    130,
 	syscall.SIGTERM: 143,
@@ -58,13 +59,11 @@ func run(argv []string, stdin io.Reader, stdout, stderr io.Writer) int {
 	}
 
 	stdinTTY := isTerminal(stdin)
-	switch selectMode(o, stdinTTY, isTerminal(stdout)) {
-	case modeInteractive:
+	mode := selectMode(o, stdinTTY, isTerminal(stdout))
+	if mode == modeInteractive {
 		return runInteractive(stdin, stdout, stderr)
-	case modeJSON:
-		report(stderr, "Error: --mode json is not implemented yet")
-		return 1
 	}
+	defer guardStdout(stderr)()
 
 	ag, err := newHeadlessAgent(o, os.Getenv)
 	if err != nil {
@@ -80,7 +79,7 @@ func run(argv []string, stdin io.Reader, stdout, stderr io.Writer) int {
 	sigs := make(chan os.Signal, 1)
 	signal.Notify(sigs, slices.Collect(maps.Keys(signalExitCodes))...)
 	defer signal.Stop(sigs)
-	return runPrint(ag, prompts, stdout, stderr, sigs)
+	return runHeadless(ag, prompts, mode, stdout, stderr, sigs)
 }
 
 // selectMode follows Pi's resolveAppMode. --mode text does not force print
@@ -149,12 +148,18 @@ func newHeadlessAgent(o options, getenv func(string) string) (*agent.Agent, erro
 	})
 }
 
-// runPrint runs the prompts in order and prints the reply. A returned error
-// stops the remaining prompts and gives exit 1; an assistant error does not
-// stop them. The first signal aborts the run, waits up to abortGrace for it
-// to settle (a second signal stops the wait) and gives the signal's exit
-// code without printing the reply.
-func runPrint(ag *agent.Agent, prompts []string, stdout, stderr io.Writer, sigs <-chan os.Signal) int {
+// runHeadless runs the prompts in order. Print mode prints the reply at the
+// end; JSON mode streams every event and exits 0 even when the assistant
+// ends in error, as Pi does. A returned error or a failed stdout write stops
+// the remaining prompts and gives exit 1; an assistant error does not stop
+// them. The first signal aborts the run, waits up to abortGrace for it to
+// settle (a second signal stops the wait) and gives the signal's exit code
+// without printing the reply.
+func runHeadless(ag *agent.Agent, prompts []string, mode runMode, stdout, stderr io.Writer, sigs <-chan os.Signal) int {
+	out := &protocolOut{w: stdout}
+	if mode == modeJSON {
+		defer streamJSON(ag, out)()
+	}
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 	done := make(chan error, 1)
@@ -162,11 +167,20 @@ func runPrint(ag *agent.Agent, prompts []string, stdout, stderr io.Writer, sigs 
 
 	select {
 	case err := <-done:
-		if err != nil {
-			report(stderr, err)
+		code := 0
+		switch {
+		case err != nil:
+			code = 1
+		case mode == modePrint:
+			code = printReply(ag.State().Messages, out, stderr)
+		}
+		if out.failed(stderr) {
 			return 1
 		}
-		return printReply(ag.State().Messages, stdout, stderr)
+		if err != nil {
+			report(stderr, err)
+		}
+		return code
 	case sig := <-sigs:
 		ag.Abort()
 		// Abort ends only the active run; cancel also stops the prompts

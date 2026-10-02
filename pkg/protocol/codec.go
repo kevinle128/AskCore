@@ -52,15 +52,10 @@ func EncodeEvent(ev Event) ([]byte, error) {
 		if e.AssistantMessageEvent == nil {
 			return nil, errors.New("protocol: message_update has no assistant message event")
 		}
-		inner, err := MarshalStreamEvent(e.AssistantMessageEvent)
-		if err != nil {
-			return nil, err
+		if line, ok := appendDeltaUpdate(e); ok {
+			return line, nil
 		}
-		return marshalJSON(struct {
-			envelopeWire
-			AssistantMessageEvent json.RawMessage `json:"assistantMessageEvent"`
-			Usage                 Usage           `json:"usage"`
-		}{newEnvelopeWire(&e.Envelope, e.EventType()), inner, e.Usage})
+		return encodeMessageUpdate(e)
 	case *ToolExecutionStart:
 		return marshalJSON(struct {
 			envelopeWire
