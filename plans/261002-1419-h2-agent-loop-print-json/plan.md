@@ -22,6 +22,8 @@ One box is one unit of work. Every box names the evidence that checks it. A nest
 
 The program runs `pstack/skills/poteto-mode/playbooks/autopilot-stack.md`, because the five PRs are sequenced and each one builds on the one below it. No owner merges. The root appends each verified PR to one linear stack on `master`, and the operator lands it bottom-up. H2-D and H2-E change the CLI interaction, so they stop at merge-ready for the operator's review.
 
+**Local mode (operator, 2026-10-02).** Nothing is pushed and no forge PR is opened. The H1 base is commit `b0b1f5e` on the local branch `master-2`. Each PR id is a local branch (`h2-a` to `h2-e`) in its own worktree, stacked on its parent. The forge, Bugbot and CI boxes are skipped with the reason "local mode". Every verify box still applies, run locally.
+
 Tests alone are not sufficient verification. A PR is verified only when its unit, live, and perf boxes are all checked.
 
 ## Program checklist
@@ -417,9 +419,9 @@ Each live lane runs in its own local git worktree at the PR head. Drive through 
 
 ## Close the program
 
-- [ ] Every box above is checked with its evidence.
-- [ ] The roadmap H2 exit holds on the stack tip. `ask -p "hello"` and `ask --mode json` run in process against faux plus `echo`, with exit codes 0, 1, 130 and 143 shown in the lane captures.
-- [ ] Add a review section to this plan with the five PR links, their verdict SHAs and the departures added during the build.
+- [ ] Every box above is checked with its evidence. Only partly done. The unit, live and perf boxes are verified (Appendix F). The review-gate media, interrogate passes and forge boxes are parked below.
+- [x] The roadmap H2 exit holds on the stack tip. `ask -p "hello"` and `ask --mode json` run in process against faux plus `echo`, with exit codes 0, 1, 130 and 143 shown in the lane captures.
+- [x] Add a review section (Appendix F) to this plan with the five PR links, their verdict SHAs and the departures added during the build.
 - [ ] Reply to the operator with the report `autopilot-stack.md` names. Links to the stack root and tip, a one-line verdict per link, and anything parked with the reason.
 
 ## Appendix A. Prototype evidence
@@ -545,3 +547,28 @@ Coercion table (D21). Each row is one subtest in `coerce_test.go`.
 | optional field | null | field removed |
 | object root | missing or null | `{}` |
 | `anyOf` with a valid arm | valid value | unchanged |
+
+## Appendix F. Review (local mode, 2026-10-02)
+
+The stack is five local branches on `master-2` (`b0b1f5e`, H1 plus Go 1.27.0). Each was verified by the root at the SHA below with `go test -race ./...`, `go vet ./...` and golangci-lint (0 issues). Nothing is pushed.
+
+| PR | Branch | Verified SHA | Live and perf evidence |
+|---|---|---|---|
+| H2-A tools | `h2-a` | `1874505` | 10 lanes in `/tmp/swarm-H2-A/lanes.txt`. Prepare is 1.6 µs and 31 allocs (budget 50 µs, 200). |
+| H2-B loop | `h2-b` | `fc52b13` | Reference event order end to end; goroutines 1 before and after 200 runs. LoopTurn 15 µs, 195 allocs (budget 500 µs, 2000). |
+| H2-C Agent | `h2-c` | `813bf85`, `4b6c193` | 23-event envelope test, seq gap-free across runs. Wrapper adds 3.5 µs per prompt (limit 100 µs). `4b6c193` adds `internal/sessions` to the depguard `core-no-agent` rule. |
+| H2-D print | `h2-d` | `5847ca1` | Lanes in `/tmp/swarm-H2-D/lanes.txt` give 0, 1, 130 (tmux C-c), 143 and 129. `ask -p hello` median 4.8 ms; binary +2.68 MiB (limit 8 MiB). |
+| H2-E JSON | `h2-e` | `19dbeb9` | Lanes in `/tmp/swarm-H2-E/lanes.txt`. Closed stdout exits 1 (trunk 141). Slow reader loses no line. A 1 MiB reply takes 0.081 s in JSON mode and 0.029 s in print mode (2.8x, rule 3x). |
+
+**Departures added during the build.**
+
+- H2-B. `PrepareRequest` takes `pipeline.Request` and returns `*RequestUpdate`; `BeforeToolCall` may replace the arguments; the partial message is not refreshed per delta; only tool-path panics are recovered in the loop (the wrapper recovers the rest).
+- H2-C. `Prompt` returns the run error, so the CLI can exit 1. The failure message uses `aborted` when the run was cancelled. The system message is rebuilt per run and not stored in the log. `Reset` calls `Config.NewContext`. After `Abort` the loop still delivers events the provider already buffered, as Pi does.
+- H2-D. Unknown flags and value flags without a value are errors. `--api-key` needs an explicit `--model`. The signal wait is bounded at 2 s. `@file` images, `provider/id` model forms and `--version` are not ported.
+- H2-E. JSON mode exits 0 on an assistant error, as Pi does. Text and thinking delta `message_update` events skip reflection (`pkg/protocol/codec_fast.go`); a test pins the bytes to the reflection encoding. Without it JSON mode was 5.3x print mode, because each event paid for encoding/json reflection and usage marshalling.
+
+**Parked, with reasons.**
+
+- Review-gate screenshots and video for H2-D and H2-E. `vhs` and `hyperfine` are not installed; the lane captures in `/tmp/swarm-H2-D` and `/tmp/swarm-H2-E` stand in, and perf used interleaved timing loops.
+- The `how` and `interrogate` passes per PR. The owners could not spawn reviewers; H2-C's listener and failure path are the first candidates.
+- Forge, Bugbot, CI and rebase boxes. Local mode.
