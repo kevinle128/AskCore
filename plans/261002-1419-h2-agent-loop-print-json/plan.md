@@ -337,15 +337,15 @@ Each live lane runs in its own local git worktree at the PR head. Drive through 
 **Verify, perf.** Tests alone are not sufficient verification. A PR is verified only when its unit, live, and perf boxes are all checked.
 
 - [ ] Metric. Wall time of `./ask -p hello` from exec to exit, and the binary size of `ask`. The end state the user waits for is the printed reply and the exit.
-- [ ] Probe. `hyperfine -w 3 -r 30 './ask -p hello'` at head. Trunk has no `-p`, so its side of the probe is `ls -l ask` only, run interleaved with the head build.
+- [x] Probe. `hyperfine -w 3 -r 30 './ask -p hello'` at head. Trunk has no `-p`, so its side of the probe is `ls -l ask` only, run interleaved with the head build.
 - [ ] Baseline. Record the trunk binary size first.
 - [ ] Rule. Fail when the head median of `./ask -p hello` is above 100 ms, or the binary grows by more than 8 MiB over trunk.
 
 **Review gate.** The operator reviews before merge.
 
-- [ ] Copy lane 1, 2, 3 and 5 screenshots (pane captures) into `plans/261002-1419-h2-agent-loop-print-json/media/H2-D-review-<slug>.txt`.
-- [ ] Record a 30 to 60 second video with `vhs` of lanes 1, 2, 3 and 5 in sequence. Save it as `plans/261002-1419-h2-agent-loop-print-json/media/H2-D-review.mp4`.
-- [ ] Post the screenshots and the video in chat for the operator. Stop at stack-ready. Wait for the operator's click.
+- [x] Copy lane 1, 2, 3 and 5 screenshots (pane captures) into `plans/261002-1419-h2-agent-loop-print-json/media/H2-D-review-<slug>.txt`.
+- [x] Record a 30 to 60 second video with `vhs` of lanes 1, 2, 3 and 5 in sequence. Save it as `plans/261002-1419-h2-agent-loop-print-json/media/H2-D-review.mp4`.
+- [x] Post the screenshots and the video in chat for the operator. Stop at stack-ready. Wait for the operator's click.
 
 **Merge.**
 
@@ -400,15 +400,15 @@ Each live lane runs in its own local git worktree at the PR head. Drive through 
 **Verify, perf.** Tests alone are not sufficient verification. A PR is verified only when its unit, live, and perf boxes are all checked.
 
 - [ ] Metric. Events per second written by `./ask --mode json` for a 1 MiB faux reply with no pacing, and the wall time to `agent_settled`.
-- [ ] Probe. `hyperfine -w 3 -r 20 './ask --mode json "<1 MiB>" > /dev/null'` at head, interleaved with `./ask -p "<1 MiB>" > /dev/null` at the H2-D parent as the trunk side of the same reply.
+- [x] Probe. `hyperfine -w 3 -r 20 './ask --mode json "<1 MiB>" > /dev/null'` at head, interleaved with `./ask -p "<1 MiB>" > /dev/null` at the H2-D parent as the trunk side of the same reply.
 - [ ] Baseline. Record the H2-D parent print-mode median for the 1 MiB reply first.
 - [ ] Rule. Fail when JSON mode is more than 3 times slower than print mode for the same reply, or above 1 second absolute.
 
 **Review gate.** The operator reviews before merge.
 
-- [ ] Copy lane 1, 3, 6 and 7 screenshots (pane captures) into `plans/261002-1419-h2-agent-loop-print-json/media/H2-E-review-<slug>.txt`.
-- [ ] Record a 30 to 60 second video with `vhs` of lanes 1, 3, 6 and 7. Save it as `plans/261002-1419-h2-agent-loop-print-json/media/H2-E-review.mp4`.
-- [ ] Post the screenshots and the video in chat for the operator. Stop at stack-ready. Wait for the operator's click.
+- [x] Copy lane 1, 3, 6 and 7 screenshots (pane captures) into `plans/261002-1419-h2-agent-loop-print-json/media/H2-E-review-<slug>.txt`.
+- [x] Record a 30 to 60 second video with `vhs` of lanes 1, 3, 6 and 7. Save it as `plans/261002-1419-h2-agent-loop-print-json/media/H2-E-review.mp4`.
+- [x] Post the screenshots and the video in chat for the operator. Stop at stack-ready. Wait for the operator's click.
 
 **Merge.**
 
@@ -419,7 +419,7 @@ Each live lane runs in its own local git worktree at the PR head. Drive through 
 
 ## Close the program
 
-- [ ] Every box above is checked with its evidence. Only partly done. The unit, live and perf boxes are verified (Appendix F). The review-gate media, interrogate passes and forge boxes are parked below.
+- [ ] Every box above is checked with its evidence. Only partly done. The unit, live and perf boxes are verified (Appendix F). The interrogate passes and forge boxes are parked below. The review-gate media is in `media/` (videos, tapes, pane captures, hyperfine results).
 - [x] The roadmap H2 exit holds on the stack tip. `ask -p "hello"` and `ask --mode json` run in process against faux plus `echo`, with exit codes 0, 1, 130 and 143 shown in the lane captures.
 - [x] Add a review section (Appendix F) to this plan with the five PR links, their verdict SHAs and the departures added during the build.
 - [ ] Reply to the operator with the report `autopilot-stack.md` names. Links to the stack root and tip, a one-line verdict per link, and anything parked with the reason.
@@ -558,17 +558,16 @@ The stack is five local branches on `master-2` (`b0b1f5e`, H1 plus Go 1.27.0). E
 | H2-B loop | `h2-b` | `fc52b13` | Reference event order end to end; goroutines 1 before and after 200 runs. LoopTurn 15 µs, 195 allocs (budget 500 µs, 2000). |
 | H2-C Agent | `h2-c` | `813bf85`, `4b6c193` | 23-event envelope test, seq gap-free across runs. Wrapper adds 3.5 µs per prompt (limit 100 µs). `4b6c193` adds `internal/sessions` to the depguard `core-no-agent` rule. |
 | H2-D print | `h2-d` | `5847ca1` | Lanes in `/tmp/swarm-H2-D/lanes.txt` give 0, 1, 130 (tmux C-c), 143 and 129. `ask -p hello` median 4.8 ms; binary +2.68 MiB (limit 8 MiB). |
-| H2-E JSON | `h2-e` | `19dbeb9` | Lanes in `/tmp/swarm-H2-E/lanes.txt`. Closed stdout exits 1 (trunk 141). Slow reader loses no line. A 1 MiB reply takes 0.081 s in JSON mode and 0.029 s in print mode (2.8x, rule 3x). |
+| H2-E JSON | `h2-e` | `19dbeb9`, then the buffered-output commit | Lanes in `/tmp/swarm-H2-E/lanes.txt`. Closed stdout exits 1 (trunk 141). Slow reader loses no line. hyperfine on a 1 MiB reply gives a JSON median of 45.6 ms and a print median of 23.8 ms (1.91x, rule 3x). |
 
 **Departures added during the build.**
 
 - H2-B. `PrepareRequest` takes `pipeline.Request` and returns `*RequestUpdate`; `BeforeToolCall` may replace the arguments; the partial message is not refreshed per delta; only tool-path panics are recovered in the loop (the wrapper recovers the rest).
 - H2-C. `Prompt` returns the run error, so the CLI can exit 1. The failure message uses `aborted` when the run was cancelled. The system message is rebuilt per run and not stored in the log. `Reset` calls `Config.NewContext`. After `Abort` the loop still delivers events the provider already buffered, as Pi does.
 - H2-D. Unknown flags and value flags without a value are errors. `--api-key` needs an explicit `--model`. The signal wait is bounded at 2 s. `@file` images, `provider/id` model forms and `--version` are not ported.
-- H2-E. JSON mode exits 0 on an assistant error, as Pi does. Text and thinking delta `message_update` events skip reflection (`pkg/protocol/codec_fast.go`); a test pins the bytes to the reflection encoding. Without it JSON mode was 5.3x print mode, because each event paid for encoding/json reflection and usage marshalling.
+- H2-E. JSON mode exits 0 on an assistant error, as Pi does. Text and thinking delta `message_update` events skip reflection (`pkg/protocol/codec_fast.go`); a test pins the bytes to the reflection encoding. Without it JSON mode was 5.3x print mode, because each event paid for encoding/json reflection and usage marshalling. That alone gave about 3x under hyperfine (the first 2.8x came from a timing loop that added shell startup to both sides). The stdout writer now buffers and flushes 2 ms after the first unflushed line, or when 64 KiB fill, and always before exit. One syscall per event was the remaining cost. A slow reader still stalls the run once the buffer is full. Lane 6 uses a 300 KB reply, because a reply that fits in the pipe is written whole before `head` closes it and exits 0.
 
 **Parked, with reasons.**
 
-- Review-gate screenshots and video for H2-D and H2-E. `vhs` and `hyperfine` are not installed; the lane captures in `/tmp/swarm-H2-D` and `/tmp/swarm-H2-E` stand in, and perf used interleaved timing loops.
 - The `how` and `interrogate` passes per PR. The owners could not spawn reviewers; H2-C's listener and failure path are the first candidates.
 - Forge, Bugbot, CI and rebase boxes. Local mode.

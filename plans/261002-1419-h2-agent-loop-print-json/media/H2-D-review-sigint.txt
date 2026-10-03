@@ -1,0 +1,12 @@
+=== 5 SIGINT in tmux (C-c) during a paced run
+ask pid before C-c: 19699
+-- pane capture:
+cd /tmp/h2-H2-D-1 && ASK_FAUX_TPS=2 ./ask -p "$(cat long.txt)" > /dev/null; echo RESULT_CODE=$?
+The default interactive shell is now zsh.
+To update your account to use zsh, please run `chsh -s /bin/zsh`.
+For more details, please visit https://support.apple.com/kb/HT208050.
+bash-3.2$ cd /tmp/h2-H2-D-1 && ASK_FAUX_TPS=2 ./ask -p "$(cat long.txt)" > /dev/null; echo RESULT_CODE=$?
+^CRESULT_CODE=130
+bash-3.2$
+exit observed 0.03s after C-c
+
