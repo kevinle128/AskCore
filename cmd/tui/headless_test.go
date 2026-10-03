@@ -294,8 +294,10 @@ func TestJSONSlowReaderStallsRun(t *testing.T) {
 	w := &gatedWriter{gate: make(chan struct{})}
 	var errb bytes.Buffer
 	codes := make(chan int, 1)
+	// Larger than the output buffer, so the run must block on the reader.
+	reply := strings.Repeat("a", 256<<10)
 
-	go func() { codes <- runHeadless(ag, []string{"hello"}, modeJSON, w, &errb, nil) }()
+	go func() { codes <- runHeadless(ag, []string{reply}, modeJSON, w, &errb, nil) }()
 	time.Sleep(200 * time.Millisecond)
 
 	select {
@@ -307,8 +309,31 @@ func TestJSONSlowReaderStallsRun(t *testing.T) {
 	close(w.gate)
 	assert.Equal(t, 0, <-codes)
 	evs := decodeJSONL(t, w.buf.String())
-	assert.Len(t, evs, 12)
+	assert.Equal(t, protocol.TypeAgentStart, evs[0].EventType())
+	assert.Equal(t, protocol.TypeAgentSettled, evs[len(evs)-1].EventType())
+	for i, ev := range evs {
+		assert.Equal(t, uint64(i+1), ev.Env().Seq)
+	}
 	assert.Equal(t, "", errb.String())
+}
+
+func TestJSONSmallReplyWaitsForFinalFlush(t *testing.T) {
+	ag := newAgent(t, "")
+	w := &gatedWriter{gate: make(chan struct{})}
+	var errb bytes.Buffer
+	codes := make(chan int, 1)
+
+	go func() { codes <- runHeadless(ag, []string{"hello"}, modeJSON, w, &errb, nil) }()
+	time.Sleep(200 * time.Millisecond)
+
+	select {
+	case <-codes:
+		t.Fatal("exited before stdout took the buffered lines")
+	default:
+	}
+	close(w.gate)
+	assert.Equal(t, 0, <-codes)
+	assert.Len(t, decodeJSONL(t, w.buf.String()), 12)
 }
 
 func TestEPIPEInProcess(t *testing.T) {

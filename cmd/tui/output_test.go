@@ -6,8 +6,10 @@ import (
 	"fmt"
 	"io"
 	"os"
+	"sync"
 	"syscall"
 	"testing"
+	"time"
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -45,14 +47,59 @@ func (c *countingWriter) Write(p []byte) (int, error) {
 
 func TestGuardWriteErrorSticks(t *testing.T) {
 	target := &countingWriter{err: syscall.EPIPE}
-	out := &protocolOut{w: target}
+	out := newProtocolOut(target)
 
-	_, first := out.Write([]byte("a\n"))
-	_, second := out.Write([]byte("b\n"))
+	_, buffered := out.Write([]byte("a\n"))
+	flushed := out.flush()
+	_, after := out.Write([]byte("b\n"))
 
-	assert.ErrorIs(t, first, syscall.EPIPE)
-	assert.ErrorIs(t, second, syscall.EPIPE)
+	assert.NoError(t, buffered)
+	assert.ErrorIs(t, flushed, syscall.EPIPE)
+	assert.ErrorIs(t, after, syscall.EPIPE)
 	assert.Equal(t, 1, target.calls)
+}
+
+// syncBuffer is a bytes.Buffer safe for the flush timer's goroutine.
+type syncBuffer struct {
+	mu sync.Mutex
+	b  bytes.Buffer
+}
+
+func (s *syncBuffer) Write(p []byte) (int, error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	return s.b.Write(p)
+}
+
+func (s *syncBuffer) String() string {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	return s.b.String()
+}
+
+func TestGuardFlushesWithinDelay(t *testing.T) {
+	var target syncBuffer
+	out := newProtocolOut(&target)
+
+	_, err := out.Write([]byte("a\n"))
+	require.NoError(t, err)
+	_, err = out.Write([]byte("b\n"))
+	require.NoError(t, err)
+
+	assert.Equal(t, "", target.String())
+	assert.Eventually(t, func() bool { return target.String() == "a\nb\n" }, time.Second, flushDelay)
+	require.NoError(t, out.flush())
+}
+
+func TestGuardWritesThroughWhenFull(t *testing.T) {
+	target := &countingWriter{}
+	out := newProtocolOut(target)
+
+	_, err := out.Write(bytes.Repeat([]byte("x"), 128<<10))
+
+	require.NoError(t, err)
+	assert.Equal(t, 1, target.calls)
+	require.NoError(t, out.flush())
 }
 
 func TestGuardReportsWriteErrors(t *testing.T) {
@@ -67,7 +114,7 @@ func TestGuardReportsWriteErrors(t *testing.T) {
 		{"other errors are reported", errors.New("no space left on device"), true, "no space left on device\n"},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
-			out := &protocolOut{w: &countingWriter{err: tc.err}}
+			out := newProtocolOut(&countingWriter{err: tc.err})
 			_, _ = out.Write([]byte("x"))
 			var errb bytes.Buffer
 

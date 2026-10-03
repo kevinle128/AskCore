@@ -156,7 +156,7 @@ func newHeadlessAgent(o options, getenv func(string) string) (*agent.Agent, erro
 // settle (a second signal stops the wait) and gives the signal's exit code
 // without printing the reply.
 func runHeadless(ag *agent.Agent, prompts []string, mode runMode, stdout, stderr io.Writer, sigs <-chan os.Signal) int {
-	out := &protocolOut{w: stdout}
+	out := newProtocolOut(stdout)
 	if mode == modeJSON {
 		defer streamJSON(ag, out)()
 	}
@@ -193,6 +193,7 @@ func runHeadless(ag *agent.Agent, prompts []string, mode runMode, stdout, stderr
 		case <-sigs:
 		case <-grace.C:
 		}
+		_ = out.flush() // a write error changes nothing; the signal sets the code
 		return signalExitCodes[sig]
 	}
 }
