@@ -3,6 +3,7 @@ package main
 import (
 	"context"
 	"fmt"
+	"net/http"
 	"strconv"
 	"strings"
 
@@ -72,21 +73,25 @@ func openProvider(o options, getenv func(string) string) (providers.StreamFn, pr
 	case defaultProvider:
 		return fauxStream(o.model, getenv)
 	case tokenplan.ProviderID:
-		return tokenPlanStream(o.model, getenv)
+		return tokenPlanStream(o.model, getenv, o.transport)
 	default:
 		return nil, providers.Model{}, fmt.Errorf("provider %q is not available", o.provider)
 	}
 }
 
-func tokenPlanStream(modelID string, getenv func(string) string) (providers.StreamFn, providers.Model, error) {
+func tokenPlanStream(modelID string, getenv func(string) string, rt http.RoundTripper) (providers.StreamFn, providers.Model, error) {
 	m := tokenplan.ModelFor(modelID)
-	p := tokenplan.New(tokenplan.WithEnv(func(k string) (string, bool) {
+	opts := []tokenplan.Option{tokenplan.WithEnv(func(k string) (string, bool) {
 		v := getenv(k)
 		if v == "" {
 			return "", false
 		}
 		return v, true
-	}))
+	})}
+	if rt != nil {
+		opts = append(opts, tokenplan.WithHTTPClient(&http.Client{Transport: rt}))
+	}
+	p := tokenplan.New(opts...)
 	return p.Stream, m, nil
 }
 

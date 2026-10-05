@@ -265,7 +265,7 @@ func (b *batchRun) prepare(c protocol.ToolCall) (p preparedCall, immediate *tool
 			return preparedCall{}, ptr(errorOutcome(c, err.Error()))
 		}
 	}
-	args, err := b.ac.Tools.Prepare(c.Name, raw)
+	args, err := b.ts.tools.Prepare(c.Name, raw)
 	if err != nil {
 		return preparedCall{}, ptr(errorOutcome(c, err.Error()))
 	}
@@ -379,11 +379,10 @@ func (u *updater) close() {
 	u.mu.Unlock()
 }
 
+// lookup finds a tool in the snapshot of the turn, never in the live
+// registry, so a call can only run a tool the model was told about.
 func (b *batchRun) lookup(name string) (tools.Tool, bool) {
-	if b.ac.Tools == nil {
-		return nil, false
-	}
-	t, _, ok := b.ac.Tools.Lookup(name)
+	t, _, ok := b.ts.tools.Lookup(name)
 	return t, ok
 }
 

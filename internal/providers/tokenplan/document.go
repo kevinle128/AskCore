@@ -132,30 +132,7 @@ func encodeSystem(msgs []protocol.Message) []map[string]any {
 }
 
 func foldTools(msgs []protocol.Message) ([]map[string]any, error) {
-	var decls []protocol.ToolDecl
-	for _, m := range msgs {
-		sys, ok := systemValue(m)
-		if !ok {
-			continue
-		}
-		for _, t := range sys.ToolsAdded {
-			decls = upsertTool(decls, t)
-		}
-		if len(sys.ToolsRemoved) == 0 {
-			continue
-		}
-		drop := map[string]struct{}{}
-		for _, r := range sys.ToolsRemoved {
-			drop[r.Name] = struct{}{}
-		}
-		kept := decls[:0]
-		for _, t := range decls {
-			if _, skip := drop[t.Name]; !skip {
-				kept = append(kept, t)
-			}
-		}
-		decls = kept
-	}
+	decls := providers.CurrentTools(msgs)
 	if len(decls) == 0 {
 		return nil, nil
 	}
@@ -175,16 +152,6 @@ func foldTools(msgs []protocol.Message) ([]map[string]any, error) {
 		out = append(out, item)
 	}
 	return out, nil
-}
-
-func upsertTool(decls []protocol.ToolDecl, t protocol.ToolDecl) []protocol.ToolDecl {
-	for i, existing := range decls {
-		if existing.Name == t.Name {
-			decls[i] = t
-			return decls
-		}
-	}
-	return append(decls, t)
 }
 
 func toolSchema(raw json.RawMessage) (any, error) {

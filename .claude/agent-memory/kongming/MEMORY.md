@@ -1,2 +1,3 @@
 - [H1 build blocker: internal/logs untracked](project_h1_build_blocker_internal_logs.md) — `go build ./...` fails in fresh worktrees; .gitignore `logs/`; out of H1 scope
 - [H1 go decision + H2 trap](project_h1_go_decision.md) — H1 GO 2026-10-01; tool ids `tool:<call>:<n>` kept; RawEvent Env() writes dropped on encode
+- [Re-scout before advising](feedback_rescout_before_advising.md) — consult prompts lag the disk; files change mid-consult; re-read named files last

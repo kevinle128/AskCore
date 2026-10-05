@@ -45,6 +45,7 @@ func Run(ctx context.Context, prompts []protocol.Message, ac pipeline.AgentConte
 		return nil, ErrNoStream
 	}
 	l := newLoop(ctx, ac, cfg, emit)
+	prompts = declareToolChanges(l.ac.Messages, l.ac.Tools.Snapshot(), prompts)
 	l.ac.Messages = append(l.ac.Messages, prompts...)
 	l.newMessages = append(l.newMessages, prompts...)
 	if err := l.emitAll(&protocol.AgentStart{}, &protocol.TurnStart{}); err != nil {

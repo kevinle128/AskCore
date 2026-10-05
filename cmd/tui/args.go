@@ -2,6 +2,7 @@ package main
 
 import (
 	"fmt"
+	"net/http"
 	"slices"
 	"strings"
 
@@ -29,6 +30,9 @@ type options struct {
 	thinking protocol.ThinkingLevel
 	messages []string
 	files    []string
+	// transport carries the provider HTTP. Nil uses http.DefaultTransport.
+	// Tests set a cassette here; ASK_CAPTURE sets a recording one.
+	transport http.RoundTripper
 }
 
 // diagnostic is one parse problem. Any error ends the program with exit 1; a

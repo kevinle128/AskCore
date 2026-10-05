@@ -33,7 +33,7 @@ func TestTwoTurnEventOrder(t *testing.T) {
 	assert.Equal(t, []string{
 		"agent_start",
 		"turn_start",
-		"message_start(user)", "message_end(user)",
+		"message_start(system)", "message_end(system)", "message_start(user)", "message_end(user)",
 		"message_start(assistant)",
 		"message_update(toolcall_start)", "message_update(toolcall_delta)", "message_update(toolcall_end)",
 		"message_end(assistant)",
@@ -48,12 +48,12 @@ func TestTwoTurnEventOrder(t *testing.T) {
 		"agent_end",
 	}, rec.eventLabels())
 
-	assert.Equal(t, []string{"user", "assistant", "toolResult:c1", "assistant"}, roles(msgs))
+	assert.Equal(t, []string{"system", "user", "assistant", "toolResult:c1", "assistant"}, roles(msgs))
 	assert.Equal(t, "hi", resultText(toolResults(msgs)["c1"].Content))
 	assert.Equal(t, "done", assistantText(lastAssistant(t, msgs)))
 	reqs := p.Requests()
 	require.Len(t, reqs, 2)
-	assert.Equal(t, []string{"user", "assistant", "toolResult:c1"}, roles(reqs[1].Transcript.Messages),
+	assert.Equal(t, []string{"system", "user", "assistant", "toolResult:c1"}, roles(reqs[1].Transcript.Messages),
 		"the partial was replaced, not appended, and the result joined the context")
 	end := rec.events[len(rec.events)-1].(*protocol.AgentEnd)
 	assert.Equal(t, roles(msgs), roles(end.Messages))
@@ -76,7 +76,7 @@ func TestSteeringPollPoints(t *testing.T) {
 			pipeline.AgentContext{Tools: registry(t, tools.Echo{})}, config(p, m, hooks), rec.emit)
 		require.NoError(t, err)
 		assert.Equal(t, []string{
-			"agent_start", "turn_start", "message_start(user)", "message_end(user)",
+			"agent_start", "turn_start", "message_start(system)", "message_end(system)", "message_start(user)", "message_end(user)",
 			"steer",
 			"prepare",
 			"message_start(assistant)", "message_update(toolcall_start)", "message_update(toolcall_delta)", "message_update(toolcall_end)", "message_end(assistant)",
@@ -219,11 +219,11 @@ func TestFinishTurnEnd(t *testing.T) {
 
 	assert.Equal(t, 1, p.Calls())
 	assert.Equal(t, []string{
-		"agent_start", "turn_start", "message_start(user)", "message_end(user)",
+		"agent_start", "turn_start", "message_start(system)", "message_end(system)", "message_start(user)", "message_end(user)",
 		"steer",
 		"message_start(assistant)", "message_update(toolcall_start)", "message_update(toolcall_delta)", "message_update(toolcall_end)", "message_end(assistant)",
 		"tool_execution_start(c1)", "tool_execution_end(c1)", "message_start(toolResult:c1)", "message_end(toolResult:c1)",
-		"finish:user,assistant,toolResult:c1",
+		"finish:system,user,assistant,toolResult:c1",
 		"turn_end",
 		"agent_end",
 	}, rec.labels(), "no poll hook runs after End")
@@ -262,7 +262,7 @@ func TestErrorTail(t *testing.T) {
 			require.NoError(t, err)
 
 			assert.Equal(t, []string{
-				"agent_start", "turn_start", "message_start(user)", "message_end(user)",
+				"agent_start", "turn_start", "message_start(system)", "message_end(system)", "message_start(user)", "message_end(user)",
 				"steer",
 				"message_start(assistant)", "message_update(toolcall_start)", "message_update(toolcall_delta)", "message_update(toolcall_end)", "message_end(assistant)",
 				"finish",
@@ -388,13 +388,13 @@ func TestPrepareRequestReplacesContext(t *testing.T) {
 	reqs := p.Requests()
 	require.Len(t, reqs, 2)
 	assert.Equal(t, "projected", resultText(reqs[0].Transcript.Messages[0].(protocol.UserMessage).Content))
-	assert.Equal(t, []string{"user", "assistant", "toolResult:c1"}, roles(reqs[1].Transcript.Messages),
-		"the replacement stays for later requests")
+	assert.Equal(t, []string{"user", "assistant", "toolResult:c1", "system"}, roles(reqs[1].Transcript.Messages),
+		"the replacement stays for later requests; it dropped the tool declaration, so the next turn declares the tools again")
 	assert.Equal(t, protocol.ThinkingHigh, reqs[1].Options.Reasoning)
 	level := lastAssistant(t, msgs).ThinkingLevel
 	require.NotNil(t, level)
 	assert.Equal(t, protocol.ThinkingHigh, *level)
-	assert.Equal(t, []string{"user", "assistant", "toolResult:c1", "assistant"}, roles(msgs),
+	assert.Equal(t, []string{"system", "user", "assistant", "toolResult:c1", "system", "assistant"}, roles(msgs),
 		"the run still reports the prompt it added")
 }
 

@@ -162,6 +162,8 @@ func TestToolExecutorSelection(t *testing.T) {
 				ctx: context.Background(),
 				ac:  pipeline.AgentContext{Tools: reg},
 				cfg: LoopConfig{},
+				// The executor reads tools from the snapshot of the turn.
+				ts: turnState{tools: reg.Snapshot()},
 			}
 
 			msg := protocol.AssistantMessage{

@@ -103,9 +103,9 @@ func TestToolCompletionOrderAndSourceOrder(t *testing.T) {
 		"message_start(toolResult:a)", "message_end(toolResult:a)",
 		"message_start(toolResult:b)", "message_end(toolResult:b)",
 	}, toolLabels(r.rec.eventLabels()))
-	assert.Equal(t, [][]string{{"user", "assistant"}, {"user", "assistant"}}, seen,
+	assert.Equal(t, [][]string{{"system", "user", "assistant"}, {"system", "user", "assistant"}}, seen,
 		"no result joins the context during the batch")
-	assert.Equal(t, []string{"user", "assistant", "toolResult:a", "toolResult:b"}, roles(r.p.Requests()[1].Transcript.Messages))
+	assert.Equal(t, []string{"system", "user", "assistant", "toolResult:a", "toolResult:b"}, roles(r.p.Requests()[1].Transcript.Messages))
 	assert.Equal(t, "a ok", resultText(toolResults(r.msgs)["a"].Content))
 }
 
@@ -201,7 +201,7 @@ func TestToolPreflightFailures(t *testing.T) {
 	assert.Equal(t, "fine", resultText(res["ok"].Content))
 	assert.Equal(t, []string{"blocked", "silent", "ok"}, before, "BeforeToolCall runs only for valid calls")
 	assert.Equal(t, []string{"ok"}, after, "AfterToolCall runs only for executed calls")
-	assert.Equal(t, []string{"user", "assistant", "toolResult:unknown", "toolResult:invalid", "toolResult:blocked", "toolResult:silent", "toolResult:ok", "assistant"}, roles(r.msgs))
+	assert.Equal(t, []string{"system", "user", "assistant", "toolResult:unknown", "toolResult:invalid", "toolResult:blocked", "toolResult:silent", "toolResult:ok", "assistant"}, roles(r.msgs))
 }
 
 func TestToolBlockTerminate(t *testing.T) {

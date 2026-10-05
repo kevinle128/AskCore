@@ -6,7 +6,7 @@ Everything an agent can call as a tool. The package is flat: a filename prefix g
 
 - The `Tool` interface, the optional `Sequential` and `ArgumentPreparer` interfaces, and the per-call `Context` (`types.go`). A tool returns `protocol.ToolExecutionResult`.
 - `SourceInfo`, where a registered tool came from (`source.go`)
-- `Registry` (`registry.go`), argument coercion (`coerce.go`) and validation with the model-facing error text (`validate.go`)
+- `Registry` and `Snapshot` (`registry.go`), argument coercion (`coerce.go`) and validation with the model-facing error text (`validate.go`)
 - Builtin tools, one prefix for each family: `echo` (`echo.go`), `filesystem_*`, `shell*`, `web_fetch*`, `web_search*`, `subagent_*`, `skill_*`, …
 - Tool backends by vendor: `<tool>_<vendor>.go` (for example `web_search_brave.go`)
 
@@ -23,6 +23,7 @@ Everything an agent can call as a tool. The package is flat: a filename prefix g
 
 - `Tool`: `Decl()` and `Execute(ctx, Context, args)`. `ctx` is the abort signal.
 - Optional capability interfaces: `Sequential` (one such tool makes its whole batch sequential) and `ArgumentPreparer` (rewrites raw arguments before validation). Pass dependencies through the constructor, not through dewee-style `*Aware` setters.
+- `Registry` is copy-on-write: `Register` and `Unregister` replace the current `Snapshot`, and a `Snapshot` never changes. The agent loop takes one snapshot for each turn, so a tool added or removed during a run takes effect on the next turn
 - Tool backend interfaces, for example `SearchProvider` (dewee `internal/tools/web_search.go:44`)
 
 ## File names
@@ -47,6 +48,7 @@ Everything an agent can call as a tool. The package is flat: a filename prefix g
 - One model is shared everywhere. Add a DTO or a separate type with a mapper only when the data is really different (design section 6).
 - Receive dependencies and typed config through constructors. `internal/app` wires them with fx.
 - Create an interface only when there is a second implementation or a test seam.
+- Code that runs tools for a turn reads a `Snapshot`, not the live `Registry`, so the tools it runs are the tools the model was told about.
 - There is no built-in allow, deny or approval policy. A later policy handler will be a hook handler, not a file in this package.
 
 Design reference: [docs/ask-architecture-reference.md](../../docs/ask-architecture-reference.md)

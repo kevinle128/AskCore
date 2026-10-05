@@ -66,6 +66,10 @@ func run(argv []string, stdin io.Reader, stdout, stderr io.Writer) int {
 	}
 	defer guardStdout(stderr)()
 
+	if _, err := startCapture(&o, os.Getenv, stderr, nil); err != nil {
+		report(stderr, "Error:", err)
+		return 1
+	}
 	ag, err := newHeadlessAgent(o, os.Getenv)
 	if err != nil {
 		report(stderr, "Error:", err)

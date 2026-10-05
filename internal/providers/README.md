@@ -32,9 +32,9 @@ LLM access. The package keeps three things apart. An **Api** is a wire protocol 
 
 ## File names
 
-Core files: `api.go`, `model.go`, `compat.go`, `registry.go`, `types.go`, `stream.go`, `assembler.go`, `convert.go`, `transform.go`, `errors.go`, `cost.go`, `normalize.go`
+Core files: `api.go`, `model.go`, `compat.go`, `registry.go`, `types.go`, `stream.go`, `assembler.go`, `convert.go`, `transform.go`, `transcript.go` (`CurrentTools`, `ToolChanges`: replay and diff of the tool declarations in system messages), `errors.go`, `cost.go`, `normalize.go`
 
-Sub-packages: `anthropic/` and `openai/` (wire adapters, one file for each Api or topic, for example `openai/completions.go`, `openai/responses.go`), `fantasykit/` (shared fantasy plumbing), `faux/` (scripted fake provider for tests of every package), `sse/` (Server-Sent Events reader), `partialjson/` (tolerant parser for streamed tool arguments), `acp/` (subprocess agents)
+Sub-packages: `anthropic/` and `openai/` (wire adapters, one file for each Api or topic, for example `openai/completions.go`, `openai/responses.go`), `fantasykit/` (shared fantasy plumbing), `faux/` (scripted fake provider for tests of every package), `cassette/` (records provider HTTP to YAML and replays it in order, for tests and `ASK_CAPTURE`; see [docs/testing-llm-cassettes.md](../../docs/testing-llm-cassettes.md)), `sse/` (Server-Sent Events reader), `partialjson/` (tolerant parser for streamed tool arguments), `acp/` (subprocess agents)
 
 ## Imports
 

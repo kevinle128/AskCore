@@ -4,6 +4,7 @@ import (
 	"slices"
 
 	"AskCore/internal/pipeline"
+	"AskCore/internal/tools"
 	"AskCore/pkg/protocol"
 )
 
@@ -40,6 +41,10 @@ type turnState struct {
 	results []protocol.ToolResultMessage
 	// moreTools is set when a tool batch ran and did not ask to terminate.
 	moreTools bool
+	// tools is the tool set of this turn. The model is told about it before
+	// the request, and the act stage runs calls against it, so the declared
+	// and the executable tools are the same even if the registry changes.
+	tools *tools.Snapshot
 }
 
 // failed reports a message that ended in an error or an abort. Such a turn
@@ -67,8 +72,9 @@ func (l *loop) runTurn() (flow, error) {
 }
 
 // steerStage opens a turn after the first: it polls steering messages when
-// none are pending and emits turn_start. Then it adds the pending messages to
-// the context.
+// none are pending and emits turn_start. Then it takes the tool snapshot of
+// the turn, declares tool changes, and adds the pending messages to the
+// context.
 type steerStage struct{}
 
 func (steerStage) name() string { return "steer" }
@@ -87,7 +93,8 @@ func (steerStage) run(l *loop) (flow, error) {
 			return flowEndRun, err
 		}
 	}
-	for _, m := range l.pending {
+	l.ts = turnState{results: []protocol.ToolResultMessage{}, tools: l.ac.Tools.Snapshot()}
+	for _, m := range declareToolChanges(l.ac.Messages, l.ts.tools, l.pending) {
 		if err := l.emitMessage(m); err != nil {
 			return flowEndRun, err
 		}
@@ -95,7 +102,6 @@ func (steerStage) run(l *loop) (flow, error) {
 		l.newMessages = append(l.newMessages, m)
 	}
 	l.pending = nil
-	l.ts = turnState{results: []protocol.ToolResultMessage{}}
 	return flowNext, nil
 }
 

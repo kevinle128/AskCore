@@ -13,7 +13,7 @@ This file provides context about the project for AI assistants.
 - API: grpc-go
 - CLI: bubbletea
 - Logging: zap
-- Testing: gomock, testcontainers, testify, goleak
+- Testing: gomock, testcontainers, testify, goleak, go-vcr (LLM cassettes)
 - Messaging: asynq
 - Observability: opentelemetry
 - Validation: validator
@@ -62,6 +62,7 @@ AskCore/
 - `go run ./cmd/server` - Start the server (applies pending migrations first)
 - `go run ./cmd/server -migrate` - Apply migrations and exit
 - `go test ./...` - Run tests
+- `ASK_RECORD=1 go test -run '^TestX$' ./cmd/tui` - Re-record the LLM cassette of one test. `ASK_CAPTURE=<dir> ask -p ...` records a real run to a cassette. See `docs/testing-llm-cassettes.md`
 - `go run github.com/golangci/golangci-lint/v2/cmd/golangci-lint run ./...` - Lint, including the depguard import rules
 - `go fmt ./...` - Format code
 - `go run ./cmd/tui -p "hello"` - Headless print mode: runs one prompt in process and prints the reply. `--mode json` writes every agent event as one JSON line instead. Until H3 the only provider is `faux`, a scripted demo: `echo <text>` calls the echo tool, `fail <text>` ends in an assistant error, anything else is said back. `ASK_FAUX_TPS` paces it in tokens per second. Exit codes: 0 done, 1 error (print mode also on an assistant error), 130 SIGINT, 143 SIGTERM, 129 SIGHUP

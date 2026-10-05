@@ -8,6 +8,7 @@ The agent runtime. `Run` and `Continue` run Pi's two-level loop: the outer loop 
 
 - The loop driver (`loop_run.go`): `Run`, `Continue`, `LoopConfig`, the driver that runs one turn after another, the idle check for follow-up messages, and the hook seam methods for the queues, `PrepareRequest` and `FinishTurn`
 - The ReAct stages (`loop_stage.go`): the `stage` interface, the `flow` enum, `turnState`, and the six stages of one turn (steer, prepare, reason, act, observe, decide)
+- Tool declarations (`loop_tool_changes.go`): before each request, the tools the transcript declares are compared with the tool snapshot of the turn, and a difference becomes `ToolsAdded` / `ToolsRemoved` on a system message (Pi `declareToolChanges`)
 - One model call (`loop_stream.go`): context transform, conversion, API key, stream, and the partial message that the final message replaces
 - One tool batch (`loop_tools.go`): the `toolExecutor` strategy (truncated, sequential, parallel), preflight, `BeforeToolCall` and `AfterToolCall`, the output-length guard, and abort
 - The `Agent` wrapper (`agent.go`): one active run, `Prompt`, `Continue`, `Abort`, `WaitForIdle`, `Reset`, `State`, and the run-failure path that turns a returned error or a panic of the loop into an error assistant message, `agent_end` and `agent_settled`
@@ -57,6 +58,7 @@ If a stage grows too large for `loop_stage.go`, move it to `loop_stage_<name>.go
 - One agent serves one session. A `Router` is not needed until multi-agent routing is.
 - The loop is the only place that calls the hook points of `pipeline`.
 - Stages are unexported. The public extension surface is `pipeline.Hooks`.
+- One tool snapshot for each turn. The steer stage takes it and declares changes; the act stage runs calls only against it. A tool added or removed during a run takes effect on the next request, after the model was told.
 - Only the seam method of a hook point reads `cfg.Hooks.<Field>`. Combine hook sets with `pipeline.Compose`, not with a hand-written wrapper.
 
 ## Design pattern map

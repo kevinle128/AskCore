@@ -1,0 +1,168 @@
+---
+version: 2
+interactions:
+    - id: 0
+      request:
+        proto: HTTP/1.1
+        proto_major: 1
+        proto_minor: 1
+        content_length: 878
+        host: ""
+        body: '{"max_tokens":384000,"messages":[{"content":[{"text":"In one reply, call add with a=1 and b=2 and also call mul with a=3 and b=4. Do not wait between them. After the results, reply with both numbers.","type":"text"}],"role":"user"}],"model":"deepseek-v4.1-flash","output_config":{"effort":"medium"},"tools":[{"description":"Return the given text unchanged.","input_schema":{"properties":{"text":{"description":"The text to return.","type":"string"}},"required":["text"],"type":"object"},"name":"echo"},{"description":"Add two numbers and return a + b.","input_schema":{"properties":{"a":{"type":"number"},"b":{"type":"number"}},"required":["a","b"],"type":"object"},"name":"add"},{"description":"Multiply two numbers and return a * b.","input_schema":{"properties":{"a":{"type":"number"},"b":{"type":"number"}},"required":["a","b"],"type":"object"},"name":"mul"}],"stream":true}'
+        headers:
+            Anthropic-Version:
+                - "2023-06-01"
+            Content-Type:
+                - application/json
+        url: https://token-plan.ap-southeast-1.maas.aliyuncs.com/apps/anthropic/v1/messages
+        method: POST
+      response:
+        proto: HTTP/2.0
+        proto_major: 2
+        proto_minor: 0
+        content_length: -1
+        body: |+
+            event:ping
+            data:{"type":"ping"}
+
+            event:message_start
+            data:{"type":"message_start","message":{"id":"msg_ce614d99-44c2-4571-869a-d83ee37837a2","type":"message","role":"assistant","model":"deepseek-v4.1-flash","content":[],"stop_reason":null,"stop_sequence":null,"usage":{"input_tokens":151,"output_tokens":0}}}
+
+            event:content_block_start
+            data:{"type":"content_block_start","index":0,"content_block":{"type":"thinking","thinking":"","signature":""}}
+
+            event:content_block_delta
+            data:{"type":"content_block_delta","index":0,"delta":{"type":"thinking_delta","thinking":"The"}}
+
+            event:content_block_delta
+            data:{"type":"content_block_delta","index":0,"delta":{"type":"thinking_delta","thinking":" user wants both"}}
+
+            event:content_block_delta
+            data:{"type":"content_block_delta","index":0,"delta":{"type":"thinking_delta","thinking":" calls in one"}}
+
+            event:content_block_delta
+            data:{"type":"content_block_delta","index":0,"delta":{"type":"thinking_delta","thinking":" block, no waiting"}}
+
+            event:content_block_delta
+            data:{"type":"content_block_delta","index":0,"delta":{"type":"thinking_delta","thinking":"."}}
+
+            event:content_block_delta
+            data:{"type":"content_block_delta","index":0,"delta":{"type":"signature_delta","signature":""}}
+
+            event:content_block_stop
+            data:{"type":"content_block_stop","index":0}
+
+            event:content_block_start
+            data:{"type":"content_block_start","index":1,"content_block":{"type":"tool_use","id":"toolu_710277b8051741649489f29c","name":"add","input":{}}}
+
+            event:content_block_delta
+            data:{"type":"content_block_delta","index":1,"delta":{"type":"input_json_delta","partial_json":""}}
+
+            event:content_block_delta
+            data:{"type":"content_block_delta","index":1,"delta":{"type":"input_json_delta","partial_json":"{"}}
+
+            event:content_block_delta
+            data:{"type":"content_block_delta","index":1,"delta":{"type":"input_json_delta","partial_json":"\"a\": 1"}}
+
+            event:content_block_delta
+            data:{"type":"content_block_delta","index":1,"delta":{"type":"input_json_delta","partial_json":", \"b\": 2}"}}
+
+            event:content_block_stop
+            data:{"type":"content_block_stop","index":1}
+
+            event:content_block_start
+            data:{"type":"content_block_start","index":2,"content_block":{"type":"tool_use","id":"toolu_83c7fe971fc8448c8dd8f417","name":"mul","input":{}}}
+
+            event:content_block_delta
+            data:{"type":"content_block_delta","index":2,"delta":{"type":"input_json_delta","partial_json":""}}
+
+            event:content_block_delta
+            data:{"type":"content_block_delta","index":2,"delta":{"type":"input_json_delta","partial_json":"{"}}
+
+            event:content_block_delta
+            data:{"type":"content_block_delta","index":2,"delta":{"type":"input_json_delta","partial_json":"\"a\": 3"}}
+
+            event:content_block_delta
+            data:{"type":"content_block_delta","index":2,"delta":{"type":"input_json_delta","partial_json":", \"b\": 4}"}}
+
+            event:content_block_stop
+            data:{"type":"content_block_stop","index":2}
+
+            event:message_delta
+            data:{"type":"message_delta","delta":{"stop_reason":"tool_use","stop_sequence":null},"usage":{"input_tokens":457,"output_tokens":108,"cache_creation_input_tokens":0,"cache_read_input_tokens":0,"prompt_tokens_details":{"cached_tokens":0}}}
+
+            event:message_stop
+            data:{"type":"message_stop"}
+
+        headers:
+            Content-Type:
+                - text/event-stream; charset=utf-8
+        status: 200 OK
+        code: 200
+        duration: 0s
+    - id: 1
+      request:
+        proto: HTTP/1.1
+        proto_major: 1
+        proto_minor: 1
+        content_length: 1444
+        host: ""
+        body: '{"max_tokens":384000,"messages":[{"content":[{"text":"In one reply, call add with a=1 and b=2 and also call mul with a=3 and b=4. Do not wait between them. After the results, reply with both numbers.","type":"text"}],"role":"user"},{"content":[{"signature":"","thinking":"The user wants both calls in one block, no waiting.","type":"thinking"},{"id":"toolu_710277b8051741649489f29c","input":{"a":1,"b":2},"name":"add","type":"tool_use"},{"id":"toolu_83c7fe971fc8448c8dd8f417","input":{"a":3,"b":4},"name":"mul","type":"tool_use"}],"role":"assistant"},{"content":[{"content":[{"text":"3","type":"text"}],"tool_use_id":"toolu_710277b8051741649489f29c","type":"tool_result"},{"content":[{"text":"12","type":"text"}],"tool_use_id":"toolu_83c7fe971fc8448c8dd8f417","type":"tool_result"}],"role":"user"}],"model":"deepseek-v4.1-flash","output_config":{"effort":"medium"},"tools":[{"description":"Return the given text unchanged.","input_schema":{"properties":{"text":{"description":"The text to return.","type":"string"}},"required":["text"],"type":"object"},"name":"echo"},{"description":"Add two numbers and return a + b.","input_schema":{"properties":{"a":{"type":"number"},"b":{"type":"number"}},"required":["a","b"],"type":"object"},"name":"add"},{"description":"Multiply two numbers and return a * b.","input_schema":{"properties":{"a":{"type":"number"},"b":{"type":"number"}},"required":["a","b"],"type":"object"},"name":"mul"}],"stream":true}'
+        headers:
+            Anthropic-Version:
+                - "2023-06-01"
+            Content-Type:
+                - application/json
+        url: https://token-plan.ap-southeast-1.maas.aliyuncs.com/apps/anthropic/v1/messages
+        method: POST
+      response:
+        proto: HTTP/2.0
+        proto_major: 2
+        proto_minor: 0
+        content_length: -1
+        body: |+
+            event:ping
+            data:{"type":"ping"}
+
+            event:message_start
+            data:{"type":"message_start","message":{"id":"msg_9536da18-a20d-46dd-8958-0afad1406baf","type":"message","role":"assistant","model":"deepseek-v4.1-flash","content":[],"stop_reason":null,"stop_sequence":null,"usage":{"input_tokens":151,"output_tokens":0}}}
+
+            event:content_block_start
+            data:{"type":"content_block_start","index":0,"content_block":{"type":"text","text":""}}
+
+            event:content_block_delta
+            data:{"type":"content_block_delta","index":0,"delta":{"type":"text_delta","text":"Both results:"}}
+
+            event:content_block_delta
+            data:{"type":"content_block_delta","index":0,"delta":{"type":"text_delta","text":" **"}}
+
+            event:content_block_delta
+            data:{"type":"content_block_delta","index":0,"delta":{"type":"text_delta","text":"3** ("}}
+
+            event:content_block_delta
+            data:{"type":"content_block_delta","index":0,"delta":{"type":"text_delta","text":"1"}}
+
+            event:content_block_delta
+            data:{"type":"content_block_delta","index":0,"delta":{"type":"text_delta","text":" + 2) and **"}}
+
+            event:content_block_delta
+            data:{"type":"content_block_delta","index":0,"delta":{"type":"text_delta","text":"12** (3 × "}}
+
+            event:content_block_delta
+            data:{"type":"content_block_delta","index":0,"delta":{"type":"text_delta","text":"4)."}}
+
+            event:content_block_stop
+            data:{"type":"content_block_stop","index":0}
+
+            event:message_delta
+            data:{"type":"message_delta","delta":{"stop_reason":"end_turn","stop_sequence":null},"usage":{"input_tokens":587,"output_tokens":23,"cache_creation_input_tokens":0,"cache_read_input_tokens":0,"prompt_tokens_details":{"cached_tokens":0}}}
+
+            event:message_stop
+            data:{"type":"message_stop"}
+
+        headers:
+            Content-Type:
+                - text/event-stream; charset=utf-8
+        status: 200 OK
+        code: 200
+        duration: 0s
