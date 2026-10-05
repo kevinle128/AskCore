@@ -21,8 +21,8 @@ const (
 
 // Config is the fixed configuration of an Agent. Stream is required.
 type Config struct {
-	// LoopConfig goes to every run. The Agent installs its own
-	// PrepareRequest in front of Hooks.PrepareRequest.
+	// LoopConfig goes to every run. The Agent composes its own PrepareRequest
+	// in front of Hooks.PrepareRequest.
 	LoopConfig
 	SystemPrompt string
 	// Tools is nil when the agent has no tools. Its declarations are read

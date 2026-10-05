@@ -17,27 +17,15 @@ type ContextSource interface {
 	Messages() []protocol.Message
 }
 
-// projectContext returns the PrepareRequest of a run: the request context
-// becomes the system message plus src.Messages(), then the user hook runs on
-// that projection and its update wins.
-func projectContext(src ContextSource, system []protocol.Message, user func(context.Context, pipeline.Request) (*pipeline.RequestUpdate, error)) func(context.Context, pipeline.Request) (*pipeline.RequestUpdate, error) {
-	return func(ctx context.Context, r pipeline.Request) (*pipeline.RequestUpdate, error) {
-		r.Context.Messages = append(slices.Clip(system), src.Messages()...)
-		projected := &pipeline.RequestUpdate{Context: &r.Context}
-		if user == nil {
-			return projected, nil
-		}
-		upd, err := user(ctx, r)
-		if err != nil {
-			return nil, err
-		}
-		if upd == nil {
-			return projected, nil
-		}
-		merged := *upd
-		if merged.Context == nil {
-			merged.Context = projected.Context
-		}
-		return &merged, nil
+// projectContext returns the hooks of the run that project the log into every
+// request: the request context becomes the system message plus src.Messages().
+// The Agent composes them in front of the user hooks, so a user hook sees the
+// projected context.
+func projectContext(src ContextSource, system []protocol.Message) pipeline.Hooks {
+	return pipeline.Hooks{
+		PrepareRequest: func(_ context.Context, r pipeline.Request) (*pipeline.RequestUpdate, error) {
+			r.Context.Messages = append(slices.Clip(system), src.Messages()...)
+			return &pipeline.RequestUpdate{Context: &r.Context}, nil
+		},
 	}
 }

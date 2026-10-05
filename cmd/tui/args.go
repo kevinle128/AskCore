@@ -5,6 +5,7 @@ import (
 	"slices"
 	"strings"
 
+	"AskCore/internal/providers/tokenplan"
 	"AskCore/pkg/protocol"
 )
 
@@ -141,11 +142,15 @@ func parseArgs(argv []string) (options, []diagnostic) {
 		}
 	}
 
-	if o.apiKey != "" && o.model == "" {
+	if o.apiKey != "" && o.model == "" && o.provider != tokenplan.ProviderID {
 		fail("--api-key requires a model to be specified via --model")
 	}
 	if o.model == "" {
-		o.model = defaultModel
+		if o.provider == tokenplan.ProviderID {
+			o.model = tokenplan.ModelID
+		} else {
+			o.model = defaultModel
+		}
 	}
 	return o, diags
 }
@@ -158,8 +163,8 @@ Usage:
 Options:
   --print, -p           Non-interactive mode: run the prompt, print the reply and exit
   --mode <mode>         Output mode: text (default) or json
-  --provider <name>     Provider name (default: faux)
-  --model <id>          Model id (default: faux-1)
+  --provider <name>     Provider name: faux (default) or alibaba-token-plan
+  --model <id>          Model id (default: faux-1, or deepseek-v4.1-flash for alibaba-token-plan)
   --api-key <key>       API key for the provider (requires --model)
   --thinking <level>    Thinking level: off, minimal, low, medium, high, xhigh, max
   --                    End option parsing; the rest are messages and @files

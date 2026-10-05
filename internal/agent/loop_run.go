@@ -91,6 +91,12 @@ type loop struct {
 	ac          pipeline.AgentContext
 	newMessages []protocol.Message
 	emit        Emit
+	// pending holds the messages that the next turn adds before its request.
+	pending []protocol.Message
+	// turns counts completed turns. The first turn has its turn_start from
+	// Run or Continue.
+	turns int
+	ts    turnState
 }
 
 func newLoop(ctx context.Context, ac pipeline.AgentContext, cfg LoopConfig, emit Emit) *loop {
@@ -99,121 +105,50 @@ func newLoop(ctx context.Context, ac pipeline.AgentContext, cfg LoopConfig, emit
 	return &loop{ctx: ctx, cfg: cfg, ac: ac, emit: emit}
 }
 
-// run is Pi's runLoop. The outer loop picks up follow-up messages after the
-// agent would stop; the inner loop runs while tool calls or steering
-// messages are pending.
+// run is Pi's runLoop. A turn is the list of turnStages. The driver reads the
+// flow of the last stage: flowNextTurn starts another turn at once (Pi's inner
+// loop); flowIdle and flowIdleContinue check follow-up messages after the
+// agent would stop (Pi's outer loop).
 func (l *loop) run() error {
-	var lastCompletedTurn *pipeline.Turn
-	explicitContinuation := false
-	pending, err := l.poll(l.cfg.Hooks.GetSteeringMessages)
-	if err != nil {
+	var err error
+	if l.pending, err = l.pollSteering(); err != nil {
 		return err
 	}
-
 	for {
-		hasMoreToolCalls := true
-		for hasMoreToolCalls || len(pending) > 0 {
-			if lastCompletedTurn != nil {
-				// Only poll again if the earlier poll was empty, so a
-				// one-at-a-time queue never delivers two messages in a turn.
-				if len(pending) == 0 {
-					if pending, err = l.poll(l.cfg.Hooks.GetSteeringMessages); err != nil {
-						return err
-					}
-				}
-				if err := l.emit(&protocol.TurnStart{}); err != nil {
-					return err
-				}
-			}
-
-			for _, m := range pending {
-				if err := l.emitMessage(m); err != nil {
-					return err
-				}
-				l.ac.Messages = append(l.ac.Messages, m)
-				l.newMessages = append(l.newMessages, m)
-			}
-
-			if err := l.prepareRequest(); err != nil {
-				return err
-			}
-			msg, err := l.streamAssistantResponse()
-			if err != nil {
-				return err
-			}
-			l.newMessages = append(l.newMessages, msg)
-
-			if msg.StopReason == protocol.StopError || msg.StopReason == protocol.StopAborted {
-				lastCompletedTurn = l.turn(msg, []protocol.ToolResultMessage{})
-				if _, err := l.finishTurn(*lastCompletedTurn); err != nil {
-					return err
-				}
-				return l.emitAll(
-					&protocol.TurnEnd{Message: msg, ToolResults: []protocol.ToolResultMessage{}},
-					&protocol.AgentEnd{Messages: slices.Clip(l.newMessages)},
-				)
-			}
-
-			toolResults := []protocol.ToolResultMessage{}
-			hasMoreToolCalls = false
-			if calls := toolCalls(msg); len(calls) > 0 {
-				var batch toolBatch
-				if msg.StopReason == protocol.StopLength {
-					batch, err = l.failTruncatedToolCalls(calls)
-				} else {
-					batch, err = l.executeToolCalls(msg, calls)
-				}
-				if err != nil {
-					return err
-				}
-				toolResults = batch.messages
-				hasMoreToolCalls = !batch.terminate
-				for _, r := range toolResults {
-					l.ac.Messages = append(l.ac.Messages, r)
-					l.newMessages = append(l.newMessages, r)
-				}
-			}
-
-			lastCompletedTurn = l.turn(msg, toolResults)
-			decision, err := l.finishTurn(*lastCompletedTurn)
-			if err != nil {
-				return err
-			}
-			if err := l.emit(&protocol.TurnEnd{Message: msg, ToolResults: toolResults}); err != nil {
-				return err
-			}
-			if decision == pipeline.End {
-				return l.emit(&protocol.AgentEnd{Messages: slices.Clip(l.newMessages)})
-			}
-
-			explicitContinuation = decision == pipeline.Continue
-			if pending, err = l.poll(l.cfg.Hooks.GetSteeringMessages); err != nil {
-				return err
-			}
-			if hasMoreToolCalls || len(pending) > 0 {
-				explicitContinuation = false
-			}
+		f, err := l.runTurn()
+		if err != nil {
+			return err
 		}
-
-		followUps, err := l.poll(l.cfg.Hooks.GetFollowUpMessages)
+		switch f {
+		case flowNextTurn:
+			continue
+		case flowEndRun:
+			return l.endRun()
+		}
+		followUps, err := l.pollFollowUps()
 		if err != nil {
 			return err
 		}
 		if len(followUps) > 0 {
-			explicitContinuation = false
-			pending = followUps
+			l.pending = followUps
 			continue
 		}
 		// No natural request was selected, so the continuation decision gets
 		// one request with the current context.
-		if explicitContinuation {
-			explicitContinuation = false
+		if f == flowIdleContinue {
 			continue
 		}
-		break
+		return l.endRun()
 	}
+}
 
-	return l.emit(&protocol.AgentEnd{Messages: slices.Clip(l.newMessages)})
+// pollSteering and pollFollowUps are the only readers of the queue hooks.
+func (l *loop) pollSteering() ([]protocol.Message, error) {
+	return l.poll(l.cfg.Hooks.GetSteeringMessages)
+}
+
+func (l *loop) pollFollowUps() ([]protocol.Message, error) {
+	return l.poll(l.cfg.Hooks.GetFollowUpMessages)
 }
 
 func (l *loop) poll(hook func(context.Context) ([]protocol.Message, error)) ([]protocol.Message, error) {
@@ -263,10 +198,11 @@ func (l *loop) turn(msg protocol.AssistantMessage, results []protocol.ToolResult
 }
 
 func (l *loop) finishTurn(t pipeline.Turn) (pipeline.TurnDecision, error) {
-	if l.cfg.Hooks.FinishTurn == nil {
+	hook := l.cfg.Hooks.FinishTurn
+	if hook == nil {
 		return pipeline.Proceed, nil
 	}
-	return l.cfg.Hooks.FinishTurn(l.ctx, t)
+	return hook(l.ctx, t)
 }
 
 // context is the view of the run context that hooks get. The clipped slice

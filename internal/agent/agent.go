@@ -168,13 +168,18 @@ func (a *Agent) execute(r *run, start loopFunc) error {
 	system := initialSystemMessage(a.cfg.SystemPrompt, a.cfg.Tools)
 	ac := pipeline.AgentContext{Messages: append(slices.Clip(system), r.source.Messages()...), Tools: a.cfg.Tools}
 	cfg := a.cfg.LoopConfig
-	cfg.Hooks.PrepareRequest = projectContext(r.source, system, cfg.Hooks.PrepareRequest)
 	if cfg.Options.SessionID == "" {
 		cfg.Options.SessionID = a.cfg.SessionID
 	}
 	emit := func(ev protocol.Event) error { return a.emit(r, ev) }
 
-	err := runGuarded(func() error { return start(r.ctx, ac, cfg, emit) })
+	// A Compose error takes the same failure path as a loop that fails
+	// before its first event, so agent_settled still ends the run.
+	hooks, err := pipeline.Compose(projectContext(r.source, system), cfg.Hooks)
+	if err == nil {
+		cfg.Hooks = hooks
+		err = runGuarded(func() error { return start(r.ctx, ac, cfg, emit) })
+	}
 	if err != nil {
 		a.fail(r, err, emit)
 	}

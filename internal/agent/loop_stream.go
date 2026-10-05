@@ -11,34 +11,22 @@ import (
 // assistant message. The message is in the run context when it returns: the
 // seed of the start event is appended and the final message replaces it.
 func (l *loop) streamAssistantResponse() (protocol.AssistantMessage, error) {
-	hooks := l.cfg.Hooks
-	msgs := l.context().Messages
-	var err error
-	if hooks.TransformContext != nil {
-		if msgs, err = hooks.TransformContext(l.ctx, msgs); err != nil {
-			return protocol.AssistantMessage{}, err
-		}
+	msgs, err := l.transformContext(l.context().Messages)
+	if err != nil {
+		return protocol.AssistantMessage{}, err
 	}
-	var llm []protocol.Message
-	if hooks.ConvertToLLM != nil {
-		if llm, err = hooks.ConvertToLLM(msgs); err != nil {
-			return protocol.AssistantMessage{}, err
-		}
-	} else {
-		llm = providers.ConvertToLLM(msgs)
+	llm, err := l.convertToLLM(msgs)
+	if err != nil {
+		return protocol.AssistantMessage{}, err
 	}
 	req := providers.NormalizeRequest(providers.Request{Messages: llm})
 
 	opts := l.cfg.Options
-	if hooks.GetAPIKey != nil {
-		key, err := hooks.GetAPIKey(l.ctx, l.cfg.Model.Provider)
-		if err != nil {
-			return protocol.AssistantMessage{}, err
-		}
-		if key != "" {
-			opts.APIKey = key
-		}
+	key, err := l.apiKey()
+	if err != nil {
+		return protocol.AssistantMessage{}, err
 	}
+	opts.APIKey = key
 
 	// The stream gets its own cancel so that an emit failure can stop the
 	// producer before the channel is drained.
@@ -84,4 +72,39 @@ func (l *loop) streamAssistantResponse() (protocol.AssistantMessage, error) {
 		}
 	}
 	return final, l.emit(&protocol.MessageEnd{Message: final})
+}
+
+// transformContext, convertToLLM and apiKey are the only readers of their
+// hooks. Each keeps the default of a nil hook.
+func (l *loop) transformContext(msgs []protocol.Message) ([]protocol.Message, error) {
+	hook := l.cfg.Hooks.TransformContext
+	if hook == nil {
+		return msgs, nil
+	}
+	return hook(l.ctx, msgs)
+}
+
+func (l *loop) convertToLLM(msgs []protocol.Message) ([]protocol.Message, error) {
+	hook := l.cfg.Hooks.ConvertToLLM
+	if hook == nil {
+		return providers.ConvertToLLM(msgs), nil
+	}
+	return hook(msgs)
+}
+
+// apiKey returns the key for the next request. An empty key from the hook
+// falls back to the configured one.
+func (l *loop) apiKey() (string, error) {
+	hook := l.cfg.Hooks.GetAPIKey
+	if hook == nil {
+		return l.cfg.Options.APIKey, nil
+	}
+	key, err := hook(l.ctx, l.cfg.Model.Provider)
+	if err != nil {
+		return "", err
+	}
+	if key == "" {
+		return l.cfg.Options.APIKey, nil
+	}
+	return key, nil
 }

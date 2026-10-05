@@ -2,7 +2,8 @@
 
 Date: 2026-09-30, revision 3 (the review and its re-check are applied). The review in `plans/reports/code-reviewer-260930-2254-roadmap-review.md` is applied; section 8 maps each finding to its fix.
 Revision 4 (2026-10-01): the H2 port analysis `plans/reports/xia-261001-h2-agent-loop-pi-port-analysis.md` is applied (D18 to D21, and the H2, H3, H9 text).
-Reference: Pi 0.99.1, commit `2bbfcca4`, at `/Users/dale/Desktop/workspace/opensources/pi`.
+Revision 5 (2026-10-05): the H4 port analysis `plans/reports/xia-261005-1408-h4-more-wire-apis-pi-port-analysis.md` and the user decisions recorded there are applied (D11, D22, H1, H3, H4, H9, H17 text, and section 9).
+Reference: Pi 1.0.1, commit `4c6fb7cfe`, at `/Users/dale/Desktop/workspace/opensources/pi` (user, 2026-10-05; before that Pi 0.99.1, commit `2bbfcca4`). Line citations written before 2026-10-05 are at `2bbfcca4`. Each phase checks and fixes the citations it uses.
 Inputs: `inventory-harness.md` (H-*), `inventory-extensions.md` (E-*), `inventory-tui.md` (T-*), `timeline.md`, the edge-case report `plans/reports/researcher-260930-2254-pi-edge-cases.md` (E§N; the top-30 list is E§24#N), and the waku report `plans/reports/researcher-260930-2254-waku-watch-it-think.md`.
 
 ## 0. How to read this roadmap
@@ -41,7 +42,7 @@ The user answers these one per turn, in this order. Each blocked phase starts wi
 | D8 | Windows and WSL at launch | H5, T1 | Yes or no | **Decided (user rule "must have first", 2026-10-01): no.** Unix only at launch (macOS, Linux). Windows, WSL and PowerShell are later. |
 | D9 | Anthropic OAuth with Claude Code identity headers | H7 (precedence), H17 (flows) | **A:** API keys only. **B:** copy Pi's OAuth identity. | **Decided (must have first): A, API keys only.** Anthropic OAuth with Claude Code identity is not built. |
 | D10 | Crash-resume in the middle of a turn | H8 | **A:** no (Pi's shipping behavior). **B:** yes (Pi's experimental v4 and `durable`). | **Decided (must have first): A, no crash-resume.** Keep the session schema open for it. |
-| D11 | Retry jitter | H9 | **A:** copy Pi (no jitter, `AI:utils/retry.ts:122-126`). **B:** full jitter. | **Decided (must have first): A, copy Pi (no jitter)** for now; add jitter when many sessions share one daemon. |
+| D11 | Retry jitter | H9 | **A:** copy Pi (no jitter, `AI:utils/retry.ts:122-126`). **B:** full jitter. | **Decided (must have first): A, copy Pi (no jitter)** for now; add jitter when many sessions share one daemon. Scope (2026-10-05): this is the agent-level retry delay. Pi's provider-level retry has jitter (`AI:utils/provider-retry.ts:66`), but it is off while provider `maxRetries` is 0, which is the Ask default. |
 | D12 | "Watch it think" (from waku-agent) | H12, W1, T2 | **Decided (user, 2026-09-30):** a read-only web monitoring dashboard served by the daemon, plus a TUI inspector and OTel export. The web has no chat and no control. | Done. The docs rule is narrowed. |
 | D13 | External-extension runtime (internal extensions are compiled-in Go, decided) | X1 | **A:** stdio JSON-RPC subprocess in any language. **B:** Go source that Ask builds on load into a separate binary, cached, over stdio (needs the Go toolchain). **C:** TypeScript through esbuild (Go library) + goja, in process (closest to Pi; no Node APIs, no isolation). **D:** WASM (wazero), sandboxed. Options can be layered. | **Decided (user, 2026-10-01): B only.** External extensions are Go source. Ask builds each one on load (`go build`, cached by content hash) into a separate binary and runs it as a child process over stdio. The stdio protocol exists as the transport, but Go through the `pkg/` SDK is the only supported way to write one. TypeScript (C) and WASM (D) are not planned. A machine without the Go toolchain gets no external extensions; skills, templates, MCP and shell hooks still work there. |
 | D14 | bubbletea v2.0.10 pin with a repo-wide Go 1.26.0; how inline scrollback is written | T1 | **Pin:** A: v2. B: stay on v1. **Committer route**, if the T0 gate needs more than the five kiln-class fixes: (a) a raw-write scrollback committer, or (b) a vendored bubbletea/ultraviolet fork. | Open. v2 is a recommendation, not a pin, until the M1 T0 gate (G1, G2, G3, G6) passes. The Go part is settled: the repo is on Go 1.27.0 since D22 (2026-10-01), which is above v2's 1.26.0 floor. |
@@ -52,7 +53,7 @@ The user answers these one per turn, in this order. Each blocked phase starts wi
 | D19 | Abort in the middle of a tool batch | H2, H3 | **A:** deviate: every unstarted call gets "Operation aborted". **B:** as Pi: prepared calls get "Operation aborted"; calls after the break point get no events and no result; the loop makes one more stream call with the aborted signal; `transformMessages` (H3) synthesizes "No result provided" at replay. | **Decided (user, 2026-10-01): B, as Pi** (`A:agent-loop.ts:575-577,613-643`; `AI:api/transform-messages.ts:158-180`). The H2 pairing test covers the loop part only. The full pairing test after abort is in H3. |
 | D20 | Hook and stream failure contract | H2 | **A:** recover inside the loop. **B:** as Pi. | **Decided (user, 2026-10-01): B, as Pi.** A throw or panic in a tool, `prepareArguments`, validation, `beforeToolCall` or `afterToolCall` becomes an error tool result (`A:agent-loop.ts:769-775,841-847,892-895`). An error from `transformContext`, `convertToLlm`, `getApiKey`, `prepareRequest`, `finishTurn` or the stream function is not caught by the loop. The loop returns it, and the `Agent` wrapper builds the error assistant message plus `message_start`, `message_end`, `turn_end` and `agent_end` (`A:agent.ts:523-548`). |
 | D21 | Tool argument coercion | H2 | Pi runs TypeBox `Value.Convert` for TypeBox schemas and a custom table (`AI:utils/validation.ts:59-131`) for plain JSON schemas. Ask has only JSON schemas. | **Decided (user, 2026-10-01):** one Go coercion table for all schemas, based on Pi's custom table plus the union rule (an arm that already validates is kept). No truncation of floats to integers (TypeBox turns `"5.7"` into 5; Ask does not). |
-| D22 | Provider wire layer | H2 (Go version), H3, H4, H17 | **A:** Ask's own adapters over HTTP and the H1 SSE reader (Pi's way). **B:** `charm.land/fantasy` (Apache-2.0, v0.45.2, needs Go 1.27.0) behind one Ask adapter. | **Decided (user, 2026-10-01): B.** Go is raised to 1.27.0 (done: build, `go test ./...` and `golangci-lint` pass; a scratch copy with fantasy v0.45.2 also passes `go test -race ./...` and lint). Ask's `pkg/protocol` messages and `providers.Stream` stay the core contract. One adapter maps Ask messages to `fantasy.Call` and `fantasy.StreamPart` to the H1 `Assembler`. Fantasy types never leave that adapter package. Fantasy's own agent loop, retry and tool runner are not used: the loop is H2, retry is H9 (fantasy's Anthropic provider leaves the SDK's default retries on, so the adapter must turn them off). `transformMessages` stays in Ask (H3). The H1 SSE reader stays unused unless a provider needs it. The dependency is added by the first PR that imports it. **Placement (user, 2026-10-02, option A):** the fantasy adapter is built in H3, not H2. H2 runs on faux only. |
+| D22 | Provider wire layer | H2 (Go version), H3, H4, H17 | **A:** Ask's own adapters over HTTP and the H1 SSE reader (Pi's way). **B:** `charm.land/fantasy` (Apache-2.0, v0.45.2, needs Go 1.27.0) behind one Ask adapter. | **Decided (user, 2026-10-01): B.** Go is raised to 1.27.0 (done: build, `go test ./...` and `golangci-lint` pass; a scratch copy with fantasy v0.45.2 also passes `go test -race ./...` and lint). Ask's `pkg/protocol` messages and `providers.Stream` stay the core contract. One adapter maps Ask messages to `fantasy.Call` and `fantasy.StreamPart` to the H1 `Assembler`. Fantasy types never leave that adapter package. Fantasy's own agent loop, retry and tool runner are not used: the loop is H2, retry is H9 (fantasy v0.45.2 already sets the SDK retries to 0 in its Anthropic and OpenAI providers, `providers/anthropic/anthropic.go:277`, `providers/openai/openai.go:168`; keep a lock-in test). `transformMessages` stays in Ask (H3). The H1 SSE reader stays unused unless a provider needs it. The dependency is added by the first PR that imports it. **Placement (user, 2026-10-02, option A):** the fantasy adapter is built in H3, not H2. H2 runs on faux only. **Update (user, 2026-10-05):** (1) Fantasy v0.45.2 cannot replay OpenAI Responses reasoning statelessly. The user chose to patch fantasy ("sửa fantasy, chúng ta có source mà"), so D22 stays. Ask uses the fork through `replace charm.land/fantasy => github.com/kevinle128/fantasy <pseudo-version>` in `go.mod` (a local `go.work` is allowed during fork work). The fork already has `bff4512` (inline reasoning replay with `store:false`, encrypted content from `output_item.done`), `76fdec8` (Chat stream must end with `finish_reason`) and `9a5405c` (Anthropic large tool numbers). Fork work still open: F1 message item id and `phase` on replay, F2 function-call item id, F3 Responses `ExtraBody`, F4 status and raw reason on Responses stream errors, F8 the echoed `service_tier` (H4 port analysis, "State of the fantasy fork"). (2) Fantasy is infrastructure ("fantasy là ở tầng infrastructure, các adapter sử dụng cái gì là việc của adapter"). There is one adapter package for each wire API, named for what it serves: `internal/providers/anthropic/` and `internal/providers/openai/`. Each adapter chooses its own libraries. The shared fantasy plumbing (StreamPart-to-Assembler fold, idle timeout, error mapping, witness) is one infrastructure package, for example `internal/providers/fantasykit/`. A vendor such as Alibaba Token Plan is data (provider and model records), not a package. Core files in `internal/providers/*.go` and packages outside providers do not import fantasy or the vendor SDKs (depguard). |
 
 ## 2. Phase 0: architecture alignment (documentation only)
 
@@ -119,7 +120,7 @@ Rules behind this order (all checked by the review):
   - H-PROV-11 (stream completeness and the tolerant partial-JSON parser).
   - H-MODE-04, agent-core part.
 - **Also builds:**
-  - The `Usage` type in micro-USD integers. H9 owns H-RETRY-07.
+  - The `Usage` type in micro-USD integers. H4 owns the pricing part of H-RETRY-07, and H9 owns the rest.
   - The event envelope `seq`, `ts`, `sessionId`, `runId`, `type`, in `pkg/protocol`. `message_end` carries `usage`, `model` and `provider`. Changing the envelope later breaks every subscriber (waku report 7(a)).
   - An SSE reader without `bufio.Scanner`.
 - **Packages:** `providers` (types, SSE reader, faux provider), `pkg/protocol`.
@@ -194,7 +195,7 @@ Rules behind this order (all checked by the review):
 ### H3: The first real provider (Anthropic)
 
 - **Concept:** one internal message model, one adapter for each wire API.
-- **Wire layer (D22):** the wire APIs come from `charm.land/fantasy`. H3 builds the one Ask adapter (Ask messages to `fantasy.Call`, `fantasy.StreamPart` to the H1 `Assembler`) and uses it for Anthropic. H4 reuses the same adapter for OpenAI. The Pi adapter files below are read for behavior and quirks that the adapter must keep, not for HTTP code to port.
+- **Wire layer (D22):** the wire APIs come from `charm.land/fantasy`. H3 builds the `anthropic-messages` adapter (Ask messages to `fantasy.Call`, `fantasy.StreamPart` to the H1 `Assembler`) and the shared fantasy plumbing that H4 reuses for the OpenAI adapter (D22 update, 2026-10-05: one adapter for each wire API, shared code in one infrastructure package). The Pi adapter files below are read for behavior and quirks that the adapter must keep, not for HTTP code to port.
 - **Read in Pi:** `AI:types.ts:1056-1143`, `AI:api/anthropic-messages.ts`, `AI:env-api-keys.ts`, `AI:api/simple-options.ts`.
 - **Owns:**
   - H-PROV-01 (the Api/Provider/Model layers).
@@ -221,22 +222,51 @@ Rules behind this order (all checked by the review):
 
 ### H4: More wire APIs and cross-provider replay
 
-- **Waits on:** D6.
+- **Waits on:** D6 (decided B), D22 (updated 2026-10-05), and the fantasy fork work F1 to F4 and F8 that the Responses adapter needs.
 - **Concept:** "compatible" APIs hide real differences. Keep the quirks as data. Replay history across vendors.
-- **Read in Pi:** `AI:api/openai-completions.ts`, `AI:api/openai-responses.ts`, `AI:api/transform-messages.ts` (built in H3; H4 adds the per-vendor parts).
+- **Analysis:** `plans/reports/xia-261005-1408-h4-more-wire-apis-pi-port-analysis.md` and its five lane reports (`researcher-261005-1354-h4-*`). The edge-case lists there (Completions 38, Responses 36, replay scenarios S1 to S35) are the test source.
+- **Targets (user, 2026-10-05, option A):**
+  - `openai-completions`: Alibaba Token Plan at `https://token-plan.ap-southeast-1.maas.aliyuncs.com/compatible-mode/v1`, model `deepseek-v4.1-flash`, the same key as H3. A live probe on 2026-10-05 confirmed it: thinking in `reasoning_content`, `enable_thinking:false` turns it off, the `developer` role is rejected. Compat as Pi's `qwen-token-plan`: `thinkingFormat:"qwen"`, `supportsDeveloperRole:false`, `supportsStore:false`. Cost 0 (subscription).
+  - `openai-responses`: OpenAI `gpt-5.5`, key from `OPENAI_API_KEY` only (user, 2026-10-05, plain Pi name). Prices from OpenAI's price page.
+- **Read in Pi:** `AI:api/openai-completions.ts`, `AI:api/openai-responses.ts`, `AI:api/openai-responses-shared.ts`, `AI:api/openai-prompt-cache.ts`, `AI:api/transform-messages.ts` (built in H3; H4 adds the per-vendor parts), `AI:models.ts:1193-1247` (`calculateCost`, `clampThinkingLevel`), `C:core/agent-session.ts:2430-2637` (`setModel`, thinking re-clamp), `C:main.ts:827-834` (per-provider `--api-key`).
 - **Owns:**
   - H-PROV-03 (`openai-completions` with the compat record).
-  - H-PROV-04 (`openai-responses`).
+  - H-PROV-04 (`openai-responses`), including the `prompt_cache_key` from the session id.
   - H-PROV-10, cross-API part: the per-vendor tool-call id rules and the replay tests across all chosen APIs. The function itself is in H3 (user, 2026-10-01, option C).
   - H-PROV-21, in memory (switch model mid-conversation).
+  - H-AUTH-05, OpenAI part (`OPENAI_API_KEY`) and the Token Plan Completions key.
+  - H-PROV-26, OpenAI and Token Plan Completions quirk data.
+  - H-PROV-14, OpenAI part (`prompt_cache_key`, `prompt_cache_retention`).
+  - H-PROV-12, OpenAI part (the `thinkingLevelMap` data and the effort mapping for each API).
+  - H-RETRY-07, pricing part (user, 2026-10-05, "làm giống PI"): prices and `tiers` in the model record, one shared `calculateCost`, and the Responses service tier multiplier using the tier echoed in the response. H9 keeps the totals.
+- **Also builds:**
+  - Model record fields: `BaseURL`, `Headers`, `ThinkingLevelMap`, `Cost` with `Tiers`, `Compat` (Completions and Responses fields), `SamplingParams` (merge in H7). The record replaces `reasoningEffortMap` and `sendSessionIdHeader` with `thinkingLevelMap` and `compat.sessionAffinityFormat`.
+  - A provider registry that picks the stream function by `Model.API`, plus `Agent.SetModel` and `Agent.SetThinkingLevel` (auth check first, then re-clamp). The loop reads the model per request through the existing `PrepareRequest` hook.
+  - Thinking clamp as in Pi: only the clamped level is stored (user, 2026-10-05, option A). Until H6 settings exist, `high`, then a non-reasoning model, then back gives `off`.
+  - Per-provider API keys through the `GetAPIKey` hook. `--api-key` applies only to the initial provider. A key must never go to another provider's host.
+  - A guard against the openai-go SDK reading `OPENAI_BASE_URL`, `OPENAI_ORG_ID`, `OPENAI_PROJECT_ID`, `OPENAI_CUSTOM_HEADERS` and the other `OPENAI_*` variables on its own: always pass the key and base URL from the record, and remove the org, project and custom headers.
+  - Shared tool-call id normalizers (Anthropic, Completions, Responses) and a deterministic `shortHash`. No collision guard (user, 2026-10-05, follow Pi).
+  - Responses replay slots: the reasoning item JSON in `ThinkingSignature`, `{v:1,id,phase}` in `TextSignature`, `call_id|item_id` in `ToolCall.ID`. Port Pi `bc2d8dc1c`: drop the item id when the model differs or the prefix does not match the item type (`fc_` or `ctc_`).
+  - Per-wire rendering of mid-conversation system messages and tool deltas for Anthropic, Completions and Responses (user, 2026-10-05). H8 only creates the entries (H-LOOP-15).
+  - One session id per headless process for the prompt cache key. H8 replaces it.
+  - Error data for H9: status and body in the error text, the stream-end errors mapped to `ErrStreamIncomplete`, and the retry pattern `model is at capacity` (Pi `3874b3e98`).
+- **Packages:** `providers` (core types, registry, normalizers, `calculateCost`), `providers/openai` (new adapter), `providers/anthropic` (the H3 adapter, moved from `tokenplan`), `providers/fantasykit` (shared plumbing), `agent` (`SetModel`).
 - **Tests:**
-  - Replay across all chosen APIs (E§24#2, E§24#3).
-  - Stream completeness for each protocol (E§24#4).
+  - Replay across all chosen APIs (E§24#2, E§24#3), as offline golden-payload tests on the request JSON (scenarios S1 to S35, except S7 because there is no collision guard). The servers accept invalid input, so live acceptance proves little.
+  - Stream completeness for each protocol (E§24#4), with Pi's error texts.
+  - A golden test for each compat flag (role, token-limit field, `store`, `stream_options`, thinking format, `reasoning_effort` by map).
+  - Usage and cost: cached tokens subtracted, reasoning as a subset of output, the long-context tier, the service tier multiplier.
+  - The model switch, modeled on Pi `test/suite/agent-session-model-extension.test.ts`: two `httptest` servers and one agent that switches model between turns (S29); thinking re-clamp (S30 expects `off`); no key for the target fails before any change (S32).
+  - With `--api-key` set and a switch, the second server never sees the first key. With every `OPENAI_*` variable set, no org, project or custom header and no foreign base URL reaches the server.
+  - SDK retries stay 0 for the Completions and Responses clients (lock-in).
+  - A `goleak` test on a real `httptest` server for each adapter: after a normal end, after abort, and after an idle timeout. The adapters add no goroutine; they run inside the `providers.Stream` producer goroutine.
+  - One env-gated live test on Token Plan that switches between the Anthropic route and the Completions route with the same key (modeled on Pi `packages/ai/test/cross-provider-handoff.test.ts`). It is manual, because the Token Plan terms limit it to interactive use. A live Responses test runs only when `OPENAI_API_KEY` is set.
 - **Do not rebuild:**
   - `reasoningEffortMap` and `sendSessionIdHeader`.
   - Per-thinking-level model variants.
   - The Gemini CLI and Antigravity providers.
-- **Exit:** one in-memory conversation switches between Anthropic and OpenAI with correct thinking replay.
+  - The ChatGPT sign-in heuristic (`AI:api/openai-responses.ts:40-47`).
+- **Exit:** one in-memory conversation switches between Anthropic and OpenAI with correct thinking replay, shown by the Go tests above (user, 2026-10-05: tests only; the user-facing switch is H13 `set_model` and `/model`, and H17 `cycle_model`).
 
 ### H5: Built-in tools
 
@@ -354,7 +384,7 @@ Rules behind this order (all checked by the review):
   - H-LOOP-21 (`agent_settled` and the session events). H2 already emits a minimal `agent_settled` right after `agent_end` (D18). H9 moves it after retry, compaction and queued work, and adds `agent_end.willRetry`.
   - H-RETRY-01 to H-RETRY-04 (retry, with the patterns as data).
   - H-RETRY-06 (overflow detection).
-  - H-RETRY-07 (usage and cost with tiers).
+  - H-RETRY-07, except the pricing part, which H4 owns (user, 2026-10-05). H9 keeps the usage totals across turns and the usage entries.
   - H-RETRY-08, H-RETRY-09 (totals and the context-usage estimate).
   - H-RETRY-10 (P1, pulled: usage entries).
 - **Packages:** `agent`, `providers` (error classification), `scheduler` (lanes only).
@@ -566,8 +596,8 @@ Rules behind this order (all checked by the review):
 - **Concept:** breadth is data plus flows. Each new vendor is a compat record and quirk data. Each login is a flow with timeouts and fallbacks.
 - **Read in Pi:** `AI:auth/oauth/pkce.ts`, `AI:auth/oauth/callback-server.ts`, `AI:auth/oauth/device-code.ts`, `AI:api/bedrock-converse-stream.ts`, `AI:api/google-generative-ai.ts`, `CD:providers.md`.
 - **Owns:**
-  - H-PROV-05 (Bedrock, Google, Mistral), H-PROV-13 (thinking budgets), H-PROV-14 (other vendors), H-PROV-20 (scoped models and the `cycle_model` RPC).
-  - H-AUTH-04 (command keys), H-AUTH-05 (the other vendors), H-AUTH-06 (the P1 subset: ChatGPT and Copilot, plus Anthropic only if D9 = B; not legacy Codex), H-AUTH-07 (flow mechanics), H-AUTH-10 and H-SLASH-10 (`/login`, `/logout` as a gateway method, which T1 `/login` needs), H-AUTH-12 (proxy).
+  - H-PROV-05 (Bedrock, Google, Mistral), H-PROV-13 (thinking budgets), H-PROV-14 (vendors other than Anthropic and OpenAI), H-PROV-20 (scoped models and the `cycle_model` RPC).
+  - H-AUTH-04 (command keys), H-AUTH-05 (vendors other than Anthropic, OpenAI and Alibaba Token Plan), H-AUTH-06 (the P1 subset: ChatGPT and Copilot, plus Anthropic only if D9 = B; not legacy Codex), H-AUTH-07 (flow mechanics), H-AUTH-10 and H-SLASH-10 (`/login`, `/logout` as a gateway method, which T1 `/login` needs), H-AUTH-12 (proxy).
   - H-TOOL-20 (image resize).
   - H-PKG-05 (offline mode).
 - **Tests:**
@@ -690,7 +720,7 @@ Rules behind this order (all checked by the review):
 | Finding | Fix in this revision |
 |---|---|
 | B1: unauthenticated gateway | H13 "Security first", plus the print-mode no-listener test in H2 |
-| B2: P0 coverage | Ownership rule in section 0. H-LOOP-14 (H2, H11), H-TOOL-21 (H2, H3), H-PROV-10 (H3, H4), H-PROV-26 (H3), H-CONF-14 (H6), H-SLASH-01..03 (H10, H13), H-SEC-03 (H5). H-RETRY-07 is owned by H9 and H-SESS-04/05 by H1. |
+| B2: P0 coverage | Ownership rule in section 0. H-LOOP-14 (H2, H11), H-TOOL-21 (H2, H3), H-PROV-10 (H3, H4), H-PROV-26 (H3), H-CONF-14 (H6), H-SLASH-01..03 (H10, H13), H-SEC-03 (H5). H-RETRY-07 is owned by H9 (since 2026-10-05: the pricing part by H4) and H-SESS-04/05 by H1. |
 | B3: H9b stale | H12 and W1 filled in from the waku report. D12 decided by the user. The envelope is in H1. |
 | M1: forward dependencies | New phase order: settings before catalog and credentials; in-memory H2; two event layers; stubs in H6; the 429 test split between H9 and H10 |
 | M2: decision order | Section 1 renumbered by the phase each decision blocks. "Waits on" lines added. |
@@ -702,3 +732,26 @@ Rules behind this order (all checked by the review):
 | M8: D1 claim | D1 quotes confirmed decision 0. `pipeline` is kept. |
 | M9: deadline versus Pi | D4 scopes the departure |
 | Minor 1-12 | Applied: E§3 citation, abort range, session-event read, T0 location note, OAuth subset, tool unregister, server/client rules, tool-context struct, Ask names (D7), exits for X/T, cross-process session lock, pairing tests after compaction and fork |
+
+## 9. H4 port analysis decisions (2026-10-05)
+
+Source: `plans/reports/xia-261005-1408-h4-more-wire-apis-pi-port-analysis.md`. The user answered one question per turn. The text above is updated to match.
+
+| Question | Decision (user, 2026-10-05) | Where applied |
+|---|---|---|
+| H4 targets | A: Token Plan `/compatible-mode/v1` for `openai-completions`; OpenAI `gpt-5.5` for `openai-responses`. One live probe of the Token Plan route was approved and run. | H4 "Targets" |
+| Responses wire layer | Patch fantasy ("sửa fantasy, chúng ta có source mà"). D22 stays. | D22 update, H4 "Waits on" |
+| Fork use | (a) `go.mod` `replace` to `github.com/kevinle128/fantasy` | D22 update |
+| OpenAI key env name | (b) plain `OPENAI_API_KEY` only, as Pi. H3 keeps its two Token Plan names. | H4 "Targets" |
+| Thinking level on a switch | (a) as Pi: store only the clamped level | H4 "Also builds", test S30 |
+| Package shape | Fantasy is infrastructure. One adapter package for each wire API, shared plumbing in one infrastructure package, vendors as data. | D22 update, H3, H4 "Packages" |
+| Tool-call id collisions | (b) as Pi: no guard | H4 "Also builds", tests (S7 removed) |
+| Mid-conversation system messages | (a) H4 renders them on all three wires; H8 only creates the entries | H4 "Also builds" |
+| Cost | (c) as Pi: prices, tiers, `calculateCost` and service tier pricing in H4 | H1, H4, H9, section 8 |
+| Switch demo | (a) Go tests only, as Pi's agent-level tests | H4 "Exit" |
+| Pi reference | (a) move to `4c6fb7cfe` (v1.0.1) | Header |
+| Apply corrections | (a) roadmap, inventory, providers README and architecture reference | This revision |
+
+Upstream (user, 2026-10-05, option a): send each fantasy fix to `charmbracelet/fantasy` as a PR once it has tests and works in Ask; use the fork until upstream accepts it, then remove the `replace`.
+
+Fork scope (user, 2026-10-05): fix F1, F2, F3, F4 and F8 in the fork before H4 starts ("bao giờ xong thì mới bắt đầu làm H4"). The work is handed off to a Codex agent: brief `plans/reports/handoff-261005-1600-fantasy-fork-responses-fixes.md`, result report `plans/reports/codex-261005-fantasy-fork-responses-fixes.md`. F1 and F2 are not proven necessary by a live OpenAI test (no key yet). **Done 2026-10-05:** all five fixes are pushed (final SHA `08976763bfea`, commits `b8c979f`, `9a2008a`, `a855426`, `88f560d`, `0897676`). `replace charm.land/fantasy => github.com/kevinle128/fantasy v0.0.0-20261005094512-08976763bfea` is in `go.mod` (applied 2026-10-05 at the user's request; `go build`, `go test ./...`, `go test -race` on providers and agent, and golangci-lint pass; `go mod tidy` also moved `github.com/charmbracelet/x/exp/slice` to v0.1.0); the result report gives the adapter mapping for the new metadata types. **Upstream (2026-10-05):** PR #407 (closes #406) is restored to its six commits; the five Responses fixes are in issue #411 and PR #412 (depends on #407). Fork `main` and branch `feat/openai-responses-replay-metadata` both hold `08976763bfea`. Remove the `replace` when both PRs are merged and released.

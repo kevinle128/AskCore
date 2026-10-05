@@ -15,6 +15,7 @@ import (
 
 	"AskCore/internal/agent"
 	"AskCore/internal/providers"
+	"AskCore/internal/providers/tokenplan"
 	"AskCore/internal/tools"
 	"AskCore/pkg/protocol"
 )
@@ -119,15 +120,16 @@ func readPrompts(o options, stdin io.Reader, stdinTTY bool) ([]string, error) {
 	return buildPrompts(piped, files, o.messages), nil
 }
 
-// newHeadlessAgent builds the in-process agent with the echo tool. Faux is
-// the only provider until the real adapters land in H3.
+// newHeadlessAgent builds the in-process agent with the echo tool.
+// faux is the default. alibaba-token-plan is the H3 Token Plan adapter.
 func newHeadlessAgent(o options, getenv func(string) string) (*agent.Agent, error) {
-	if o.provider != defaultProvider {
-		return nil, fmt.Errorf("provider %q is not available until H3", o.provider)
-	}
-	stream, model, err := fauxStream(o.model, getenv)
+	stream, model, err := openProvider(o, getenv)
 	if err != nil {
 		return nil, err
+	}
+	reasoning := o.thinking
+	if o.provider == tokenplan.ProviderID && reasoning == "" {
+		reasoning = protocol.ThinkingMedium
 	}
 	reg := &tools.Registry{}
 	if err := reg.Register(tools.Echo{}, tools.SourceInfo{Kind: tools.SourceBuiltin}); err != nil {
@@ -141,7 +143,7 @@ func newHeadlessAgent(o options, getenv func(string) string) (*agent.Agent, erro
 		LoopConfig: agent.LoopConfig{
 			Model:   model,
 			Stream:  stream,
-			Options: providers.StreamOptions{Reasoning: o.thinking, APIKey: o.apiKey},
+			Options: providers.StreamOptions{Reasoning: reasoning, APIKey: o.apiKey},
 			Cwd:     cwd,
 		},
 		Tools: reg,

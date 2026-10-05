@@ -102,6 +102,36 @@ type AfterToolCallResult struct {
 	Terminate         *bool
 }
 
+// Apply returns res with the overrides of r and the new error flag. A nil r
+// returns the input unchanged. The loop and Compose both use it, so the
+// override rule has one copy.
+func (r *AfterToolCallResult) Apply(res protocol.ToolExecutionResult, isError bool) (protocol.ToolExecutionResult, bool) {
+	if r == nil {
+		return res, isError
+	}
+	if r.StructuredContent != nil {
+		res.StructuredContent = r.StructuredContent
+	} else if r.Content != nil {
+		res.StructuredContent = nil
+	}
+	if r.Content != nil {
+		res.Content = r.Content
+	}
+	if r.Details != nil {
+		res.Details = r.Details
+	}
+	if r.Usage != nil {
+		res.Usage = r.Usage
+	}
+	if r.Terminate != nil {
+		res.Terminate = r.Terminate
+	}
+	if r.IsError != nil {
+		isError = *r.IsError
+	}
+	return res, isError
+}
+
 // Hooks are the hook points of the agent loop, one function per point. A nil
 // field gives the default behavior.
 //

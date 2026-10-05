@@ -4,6 +4,8 @@ import (
 	"testing"
 
 	"github.com/stretchr/testify/assert"
+
+	"AskCore/internal/providers/tokenplan"
 )
 
 func TestArgs(t *testing.T) {
@@ -42,6 +44,15 @@ func TestArgs(t *testing.T) {
 			[]string{`Error: Invalid mode "x". Valid values: text, json`}},
 		{"--mode rpc is not an Ask mode", []string{"--mode", "rpc"}, base(nil), []string{`Error: Invalid mode "rpc". Valid values: text, json`}},
 		{"--provider", []string{"--provider", "openai"}, base(func(o *options) { o.provider = "openai" }), nil},
+		{"token plan defaults the model", []string{"--provider", tokenplan.ProviderID}, base(func(o *options) {
+			o.provider = tokenplan.ProviderID
+			o.model = tokenplan.ModelID
+		}), nil},
+		{"token plan api key does not need --model", []string{"--provider", tokenplan.ProviderID, "--api-key", "k"}, base(func(o *options) {
+			o.provider = tokenplan.ProviderID
+			o.model = tokenplan.ModelID
+			o.apiKey = "k"
+		}), nil},
 		{"--provider missing", []string{"--provider"}, base(nil), []string{"Error: --provider requires a value"}},
 		{"--model", []string{"--model", "faux-2"}, base(func(o *options) { o.model = "faux-2" }), nil},
 		{"--model missing", []string{"--model"}, base(nil), []string{"Error: --model requires a value"}},

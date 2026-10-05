@@ -398,3 +398,19 @@ A spiral re-scout for phase H1 checked these rows against the Pi source. Where a
 | H-MODE-05 | Cite the coding-agent changelog: 0.84.0 (delta only), 0.84.2 (top-level `usage`), 0.84.3 (`toolcall_start` id and name). The agent changelog has no entry. | CL lines 590, 527, 449 |
 | H-LOOP-16 | The `result()` fallback is at `A:agent-loop.ts:460`. Hazard: `EventStream.end()` without a result never resolves `result()`. | `AI:utils/event-stream.ts:26-89` |
 | (doc) | `SystemMessage.replace` exists only in `CD:message-types.md`. No code reads it. Do not port it. | grep of `ai/src`, `agent/src`, `coding-agent/src` |
+
+## 19. Corrections (2026-10-05)
+
+The H4 port analysis checked these rows against Pi `4c6fb7cfe` (v1.0.1, the new reference). Where a row above disagrees with this table, this table is correct. Evidence: `plans/reports/xia-261005-1408-h4-more-wire-apis-pi-port-analysis.md` section 6 and the lane reports `plans/reports/researcher-261005-1354-h4-*`.
+
+| Row | Correction | Evidence |
+|---|---|---|
+| H-PROV-03 | "Never URL heuristics" is the Ask rule, not Pi's behavior. Pi merges the model's compat data field by field over a URL and provider detection fallback. Ask decides in H7 whether custom endpoints get a fallback. | `AI:api/openai-completions.ts:1585-1726` |
+| H-PROV-04 | Providers also include `opencode`, `opencode-go` and `cloudflare-ai-gateway`. Pi has no "missing `output_index`" error. The rule is: a tool call that is not finished at completion is an error, and a delta without an index is skipped. The replay history has six main fixes, not five (`d327b9c76`, `b2548ce48`+`b21b42d03`, `8fc2b7682`/`b4e7d5c44`, `d1fb34bc8`, `8c9dbffa3`, `bc2d8dc1c`). Completions sends `prompt_cache_key` only for `api.openai.com` or long retention on a supporting vendor. | `AI:api/openai-responses-shared.ts:448-454,763-776`; `AI:api/openai-completions.ts:821-823` |
+| H-PROV-10 | Foreign thinking becomes plain text with no `<thinking>` tags. This applies to every target API. | `AI:api/transform-messages.ts:113-116` |
+| H-PROV-21 | Foreign thinking becomes plain text, not tagged text. "Cache lost" has no code in Pi; the provider cache simply misses on the first request after a switch. The code is at `C:core/agent-session.ts:2430-2450` (set) and `:2472-2553` (cycle). Pi stores only the clamped thinking level (Ask follows this, user 2026-10-05). | `C:core/agent-session.ts:2430-2637` |
+| H-PROV-14 | The OpenAI part (`prompt_cache_key`, `prompt_cache_retention`) is owned by H4, not H17. | roadmap H4 |
+| H-AUTH-05 | `AI:env-api-keys.ts` now has 195 lines: `getApiKeyEnvVars` at `:73`, the env map at `:84-111`, `getEnvApiKey` at `:153`. The OpenAI and Token Plan Completions keys are owned by H4. | `AI:env-api-keys.ts` |
+| H-RETRY-01 | "No jitter" is true for the agent-level delay only. The provider-level retry has jitter (x0.75 to x1.0) and honors `x-should-retry`. | `AI:utils/provider-retry.ts:24,66` |
+| H-RETRY-07 | The pricing part (prices, tiers, `calculateCost`, service tier multiplier with the echoed tier first) is owned by H4. The usage totals stay in H9. | roadmap H4, H9 |
+| H-TOOL-14 | `constrained-sampling.ts` converts tool schemas to strict JSON schema. Strict mode is off by default for both OpenAI APIs. | `AI:api/constrained-sampling.ts:1-60`; `AI:api/openai-responses.ts:88` |

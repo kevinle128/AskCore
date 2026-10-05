@@ -112,7 +112,7 @@ Ask has no `thirdparty/` folder. A vendor goes to the package of the capability 
 
 | Vendor kind | Location | Example |
 |---|---|---|
-| LLM API | `internal/providers/<vendor>*.go` | `anthropic.go`, `openai.go`, `acp/` |
+| LLM API | `internal/providers/<api>/`, one adapter for each wire API; a vendor is data (provider and model records) | `anthropic/`, `openai/`, `acp/`; shared fantasy plumbing in `fantasykit/` |
 | Chat platform | `internal/channels/<vendor>/` | `channels/telegram/` |
 | Backend of one tool | `internal/tools/<tool>_<vendor>.go` | `web_search_brave.go`, `web_search_tavily.go` |
 | Infrastructure client | its own package | `cache/` (Redis), `messaging/` (asynq), `sandbox/` (Docker) |
@@ -321,7 +321,7 @@ Allowed: `tools` imports `providers`.
 |---|---|---|
 | A new builtin tool | `internal/tools/<family>_*.go` | `tools.Tool`; add it to the `tools` fx group |
 | A new backend of a tool | `internal/tools/<tool>_<vendor>.go` | the tool's backend interface (for example `SearchProvider`) |
-| A new LLM vendor | `internal/providers/<vendor>*.go` | `providers.Provider` |
+| A new LLM vendor | its provider and model records (data); a new adapter `internal/providers/<api>/` only for a new wire API | `providers.Provider` for a new adapter |
 | A new chat platform | `internal/channels/<vendor>/` | `channels.Channel`, embed `BaseChannel` |
 | A new hook-point step of a turn | `internal/pipeline/<name>_step.go` | `pipeline.Step` |
 | A new session entry type | `internal/sessions/entry.go` | |

@@ -3,6 +3,7 @@ package main
 import (
 	"bufio"
 	"bytes"
+	"context"
 	"errors"
 	"io"
 	"os"
@@ -20,6 +21,7 @@ import (
 	"go.uber.org/goleak"
 
 	"AskCore/internal/agent"
+	"AskCore/internal/providers/tokenplan"
 	"AskCore/pkg/protocol"
 )
 
@@ -60,7 +62,7 @@ func TestPrint(t *testing.T) {
 		{"first prompt fails, second runs", "", []string{"-p", "fail boom", "second"}, result{"second\n", "", 0}},
 		{"last prompt fails", "", []string{"-p", "first", "fail late"}, result{"", "late\n", 1}},
 		{"unknown provider", "", []string{"--provider", "openai", "-p", "hi"},
-			result{"", "Error: provider \"openai\" is not available until H3\n", 1}},
+			result{"", "Error: provider \"openai\" is not available\n", 1}},
 		{"unknown model", "", []string{"--model", "gpt", "-p", "hi"},
 			result{"", "Error: model \"gpt\" not found for provider \"faux\"\n", 1}},
 		{"stdin joins the message", "a", []string{"-p", "b"}, result{"ab\n", "", 0}},
@@ -275,6 +277,29 @@ type gatedWriter struct {
 func (g *gatedWriter) Write(p []byte) (int, error) {
 	<-g.gate
 	return g.buf.Write(p)
+}
+
+func TestTokenPlanMissingKeyIsAnAssistantError(t *testing.T) {
+	ag, err := newHeadlessAgent(options{provider: tokenplan.ProviderID, model: tokenplan.ModelID}, func(k string) string {
+		if k == "ANTHROPIC_API_KEY" {
+			return "must-not-be-used"
+		}
+		return ""
+	})
+	require.NoError(t, err)
+	require.NoError(t, ag.Prompt(context.Background(), protocol.UserMessage{
+		Content: []protocol.UserBlock{protocol.Text{Text: "hi"}},
+	}))
+	msgs := ag.State().Messages
+	require.NotEmpty(t, msgs)
+	last, ok := msgs[len(msgs)-1].(protocol.AssistantMessage)
+	require.True(t, ok)
+	assert.Equal(t, protocol.StopError, last.StopReason)
+	require.NotNil(t, last.ErrorMessage)
+	assert.Contains(t, *last.ErrorMessage, "ASK_ALIBABA_TOKEN_PLAN_API_KEY")
+	assert.Contains(t, *last.ErrorMessage, "ALIBABA_TOKEN_PLAN_API_KEY")
+	require.NotNil(t, last.ThinkingLevel)
+	assert.Equal(t, protocol.ThinkingMedium, *last.ThinkingLevel)
 }
 
 func newAgent(t *testing.T, tps string) *agent.Agent {

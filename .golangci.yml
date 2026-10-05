@@ -67,6 +67,16 @@ linters:
           deny:
             - pkg: AskCore/internal/tools
               desc: tools may import providers, not the reverse
+        providers-no-fantasy:
+          list-mode: lax
+          files:
+            - "**/internal/providers/**"
+            - "!**/internal/providers/tokenplan/**"
+          deny:
+            - pkg: charm.land/fantasy
+              desc: only internal/providers/tokenplan may import fantasy
+            - pkg: github.com/anthropics/anthropic-sdk-go
+              desc: only internal/providers/tokenplan may import the Anthropic SDK
         store-no-implementation:
           list-mode: lax
           files:

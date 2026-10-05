@@ -8,6 +8,7 @@ import (
 
 	"AskCore/internal/providers"
 	"AskCore/internal/providers/faux"
+	"AskCore/internal/providers/tokenplan"
 	"AskCore/pkg/protocol"
 )
 
@@ -64,6 +65,33 @@ func fauxStream(modelID string, getenv func(string) string) (providers.StreamFn,
 		return p.Stream(ctx, m, req, opts)
 	}
 	return stream, m, nil
+}
+
+func openProvider(o options, getenv func(string) string) (providers.StreamFn, providers.Model, error) {
+	switch o.provider {
+	case defaultProvider:
+		return fauxStream(o.model, getenv)
+	case tokenplan.ProviderID:
+		return tokenPlanStream(o.model, getenv)
+	default:
+		return nil, providers.Model{}, fmt.Errorf("provider %q is not available", o.provider)
+	}
+}
+
+func tokenPlanStream(modelID string, getenv func(string) string) (providers.StreamFn, providers.Model, error) {
+	m := tokenplan.Model()
+	if modelID != "" && modelID != m.ID {
+		m.ID = modelID
+		m.Name = modelID
+	}
+	p := tokenplan.New(tokenplan.WithEnv(func(k string) (string, bool) {
+		v := getenv(k)
+		if v == "" {
+			return "", false
+		}
+		return v, true
+	}))
+	return p.Stream, m, nil
 }
 
 func blockText(blocks []protocol.UserBlock) string {
