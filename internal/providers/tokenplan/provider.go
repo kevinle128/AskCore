@@ -51,6 +51,27 @@ func Model() providers.Model {
 	}
 }
 
+// maxOutput holds the output limit of models whose limit differs from the
+// catalog row. The route answers HTTP 400 "Range of max_tokens should be
+// [1, 131072]" for qwen3.7-max above it.
+var maxOutput = map[string]int{
+	"qwen3.7-max": 131_072,
+}
+
+// ModelFor returns the catalog row with id as the model id. A known output
+// limit of that model replaces the row default.
+func ModelFor(id string) providers.Model {
+	m := Model()
+	if id == "" || id == m.ID {
+		return m
+	}
+	m.ID, m.Name = id, id
+	if limit, ok := maxOutput[id]; ok {
+		m.MaxTokens = limit
+	}
+	return m
+}
+
 type Option func(*config)
 
 type config struct {

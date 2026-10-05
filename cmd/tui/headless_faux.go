@@ -79,11 +79,7 @@ func openProvider(o options, getenv func(string) string) (providers.StreamFn, pr
 }
 
 func tokenPlanStream(modelID string, getenv func(string) string) (providers.StreamFn, providers.Model, error) {
-	m := tokenplan.Model()
-	if modelID != "" && modelID != m.ID {
-		m.ID = modelID
-		m.Name = modelID
-	}
+	m := tokenplan.ModelFor(modelID)
 	p := tokenplan.New(tokenplan.WithEnv(func(k string) (string, bool) {
 		v := getenv(k)
 		if v == "" {

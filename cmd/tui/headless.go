@@ -120,9 +120,14 @@ func readPrompts(o options, stdin io.Reader, stdinTTY bool) ([]string, error) {
 	return buildPrompts(piped, files, o.messages), nil
 }
 
-// newHeadlessAgent builds the in-process agent with the echo tool.
+// builtinTools are the tools that every headless agent registers.
+func builtinTools() []tools.Tool { return []tools.Tool{tools.Echo{}} }
+
+// newHeadlessAgent builds the in-process agent with the builtin tools, then
+// the extra tools. ask passes no extra tools; a test passes the tools its
+// scenario needs and still runs the same agent setup as ask.
 // faux is the default. alibaba-token-plan is the H3 Token Plan adapter.
-func newHeadlessAgent(o options, getenv func(string) string) (*agent.Agent, error) {
+func newHeadlessAgent(o options, getenv func(string) string, extra ...tools.Tool) (*agent.Agent, error) {
 	stream, model, err := openProvider(o, getenv)
 	if err != nil {
 		return nil, err
@@ -132,8 +137,16 @@ func newHeadlessAgent(o options, getenv func(string) string) (*agent.Agent, erro
 		reasoning = protocol.ThinkingMedium
 	}
 	reg := &tools.Registry{}
-	if err := reg.Register(tools.Echo{}, tools.SourceInfo{Kind: tools.SourceBuiltin}); err != nil {
-		return nil, err
+	for _, t := range builtinTools() {
+		if err := reg.Register(t, tools.SourceInfo{Kind: tools.SourceBuiltin}); err != nil {
+			return nil, err
+		}
+	}
+	// Extra tools do not ship with ask, so they are not marked builtin.
+	for _, t := range extra {
+		if err := reg.Register(t, tools.SourceInfo{Kind: tools.SourceExtension, Name: "injected"}); err != nil {
+			return nil, err
+		}
 	}
 	cwd, err := os.Getwd()
 	if err != nil {
