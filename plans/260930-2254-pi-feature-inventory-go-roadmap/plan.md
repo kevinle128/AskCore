@@ -81,7 +81,7 @@ Each lane scans its area in rings. It goes to the next ring only after the curre
 | 2026-10-01 | `transformMessages` = option C: the pure function, H-PROV-27 and the replay part of H-TOOL-21 move from H4 to H3, because the H3 Anthropic adapter is the first caller (`AI:api/anthropic-messages.ts:1057`). H4 keeps the per-vendor tool-call id rules and the cross-API replay tests. Source: `plans/261001-0836-h1-messages-events-faux/plan.md` section 6. |
 | 2026-10-05 | H4 port analysis (`plans/reports/xia-261005-1408-h4-more-wire-apis-pi-port-analysis.md`), one question per turn. Targets A: Token Plan `/compatible-mode/v1` for Completions (live probe run), OpenAI `gpt-5.5` for Responses. Patch fantasy ("sửa fantasy, chúng ta có source mà"); D22 stays; fork through a `go.mod` `replace` to `github.com/kevinle128/fantasy`. `OPENAI_API_KEY` only. Thinking level as Pi (clamped level only). Package shape: "fantasy là ở tầng infrastructure, các adapter sử dụng cái gì là việc của adapter": one adapter for each wire API, `fantasykit` for shared plumbing, vendors as data. No id-collision guard, as Pi. H4 renders mid-conversation system messages. Cost "làm giống PI" in H4. Switch shown by Go tests only. Pi reference moves to `4c6fb7cfe`. Roadmap revision 5, inventory section 19, providers README and architecture reference updated. |
 | 2026-10-06 | Distribute the provider interview across phases because H4 cannot deliver it all. H4 owns wire/replay; H5 Pi builtin contracts; H7 catalog/configuration and one-credential store; new H7a native Anthropic/ChatGPT/xAI auth, profiles and minimal headless login/logout after H7. H8/H9/H13 integrate persistence, retry and switching; H17/T2 retain breadth and full gateway/TUI auth. This supersedes Q1's H4 timing and the older API-key-only scope, not accepted behavior. |
-| 2026-09-30 | The user's goal is to learn how to build a harness. The roadmap puts harness features first. Extension and TUI phases come after the harness core. Each harness phase must teach one harness concept and end with a working, testable result. |
+| 2026-09-30 | The user's goal is to learn how to build a harness. Each harness phase must teach one harness concept and end with a working, testable result. The original backend-first order is superseded by revision 16: test the completed harness through the local TUI now, then integrate each remaining feature at its runnable TUI exit. |
 
 ## Verified findings (lock)
 
@@ -89,7 +89,7 @@ Each lane scans its area in rings. It goes to the next ring only after the curre
 
 ## Current provider planning
 
-[Roadmap revision 7](./roadmap.md) owns the current allocation: subscription delivery now precedes full H5-H7 because Alibaba Token Plan expires soon.
+[Roadmap revision 16](./roadmap.md#3-dependency-order) owns the current allocation: H7a subscription delivery is complete, and local Leader ACP plus TUI delivery comes next.
 [H7a execution detail](./phase-h7a-subscription-auth.md), its [deep TDD implementation plan](../261006-0157-h7a-subscription-auth/plan.md), and the [provider design](../261005-2139-provider-auth-design/plan.md) define subscription delivery.
 The H4 report is a cross-phase decision record, not an H4 implementation checklist.
 
@@ -118,3 +118,13 @@ The H4 report is a cross-phase decision record, not an H4 implementation checkli
 - A script checks the coverage: 110 of 110 P0 harness rows have an owner phase, and all 47 P1 rows are placed or deferred.
 - The user decides the next step, D1 to D15 in roadmap section 1, one per turn. A narrow re-check of revision 2 (review report, last section) found no blocker. Its consistency findings (decision order, "Waits on" lines, H14 to H17 content, forward uses) are fixed in revision 3. No code was written.
 - The acceptance criteria in this file are met. Exceptions: the "edge cases grouped by area" rows are keyword-based (lane C). The bubbletea inline behavior is not proven yet; the T0 gate proves it.
+
+## Next execution priority (2026-10-06)
+
+Use [roadmap revision 16](./roadmap.md#3-dependency-order): T0 → H13a → H13b → T1a.
+The local acceptance path is TUI → Leader → ACP → agent.
+[H7a](../261006-0157-h7a-subscription-auth/plan.md#current-execution-record) and [lifecycle](../261006-0933-lifecycle-event-pipeline-redesign/plan.md) record completed implementation.
+H4 verification is recorded in `master-2/plans/261006-0130-h4-verification/plan.md` and its linked audit report in the sibling worktree.
+Use those completed implementations for T1a; do not infer missing implementation from the older master scaffold.
+Integrate the remaining harness phases through T1b at each phase exit.
+All M1 features and M2 boundaries stay in scope as recorded in the roadmap.

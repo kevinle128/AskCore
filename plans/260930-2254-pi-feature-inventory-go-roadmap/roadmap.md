@@ -14,15 +14,18 @@ Revision 13 (2026-10-06): add D26 (user): admitted input is committed after requ
 Revision 14 (2026-10-06): after the source audit `plans/reports/review-261006-1104-deepseek-lifecycle-source-audit.md`: D19 reaffirmed (no drain bound), add D27 (input removal, non-waking added context), D28 (provider Prepare step for the D23 record), D29 (Dispose separate from abort). D29 queue handling corrected to "cleared", as DeepSeek (user, 2026-10-06).
 Revision 15 (2026-10-06): the lifecycle redesign is implemented (plan `261006-0933-lifecycle-event-pipeline-redesign`).
 The implemented control points, in-memory request reconstruction, queues, retry, tool outcomes, disposal, and follow path are removed from the remaining H8, H9, H11, and H12 work.
+Revision 16 (2026-10-06): prioritize the local Leader ACP and TUI path after completed H4, H7a and lifecycle work.
 Reference: Pi 1.0.1, commit `4c6fb7cfe`, at `/Users/dale/Desktop/workspace/opensources/pi` (user, 2026-10-05; before that Pi 0.99.1, commit `2bbfcca4`). Line citations written before 2026-10-05 are at `2bbfcca4`. Each phase checks and fixes the citations it uses.
 Inputs: `inventory-harness.md` (H-*), `inventory-extensions.md` (E-*), `inventory-tui.md` (T-*), `timeline.md`, the edge-case report `plans/reports/researcher-260930-2254-pi-edge-cases.md` (E§N; the top-30 list is E§24#N), and the waku report `plans/reports/researcher-260930-2254-waku-watch-it-think.md`.
 
 ## 0. How to read this roadmap
 
-- **Goal of the user:** learn how to build an agent harness. The harness comes first. Each harness phase teaches **one concept** and ends with a **runnable, testable result**.
+- **Goal of the user:** learn how to build an agent harness. The next priority is a TUI that tests the completed harness through Leader ACP. Each harness phase teaches **one concept** and ends with a **runnable, testable result**.
 - **Milestones:** see section 0b. M1 is must-have; M2 is nice-to-have.
 - **Order (M1 first, then M2):**
-  1. M1: Phase 0, H1-H3, then priority H7a alongside H4's required Responses adapter; finish H4, then H5-H7 and H8-H13, then W1, H14, H15, X1 and T1. T0 runs independently from H2 in a scratch module.
+  1. M1 next: T0 → H13a → H13b → T1a.
+     Then H5-H7 and H8-H12, with T1b integration at each exit, followed by H13c, W1, H14, H15, X1 and remaining T1b work.
+     Use the completed H4, H7a and lifecycle implementations; do not rebuild them.
   2. M2: H16, X2, H17, T2, X3 and the built-in permission policy, in any order the user picks.
 - **Each phase lists:** the decisions it waits on, the concept, the Pi files to read, the inventory ids it owns, its tests (edge cases), what it must not rebuild, and its exit.
 - **Ownership rule:** each P0 inventory row is owned by exactly one phase. Other phases may use a row, but they do not own it. A P1 row that a P0 exit needs is pulled forward and marked "(P1, pulled)". Section 6 places or defers all other P1 rows.
@@ -101,22 +104,33 @@ The comparison below is historical scaffold and Pi evidence; current lifecycle o
 
 ## 3. Dependency order
 
-```
-P0 ─► H1 events ─► H2 loop ─► H3 first provider ─► H4 more providers ─► H5 tools ─► H6 settings+trust+prompt
-                                                                                            │
-      H7 models+credentials ◄──────────────────────────────────────────────────────────────┘
-          │
-          ▼
-      H8 durable log ─► H9 overflow+usage ─► H10 compaction ─► H11 extensions ─► H12 observability ─► H13 gateway
-                                                                                                    │
-            ┌────────────────────┬────────────────────────┬─────────────────────────────────────────┤
-            ▼                    ▼                        ▼                                         ▼
-       W1 web dashboard    H14 session tree ─► H15 commands ─► H16 MCP ─► H17 auth+providers    X1 extension protocol ─► X2, X3
-                                                                                                    
-T0 inline prototype (scratch module, parallel from H2) ─► T1 TUI core (after H13) ─► T2 TUI P1 + inspector (also after W1 and X1)
-```
+The next path is T0 → H13a ACP → H13b Leader → T1a local TUI E2E.
+H4 is merged; its sibling verification plan records `DONE_WITH_CONCERNS` with vendor live limits.
+H7a records 6/6 completed phases; lifecycle records 12/12.
+Use those implementations now; T1a does not wait for H8 storage, H12 monitoring or H13c networking.
 
-Rules behind this order (all checked by the review):
+After T1a, deliver each row below with its T1b integration before moving to the next row.
+Each exit uses a built `ask` through its real Leader socket and ACP.
+Use the affected provider and contract checks; a full live-provider matrix is not required at every exit.
+
+| Order | Backend owner and prerequisite | Runnable TUI exit (T1b) |
+|---|---|---|
+| 1 | H5 tools, then H6 settings/trust | Call builtins and see results/errors; test trusted and untrusted project settings. |
+| 2 | H7 catalog, after H6; reuse H7a credentials | Select a catalog model and thinking level; show readiness and failed selection without changing the prior target. |
+| 3 | H8 durable log, after H7 and completed lifecycle | Exit, resume and continue the same session; test a competing writer and selection restore without saved tokens. |
+| 4 | H9 overflow/usage, after H8 | Show cumulative usage and distinguish overflow, quota exhaustion and transient retry. |
+| 5 | H10 compaction, after H9 | Run `/compact`, continue and resume; preserve tool pairing and show compaction events. |
+| 6 | H11 internal extensions, after H10 | Show a denied tool outcome and compaction hooks through the existing dispatch. |
+| 7 | H12 redaction/tracing, after H11; H13c gateway, after H12 and H13b | Compare local TUI lifecycle updates with an authenticated remote ACP run; test redaction and reconnect cursors. |
+| 8 | W1, after H12/H13c | Run a TUI prompt while the read-only dashboard shows its stages and cost. |
+| 9 | H14 session tree, after H8/H10 and local ACP | Fork, switch and resume from the session picker; show branch summaries and session stats. |
+| 10 | H15 resources, after H6/H11/H14 | Use a template and skill, enforce trust, and reload a new skill without losing the session. |
+| 11 | X1 external Go extensions, after H11/H15 | Reload an extension, call its tool, and show its blocked command outcome; keep UI dialogs in M2. |
+
+H13 owns ACP methods added at each feature exit; feature ownership does not move to T1b.
+T1a and T1b together retain all T1 P0 inventory rows and full M1 scope.
+M2 scope stays unchanged.
+Rules behind this order:
 - The faux provider and the partial-JSON parser (H1) come before the loop (H2).
 - H2 runs in memory (`--no-session` semantics) behind a context-source interface. H8 swaps in the session projection without a rewrite.
 - The settings (H6) come before the catalog, credentials and resolution (H7). Tools (H5) use hard-coded defaults until H6 wires the settings.
@@ -329,9 +343,10 @@ Rules behind this order (all checked by the review):
 - **Do not rebuild:** API keys in the settings.
 - **Exit:** `--model anthropic/<id>:high` resolves, and a key saved in `auth.json` is used.
 
-### H7a: Subscription auth and request profiles (priority lane)
+### H7a: Subscription auth and request profiles (completed)
 
-- **Waits on:** H3 Messages and H2 tool/result contracts; OpenAI/xAI inference additionally needs H4's Responses adapter. Native auth/store work starts now; full H4, H5, H6 and H7 are not gates.
+- **Status:** completed; the [execution record](../261006-0157-h7a-subscription-auth/plan.md#current-execution-record) records 6/6 phases.
+- **Original prerequisites:** H3 Messages and H2 tool/result contracts; OpenAI/xAI inference needed H4 Responses, not full H5-H7.
 - **Concept:** credential lifecycle and request shaping are separate from wire serialization.
 - **Owns:** H-AUTH-01/02/03 shared precedence and locked credential persistence, H-AUTH-06 for Anthropic/ChatGPT/xAI, H-AUTH-07 shared mechanics, H-AUTH-11 shaping and H-AUTH-10 shared operations/headless commands; breadth and gateway/TUI transport stay H17/T2.
 - **Build:** injected supported auth methods, explicit profiles, native login/refresh, safe one-credential replacement and per-request auth. Use compiled provider/model records and existing tools; remote catalog, project settings and complete builtins follow later.
@@ -448,14 +463,20 @@ Rules behind this order (all checked by the review):
 - **Tests:** secrets never reach dashboard subscribers, span durations are real, and hang detection distinguishes a slow operation from a lost completion.
   Existing follow tests remain the regression owner for replay, cursor gaps, epochs, and slow followers.
 - **Do not copy:** Waku's per-event file writes, line-count cursor, unredacted traces, or hosted/static application.
-- **Exit:** a print-mode run exports a trace tree to a local OTel viewer and the dashboard uses a redacted view of the existing follow stream.
+- **Exit:** a print-mode run exports a trace tree to a local OTel viewer; a subscriber receives the redacted follow projection that H13c/W1 will expose.
 
 ### H13: Leader, ACP adapter and gateway (Pi's RPC mode, multi-client)
 
-- **Waits on:** D16 (decided), D17.
+- **Waits on:** H13a needs completed H4/H7a/lifecycle and D16/D17; H13b needs H13a; H13c needs H13b, H8, H10 and H12.
+- **Schedule:** H13a and H13b are next, before the remaining harness phases; H13c follows H12.
+- **Early scope:** expose the completed agent API, lifecycle events, follow path, queues, retry, cancellation, model switching and H7a auth through local ACP.
+  Reuse the current in-memory log and session boundary.
+  Durable resume and compaction become available after H8 and H10.
+  Methods whose owners are incomplete return an explicit unsupported error.
+  H13 remains the owner of the transport contract.
 - **Concept:** the agent gets one external protocol, ACP. The leader (`ask leader`) holds one agent and routes many ACP clients to it (id rewrite, per-session subscribers, driver client), as Grok's leader does. The daemon is one more ACP client and adds the network gateway. Design: `docs/ask-architecture-reference.md` section 7.3.
 - **Split into three steps, each with its own runnable exit:**
-  - **H13a ACP adapter over stdio.** `internal/acp` over the agent's Go API, plus the `_ask/*` methods. Exit: `ask acp` works with a scripted ACP client over stdio (prompt, cancel, one `_ask/*` method), and starts no network listener.
+  - **H13a ACP adapter over stdio.** `internal/acp` over the agent's Go API, plus the `_ask/*` methods. Exit: `ask acp` works with a scripted ACP client over stdio (prompt, cancel, model selection, queues and follow updates), and starts no network listener.
   - **H13b Leader over the Unix socket.** `internal/leader`: handshake with a hard version gate, id rewrite, per-session subscribers and driver, `ConnectOrSpawn`, flock, pid, log, 0700/0600 permissions, peer-UID check. Exit: two `ask` TUI stubs share one auto-started leader.
   - **H13c Daemon over ACP plus the network gateway.** `cmd/server` becomes an ACP client of the leader and adds the network gateway (security rules below). Exit: an authenticated remote WS client runs a prompt through the daemon.
   - Each fx composition (headless, leader, editor `ask acp`, daemon) gets its own `fx.ValidateApp` test. Headless and editor modes must start no network listener.
@@ -491,13 +512,13 @@ Rules behind this order (all checked by the review):
   - `seq` resume has no gaps.
 - **Do not rebuild:** the removed slash-command names. Fix the names before the protocol ships.
 - **Tests (leader):** two TUIs share one leader and see the same session updates; two clients with different cwd and capabilities create different sessions; a driver disconnects during a question; `ask-server` starts first from another cwd, and with `ask` missing from `PATH`; a version mismatch arrives while another client runs a tool; a stale, reused pid is not signalled; ids of two clients never collide; a client of a different protocol version is rejected; a peer with another UID is rejected; a stale socket is replaced by the leader that wins the flock; a client disconnect does not cancel the run.
-- **Exit (all of H13):** `ask` (TUI stub) and `cmd/server` both connect to one auto-started leader over ACP and run prompt, steer, abort, compact and new session, and receive `agent_settled`. An authenticated remote WS client does the same through the daemon.
+- **Exit (all of H13):** `ask` (T1 TUI) and `cmd/server` both connect to one auto-started leader over ACP and run prompt, steer, abort, compact and new session, and receive `agent_settled`. An authenticated remote WS client does the same through the daemon.
 
 ### W1: Web monitoring dashboard ("Watch it think", part 2)
 
 - **Waits on:** D12 (decided).
 - **Scope (user, 2026-09-30):** monitoring only, read-only, no chat and no control. It is the one allowed web UI (`docs/ask-architecture-reference.md:9`).
-- **Depends on:** H1 (envelope), H12 (bus and redaction), H13 (event feed and token).
+- **Depends on:** H1 (envelope), H12 (redaction), H13c (event feed and token).
 - **Build:**
   - Embedded static files (`go:embed`) served by `gateway` on a separate `127.0.0.1` listener, with a token and `Host`/`Origin` checks (waku has none).
   - Plain HTML, CSS and JS with no build step. This is a recommendation.
@@ -521,6 +542,7 @@ Rules behind this order (all checked by the review):
 
 ### H14: Session tree
 
+- **Waits on:** H8 durable entries, H10 branch-summary primitives and H13a/H13b local ACP.
 - **Concept:** a session is a tree, not a list. Branches, forks and summaries of abandoned branches are operations on the entry log.
 - **Read in Pi:** `C:core/session-manager.ts:1579-1750,1856-1861`, `C:core/agent-session-runtime.ts`, `C:core/compaction/branch-summarization.ts`, `CD:sessions.md`.
 - **Owns:**
@@ -535,6 +557,7 @@ Rules behind this order (all checked by the review):
 
 ### H15: Commands and resources
 
+- **Waits on:** H6 trust/settings, H11 extension handlers, H14 session commands and H13a/H13b local ACP.
 - **Concept:** user input is expanded before it reaches the model. Skills, templates and `!cmd` are input transforms, and project resources pass the trust gate first.
 - **Read in Pi:** `C:core/agent-session.ts:1883-2062,3745-3843`, `CD:skills.md`, `CD:prompt-templates.md`, `CD:usage.md`, `CD:configuration.md`.
 - **Owns:**
@@ -587,7 +610,7 @@ Rules behind this order (all checked by the review):
 
 ### X1: External extensions (loaded at run time, no Ask rebuild)
 
-- **Waits on:** D13 (runtime), D4.
+- **Waits on:** H11 event adapter, H15 reload/resources and H6 trust, plus D13 (runtime) and D4.
 - **Model (user, 2026-10-01):** two kinds of extension share one event contract. Internal extensions are Go code compiled into Ask (H11). External extensions are loaded at run time without rebuilding Ask; end users write them, and Ask writes them for itself. An external extension goes through an adapter that speaks the same contract, so it can later be promoted to an internal one without a logic rewrite.
 - **Runtime (D13 = B):** Go source in `~/.ask/extensions/<name>/` (and the project `.ask/extensions/`, after trust). On load or `/reload`, Ask runs `go build`, caches the binary by content hash, and starts it as a child process over stdio. Build errors are shown to the user and the model; an old cached binary is never used for changed source.
 - **SDK:** a public Go package in `pkg/` (for example `pkg/askext`), because code outside the module cannot import `internal/`. It hides the stdio framing and shares the event and content types with internal extensions (from `pkg/protocol`).
@@ -634,7 +657,7 @@ Rules behind this order (all checked by the review):
 - Skill and prompt packages.
 - Each item gets its own exit when it is scheduled.
 
-### T0: Inline prototype gate (parallel from H2)
+### T0: Inline prototype gate (next priority)
 
 - **Where:** a scratch Go module outside the repo `go.mod`, so it needs neither Go 1.26.0 nor D14 first. This is a deliberate change from `inventory-tui.md` section 3, which puts the testkit in `cmd/tui/internal/testkit/`. The testkit moves there in T1.
 - **Tests (M1 gate):** G1, G2, G3 and G6 (`inventory-tui.md` section 3). G4 (Kitty image in scrollback) and G5 (fullscreen switch) are M2 checks: record their result, but they do not block D14 or T1.
@@ -642,8 +665,29 @@ Rules behind this order (all checked by the review):
 
 ### T1: TUI core
 
-- **Waits on:** H13, D14, D15, D8.
-- **Build:** the P0 rows of `inventory-tui.md`:
+- **Waits on:** T0, H13a, H13b, D14, D15, D8 for T1a.
+  T1b waits on each feature's owning phase, not the whole H13 gateway.
+- **T1a: test the completed harness through the local TUI.**
+  - Build the inline editor, transcript, live markdown stream, status, provider/model selector, error display and terminal restoration.
+  - Connect through `ConnectOrSpawn`: TUI → Leader Unix socket → ACP adapter → agent.
+    On this acceptance path, a connection failure is visible and must not trigger a silent direct fallback.
+  - Use H7a credentials and profiles on the inference host, including refresh and readiness errors.
+    Keep full TUI login dialogs in M2; use the completed headless auth commands for login.
+  - Expose current model switching, input queues, input removal, cancellation, retry, usage and follow updates through ACP.
+    Preserve lifecycle completion, request preparation, tool-outcome and unbounded cancellation-drain rules.
+    Map ACP prompt completion to the settled lifecycle boundary; cancellation must not report completed work before that boundary.
+  - Test repeated prompts, cross-provider replay, API-key and subscription inference, cancellation followed by a new prompt, visible retries, and provider errors.
+  - Test two clients, request-id isolation, session isolation, disconnect and reconnect without automatic prompt resend.
+    TUI exit detaches its client; it must not dispose the shared leader agent.
+    Explicit cancellation is separate from client exit.
+  - Run acceptance with a built `ask`, its actual Unix socket and real providers.
+    Verify terminal restoration after normal exit, errors and signals.
+    Protocol and local HTTP tests support acceptance but do not replace the real-provider check.
+- **T1b: complete the remaining M1 TUI scope.**
+  - Connect H5 builtin tools, H6 settings/trust, H7 catalog, H8 durable resume, H9 remaining overflow/usage, H10 compaction, H11 extensions and H12 observability as each phase completes.
+  - Connect H14 session tree, H15 commands/resources and X1 extension tools within their M1 scope.
+  - Each phase exit includes its real TUI → Leader ACP flow.
+- **Build (T1a and T1b together):** the P0 rows of `inventory-tui.md`:
   - the scrollback committer and the live area;
   - the custom editor core with undo, kill ring and paste markers;
   - markdown and syntax highlighting;
@@ -655,7 +699,9 @@ Rules behind this order (all checked by the review):
 - **Harness rows that T1 commands need:** H-SESS-18 (H13), H-SESS-20 (H14) and the H-SESS-10 picker (built in T1), H7/H7a model/auth readiness. `/session` and `/resume` are enabled when their phase is done. Full TUI `/login` remains M2 (H17 transport, T2 dialogs); M1 can use H7a headless login on the inference host or environment API keys. Show provider, model, auth method and readiness without assuming entitlement.
 - **Constraint:** the TUI uses one `AgentClient` interface: `remote` (ACP to the leader, or to a remote agent) and `direct` (in-process Go API, the fallback when no leader is reachable). Headless mode uses `direct` (D5).
 - **Tests:** E§24#23 to #27.
-- **Exit:** a full session in the terminal works: prompt, stream, steer, abort, compact, and resume. The terminal is restored on every exit path.
+- **Exit (T1a):** the completed H4, H7a and lifecycle behavior works from the terminal through Leader ACP.
+- **Exit (full T1):** a full session in the terminal works: prompt, stream, steer, abort, compact, and resume.
+  The terminal is restored on every exit path.
 
 ### T2: TUI P1 and the inspector
 
@@ -744,11 +790,10 @@ Keep one provider with injected supported auth methods and one saved credential;
 Pi is the initial remote catalog source; user overrides win, active model snapshots survive background refresh, and custom JSON defaults follow Pi.
 All phase exits are cumulative dependencies; no phase may weaken an accepted contract to avoid work.
 
-## 11. Subscription delivery priority (2026-10-06)
+## 11. Completed subscription priority (2026-10-06)
 
-The user needs replacement access before Alibaba Token Plan expires; H7a is the next product-delivery priority, not a phase waiting behind H5-H7.
-Implement the shared secure credential store first, then deliver Anthropic using Messages; OpenAI ChatGPT and xAI/Grok use Responses as that H4 adapter becomes available.
-Auth strategy work for all three can proceed independently after shared contracts are fixed; integrate each provider without waiting for the other two.
-The first live subscription prompt is a delivery checkpoint; retain the exit that all three flows work before H7a is complete.
-Remote catalog, full builtin tools, project trust/settings, public switching and TUI keep their phase ownership; H7 integrates the credential store built here.
-Preserve all accepted security, refresh, profile and no-billed-fallback requirements; do not make an expired Alibaba account an acceptance dependency.
+H7a delivered the subscription priority; its [execution record](../261006-0157-h7a-subscription-auth/plan.md#current-execution-record) records completion.
+The next priority is the local TUI path in section 3, using the shared credential store and Anthropic/ChatGPT/xAI request profiles.
+H7 later integrates catalog/configuration; H17/T2 keep gateway auth transport and full login dialogs.
+Preserve the accepted security, refresh, profile and no-billed-fallback contracts.
+Do not require an expired Alibaba Token Plan for acceptance; record live-provider access limits.
