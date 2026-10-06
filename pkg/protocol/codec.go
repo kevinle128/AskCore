@@ -17,8 +17,67 @@ func EncodeEvent(ev Event) ([]byte, error) {
 	switch e := ev.(type) {
 	case nil:
 		return nil, errors.New("protocol: event is nil")
-	case *AgentStart, *AgentSettled, *TurnStart:
+	case *AgentStart, *AgentSettled, *AgentDisposed:
 		return marshalJSON(struct{ envelopeWire }{newEnvelopeWire(e.Env(), e.EventType())})
+	case *QueueUpdate:
+		steering, followUp := e.Steering, e.FollowUp
+		if steering == nil {
+			steering = []string{}
+		}
+		if followUp == nil {
+			followUp = []string{}
+		}
+		return marshalJSON(struct {
+			envelopeWire
+			Steering []string `json:"steering"`
+			FollowUp []string `json:"followUp"`
+		}{newEnvelopeWire(&e.Envelope, e.EventType()), steering, followUp})
+	case *TurnStart:
+		return marshalJSON(struct {
+			envelopeWire
+			CycleID string `json:"cycleId,omitempty"`
+		}{newEnvelopeWire(&e.Envelope, e.EventType()), e.CycleID})
+	case *CycleStart:
+		return marshalJSON(struct {
+			envelopeWire
+			CycleID string `json:"cycleId"`
+		}{newEnvelopeWire(&e.Envelope, e.EventType()), e.CycleID})
+	case *CycleEnd:
+		return marshalJSON(struct {
+			envelopeWire
+			CycleID string `json:"cycleId"`
+			Reason  string `json:"reason"`
+			Cause   string `json:"cause,omitempty"`
+			Code    string `json:"code,omitempty"`
+		}{newEnvelopeWire(&e.Envelope, e.EventType()), e.CycleID, e.Reason, e.Cause, e.Code})
+	case *AttemptStart:
+		return marshalJSON(struct {
+			envelopeWire
+			AttemptID string `json:"attemptId"`
+			CycleID   string `json:"cycleId"`
+			Number    int    `json:"number"`
+		}{newEnvelopeWire(&e.Envelope, e.EventType()), e.AttemptID, e.CycleID, e.Number})
+	case *AttemptEnd:
+		return marshalJSON(struct {
+			envelopeWire
+			AttemptID string `json:"attemptId"`
+			Outcome   string `json:"outcome"`
+		}{newEnvelopeWire(&e.Envelope, e.EventType()), e.AttemptID, e.Outcome})
+	case *AutoRetryStart:
+		return marshalJSON(struct {
+			envelopeWire
+			Attempt      int    `json:"attempt"`
+			MaxAttempts  int    `json:"maxAttempts"`
+			DelayMs      int64  `json:"delayMs"`
+			ErrorMessage string `json:"errorMessage"`
+		}{newEnvelopeWire(e.Env(), e.EventType()), e.Attempt, e.MaxAttempts, e.DelayMs, e.ErrorMessage})
+	case *AutoRetryEnd:
+		return marshalJSON(struct {
+			envelopeWire
+			Success    bool   `json:"success"`
+			Attempt    int    `json:"attempt"`
+			FinalError string `json:"finalError,omitempty"`
+		}{newEnvelopeWire(e.Env(), e.EventType()), e.Success, e.Attempt, e.FinalError})
 	case *AgentEnd:
 		msgs := make([]anyMessage, len(e.Messages))
 		for i, m := range e.Messages {
@@ -26,8 +85,9 @@ func EncodeEvent(ev Event) ([]byte, error) {
 		}
 		return marshalJSON(struct {
 			envelopeWire
-			Messages []anyMessage `json:"messages"`
-		}{newEnvelopeWire(&e.Envelope, e.EventType()), msgs})
+			Messages  []anyMessage `json:"messages"`
+			WillRetry bool         `json:"willRetry"`
+		}{newEnvelopeWire(&e.Envelope, e.EventType()), msgs, e.WillRetry})
 	case *TurnEnd:
 		results := e.ToolResults
 		if results == nil {
@@ -35,9 +95,10 @@ func EncodeEvent(ev Event) ([]byte, error) {
 		}
 		return marshalJSON(struct {
 			envelopeWire
+			CycleID     string              `json:"cycleId,omitempty"`
 			Message     anyMessage          `json:"message"`
 			ToolResults []ToolResultMessage `json:"toolResults"`
-		}{newEnvelopeWire(&e.Envelope, e.EventType()), anyMessage{e.Message}, results})
+		}{newEnvelopeWire(&e.Envelope, e.EventType()), e.CycleID, anyMessage{e.Message}, results})
 	case *MessageStart:
 		return marshalJSON(struct {
 			envelopeWire
@@ -185,11 +246,88 @@ func DecodeEvent(data []byte) (Event, error) {
 		return &AgentStart{Envelope: env}, nil
 	case TypeAgentSettled:
 		return &AgentSettled{Envelope: env}, nil
+	case TypeAgentDisposed:
+		return &AgentDisposed{Envelope: env}, nil
+	case TypeQueueUpdate:
+		var w struct {
+			Steering []string `json:"steering"`
+			FollowUp []string `json:"followUp"`
+		}
+		if err := json.Unmarshal(data, &w); err != nil {
+			return nil, err
+		}
+		return &QueueUpdate{Envelope: env, Steering: w.Steering, FollowUp: w.FollowUp}, nil
 	case TypeTurnStart:
-		return &TurnStart{Envelope: env}, nil
+		var w struct {
+			CycleID string `json:"cycleId"`
+		}
+		if err := json.Unmarshal(data, &w); err != nil {
+			return nil, err
+		}
+		return &TurnStart{Envelope: env, CycleID: w.CycleID}, nil
+	case TypeCycleStart:
+		var w struct {
+			CycleID string `json:"cycleId"`
+		}
+		if err := json.Unmarshal(data, &w); err != nil {
+			return nil, err
+		}
+		return &CycleStart{Envelope: env, CycleID: w.CycleID}, nil
+	case TypeCycleEnd:
+		var w struct {
+			CycleID string `json:"cycleId"`
+			Reason  string `json:"reason"`
+			Cause   string `json:"cause"`
+			Code    string `json:"code"`
+		}
+		if err := json.Unmarshal(data, &w); err != nil {
+			return nil, err
+		}
+		return &CycleEnd{Envelope: env, CycleID: w.CycleID, Reason: w.Reason, Cause: w.Cause, Code: w.Code}, nil
+	case TypeAttemptStart:
+		var w struct {
+			AttemptID string `json:"attemptId"`
+			CycleID   string `json:"cycleId"`
+			Number    int    `json:"number"`
+		}
+		if err := json.Unmarshal(data, &w); err != nil {
+			return nil, err
+		}
+		return &AttemptStart{Envelope: env, AttemptID: w.AttemptID, CycleID: w.CycleID, Number: w.Number}, nil
+	case TypeAttemptEnd:
+		var w struct {
+			AttemptID string `json:"attemptId"`
+			Outcome   string `json:"outcome"`
+		}
+		if err := json.Unmarshal(data, &w); err != nil {
+			return nil, err
+		}
+		return &AttemptEnd{Envelope: env, AttemptID: w.AttemptID, Outcome: w.Outcome}, nil
+	case TypeAutoRetryStart:
+		var w struct {
+			Attempt      int    `json:"attempt"`
+			MaxAttempts  int    `json:"maxAttempts"`
+			DelayMs      int64  `json:"delayMs"`
+			ErrorMessage string `json:"errorMessage"`
+		}
+		if err := json.Unmarshal(data, &w); err != nil {
+			return nil, err
+		}
+		return &AutoRetryStart{Envelope: env, Attempt: w.Attempt, MaxAttempts: w.MaxAttempts, DelayMs: w.DelayMs, ErrorMessage: w.ErrorMessage}, nil
+	case TypeAutoRetryEnd:
+		var w struct {
+			Success    bool   `json:"success"`
+			Attempt    int    `json:"attempt"`
+			FinalError string `json:"finalError"`
+		}
+		if err := json.Unmarshal(data, &w); err != nil {
+			return nil, err
+		}
+		return &AutoRetryEnd{Envelope: env, Success: w.Success, Attempt: w.Attempt, FinalError: w.FinalError}, nil
 	case TypeAgentEnd:
 		var w struct {
-			Messages []anyMessage `json:"messages"`
+			Messages  []anyMessage `json:"messages"`
+			WillRetry bool         `json:"willRetry"`
 		}
 		if err := json.Unmarshal(data, &w); err != nil {
 			return nil, err
@@ -198,9 +336,10 @@ func DecodeEvent(data []byte) (Event, error) {
 		for i, m := range w.Messages {
 			msgs[i] = m.m
 		}
-		return &AgentEnd{Envelope: env, Messages: msgs}, nil
+		return &AgentEnd{Envelope: env, Messages: msgs, WillRetry: w.WillRetry}, nil
 	case TypeTurnEnd:
 		var w struct {
+			CycleID     string              `json:"cycleId"`
 			Message     *anyMessage         `json:"message"`
 			ToolResults []ToolResultMessage `json:"toolResults"`
 		}
@@ -213,7 +352,7 @@ func DecodeEvent(data []byte) (Event, error) {
 		if w.ToolResults == nil {
 			w.ToolResults = []ToolResultMessage{}
 		}
-		return &TurnEnd{Envelope: env, Message: w.Message.m, ToolResults: w.ToolResults}, nil
+		return &TurnEnd{Envelope: env, CycleID: w.CycleID, Message: w.Message.m, ToolResults: w.ToolResults}, nil
 	case TypeMessageStart, TypeMessageEnd:
 		var w struct {
 			Message *anyMessage `json:"message"`

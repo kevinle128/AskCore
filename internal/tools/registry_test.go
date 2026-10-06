@@ -16,6 +16,35 @@ import (
 
 type stubTool struct{ decl protocol.ToolDecl }
 
+type safeStubTool struct{ stubTool }
+
+func (safeStubTool) ConcurrencySafe(json.RawMessage) bool { return true }
+
+func TestToolDeclCarriesOnlyNameDescriptionParameters(t *testing.T) {
+	var registry tools.Registry
+	tool := safeStubTool{stubTool{protocol.ToolDecl{Name: "safe", Description: "A safe tool", Parameters: json.RawMessage(`{"type":"object","properties":{"nested":{"type":"object"}}}`)}}}
+	require.NoError(t, registry.Register(tool, tools.SourceInfo{Kind: tools.SourceExtension, Name: "private-host"}))
+	decls := registry.Snapshot().Decls()
+	encoded, err := json.Marshal(decls)
+	require.NoError(t, err)
+	var projected []map[string]json.RawMessage
+	require.NoError(t, json.Unmarshal(encoded, &projected))
+	require.Len(t, projected, 1)
+	assert.ElementsMatch(t, []string{"name", "description", "parameters"}, keys(projected[0]))
+	decls[0].Name = "changed"
+	decls[0].Description = "changed"
+	decls[0].Parameters[0] = '['
+	assert.Equal(t, tool.Decl(), registry.Decls()[0])
+}
+
+func keys(values map[string]json.RawMessage) []string {
+	var result []string
+	for key := range values {
+		result = append(result, key)
+	}
+	return result
+}
+
 func (s stubTool) Decl() protocol.ToolDecl { return s.decl }
 
 func (stubTool) Execute(context.Context, tools.Context, json.RawMessage) (protocol.ToolExecutionResult, error) {

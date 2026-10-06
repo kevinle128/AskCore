@@ -103,14 +103,21 @@ func (p *responses) produce(ctx context.Context, a *providers.Assembler, m provi
 		a.Fail(protocol.StopError, "openai model has no BaseURL", errors.New("openai model has no BaseURL"))
 		return
 	}
-	if opts.Auth.Method == "openai-chatgpt" && (opts.Temperature != nil || opts.MaxTokens != 0 || opts.CacheRetention == providers.CacheRetentionLong) {
+	msgs := providers.TransformMessages(req.Messages, m, p.cfg.now, p.cfg.normalize)
+	pr := opts.Prepared
+	if pr == nil {
+		var err error
+		if pr, err = p.compute(m, msgs, opts); err != nil {
+			a.Fail(protocol.StopError, err.Error(), err)
+			return
+		}
+	}
+	if opts.Auth.Method == "openai-chatgpt" && (pr.Temperature != nil || pr.MaxTokens != 0 || pr.CacheRetention == providers.CacheRetentionLong) {
 		err := fmt.Errorf("%w: ChatGPT Responses sampling, output limit, or long cache retention is unsupported", providers.ErrUnsupportedRequest)
 		a.Fail(protocol.StopError, err.Error(), err)
 		return
 	}
-
-	msgs := providers.TransformMessages(req.Messages, m, p.cfg.now, p.cfg.normalize)
-	call, err := buildResponsesCall(msgs, m, opts)
+	call, err := buildResponsesCall(msgs, m, pr, opts.Auth.Method)
 	if err != nil {
 		a.Fail(protocol.StopError, err.Error(), err)
 		return
@@ -120,6 +127,7 @@ func (p *responses) produce(ctx context.Context, a *providers.Assembler, m provi
 
 	runCtx, cancel := context.WithCancelCause(ctx)
 	defer cancel(nil)
+	runCtx = fantasykit.TrackBody(runCtx)
 
 	idle := fantasykit.StartIdle(p.cfg.idle, cancel)
 	defer idle.Stop()
@@ -142,23 +150,23 @@ func (p *responses) produce(ctx context.Context, a *providers.Assembler, m provi
 		fopenai.WithResponsesAPIFunc(func(string) bool { return true }),
 	)
 	if err != nil {
-		fantasykit.Fail(a, ctx, runCtx, fantasykit.ErrIdleTimeout, classifyResponsesError(err))
+		fantasykit.Fail(a, ctx, runCtx, fantasykit.ErrIdleTimeout, classifyResponsesError(runCtx, err))
 		return
 	}
 	lm, err := fp.LanguageModel(runCtx, m.ID)
 	if err != nil {
-		fantasykit.Fail(a, ctx, runCtx, fantasykit.ErrIdleTimeout, classifyResponsesError(err))
+		fantasykit.Fail(a, ctx, runCtx, fantasykit.ErrIdleTimeout, classifyResponsesError(runCtx, err))
 		return
 	}
 	parts, err := lm.Stream(runCtx, call)
 	if err != nil {
-		fantasykit.Fail(a, ctx, runCtx, fantasykit.ErrIdleTimeout, classifyResponsesError(err))
+		fantasykit.Fail(a, ctx, runCtx, fantasykit.ErrIdleTimeout, classifyResponsesError(runCtx, err))
 		return
 	}
 	original := parts
 	parts = func(yield func(fantasy.StreamPart) bool) {
 		original(func(part fantasy.StreamPart) bool {
-			part.Error = classifyResponsesError(part.Error)
+			part.Error = classifyResponsesError(runCtx, part.Error)
 			return yield(part)
 		})
 	}

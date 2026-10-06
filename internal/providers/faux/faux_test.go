@@ -779,3 +779,52 @@ func TestRequestRecordKeepsPointerMessages(t *testing.T) {
 	require.NoError(t, rerr)
 	assert.IsType(t, &protocol.UserMessage{}, p.Requests()[0].Transcript.Messages[0])
 }
+
+func TestFauxStepErrReturnsTypedFailure(t *testing.T) {
+	want := providers.NewFailure(providers.CodeRateLimit, 429, 9*time.Second, "slow down", nil)
+	p := newProvider(t)
+	p.Set(Say("partial").Err(want), Fail("plain failure"))
+
+	_, msg, err := play(t, p)
+	require.Error(t, err)
+	got, ok := providers.AsFailure(err)
+	require.True(t, ok, "errors.As finds the typed failure")
+	assert.Equal(t, providers.CodeRateLimit, got.Code)
+	assert.Equal(t, 429, got.Status)
+	assert.Equal(t, 9*time.Second, got.RetryAfter)
+	assert.ErrorIs(t, err, providers.ErrRateLimited)
+	assert.Equal(t, protocol.StopError, msg.StopReason)
+	require.NotNil(t, msg.ErrorMessage)
+	assert.Equal(t, "slow down", *msg.ErrorMessage)
+
+	// A step that has no typed failure ends with a plain error: no code.
+	_, _, err = play(t, p)
+	require.Error(t, err)
+	_, typed := providers.AsFailure(err)
+	assert.False(t, typed)
+	assert.Equal(t, providers.CodeUnknown, providers.CodeOf(err))
+}
+
+func TestRequestRecordsClonePreparedPolicyAndRequiredBinding(t *testing.T) {
+	p, err := New()
+	require.NoError(t, err)
+	m, ok := p.Model("faux-1")
+	require.True(t, ok)
+	p.Set(Say("hello"))
+	prepared := &providers.Prepared{Provider: m.Provider, API: string(m.API), Model: m.ID, RetryPolicy: providers.DefaultRetryPolicy()}
+	binding := &providers.AuthBinding{Provider: m.Provider, Method: "api-key", Profile: "api-key", BillingHint: "api-key"}
+	s := p.Stream(context.Background(), m, req(userMsg("hi")), providers.StreamOptions{Prepared: prepared, RequireBinding: binding})
+	for range s.Events() {
+	}
+	_, err = s.Result(context.Background())
+	require.NoError(t, err)
+	prepared.RetryPolicy.Key = "changed"
+	binding.BillingHint = "changed"
+	records := p.Requests()
+	require.Equal(t, "default", records[0].Options.Prepared.RetryPolicy.Key)
+	require.Equal(t, "api-key", records[0].Options.RequireBinding.BillingHint)
+	records[0].Options.Prepared.RetryPolicy.Key = "caller changed"
+	records[0].Options.RequireBinding.BillingHint = "caller changed"
+	require.Equal(t, "default", p.Requests()[0].Options.Prepared.RetryPolicy.Key)
+	require.Equal(t, "api-key", p.Requests()[0].Options.RequireBinding.BillingHint)
+}

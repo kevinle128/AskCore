@@ -108,3 +108,56 @@ func TestCloneAssistantBlockSharesNothing(t *testing.T) {
 	assert.Equal(t, "t", *call.ThoughtSignature)
 	assert.Equal(t, "ns", *call.Namespace)
 }
+
+func TestClonePointerAssistantBlocksSharesNothing(t *testing.T) {
+	for _, tc := range []struct {
+		name   string
+		block  AssistantBlock
+		mutate func(AssistantBlock)
+	}{
+		{"text", &Text{Text: "text", TextSignature: sp("signature")}, func(block AssistantBlock) {
+			value := block.(*Text)
+			value.Text = "changed"
+			*value.TextSignature = "changed"
+		}},
+		{"thinking", &Thinking{Thinking: "reason", ThinkingSignature: sp("signature"), Redacted: bp(true)}, func(block AssistantBlock) {
+			value := block.(*Thinking)
+			value.Thinking = "changed"
+			*value.ThinkingSignature = "changed"
+			*value.Redacted = false
+		}},
+		{"tool call", &ToolCall{ID: "call", Name: "echo", Arguments: json.RawMessage(`{"a":1}`), ThoughtSignature: sp("signature"), Namespace: sp("namespace")}, func(block AssistantBlock) {
+			value := block.(*ToolCall)
+			value.ID = "changed"
+			value.Arguments[5] = '2'
+			*value.ThoughtSignature = "changed"
+			*value.Namespace = "changed"
+		}},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			before, err := json.Marshal(tc.block)
+			require.NoError(t, err)
+			cloned := CloneAssistantBlock(tc.block)
+			require.IsType(t, tc.block, cloned, "cloning preserves the legal pointer block type")
+			tc.mutate(cloned)
+			after, err := json.Marshal(tc.block)
+			require.NoError(t, err)
+			require.Equal(t, string(before), string(after), "pointer block fields stay private")
+			message := AssistantMessage{Content: []AssistantBlock{tc.block}}
+			copy := message.Clone()
+			tc.mutate(copy.Content[0])
+			after, err = json.Marshal(tc.block)
+			require.NoError(t, err)
+			require.Equal(t, string(before), string(after), "assistant messages use the same block cloner")
+		})
+	}
+}
+
+func TestClonePointerBlocksPreservesTypedNil(t *testing.T) {
+	for _, block := range []AssistantBlock{(*Text)(nil), (*Thinking)(nil), (*ToolCall)(nil)} {
+		require.Equal(t, block, CloneAssistantBlock(block))
+	}
+	for _, block := range []UserBlock{(*Text)(nil), (*Image)(nil)} {
+		require.Equal(t, []UserBlock{block}, cloneUserBlocks([]UserBlock{block}))
+	}
+}

@@ -40,9 +40,9 @@ func TestChatGPTProfileRejectsEachForbiddenField(t *testing.T) {
 
 func TestResponsesNamedToolChoice(t *testing.T) {
 	m := responsesModel(providers.OpenAIURL)
-	_, err := buildResponsesCall(helloReq().Messages, m, providers.StreamOptions{ToolChoice: "missing"})
+	_, err := buildResponsesCall(helloReq().Messages, m, &providers.Prepared{ToolChoice: "missing"}, "")
 	require.ErrorContains(t, err, "unknown Responses tool choice")
-	call, err := buildResponsesCall(helloReq().Messages, m, providers.StreamOptions{ToolChoice: "echo"})
+	call, err := buildResponsesCall(helloReq().Messages, m, &providers.Prepared{ToolChoice: "echo"}, "")
 	require.NoError(t, err)
 	require.NotNil(t, call.ToolChoice)
 	require.Equal(t, "echo", string(*call.ToolChoice))

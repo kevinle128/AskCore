@@ -235,7 +235,7 @@ func newHeadlessAgentWithAuth(o options, getenv func(string) string, service *au
 	wires.Register(model.API, stream)
 	if o.provider != defaultProvider {
 		env := func(k string) (string, bool) { v := getenv(k); return v, v != "" }
-		wires.Register(providers.APIAnthropicMessages, anthropic.New(anthropic.WithEnv(env), anthropic.WithHTTPClient(&http.Client{Transport: o.transport})).Stream)
+		wires.RegisterProvider(anthropic.New(anthropic.WithEnv(env), anthropic.WithHTTPClient(&http.Client{Transport: o.transport})))
 		registerOpenAIWires(wires, o, getenv)
 	}
 	sessionID := newSessionID()
@@ -250,6 +250,7 @@ func newHeadlessAgentWithAuth(o options, getenv func(string) string, service *au
 			BoundKey: bound,
 			Options:  providers.StreamOptions{Reasoning: reasoning, APIKey: o.apiKey},
 			Cwd:      cwd,
+			Wait:     o.wait,
 		},
 		Registry:  wires,
 		Tools:     reg,
@@ -272,8 +273,8 @@ func registerOpenAIWires(reg *providers.Registry, o options, getenv func(string)
 	if o.transport != nil {
 		opts = append(opts, openai.WithHTTPClient(&http.Client{Transport: o.transport}))
 	}
-	reg.Register(providers.APIOpenAICompletions, openai.NewCompletions(opts...).Stream)
-	reg.Register(providers.APIOpenAIResponses, openai.NewResponses(opts...).Stream)
+	reg.RegisterProvider(openai.NewCompletions(opts...))
+	reg.RegisterProvider(openai.NewResponses(opts...))
 }
 
 func newSessionID() string {
@@ -288,17 +289,24 @@ func newSessionID() string {
 // end; JSON mode streams every event and exits 0 even when the assistant
 // ends in error, as Pi does. A returned error or a failed stdout write stops
 // the remaining prompts and gives exit 1; an assistant error does not stop
-// them. The first signal aborts the run, waits up to abortGrace for it to
-// settle and gives the signal's exit code without printing the reply.
+// them. The first signal disposes the Agent, waits up to abortGrace for the run
+// to settle and for its last lines to reach stdout, and gives the signal's exit
+// code without printing the reply. The grace bounds the exit even when a write
+// is blocked on a full pipe or a tool does not return.
 // Registered auth work drains first with its separate bound; another signal
 // cannot shorten that drain.
 func runHeadless(ag *agent.Agent, prompts []string, mode runMode, stdout, stderr io.Writer, sigs <-chan os.Signal, services ...*auth.Service) int {
 	out := newProtocolOut(stdout)
+	ctx, cancel := context.WithCancelCause(context.Background())
+	defer cancel(nil)
 	if mode == modeJSON {
-		defer streamJSON(ag, out)()
+		// A failed stdout write ends the run and the prompts that have not
+		// started: nobody reads the replies.
+		defer streamJSON(ag, out, func() {
+			cancel(agent.ErrOutputFailure)
+			ag.Abort()
+		})()
 	}
-	ctx, cancel := context.WithCancel(context.Background())
-	defer cancel()
 	done := make(chan error, 1)
 	go func() { done <- promptAll(ctx, ag, prompts) }()
 
@@ -326,10 +334,17 @@ func runHeadless(ag *agent.Agent, prompts []string, mode runMode, stdout, stderr
 		if service != nil {
 			service.StopRefresh()
 		}
-		ag.Abort()
-		// Abort ends only the active run; cancel also stops the prompts
-		// that have not started.
-		cancel()
+		// Dispose closes admission first, so the prompts that have not started
+		// fail with ErrDisposed, and cancels the active run. It waits for the
+		// run to settle, which includes the tools that started, so it runs on
+		// its own goroutine and the grace below bounds the exit.
+		disposed := make(chan struct{})
+		go func() {
+			defer close(disposed)
+			if err := ag.Dispose(); err != nil {
+				report(stderr, "Dispose:", err)
+			}
+		}()
 		if service != nil {
 			if err := app.AuthWait(service)(context.Background()); err != nil {
 				report(stderr, "Auth shutdown:", err)
@@ -337,12 +352,24 @@ func runHeadless(ag *agent.Agent, prompts []string, mode runMode, stdout, stderr
 		}
 		grace := time.NewTimer(abortGrace)
 		defer grace.Stop()
+		expired := false
 		select {
-		case <-done:
+		case <-disposed:
 		case <-sigs:
 		case <-grace.C:
+			expired = true
 		}
-		_ = out.flush() // a write error changes nothing; the signal sets the code
+		if !expired {
+			// The final lines wait for a reader that keeps up, but only within
+			// the same grace: a write blocked on a full pipe holds the output
+			// lock, and the exit never waits on that lock. A write error
+			// changes nothing; the signal sets the code.
+			select {
+			case <-out.flushAsync():
+			case <-sigs:
+			case <-grace.C:
+			}
+		}
 		return signalExitCodes[sig]
 	}
 }

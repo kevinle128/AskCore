@@ -107,3 +107,108 @@ func TestFoldToolIDRewritePreservesArguments(t *testing.T) {
 		})
 	}
 }
+
+func TestFinalUsageReplacesLastSampleAndMissingFinalKeepsSample(t *testing.T) {
+	sample := func(n int64) protocol.Usage {
+		return protocol.Usage{Input: n, TotalTokens: n}
+	}
+	cases := []struct {
+		name  string
+		final fantasy.Usage
+		want  protocol.Usage
+	}{
+		{"final usage replaces the last sample", fantasy.Usage{InputTokens: 25}, sample(25)},
+		{"missing final usage keeps the last sample", fantasy.Usage{}, sample(20)},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			parts := func(yield func(fantasy.StreamPart) bool) {
+				_ = yield(fantasy.StreamPart{Type: fantasy.StreamPartTypeTextStart, ID: "t"})
+				_ = yield(fantasy.StreamPart{Type: fantasy.StreamPartTypeTextDelta, ID: "t", Delta: "hi"})
+				_ = yield(fantasy.StreamPart{Type: fantasy.StreamPartTypeTextEnd, ID: "t"})
+				_ = yield(fantasy.StreamPart{Type: fantasy.StreamPartTypeFinish, Usage: tc.final})
+			}
+			s := providers.NewStream(context.Background(), 16, protocol.AssistantMessage{}, func(a *providers.Assembler) {
+				a.Start()
+				a.SetUsage(sample(10))
+				a.SetUsage(sample(20))
+				Fold(a, parts, Options{MapStop: func(string) (protocol.StopReason, error) { return protocol.StopStop, nil }})
+			})
+			for range s.Events() {
+			}
+			msg, err := s.Result(context.Background())
+			require.NoError(t, err)
+			assert.Equal(t, tc.want, msg.Usage, "the samples are not summed")
+		})
+	}
+}
+
+func TestFoldEmptyStopIsEmptyResponseButEmptyLengthIsNot(t *testing.T) {
+	run := func(reason protocol.StopReason) (protocol.AssistantMessage, error) {
+		parts := func(yield func(fantasy.StreamPart) bool) {
+			_ = yield(fantasy.StreamPart{Type: fantasy.StreamPartTypeFinish})
+		}
+		s := providers.NewStream(context.Background(), 16, protocol.AssistantMessage{}, func(a *providers.Assembler) {
+			a.Start()
+			Fold(a, parts, Options{MapStop: func(string) (protocol.StopReason, error) { return reason, nil }})
+		})
+		for range s.Events() {
+		}
+		return s.Result(context.Background())
+	}
+	_, err := run(protocol.StopStop)
+	require.Error(t, err)
+	assert.Equal(t, providers.CodeEmptyResponse, providers.CodeOf(err))
+
+	msg, err := run(protocol.StopLength)
+	require.NoError(t, err)
+	assert.Equal(t, protocol.StopLength, msg.StopReason)
+}
+
+func TestFoldUsageUsesZeroBucketsAndDerivedTotal(t *testing.T) {
+	cases := []struct {
+		name  string
+		usage fantasy.Usage
+		want  protocol.Usage
+	}{
+		{
+			name:  "absent cache and reasoning",
+			usage: fantasy.Usage{InputTokens: 10, OutputTokens: 12, TotalTokens: 99},
+			want:  protocol.Usage{Input: 10, Output: 12, TotalTokens: 22},
+		},
+		{
+			name:  "both cache buckets contribute",
+			usage: fantasy.Usage{InputTokens: 10, OutputTokens: 12, CacheReadTokens: 3, CacheCreationTokens: 5, TotalTokens: 99},
+			want:  protocol.Usage{Input: 10, Output: 12, CacheRead: 3, CacheWrite: 5, TotalTokens: 30},
+		},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			parts := func(yield func(fantasy.StreamPart) bool) {
+				if !yield(fantasy.StreamPart{Type: fantasy.StreamPartTypeTextStart, ID: "text"}) {
+					return
+				}
+				if !yield(fantasy.StreamPart{Type: fantasy.StreamPartTypeTextDelta, ID: "text", Delta: "done"}) {
+					return
+				}
+				if !yield(fantasy.StreamPart{Type: fantasy.StreamPartTypeTextEnd, ID: "text"}) {
+					return
+				}
+				_ = yield(fantasy.StreamPart{Type: fantasy.StreamPartTypeFinish, Usage: tc.usage})
+			}
+			stream := providers.NewStream(context.Background(), 16, protocol.AssistantMessage{}, func(assembler *providers.Assembler) {
+				assembler.Start()
+				Fold(assembler, parts, Options{MapStop: func(string) (protocol.StopReason, error) {
+					return protocol.StopStop, nil
+				}})
+			})
+			for range stream.Events() {
+			}
+			message, err := stream.Result(context.Background())
+			require.NoError(t, err)
+			require.Equal(t, protocol.StopStop, message.StopReason)
+			require.Equal(t, tc.want, message.Usage, "Fold derives the total instead of copying the reported total")
+			require.Nil(t, message.Usage.Reasoning, "default Fold has no separate reasoning count")
+		})
+	}
+}

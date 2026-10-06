@@ -26,6 +26,8 @@ type Stream struct {
 	once sync.Once
 	msg  protocol.AssistantMessage
 	err  error
+
+	binding AuthBinding
 }
 
 // NewStream starts a producer goroutine that runs body with an Assembler and
@@ -54,6 +56,18 @@ func NewStream(ctx context.Context, buffer int, seed protocol.AssistantMessage, 
 	go s.run(ctx, a, body)
 	return s
 }
+
+// WithBinding sets the credential binding that the request used and returns s.
+// The function that starts the stream sets it once, before it hands the stream
+// out; the producer never reads it.
+func (s *Stream) WithBinding(b AuthBinding) *Stream {
+	s.binding = b
+	return s
+}
+
+// Binding returns the credential binding that the request used. It has no
+// token and no account ID. A stream that no credential bound has the zero value.
+func (s *Stream) Binding() AuthBinding { return s.binding }
 
 // Events returns the channel of items. The producer closes it after the
 // terminal event. A consumer must read until it closes, or cancel the request.

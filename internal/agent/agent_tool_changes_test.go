@@ -46,8 +46,8 @@ func lateTool(ran *bool) *funcTool {
 
 // installer registers the late tool when it runs, the way an extension or
 // an MCP connection adds a tool while a run is going on.
-func installer(reg *tools.Registry, late tools.Tool) sequentialTool {
-	return sequentialTool{&funcTool{name: "install", run: func(context.Context, tools.Context, json.RawMessage) (protocol.ToolExecutionResult, error) {
+func installer(reg *tools.Registry, late tools.Tool) exclusiveTool {
+	return exclusiveTool{&funcTool{name: "install", run: func(context.Context, tools.Context, json.RawMessage) (protocol.ToolExecutionResult, error) {
 		if err := reg.Register(late, tools.SourceInfo{Kind: tools.SourceExtension}); err != nil {
 			return protocol.ToolExecutionResult{}, err
 		}
@@ -117,10 +117,10 @@ func TestToolUnregisteredMidRunRunsThisTurnThenIsRemoved(t *testing.T) {
 	reg := registry(t, tools.Echo{}, gone)
 	a := newAgent(t, p, m, func(c *agent.Config) {
 		c.Tools = reg
-		c.Hooks.FinishTurn = func(context.Context, pipeline.Turn) (pipeline.TurnDecision, error) {
+		registryOf(c).OnCompleteStep(func(context.Context, pipeline.Turn) (pipeline.TurnDecision, error) {
 			reg.Unregister("gone")
 			return pipeline.Proceed, nil
-		}
+		})
 	})
 
 	require.NoError(t, a.Prompt(context.Background(), user("go")))
@@ -131,6 +131,7 @@ func TestToolUnregisteredMidRunRunsThisTurnThenIsRemoved(t *testing.T) {
 	assert.True(t, res["c2"].IsError)
 	assert.Equal(t, "Tool gone not found", resultText(res["c2"].Content))
 	assert.Equal(t, []string{"+echo", "+gone", "-gone"}, toolDeltas(p.Requests()[1].Transcript.Messages), "the removal is declared before request 2")
+	assert.Equal(t, []string{"+echo", "+gone", "-gone"}, toolDeltas(p.Requests()[2].Transcript.Messages), "request 3 keeps the removal declaration without adding it again")
 }
 
 func TestUnchangedToolsAddNoSystemMessage(t *testing.T) {

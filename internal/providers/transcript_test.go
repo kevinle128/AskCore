@@ -31,7 +31,9 @@ func TestCurrentToolsReplaysSystemMessages(t *testing.T) {
 		sysTools([]protocol.ToolDecl{c}, "a"),
 		sysTools([]protocol.ToolDecl{b2}, "b"),
 	}
-	assert.Equal(t, []protocol.ToolDecl{c, b2}, providers.CurrentTools(msgs))
+	// The result is in name order, not in declaration order: the replay
+	// declares c before b2, and the request lists b first.
+	assert.Equal(t, []protocol.ToolDecl{b2, c}, providers.CurrentTools(msgs))
 	assert.Empty(t, providers.CurrentTools(nil))
 }
 

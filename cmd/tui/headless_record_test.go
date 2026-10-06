@@ -139,15 +139,21 @@ func TestCassetteJSONEventOrder(t *testing.T) {
 	}
 	assert.Equal(t, []string{
 		"agent_start",
+		"cycle_start",
 		"turn_start",
 		"message_start:user", "message_end:user",
+		"attempt_start",
 		"message_start:assistant", "message_end:assistant",
+		"attempt_end",
 		"tool_execution_start", "tool_execution_end",
 		"message_start:toolResult", "message_end:toolResult",
 		"turn_end",
 		"turn_start",
+		"attempt_start",
 		"message_start:assistant", "message_end:assistant",
+		"attempt_end",
 		"turn_end",
+		"cycle_end",
 		"agent_end",
 		"agent_settled",
 	}, seq)

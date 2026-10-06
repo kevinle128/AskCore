@@ -31,12 +31,20 @@ func AuthRunner(service *auth.Service, registry *providers.Registry) (providers.
 			}
 			opts.Auth = binding
 		}
+		if pin := opts.RequireBinding; pin != nil {
+			bound := opts.Auth.Binding()
+			if bound.Method != pin.Method || bound.Profile != pin.Profile || bound.BillingHint != pin.BillingHint {
+				return authFailure(ctx, model, auth.ErrBindingChanged)
+			}
+		}
 		if opts.Auth.Method == "api-key" {
 			opts.APIKey = opts.Auth.AccessToken
 		} else {
 			opts.APIKey = ""
 		}
-		return registry.Stream(ctx, model, request, opts)
+		// The stream reports the binding without token or account, so the Agent can
+		// log which credential the attempt used.
+		return registry.Stream(ctx, model, request, opts).WithBinding(opts.Auth.Binding())
 	}
 	return stream, ready
 }
@@ -50,13 +58,19 @@ func AuthWait(service *auth.Service) func(context.Context) error {
 	}
 }
 
+// authFailure is a stream that ends at once with a failure of code AUTH. The
+// failure wraps err, so errors.Is still finds the cause.
 func authFailure(ctx context.Context, model providers.Model, err error) *providers.Stream {
 	seed := protocol.AssistantMessage{API: string(model.API), Provider: model.Provider, Model: model.ID}
-	return providers.NewStream(ctx, 0, seed, func(a *providers.Assembler) { a.Fail(protocol.StopError, err.Error(), err) })
+	failure := providers.NewFailure(providers.CodeAuth, 0, 0, err.Error(), err)
+	return providers.NewStream(ctx, 0, seed, func(a *providers.Assembler) { a.Fail(protocol.StopError, err.Error(), failure) })
 }
 
 // BindAuth installs the composed request and readiness functions together.
 func BindAuth(cfg agent.Config, service *auth.Service, registry *providers.Registry) agent.Config {
 	cfg.Stream, cfg.Ready = AuthRunner(service, registry)
+	if cfg.Prepare == nil {
+		cfg.Prepare = registry.Prepare
+	}
 	return cfg
 }

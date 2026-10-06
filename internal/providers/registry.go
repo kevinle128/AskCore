@@ -11,8 +11,10 @@ import (
 // Registry maps Model.API to one stream function. Register happens after
 // NewRegistry. Stream is safe for concurrent calls. It does not construct HTTP.
 type Registry struct {
-	mu      sync.RWMutex
-	streams map[API]StreamFn
+	mu        sync.RWMutex
+	streams   map[API]StreamFn
+	preparers map[API]Preparer
+	policies  map[API]RetryPolicy
 }
 
 func NewRegistry() *Registry {
@@ -20,7 +22,7 @@ func NewRegistry() *Registry {
 }
 
 // Register stores fn for api. A later Stream call with that Model.API uses fn.
-func (r *Registry) Register(api API, fn StreamFn) {
+func (r *Registry) Register(api API, fn StreamFn, policy ...RetryPolicy) {
 	if r == nil {
 		return
 	}
@@ -30,6 +32,15 @@ func (r *Registry) Register(api API, fn StreamFn) {
 		r.streams = make(map[API]StreamFn)
 	}
 	r.streams[api] = fn
+	if r.policies == nil {
+		r.policies = make(map[API]RetryPolicy)
+	}
+	captured := DefaultRetryPolicy()
+	if len(policy) > 0 {
+		captured = policy[0]
+	}
+	r.policies[api] = captured
+	delete(r.preparers, api)
 }
 
 // Stream looks up Model.API. An unknown API returns a stream whose terminal
@@ -50,7 +61,7 @@ func (r *Registry) Stream(ctx context.Context, m Model, req TranscriptRequest, o
 }
 
 func unknownAPIStream(ctx context.Context, m Model) *Stream {
-	err := fmt.Errorf("unknown model API %q", m.API)
+	err := fmt.Errorf("unknown model API %q for provider %q", m.API, m.Provider)
 	seed := protocol.AssistantMessage{
 		API:      string(m.API),
 		Provider: m.Provider,

@@ -36,3 +36,13 @@ func TestEchoStopsOnCancelledContext(t *testing.T) {
 	require.ErrorIs(t, err, context.Canceled)
 	assert.Equal(t, protocol.ToolExecutionResult{}, res)
 }
+
+func TestEchoDeclaresConcurrencySafeForValidatedArguments(t *testing.T) {
+	registry := echoRegistry(t)
+	args, err := registry.Prepare("echo", json.RawMessage(`{"text":5}`))
+	require.NoError(t, err)
+	safe, ok := any(tools.Echo{}).(tools.ConcurrencySafe)
+	require.True(t, ok, "a pure echo call can run with other safe tools")
+	require.True(t, safe.ConcurrencySafe(args))
+	require.JSONEq(t, `{"text":"5"}`, string(args))
+}

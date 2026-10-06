@@ -2,6 +2,10 @@ package providers
 
 import "errors"
 
+// The sentinels below name classes of failure. A *Failure (failure.go) wraps
+// the sentinel of its code, so errors.Is finds the class and errors.As finds
+// the code, the status and the Retry-After delay.
+
 // ErrStreamIncomplete is the error of a stream that ended without a terminal
 // event. The text keeps the words "ended without" so that text-based retry
 // rules match it too.

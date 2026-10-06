@@ -1,4 +1,5 @@
-// Package pipeline declares the hook points of the agent loop as typed function fields.
+// Package pipeline declares the typed control points of the agent loop and the
+// Registry that holds their handlers.
 //
 // See README.md in this folder for what belongs here and the import rules.
 package pipeline

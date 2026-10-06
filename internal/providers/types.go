@@ -45,6 +45,12 @@ type StreamOptions struct {
 	ToolChoice string
 	// Auth is a request-local typed credential. Its zero value preserves legacy APIKey callers.
 	Auth AuthSnapshot
+	// Prepared holds the effective values of the request (see Registry.Prepare).
+	// An adapter sends exactly these values. When it is nil, the adapter
+	// computes them itself.
+	Prepared *Prepared
+	// RequireBinding pins the login method, profile and billing class for retries.
+	RequireBinding *AuthBinding
 }
 
 // StreamFn starts one model call. It never fails at call time: a failure is a

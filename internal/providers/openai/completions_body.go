@@ -5,13 +5,15 @@ import (
 	"encoding/json"
 	"fmt"
 	"strings"
-	"unicode/utf8"
 
 	"AskCore/internal/providers"
 	"AskCore/pkg/protocol"
 )
 
-func buildCompletionsBody(msgs []protocol.Message, model providers.Model, opts providers.StreamOptions) (map[string]any, error) {
+// buildCompletionsBody builds the request document. It reads the effective
+// values from pr only. A pr.MaxTokens of zero leaves the output limit out,
+// which is how the size estimate for the clamp is made.
+func buildCompletionsBody(msgs []protocol.Message, model providers.Model, pr *providers.Prepared) (map[string]any, error) {
 	compat, _ := model.Completions()
 	extra := map[string]any{
 		"model":  model.ID,
@@ -37,57 +39,66 @@ func buildCompletionsBody(msgs []protocol.Message, model providers.Model, opts p
 		extra["tools"] = tools
 	}
 
-	if opts.ToolChoice != "" {
+	if pr.ToolChoice != "" {
 		found := false
 		for _, tool := range providers.CurrentTools(msgs) {
-			if tool.Name == opts.ToolChoice {
+			if tool.Name == pr.ToolChoice {
 				found = true
 				break
 			}
 		}
 		if !found {
-			return nil, fmt.Errorf("%w: unknown Completions tool choice %q", providers.ErrUnsupportedRequest, opts.ToolChoice)
+			return nil, fmt.Errorf("%w: unknown Completions tool choice %q", providers.ErrUnsupportedRequest, pr.ToolChoice)
 		}
-		extra["tool_choice"] = map[string]any{"type": "function", "function": map[string]any{"name": opts.ToolChoice}}
+		extra["tool_choice"] = map[string]any{"type": "function", "function": map[string]any{"name": pr.ToolChoice}}
 	}
-	applyCompletionsThinking(extra, model, compat, opts.Reasoning)
+	applyCompletionsThinking(extra, compat, pr)
 
-	if opts.Temperature != nil {
-		extra["temperature"] = *opts.Temperature
+	if pr.Temperature != nil {
+		extra["temperature"] = *pr.Temperature
 	}
-
-	raw, err := json.Marshal(extra)
-	if err != nil {
-		return nil, err
+	if pr.MaxTokens > 0 {
+		field := compat.MaxTokensField
+		if field == "" {
+			field = "max_tokens"
+		}
+		extra[field] = pr.MaxTokens
 	}
-	est := utf8.RuneCount(raw) / 4
-	field := compat.MaxTokensField
-	if field == "" {
-		field = "max_tokens"
-	}
-	extra[field] = clampMaxTokens(model, opts, est)
 	return extra, nil
 }
 
-func applyCompletionsThinking(extra map[string]any, model providers.Model, compat providers.CompletionsCompat, level protocol.ThinkingLevel) {
+// effectiveCompletionsThinking is the thinking level and the effort word of a
+// request. A model without reasoning has neither.
+func effectiveCompletionsThinking(model providers.Model, level protocol.ThinkingLevel) (protocol.ThinkingLevel, string) {
 	if !model.Reasoning {
-		return
+		return "", ""
 	}
 	if level == "" {
 		level = protocol.ThinkingMedium
 	}
+	if level == protocol.ThinkingOff {
+		return level, ""
+	}
+	word, _ := thinkingEffort(model, level)
+	return level, word
+}
+
+func applyCompletionsThinking(extra map[string]any, compat providers.CompletionsCompat, pr *providers.Prepared) {
+	if pr.Thinking == "" {
+		return
+	}
 	if compat.ThinkingFormat == "qwen" {
-		if level == protocol.ThinkingOff {
+		if pr.Thinking == protocol.ThinkingOff {
 			extra["enable_thinking"] = false
 			return
 		}
 		extra["enable_thinking"] = true
 	}
-	if level == protocol.ThinkingOff {
+	if pr.Thinking == protocol.ThinkingOff {
 		return
 	}
-	if word, ok := thinkingEffort(model, level); ok {
-		extra["reasoning_effort"] = word
+	if pr.Effort != "" {
+		extra["reasoning_effort"] = pr.Effort
 	}
 }
 

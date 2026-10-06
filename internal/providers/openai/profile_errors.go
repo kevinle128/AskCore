@@ -1,18 +1,21 @@
 package openai
 
 import (
+	"context"
 	"encoding/json"
 	"errors"
-	"fmt"
-	"net/http"
 
 	"charm.land/fantasy"
 	fopenai "charm.land/fantasy/providers/openai"
 
-	"AskCore/internal/providers"
+	"AskCore/internal/providers/fantasykit"
 )
 
-func classifyResponsesError(err error) error {
+// classifyResponsesError turns a provider error of the Responses stream into a
+// typed failure. The error code can sit in the response body or in a failed
+// response event; the shared classifier reads it as one more fact. An error
+// that is no provider error stays as it is.
+func classifyResponsesError(runCtx context.Context, err error) error {
 	if err == nil {
 		return nil
 	}
@@ -35,21 +38,5 @@ func classifyResponsesError(err error) error {
 	if errors.As(err, &responseError) && responseError.Code != "" {
 		code = responseError.Code
 	}
-	var class error
-	switch {
-	case code == "subscription_sharing_usage_limit_exceeded":
-		class = providers.ErrAllowanceExhausted
-	case pe.StatusCode == http.StatusTooManyRequests || code == "rate_limit_exceeded":
-		class = providers.ErrRateLimited
-	case pe.StatusCode == http.StatusUnauthorized || pe.StatusCode == http.StatusForbidden || pe.AuthError:
-		class = providers.ErrAuthentication
-	case pe.StatusCode == http.StatusBadRequest || pe.StatusCode == http.StatusUnprocessableEntity:
-		class = providers.ErrUnsupportedRequest
-	case pe.StatusCode == 0:
-		class = providers.ErrTransport
-	}
-	if class != nil {
-		return fmt.Errorf("%w: %w", class, err)
-	}
-	return err
+	return fantasykit.Classify(runCtx, err, code, fantasykit.ErrIdleTimeout)
 }

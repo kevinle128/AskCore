@@ -288,3 +288,69 @@ func TestTransformMessagesLeavesRawMessages(t *testing.T) {
 	got := TransformMessages([]protocol.Message{raw}, Model{}, func() int64 { return 1 }, nil)
 	assert.Equal(t, []protocol.Message{raw}, got)
 }
+
+func TestTruncatedToolOnlyMessageIsNotReplayed(t *testing.T) {
+	model := Model{ID: "m", API: "api", Provider: "prov", Input: []string{"text"}}
+	user := func(s string) protocol.Message {
+		return protocol.UserMessage{Content: []protocol.UserBlock{protocol.Text{Text: s}}}
+	}
+	truncated := protocol.AssistantMessage{
+		API: "api", Provider: "prov", Model: "m",
+		StopReason: protocol.StopLength,
+		Content:    []protocol.AssistantBlock{},
+	}
+	kept := protocol.AssistantMessage{
+		API: "api", Provider: "prov", Model: "m",
+		StopReason: protocol.StopStop,
+		Content:    []protocol.AssistantBlock{protocol.Text{Text: "kept"}},
+	}
+	emptyStop := truncated
+	emptyStop.StopReason = protocol.StopStop
+	in := []protocol.Message{user("one"), kept, user("two"), truncated, user("three"), emptyStop, user("four")}
+
+	out := TransformMessages(in, model, func() int64 { return 1 }, nil)
+
+	assert.Equal(t, []protocol.Message{user("one"), kept, user("two"), user("three"), user("four")}, out,
+		"an empty assistant message is left out whatever its stop reason, and its neighbours stay")
+}
+
+func TestInterruptedMessageReplayRetainsOnlyNonblankContent(t *testing.T) {
+	model := Model{ID: "m", API: "api", Provider: "prov"}
+	signature := "signed"
+	for _, tc := range []struct {
+		name        string
+		input, want []protocol.AssistantBlock
+	}{
+		{"unsigned thinking is plain text", []protocol.AssistantBlock{protocol.Text{Text: "partial"}, protocol.Thinking{Thinking: "plan"}, protocol.ToolCall{ID: "unfinished", Name: "tool"}, protocol.Text{Text: " \n"}}, []protocol.AssistantBlock{protocol.Text{Text: "partial"}, protocol.Text{Text: "plan"}}},
+		{"signed thinking stays thinking", []protocol.AssistantBlock{protocol.Thinking{Thinking: "plan", ThinkingSignature: &signature}}, []protocol.AssistantBlock{protocol.Thinking{Thinking: "plan", ThinkingSignature: &signature}}},
+		{"blank wrapper stays out", []protocol.AssistantBlock{protocol.Text{Text: " \n"}, protocol.Thinking{Thinking: "\t"}}, nil},
+		{"tool only stays out", []protocol.AssistantBlock{protocol.ToolCall{ID: "unfinished", Name: "tool"}}, nil},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			interrupted := protocol.AssistantMessage{API: string(model.API), Provider: model.Provider, Model: model.ID, StopReason: protocol.StopAborted, Content: tc.input}
+			for _, source := range []protocol.Message{interrupted, &interrupted} {
+				got := TransformMessages([]protocol.Message{source}, model, func() int64 { return 1 }, nil)
+				if tc.want == nil {
+					require.Empty(t, got)
+					continue
+				}
+				require.Len(t, got, 1)
+				message, ok := assistantValue(got[0])
+				require.True(t, ok)
+				require.Equal(t, tc.want, message.Content)
+			}
+			require.Equal(t, tc.input, interrupted.Content, "replay does not mutate history")
+		})
+	}
+}
+
+func TestInterruptedUnsignedThinkingIsReplayedAsText(t *testing.T) {
+	model := Model{ID: "m", API: "api", Provider: "prov"}
+	interrupted := protocol.AssistantMessage{API: string(model.API), Provider: model.Provider, Model: model.ID, StopReason: protocol.StopAborted, Content: []protocol.AssistantBlock{protocol.Thinking{Thinking: "unfinished reasoning"}}}
+	got := TransformMessages([]protocol.Message{interrupted}, model, nil, nil)
+	require.Len(t, got, 1)
+	message, ok := assistantValue(got[0])
+	require.True(t, ok)
+	require.Equal(t, []protocol.AssistantBlock{protocol.Text{Text: "unfinished reasoning"}}, message.Content)
+	require.IsType(t, protocol.Thinking{}, interrupted.Content[0], "replay keeps the original thinking block in history")
+}

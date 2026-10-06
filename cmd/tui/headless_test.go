@@ -98,9 +98,9 @@ func TestPrintBadPaceEnv(t *testing.T) {
 	assert.Equal(t, result{"", "Error: ASK_FAUX_TPS must be a non-negative number, got \"fast\"\n", 1}, got)
 }
 
-var volatileFields = regexp.MustCompile(`"(ts|timestamp)":\d+|"runId":"[0-9a-f]{32}"|"sessionId":"[0-9a-fA-F-]{36}"`)
+var volatileFields = regexp.MustCompile(`"(ts|timestamp)":\d+|"runId":"[0-9a-f]{32}"|"sessionId":"[0-9a-fA-F-]{36}"|"(cycleId|attemptId)":"[0-9a-f]{32}"`)
 
-// normalize replaces the clock, run id and session id values, which change per run.
+// normalize replaces the clock, run, session, cycle and attempt id values, which change per run.
 func normalize(jsonl string) string {
 	return volatileFields.ReplaceAllStringFunc(jsonl, func(s string) string {
 		if strings.HasPrefix(s, `"runId"`) {
@@ -108,6 +108,12 @@ func normalize(jsonl string) string {
 		}
 		if strings.HasPrefix(s, `"sessionId"`) {
 			return `"sessionId":""`
+		}
+		if strings.HasPrefix(s, `"cycleId"`) {
+			return `"cycleId":"C"`
+		}
+		if strings.HasPrefix(s, `"attemptId"`) {
+			return `"attemptId":"A"`
 		}
 		return s[:strings.IndexByte(s, ':')+1] + "0"
 	})
@@ -132,17 +138,21 @@ func TestJSONHelloLines(t *testing.T) {
 	got := runCLI("", "--mode", "json", "hello")
 
 	want := `{"seq":1,"ts":0,"sessionId":"","runId":"R","type":"agent_start"}
-{"seq":2,"ts":0,"sessionId":"","runId":"R","type":"turn_start"}
-{"seq":3,"ts":0,"sessionId":"","runId":"R","type":"message_start","message":{"role":"user","content":[{"type":"text","text":"hello"}],"timestamp":0}}
-{"seq":4,"ts":0,"sessionId":"","runId":"R","type":"message_end","message":{"role":"user","content":[{"type":"text","text":"hello"}],"timestamp":0}}
-{"seq":5,"ts":0,"sessionId":"","runId":"R","type":"message_start","message":{"role":"assistant","content":[],"api":"faux","provider":"faux","model":"faux-1","usage":{"input":54,"output":0,"cacheRead":0,"cacheWrite":54,"totalTokens":108,"cost":{"input":0,"output":0,"cacheRead":0,"cacheWrite":0,"total":0}},"stopReason":"pending","timestamp":0}}
-{"seq":6,"ts":0,"sessionId":"","runId":"R","type":"message_update","assistantMessageEvent":{"type":"text_start","contentIndex":0,"content":{"type":"text","text":""}},"usage":{"input":54,"output":2,"cacheRead":0,"cacheWrite":54,"totalTokens":110,"cost":{"input":0,"output":0,"cacheRead":0,"cacheWrite":0,"total":0}}}
-{"seq":7,"ts":0,"sessionId":"","runId":"R","type":"message_update","assistantMessageEvent":{"type":"text_delta","contentIndex":0,"delta":"hello"},"usage":{"input":54,"output":2,"cacheRead":0,"cacheWrite":54,"totalTokens":110,"cost":{"input":0,"output":0,"cacheRead":0,"cacheWrite":0,"total":0}}}
-{"seq":8,"ts":0,"sessionId":"","runId":"R","type":"message_update","assistantMessageEvent":{"type":"text_end","contentIndex":0,"content":"hello"},"usage":{"input":54,"output":2,"cacheRead":0,"cacheWrite":54,"totalTokens":110,"cost":{"input":0,"output":0,"cacheRead":0,"cacheWrite":0,"total":0}}}
-{"seq":9,"ts":0,"sessionId":"","runId":"R","type":"message_end","message":{"role":"assistant","content":[{"type":"text","text":"hello"}],"api":"faux","provider":"faux","model":"faux-1","thinkingLevel":"off","usage":{"input":54,"output":2,"cacheRead":0,"cacheWrite":54,"totalTokens":110,"cost":{"input":0,"output":0,"cacheRead":0,"cacheWrite":0,"total":0}},"stopReason":"stop","timestamp":0}}
-{"seq":10,"ts":0,"sessionId":"","runId":"R","type":"turn_end","message":{"role":"assistant","content":[{"type":"text","text":"hello"}],"api":"faux","provider":"faux","model":"faux-1","thinkingLevel":"off","usage":{"input":54,"output":2,"cacheRead":0,"cacheWrite":54,"totalTokens":110,"cost":{"input":0,"output":0,"cacheRead":0,"cacheWrite":0,"total":0}},"stopReason":"stop","timestamp":0},"toolResults":[]}
-{"seq":11,"ts":0,"sessionId":"","runId":"R","type":"agent_end","messages":[{"role":"user","content":[{"type":"text","text":"hello"}],"timestamp":0},{"role":"assistant","content":[{"type":"text","text":"hello"}],"api":"faux","provider":"faux","model":"faux-1","thinkingLevel":"off","usage":{"input":54,"output":2,"cacheRead":0,"cacheWrite":54,"totalTokens":110,"cost":{"input":0,"output":0,"cacheRead":0,"cacheWrite":0,"total":0}},"stopReason":"stop","timestamp":0}]}
-{"seq":12,"ts":0,"sessionId":"","runId":"R","type":"agent_settled"}
+{"seq":2,"ts":0,"sessionId":"","runId":"R","type":"cycle_start","cycleId":"C"}
+{"seq":3,"ts":0,"sessionId":"","runId":"R","type":"turn_start","cycleId":"C"}
+{"seq":4,"ts":0,"sessionId":"","runId":"R","type":"message_start","message":{"role":"user","content":[{"type":"text","text":"hello"}],"timestamp":0}}
+{"seq":5,"ts":0,"sessionId":"","runId":"R","type":"message_end","message":{"role":"user","content":[{"type":"text","text":"hello"}],"timestamp":0}}
+{"seq":6,"ts":0,"sessionId":"","runId":"R","type":"attempt_start","attemptId":"A","cycleId":"C","number":1}
+{"seq":7,"ts":0,"sessionId":"","runId":"R","type":"message_start","message":{"role":"assistant","content":[],"api":"faux","provider":"faux","model":"faux-1","usage":{"input":54,"output":0,"cacheRead":0,"cacheWrite":54,"totalTokens":108,"cost":{"input":0,"output":0,"cacheRead":0,"cacheWrite":0,"total":0}},"stopReason":"pending","timestamp":0}}
+{"seq":8,"ts":0,"sessionId":"","runId":"R","type":"message_update","assistantMessageEvent":{"type":"text_start","contentIndex":0,"content":{"type":"text","text":""}},"usage":{"input":54,"output":2,"cacheRead":0,"cacheWrite":54,"totalTokens":110,"cost":{"input":0,"output":0,"cacheRead":0,"cacheWrite":0,"total":0}}}
+{"seq":9,"ts":0,"sessionId":"","runId":"R","type":"message_update","assistantMessageEvent":{"type":"text_delta","contentIndex":0,"delta":"hello"},"usage":{"input":54,"output":2,"cacheRead":0,"cacheWrite":54,"totalTokens":110,"cost":{"input":0,"output":0,"cacheRead":0,"cacheWrite":0,"total":0}}}
+{"seq":10,"ts":0,"sessionId":"","runId":"R","type":"message_update","assistantMessageEvent":{"type":"text_end","contentIndex":0,"content":"hello"},"usage":{"input":54,"output":2,"cacheRead":0,"cacheWrite":54,"totalTokens":110,"cost":{"input":0,"output":0,"cacheRead":0,"cacheWrite":0,"total":0}}}
+{"seq":11,"ts":0,"sessionId":"","runId":"R","type":"message_end","message":{"role":"assistant","content":[{"type":"text","text":"hello"}],"api":"faux","provider":"faux","model":"faux-1","thinkingLevel":"off","usage":{"input":54,"output":2,"cacheRead":0,"cacheWrite":54,"totalTokens":110,"cost":{"input":0,"output":0,"cacheRead":0,"cacheWrite":0,"total":0}},"stopReason":"stop","timestamp":0}}
+{"seq":12,"ts":0,"sessionId":"","runId":"R","type":"attempt_end","attemptId":"A","outcome":"completed"}
+{"seq":13,"ts":0,"sessionId":"","runId":"R","type":"turn_end","cycleId":"C","message":{"role":"assistant","content":[{"type":"text","text":"hello"}],"api":"faux","provider":"faux","model":"faux-1","thinkingLevel":"off","usage":{"input":54,"output":2,"cacheRead":0,"cacheWrite":54,"totalTokens":110,"cost":{"input":0,"output":0,"cacheRead":0,"cacheWrite":0,"total":0}},"stopReason":"stop","timestamp":0},"toolResults":[]}
+{"seq":14,"ts":0,"sessionId":"","runId":"R","type":"cycle_end","cycleId":"C","reason":"completed"}
+{"seq":15,"ts":0,"sessionId":"","runId":"R","type":"agent_end","messages":[{"role":"user","content":[{"type":"text","text":"hello"}],"timestamp":0},{"role":"assistant","content":[{"type":"text","text":"hello"}],"api":"faux","provider":"faux","model":"faux-1","thinkingLevel":"off","usage":{"input":54,"output":2,"cacheRead":0,"cacheWrite":54,"totalTokens":110,"cost":{"input":0,"output":0,"cacheRead":0,"cacheWrite":0,"total":0}},"stopReason":"stop","timestamp":0}],"willRetry":false}
+{"seq":16,"ts":0,"sessionId":"","runId":"R","type":"agent_settled"}
 `
 	assert.Equal(t, result{want, "", 0}, result{normalize(got.stdout), got.stderr, got.code})
 }
@@ -192,15 +202,21 @@ func TestJSONEchoEventOrder(t *testing.T) {
 	evs := decodeJSONL(t, got.stdout)
 	assert.Equal(t, []string{
 		"agent_start",
+		"cycle_start",
 		"turn_start",
 		"message_start(user)", "message_end(user)",
+		"attempt_start",
 		"message_start(assistant)", "message_update(toolcall_start)", "message_update(toolcall_delta)", "message_update(toolcall_end)", "message_end(assistant)",
+		"attempt_end",
 		"tool_execution_start(echo)", "tool_execution_end(echo)",
 		"message_start(toolResult)", "message_end(toolResult)",
 		"turn_end",
 		"turn_start",
+		"attempt_start",
 		"message_start(assistant)", "message_update(text_start)", "message_update(text_delta)", "message_update(text_end)", "message_end(assistant)",
+		"attempt_end",
 		"turn_end",
+		"cycle_end",
 		"agent_end",
 		"agent_settled",
 	}, labels(evs))
@@ -255,8 +271,8 @@ func TestJSONAssistantErrorExitsZero(t *testing.T) {
 	assert.Equal(t, 0, got.code)
 	assert.Equal(t, "", got.stderr)
 	evs := decodeJSONL(t, got.stdout)
-	assert.Equal(t, []string{"message_end(assistant)", "turn_end", "agent_end", "agent_settled"}, labels(evs[len(evs)-4:]))
-	end := evs[len(evs)-4].(*protocol.MessageEnd).Message.(protocol.AssistantMessage)
+	assert.Equal(t, []string{"message_end(assistant)", "attempt_end", "turn_end", "cycle_end", "agent_end", "agent_settled"}, labels(evs[len(evs)-6:]))
+	end := evs[len(evs)-6].(*protocol.MessageEnd).Message.(protocol.AssistantMessage)
 	assert.Equal(t, protocol.StopError, end.StopReason)
 	require.NotNil(t, end.ErrorMessage)
 	assert.Equal(t, "boom", *end.ErrorMessage)
@@ -274,12 +290,12 @@ func TestJSONTwoPrompts(t *testing.T) {
 			settled = append(settled, i)
 		}
 	}
-	require.Equal(t, []int{11, 23}, settled)
-	first, second := evs[0].Env().RunID, evs[12].Env().RunID
+	require.Equal(t, []int{15, 31}, settled)
+	first, second := evs[0].Env().RunID, evs[16].Env().RunID
 	assert.NotEqual(t, first, second)
 	for i, ev := range evs {
 		want := first
-		if i > 11 {
+		if i > 15 {
 			want = second
 		}
 		assert.Equal(t, want, ev.Env().RunID, "runId of event %d", i)
@@ -376,7 +392,7 @@ func TestJSONSmallReplyWaitsForFinalFlush(t *testing.T) {
 	}
 	close(w.gate)
 	assert.Equal(t, 0, <-codes)
-	assert.Len(t, decodeJSONL(t, w.buf.String()), 12)
+	assert.Len(t, decodeJSONL(t, w.buf.String()), 16)
 }
 
 func TestEPIPEInProcess(t *testing.T) {

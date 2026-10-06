@@ -389,6 +389,10 @@ func (r *run) finish(step Step) {
 	case protocol.StopPending:
 		a.Fail(protocol.StopError, msgPending, nil)
 	case protocol.StopError:
+		if f := step.failure; f != nil {
+			a.Fail(protocol.StopError, text(f.Error()), f)
+			return
+		}
 		msg := text(msgFailed)
 		a.Fail(protocol.StopError, msg, errors.New(msg))
 	case protocol.StopAborted:

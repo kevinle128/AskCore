@@ -1,19 +1,26 @@
 package agent
 
 import (
+	"slices"
+	"strings"
+
 	"AskCore/internal/providers"
-	"AskCore/internal/tools"
+	"AskCore/internal/sessions"
 	"AskCore/pkg/protocol"
 )
 
-// initialSystemMessage is Pi's createInitialSystemMessage: one system message
-// with timestamp 0 that holds the prompt and declares every tool, or nothing
-// when both are empty. The tool set is fixed for the run; tool changes inside
-// the log arrive with sessions.
-func initialSystemMessage(prompt string, reg *tools.Registry) []protocol.Message {
-	var decls []protocol.ToolDecl
-	if reg != nil {
-		decls = reg.Decls()
-	}
-	return providers.NormalizeRequest(providers.Request{SystemPrompt: prompt, Tools: decls}).Messages
+// systemMessages is Pi's createInitialSystemMessage: one system message with
+// timestamp 0 that holds the prompt and declares every tool of the snapshot,
+// or nothing when both are empty. Tool changes inside the log arrive as
+// messages of their own.
+func systemMessages(snap sessions.SystemSnapshot) []protocol.Message {
+	return providers.NormalizeRequest(providers.Request{SystemPrompt: snap.SystemPrompt, Tools: snap.Tools}).Messages
+}
+
+// sortedDecls sorts decls by tool name and returns them. The order of the
+// registration never reaches a request, so two Agents that register the same
+// tools in a different order send the same request.
+func sortedDecls(decls []protocol.ToolDecl) []protocol.ToolDecl {
+	slices.SortStableFunc(decls, func(a, b protocol.ToolDecl) int { return strings.Compare(a.Name, b.Name) })
+	return decls
 }

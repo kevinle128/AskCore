@@ -1,6 +1,7 @@
 package tools_test
 
 import (
+	"context"
 	"encoding/json"
 	"strings"
 	"testing"
@@ -9,7 +10,35 @@ import (
 	"github.com/stretchr/testify/require"
 
 	"AskCore/internal/tools"
+	"AskCore/pkg/protocol"
 )
+
+type unchangedArgsTool struct {
+	seen json.RawMessage
+}
+
+func (*unchangedArgsTool) Decl() protocol.ToolDecl {
+	return protocol.ToolDecl{Name: "unchanged", Parameters: json.RawMessage(`{"type":"object","required":["required"],"properties":{"required":{"type":"string"},"optional":{"type":"string","default":"do not insert"}}}`)}
+}
+
+func (tool *unchangedArgsTool) Execute(_ context.Context, _ tools.Context, args json.RawMessage) (protocol.ToolExecutionResult, error) {
+	tool.seen = append(json.RawMessage(nil), args...)
+	return protocol.ToolExecutionResult{}, nil
+}
+
+func TestValidateAllowsExtraKeysAndAppliesNoDefaults(t *testing.T) {
+	var registry tools.Registry
+	tool := &unchangedArgsTool{}
+	require.NoError(t, registry.Register(tool, tools.SourceInfo{}))
+	input := json.RawMessage(`{"required":"present","extra":{"nested":[1,true]}}`)
+	prepared, err := registry.Prepare(tool.Decl().Name, input)
+	require.NoError(t, err)
+	registered, _, ok := registry.Lookup(tool.Decl().Name)
+	require.True(t, ok)
+	_, err = registered.Execute(context.Background(), tools.Context{}, prepared)
+	require.NoError(t, err)
+	assert.JSONEq(t, string(input), string(tool.seen), "extra keys stay present and the omitted optional receives no default")
+}
 
 func echoRegistry(t *testing.T) *tools.Registry {
 	t.Helper()

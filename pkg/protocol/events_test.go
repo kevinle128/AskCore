@@ -24,7 +24,11 @@ func allEvents() []Event {
 	upd := &MessageUpdate{Envelope: env(5), AssistantMessageEvent: TextDeltaEvent{ContentIndex: 1, Delta: "ok"}, Usage: Usage{Input: 3, TotalTokens: 3}}
 	return []Event{
 		&AgentStart{Envelope: env(1)},
-		&TurnStart{Envelope: env(2)},
+		&CycleStart{Envelope: env(2), CycleID: "c1"},
+		&TurnStart{Envelope: env(2), CycleID: "c1"},
+		&AttemptStart{Envelope: env(2), AttemptID: "a1", CycleID: "c1", Number: 1},
+		&AttemptEnd{Envelope: env(2), AttemptID: "a1", Outcome: "completed"},
+		&CycleEnd{Envelope: env(2), CycleID: "c1", Reason: "aborted", Cause: "user"},
 		&MessageStart{Envelope: env(3), Message: UserMessage{Content: []UserBlock{Text{Text: "hi"}}, Timestamp: 1}},
 		&MessageStart{Envelope: env(4), Message: seedMessage()},
 		upd,
@@ -39,6 +43,8 @@ func allEvents() []Event {
 		&AgentEnd{Envelope: env(11), Messages: []Message{UserMessage{Content: []UserBlock{}}, finalAssistant(),
 			RawMessage{RoleName: "custom", Data: json.RawMessage(`{"role":"custom"}`)}}},
 		&AgentSettled{Envelope: env(12)},
+		&AutoRetryStart{Envelope: env(13), Attempt: 1, MaxAttempts: 5, DelayMs: 500, ErrorMessage: "slow down"},
+		&AutoRetryEnd{Envelope: env(14), Success: false, Attempt: 5, FinalError: "failed"},
 	}
 }
 
@@ -47,7 +53,7 @@ func TestAgentSettledJSONLRoundTrip(t *testing.T) {
 	w := NewJSONLWriter(&buf)
 	require.NoError(t, w.Write(&AgentEnd{Envelope: env(1)}))
 	require.NoError(t, w.Write(&AgentSettled{Envelope: env(2)}))
-	assert.Equal(t, `{"seq":1,"ts":1700000000001,"sessionId":"s1","runId":"r1","type":"agent_end","messages":[]}`+"\n"+
+	assert.Equal(t, `{"seq":1,"ts":1700000000001,"sessionId":"s1","runId":"r1","type":"agent_end","messages":[],"willRetry":false}`+"\n"+
 		`{"seq":2,"ts":1700000000002,"sessionId":"s1","runId":"r1","type":"agent_settled"}`+"\n", buf.String())
 
 	r := NewJSONLReader(&buf)
@@ -125,12 +131,12 @@ func TestMessageUpdateRejectsNonBlockEvents(t *testing.T) {
 }
 
 func TestUnknownAgentEventKeptRaw(t *testing.T) {
-	src := `{"seq":4,"ts":9,"sessionId":"s","runId":"r","type":"queue_update","queued":["a","b"],"n":{"x":1}}`
+	src := `{"seq":4,"ts":9,"sessionId":"s","runId":"r","type":"test_unknown_event","queued":["a","b"],"n":{"x":1}}`
 	ev, err := DecodeEvent([]byte(src))
 	require.NoError(t, err)
 	raw, ok := ev.(*RawEvent)
 	require.True(t, ok)
-	assert.Equal(t, "queue_update", raw.EventType())
+	assert.Equal(t, "test_unknown_event", raw.EventType())
 	assert.Equal(t, uint64(4), raw.Seq)
 	b, err := EncodeEvent(raw)
 	require.NoError(t, err)

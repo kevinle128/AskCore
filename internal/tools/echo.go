@@ -11,6 +11,9 @@ import (
 // Echo returns its text argument as one text block.
 type Echo struct{}
 
+// ConcurrencySafe returns true because Echo has no shared mutable state.
+func (Echo) ConcurrencySafe(json.RawMessage) bool { return true }
+
 func (Echo) Decl() protocol.ToolDecl {
 	return protocol.ToolDecl{
 		Name:        "echo",

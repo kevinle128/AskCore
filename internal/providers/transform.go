@@ -213,6 +213,22 @@ func rewriteAssistant(m protocol.AssistantMessage, model Model, normalize Normal
 }
 
 func rewriteAssistantBlock(b protocol.AssistantBlock, same bool, model Model, source protocol.AssistantMessage, normalize NormalizeToolCallID, idMap map[string]string) (protocol.AssistantBlock, bool, bool) {
+	if source.StopReason == protocol.StopAborted {
+		if t, ok := textOfAssistant(b); ok && strings.TrimSpace(t.Text) == "" {
+			return nil, false, true
+		}
+		if _, ok := toolCallOf(b); ok {
+			return nil, false, true
+		}
+		if t, ok := thinkingOf(b); ok {
+			if strings.TrimSpace(t.Thinking) == "" {
+				return nil, false, true
+			}
+			if t.ThinkingSignature == nil || *t.ThinkingSignature == "" {
+				return protocol.Text{Text: t.Thinking}, true, true
+			}
+		}
+	}
 	if t, ok := thinkingOf(b); ok {
 		return rewriteThinking(t, same)
 	}
@@ -310,7 +326,14 @@ func pairMessages(msgs []protocol.Message, now func() int64) []protocol.Message 
 	for _, m := range msgs {
 		if asst, ok := assistantValue(m); ok {
 			closePending()
-			if asst.StopReason == protocol.StopError || asst.StopReason == protocol.StopAborted {
+			if asst.StopReason == protocol.StopError {
+				continue
+			}
+			// An assistant message with no content blocks is never replayed: it
+			// gives the model nothing to read. One case is a reply cut off at
+			// the token limit whose only content was tool calls. The message
+			// stays in the log for its usage.
+			if len(asst.Content) == 0 {
 				continue
 			}
 			for _, b := range asst.Content {

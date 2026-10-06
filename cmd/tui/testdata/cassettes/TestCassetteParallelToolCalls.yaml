@@ -8,7 +8,7 @@ interactions:
         proto_minor: 1
         content_length: 878
         host: ""
-        body: '{"max_tokens":384000,"messages":[{"content":[{"text":"In one reply, call add with a=1 and b=2 and also call mul with a=3 and b=4. Do not wait between them. After the results, reply with both numbers.","type":"text"}],"role":"user"}],"model":"deepseek-v4.1-flash","output_config":{"effort":"medium"},"tools":[{"description":"Return the given text unchanged.","input_schema":{"properties":{"text":{"description":"The text to return.","type":"string"}},"required":["text"],"type":"object"},"name":"echo"},{"description":"Add two numbers and return a + b.","input_schema":{"properties":{"a":{"type":"number"},"b":{"type":"number"}},"required":["a","b"],"type":"object"},"name":"add"},{"description":"Multiply two numbers and return a * b.","input_schema":{"properties":{"a":{"type":"number"},"b":{"type":"number"}},"required":["a","b"],"type":"object"},"name":"mul"}],"stream":true}'
+        body: '{"max_tokens":384000,"messages":[{"content":[{"text":"In one reply, call add with a=1 and b=2 and also call mul with a=3 and b=4. Do not wait between them. After the results, reply with both numbers.","type":"text"}],"role":"user"}],"model":"deepseek-v4.1-flash","output_config":{"effort":"medium"},"tools":[{"description":"Add two numbers and return a + b.","input_schema":{"properties":{"a":{"type":"number"},"b":{"type":"number"}},"required":["a","b"],"type":"object"},"name":"add"},{"description":"Return the given text unchanged.","input_schema":{"properties":{"text":{"description":"The text to return.","type":"string"}},"required":["text"],"type":"object"},"name":"echo"},{"description":"Multiply two numbers and return a * b.","input_schema":{"properties":{"a":{"type":"number"},"b":{"type":"number"}},"required":["a","b"],"type":"object"},"name":"mul"}],"stream":true}'
         headers:
             Anthropic-Version:
                 - "2023-06-01"
@@ -26,7 +26,7 @@ interactions:
             data:{"type":"ping"}
 
             event:message_start
-            data:{"type":"message_start","message":{"id":"msg_ce614d99-44c2-4571-869a-d83ee37837a2","type":"message","role":"assistant","model":"deepseek-v4.1-flash","content":[],"stop_reason":null,"stop_sequence":null,"usage":{"input_tokens":151,"output_tokens":0}}}
+            data:{"type":"message_start","message":{"id":"msg_4b63bfa6-eb00-4e3a-8254-34236d556633","type":"message","role":"assistant","model":"deepseek-v4.1-flash","content":[],"stop_reason":null,"stop_sequence":null,"usage":{"input_tokens":151,"output_tokens":0}}}
 
             event:content_block_start
             data:{"type":"content_block_start","index":0,"content_block":{"type":"thinking","thinking":"","signature":""}}
@@ -35,13 +35,22 @@ interactions:
             data:{"type":"content_block_delta","index":0,"delta":{"type":"thinking_delta","thinking":"The"}}
 
             event:content_block_delta
-            data:{"type":"content_block_delta","index":0,"delta":{"type":"thinking_delta","thinking":" user wants both"}}
+            data:{"type":"content_block_delta","index":0,"delta":{"type":"thinking_delta","thinking":" user wants me to call add"}}
 
             event:content_block_delta
-            data:{"type":"content_block_delta","index":0,"delta":{"type":"thinking_delta","thinking":" calls in one"}}
+            data:{"type":"content_block_delta","index":0,"delta":{"type":"thinking_delta","thinking":"("}}
 
             event:content_block_delta
-            data:{"type":"content_block_delta","index":0,"delta":{"type":"thinking_delta","thinking":" block, no waiting"}}
+            data:{"type":"content_block_delta","index":0,"delta":{"type":"thinking_delta","thinking":"1,2) and mul"}}
+
+            event:content_block_delta
+            data:{"type":"content_block_delta","index":0,"delta":{"type":"thinking_delta","thinking":"(3,4) in"}}
+
+            event:content_block_delta
+            data:{"type":"content_block_delta","index":0,"delta":{"type":"thinking_delta","thinking":" the same block, then report"}}
+
+            event:content_block_delta
+            data:{"type":"content_block_delta","index":0,"delta":{"type":"thinking_delta","thinking":" both results"}}
 
             event:content_block_delta
             data:{"type":"content_block_delta","index":0,"delta":{"type":"thinking_delta","thinking":"."}}
@@ -53,7 +62,7 @@ interactions:
             data:{"type":"content_block_stop","index":0}
 
             event:content_block_start
-            data:{"type":"content_block_start","index":1,"content_block":{"type":"tool_use","id":"toolu_710277b8051741649489f29c","name":"add","input":{}}}
+            data:{"type":"content_block_start","index":1,"content_block":{"type":"tool_use","id":"toolu_9769c2431cc248f6ae1683bd","name":"add","input":{}}}
 
             event:content_block_delta
             data:{"type":"content_block_delta","index":1,"delta":{"type":"input_json_delta","partial_json":""}}
@@ -71,7 +80,7 @@ interactions:
             data:{"type":"content_block_stop","index":1}
 
             event:content_block_start
-            data:{"type":"content_block_start","index":2,"content_block":{"type":"tool_use","id":"toolu_83c7fe971fc8448c8dd8f417","name":"mul","input":{}}}
+            data:{"type":"content_block_start","index":2,"content_block":{"type":"tool_use","id":"toolu_e4063e298f1948e5bcd40b1e","name":"mul","input":{}}}
 
             event:content_block_delta
             data:{"type":"content_block_delta","index":2,"delta":{"type":"input_json_delta","partial_json":""}}
@@ -89,7 +98,7 @@ interactions:
             data:{"type":"content_block_stop","index":2}
 
             event:message_delta
-            data:{"type":"message_delta","delta":{"stop_reason":"tool_use","stop_sequence":null},"usage":{"input_tokens":457,"output_tokens":108,"cache_creation_input_tokens":0,"cache_read_input_tokens":0,"prompt_tokens_details":{"cached_tokens":0}}}
+            data:{"type":"message_delta","delta":{"stop_reason":"tool_use","stop_sequence":null},"usage":{"input_tokens":457,"output_tokens":125,"cache_creation_input_tokens":0,"cache_read_input_tokens":0,"prompt_tokens_details":{"cached_tokens":0}}}
 
             event:message_stop
             data:{"type":"message_stop"}
@@ -105,9 +114,9 @@ interactions:
         proto: HTTP/1.1
         proto_major: 1
         proto_minor: 1
-        content_length: 1444
+        content_length: 1485
         host: ""
-        body: '{"max_tokens":384000,"messages":[{"content":[{"text":"In one reply, call add with a=1 and b=2 and also call mul with a=3 and b=4. Do not wait between them. After the results, reply with both numbers.","type":"text"}],"role":"user"},{"content":[{"signature":"","thinking":"The user wants both calls in one block, no waiting.","type":"thinking"},{"id":"toolu_710277b8051741649489f29c","input":{"a":1,"b":2},"name":"add","type":"tool_use"},{"id":"toolu_83c7fe971fc8448c8dd8f417","input":{"a":3,"b":4},"name":"mul","type":"tool_use"}],"role":"assistant"},{"content":[{"content":[{"text":"3","type":"text"}],"tool_use_id":"toolu_710277b8051741649489f29c","type":"tool_result"},{"content":[{"text":"12","type":"text"}],"tool_use_id":"toolu_83c7fe971fc8448c8dd8f417","type":"tool_result"}],"role":"user"}],"model":"deepseek-v4.1-flash","output_config":{"effort":"medium"},"tools":[{"description":"Return the given text unchanged.","input_schema":{"properties":{"text":{"description":"The text to return.","type":"string"}},"required":["text"],"type":"object"},"name":"echo"},{"description":"Add two numbers and return a + b.","input_schema":{"properties":{"a":{"type":"number"},"b":{"type":"number"}},"required":["a","b"],"type":"object"},"name":"add"},{"description":"Multiply two numbers and return a * b.","input_schema":{"properties":{"a":{"type":"number"},"b":{"type":"number"}},"required":["a","b"],"type":"object"},"name":"mul"}],"stream":true}'
+        body: '{"max_tokens":384000,"messages":[{"content":[{"text":"In one reply, call add with a=1 and b=2 and also call mul with a=3 and b=4. Do not wait between them. After the results, reply with both numbers.","type":"text"}],"role":"user"},{"content":[{"signature":"","thinking":"The user wants me to call add(1,2) and mul(3,4) in the same block, then report both results.","type":"thinking"},{"id":"toolu_9769c2431cc248f6ae1683bd","input":{"a":1,"b":2},"name":"add","type":"tool_use"},{"id":"toolu_e4063e298f1948e5bcd40b1e","input":{"a":3,"b":4},"name":"mul","type":"tool_use"}],"role":"assistant"},{"content":[{"content":[{"text":"3","type":"text"}],"tool_use_id":"toolu_9769c2431cc248f6ae1683bd","type":"tool_result"},{"content":[{"text":"12","type":"text"}],"tool_use_id":"toolu_e4063e298f1948e5bcd40b1e","type":"tool_result"}],"role":"user"}],"model":"deepseek-v4.1-flash","output_config":{"effort":"medium"},"tools":[{"description":"Add two numbers and return a + b.","input_schema":{"properties":{"a":{"type":"number"},"b":{"type":"number"}},"required":["a","b"],"type":"object"},"name":"add"},{"description":"Return the given text unchanged.","input_schema":{"properties":{"text":{"description":"The text to return.","type":"string"}},"required":["text"],"type":"object"},"name":"echo"},{"description":"Multiply two numbers and return a * b.","input_schema":{"properties":{"a":{"type":"number"},"b":{"type":"number"}},"required":["a","b"],"type":"object"},"name":"mul"}],"stream":true}'
         headers:
             Anthropic-Version:
                 - "2023-06-01"
@@ -124,38 +133,50 @@ interactions:
             event:ping
             data:{"type":"ping"}
 
+            event:ping
+            data:{"type":"ping"}
+
             event:message_start
-            data:{"type":"message_start","message":{"id":"msg_9536da18-a20d-46dd-8958-0afad1406baf","type":"message","role":"assistant","model":"deepseek-v4.1-flash","content":[],"stop_reason":null,"stop_sequence":null,"usage":{"input_tokens":151,"output_tokens":0}}}
+            data:{"type":"message_start","message":{"id":"msg_c891fa0c-9ad7-4066-aa8f-846762992467","type":"message","role":"assistant","model":"deepseek-v4.1-flash","content":[],"stop_reason":null,"stop_sequence":null,"usage":{"input_tokens":151,"output_tokens":0}}}
 
             event:content_block_start
             data:{"type":"content_block_start","index":0,"content_block":{"type":"text","text":""}}
 
             event:content_block_delta
-            data:{"type":"content_block_delta","index":0,"delta":{"type":"text_delta","text":"Both results:"}}
+            data:{"type":"content_block_delta","index":0,"delta":{"type":"text_delta","text":"Both calls"}}
 
             event:content_block_delta
-            data:{"type":"content_block_delta","index":0,"delta":{"type":"text_delta","text":" **"}}
+            data:{"type":"content_block_delta","index":0,"delta":{"type":"text_delta","text":" ran"}}
 
             event:content_block_delta
-            data:{"type":"content_block_delta","index":0,"delta":{"type":"text_delta","text":"3** ("}}
+            data:{"type":"content_block_delta","index":0,"delta":{"type":"text_delta","text":" together"}}
 
             event:content_block_delta
-            data:{"type":"content_block_delta","index":0,"delta":{"type":"text_delta","text":"1"}}
+            data:{"type":"content_block_delta","index":0,"delta":{"type":"text_delta","text":":"}}
 
             event:content_block_delta
-            data:{"type":"content_block_delta","index":0,"delta":{"type":"text_delta","text":" + 2) and **"}}
+            data:{"type":"content_block_delta","index":0,"delta":{"type":"text_delta","text":"\n\n- `"}}
 
             event:content_block_delta
-            data:{"type":"content_block_delta","index":0,"delta":{"type":"text_delta","text":"12** (3 × "}}
+            data:{"type":"content_block_delta","index":0,"delta":{"type":"text_delta","text":"add(1, 2"}}
 
             event:content_block_delta
-            data:{"type":"content_block_delta","index":0,"delta":{"type":"text_delta","text":"4)."}}
+            data:{"type":"content_block_delta","index":0,"delta":{"type":"text_delta","text":")` ="}}
+
+            event:content_block_delta
+            data:{"type":"content_block_delta","index":0,"delta":{"type":"text_delta","text":" **3**\n- `mul"}}
+
+            event:content_block_delta
+            data:{"type":"content_block_delta","index":0,"delta":{"type":"text_delta","text":"(3, 4)`"}}
+
+            event:content_block_delta
+            data:{"type":"content_block_delta","index":0,"delta":{"type":"text_delta","text":" = **12**"}}
 
             event:content_block_stop
             data:{"type":"content_block_stop","index":0}
 
             event:message_delta
-            data:{"type":"message_delta","delta":{"stop_reason":"end_turn","stop_sequence":null},"usage":{"input_tokens":587,"output_tokens":23,"cache_creation_input_tokens":0,"cache_read_input_tokens":0,"prompt_tokens_details":{"cached_tokens":0}}}
+            data:{"type":"message_delta","delta":{"stop_reason":"end_turn","stop_sequence":null},"usage":{"input_tokens":604,"output_tokens":32,"cache_creation_input_tokens":0,"cache_read_input_tokens":0,"prompt_tokens_details":{"cached_tokens":0}}}
 
             event:message_stop
             data:{"type":"message_stop"}

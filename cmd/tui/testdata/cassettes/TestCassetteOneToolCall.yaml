@@ -8,7 +8,7 @@ interactions:
         proto_minor: 1
         content_length: 818
         host: ""
-        body: '{"max_tokens":384000,"messages":[{"content":[{"text":"Use the add tool to compute 2 + 3. After the tool result, reply with only the number.","type":"text"}],"role":"user"}],"model":"deepseek-v4.1-flash","tools":[{"description":"Return the given text unchanged.","input_schema":{"properties":{"text":{"description":"The text to return.","type":"string"}},"required":["text"],"type":"object"},"name":"echo"},{"description":"Add two numbers and return a + b.","input_schema":{"properties":{"a":{"type":"number"},"b":{"type":"number"}},"required":["a","b"],"type":"object"},"name":"add"},{"description":"Multiply two numbers and return a * b.","input_schema":{"properties":{"a":{"type":"number"},"b":{"type":"number"}},"required":["a","b"],"type":"object"},"name":"mul"}],"output_config":{"effort":"medium"},"stream":true}'
+        body: '{"max_tokens":384000,"messages":[{"content":[{"text":"Use the add tool to compute 2 + 3. After the tool result, reply with only the number.","type":"text"}],"role":"user"}],"model":"deepseek-v4.1-flash","output_config":{"effort":"medium"},"tools":[{"description":"Add two numbers and return a + b.","input_schema":{"properties":{"a":{"type":"number"},"b":{"type":"number"}},"required":["a","b"],"type":"object"},"name":"add"},{"description":"Return the given text unchanged.","input_schema":{"properties":{"text":{"description":"The text to return.","type":"string"}},"required":["text"],"type":"object"},"name":"echo"},{"description":"Multiply two numbers and return a * b.","input_schema":{"properties":{"a":{"type":"number"},"b":{"type":"number"}},"required":["a","b"],"type":"object"},"name":"mul"}],"stream":true}'
         headers:
             Anthropic-Version:
                 - "2023-06-01"
@@ -26,7 +26,7 @@ interactions:
             data:{"type":"ping"}
 
             event:message_start
-            data:{"type":"message_start","message":{"id":"msg_6a3f6240-0374-4468-9a3c-8771ec2cd322","type":"message","role":"assistant","model":"deepseek-v4.1-flash","content":[],"stop_reason":null,"stop_sequence":null,"usage":{"input_tokens":136,"output_tokens":0}}}
+            data:{"type":"message_start","message":{"id":"msg_6c665f32-2ac9-4c21-a221-ef2e0a5973fa","type":"message","role":"assistant","model":"deepseek-v4.1-flash","content":[],"stop_reason":null,"stop_sequence":null,"usage":{"input_tokens":136,"output_tokens":0}}}
 
             event:content_block_start
             data:{"type":"content_block_start","index":0,"content_block":{"type":"thinking","thinking":"","signature":""}}
@@ -35,19 +35,16 @@ interactions:
             data:{"type":"content_block_delta","index":0,"delta":{"type":"thinking_delta","thinking":"The"}}
 
             event:content_block_delta
-            data:{"type":"content_block_delta","index":0,"delta":{"type":"thinking_delta","thinking":" user wants me to use"}}
+            data:{"type":"content_block_delta","index":0,"delta":{"type":"thinking_delta","thinking":" user wants me to call"}}
 
             event:content_block_delta
-            data:{"type":"content_block_delta","index":0,"delta":{"type":"thinking_delta","thinking":" the add tool to compute "}}
+            data:{"type":"content_block_delta","index":0,"delta":{"type":"thinking_delta","thinking":" the"}}
 
             event:content_block_delta
-            data:{"type":"content_block_delta","index":0,"delta":{"type":"thinking_delta","thinking":"2+3, then reply"}}
+            data:{"type":"content_block_delta","index":0,"delta":{"type":"thinking_delta","thinking":" add tool with 2 and"}}
 
             event:content_block_delta
-            data:{"type":"content_block_delta","index":0,"delta":{"type":"thinking_delta","thinking":" with only the number.\n\nLet"}}
-
-            event:content_block_delta
-            data:{"type":"content_block_delta","index":0,"delta":{"type":"thinking_delta","thinking":" me call the add tool."}}
+            data:{"type":"content_block_delta","index":0,"delta":{"type":"thinking_delta","thinking":" 3."}}
 
             event:content_block_delta
             data:{"type":"content_block_delta","index":0,"delta":{"type":"signature_delta","signature":""}}
@@ -56,7 +53,7 @@ interactions:
             data:{"type":"content_block_stop","index":0}
 
             event:content_block_start
-            data:{"type":"content_block_start","index":1,"content_block":{"type":"tool_use","id":"toolu_03a8573e24ca4718995e9d23","name":"add","input":{}}}
+            data:{"type":"content_block_start","index":1,"content_block":{"type":"tool_use","id":"toolu_7fd6f0aed3624e6096e8e201","name":"add","input":{}}}
 
             event:content_block_delta
             data:{"type":"content_block_delta","index":1,"delta":{"type":"input_json_delta","partial_json":""}}
@@ -74,7 +71,7 @@ interactions:
             data:{"type":"content_block_stop","index":1}
 
             event:message_delta
-            data:{"type":"message_delta","delta":{"stop_reason":"tool_use","stop_sequence":null},"usage":{"input_tokens":438,"output_tokens":83,"cache_creation_input_tokens":0,"cache_read_input_tokens":0,"prompt_tokens_details":{"cached_tokens":0}}}
+            data:{"type":"message_delta","delta":{"stop_reason":"tool_use","stop_sequence":null},"usage":{"input_tokens":438,"output_tokens":69,"cache_creation_input_tokens":0,"cache_read_input_tokens":0,"prompt_tokens_details":{"cached_tokens":0}}}
 
             event:message_stop
             data:{"type":"message_stop"}
@@ -90,9 +87,9 @@ interactions:
         proto: HTTP/1.1
         proto_major: 1
         proto_minor: 1
-        content_length: 1245
+        content_length: 1182
         host: ""
-        body: '{"max_tokens":384000,"messages":[{"content":[{"text":"Use the add tool to compute 2 + 3. After the tool result, reply with only the number.","type":"text"}],"role":"user"},{"content":[{"signature":"","thinking":"The user wants me to use the add tool to compute 2+3, then reply with only the number.\n\nLet me call the add tool.","type":"thinking"},{"id":"toolu_03a8573e24ca4718995e9d23","input":{"a":2,"b":3},"name":"add","type":"tool_use"}],"role":"assistant"},{"content":[{"content":[{"text":"5","type":"text"}],"tool_use_id":"toolu_03a8573e24ca4718995e9d23","type":"tool_result"}],"role":"user"}],"model":"deepseek-v4.1-flash","output_config":{"effort":"medium"},"tools":[{"description":"Return the given text unchanged.","input_schema":{"properties":{"text":{"description":"The text to return.","type":"string"}},"required":["text"],"type":"object"},"name":"echo"},{"description":"Add two numbers and return a + b.","input_schema":{"properties":{"a":{"type":"number"},"b":{"type":"number"}},"required":["a","b"],"type":"object"},"name":"add"},{"description":"Multiply two numbers and return a * b.","input_schema":{"properties":{"a":{"type":"number"},"b":{"type":"number"}},"required":["a","b"],"type":"object"},"name":"mul"}],"stream":true}'
+        body: '{"max_tokens":384000,"messages":[{"content":[{"text":"Use the add tool to compute 2 + 3. After the tool result, reply with only the number.","type":"text"}],"role":"user"},{"content":[{"signature":"","thinking":"The user wants me to call the add tool with 2 and 3.","type":"thinking"},{"id":"toolu_7fd6f0aed3624e6096e8e201","input":{"a":2,"b":3},"name":"add","type":"tool_use"}],"role":"assistant"},{"content":[{"content":[{"text":"5","type":"text"}],"tool_use_id":"toolu_7fd6f0aed3624e6096e8e201","type":"tool_result"}],"role":"user"}],"model":"deepseek-v4.1-flash","output_config":{"effort":"medium"},"tools":[{"description":"Add two numbers and return a + b.","input_schema":{"properties":{"a":{"type":"number"},"b":{"type":"number"}},"required":["a","b"],"type":"object"},"name":"add"},{"description":"Return the given text unchanged.","input_schema":{"properties":{"text":{"description":"The text to return.","type":"string"}},"required":["text"],"type":"object"},"name":"echo"},{"description":"Multiply two numbers and return a * b.","input_schema":{"properties":{"a":{"type":"number"},"b":{"type":"number"}},"required":["a","b"],"type":"object"},"name":"mul"}],"stream":true}'
         headers:
             Anthropic-Version:
                 - "2023-06-01"
@@ -110,19 +107,40 @@ interactions:
             data:{"type":"ping"}
 
             event:message_start
-            data:{"type":"message_start","message":{"id":"msg_8e9de0f1-709b-4674-a5f0-3a2054f239b7","type":"message","role":"assistant","model":"deepseek-v4.1-flash","content":[],"stop_reason":null,"stop_sequence":null,"usage":{"input_tokens":136,"output_tokens":0}}}
+            data:{"type":"message_start","message":{"id":"msg_72728bb6-74b7-4984-9937-6ed1833e6f69","type":"message","role":"assistant","model":"deepseek-v4.1-flash","content":[],"stop_reason":null,"stop_sequence":null,"usage":{"input_tokens":136,"output_tokens":0}}}
 
             event:content_block_start
-            data:{"type":"content_block_start","index":0,"content_block":{"type":"text","text":""}}
+            data:{"type":"content_block_start","index":0,"content_block":{"type":"thinking","thinking":"","signature":""}}
 
             event:content_block_delta
-            data:{"type":"content_block_delta","index":0,"delta":{"type":"text_delta","text":"5"}}
+            data:{"type":"content_block_delta","index":0,"delta":{"type":"thinking_delta","thinking":"The"}}
+
+            event:content_block_delta
+            data:{"type":"content_block_delta","index":0,"delta":{"type":"thinking_delta","thinking":" tool returned"}}
+
+            event:content_block_delta
+            data:{"type":"content_block_delta","index":0,"delta":{"type":"thinking_delta","thinking":" 5. Reply with only"}}
+
+            event:content_block_delta
+            data:{"type":"content_block_delta","index":0,"delta":{"type":"thinking_delta","thinking":" the number."}}
+
+            event:content_block_delta
+            data:{"type":"content_block_delta","index":0,"delta":{"type":"signature_delta","signature":""}}
 
             event:content_block_stop
             data:{"type":"content_block_stop","index":0}
 
+            event:content_block_start
+            data:{"type":"content_block_start","index":1,"content_block":{"type":"text","text":""}}
+
+            event:content_block_delta
+            data:{"type":"content_block_delta","index":1,"delta":{"type":"text_delta","text":"5"}}
+
+            event:content_block_stop
+            data:{"type":"content_block_stop","index":1}
+
             event:message_delta
-            data:{"type":"message_delta","delta":{"stop_reason":"end_turn","stop_sequence":null},"usage":{"input_tokens":534,"output_tokens":2,"cache_creation_input_tokens":0,"cache_read_input_tokens":0,"prompt_tokens_details":{"cached_tokens":0}}}
+            data:{"type":"message_delta","delta":{"stop_reason":"end_turn","stop_sequence":null},"usage":{"input_tokens":520,"output_tokens":14,"cache_creation_input_tokens":0,"cache_read_input_tokens":0,"prompt_tokens_details":{"cached_tokens":0}}}
 
             event:message_stop
             data:{"type":"message_stop"}

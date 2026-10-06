@@ -99,7 +99,15 @@ func (p *completions) produce(ctx context.Context, a *providers.Assembler, m pro
 	}
 
 	msgs := providers.TransformMessages(req.Messages, m, p.cfg.now, p.cfg.normalize)
-	extra, err := buildCompletionsBody(msgs, m, opts)
+	pr := opts.Prepared
+	if pr == nil {
+		var err error
+		if pr, err = p.compute(m, msgs, opts); err != nil {
+			a.Fail(protocol.StopError, err.Error(), err)
+			return
+		}
+	}
+	extra, err := buildCompletionsBody(msgs, m, pr)
 	if err != nil {
 		a.Fail(protocol.StopError, err.Error(), err)
 		return
@@ -109,6 +117,7 @@ func (p *completions) produce(ctx context.Context, a *providers.Assembler, m pro
 
 	runCtx, cancel := context.WithCancelCause(ctx)
 	defer cancel(nil)
+	runCtx = fantasykit.TrackBody(runCtx)
 
 	idle := fantasykit.StartIdle(p.cfg.idle, cancel)
 	defer idle.Stop()

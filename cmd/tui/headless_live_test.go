@@ -26,6 +26,8 @@ type mathTool struct {
 	op         func(a, b float64) float64
 }
 
+func (mathTool) ConcurrencySafe(json.RawMessage) bool { return true }
+
 func (m mathTool) Decl() protocol.ToolDecl {
 	return protocol.ToolDecl{
 		Name:        m.name,
@@ -156,4 +158,25 @@ func TestLiveHeadlessMathQwen(t *testing.T) {
 	require.GreaterOrEqual(t, mulAt, 0, "no mul(1,2) call")
 	require.GreaterOrEqual(t, addAt, 0, "no add(1,2) call")
 	require.Less(t, mulAt, addAt, "add must use the result of mul")
+}
+
+func TestHeadlessMathToolsDeclareConcurrencySafe(t *testing.T) {
+	for _, tool := range []tools.Tool{addTool, mulTool} {
+		t.Run(tool.Decl().Name, func(t *testing.T) {
+			registry := &tools.Registry{}
+			require.NoError(t, registry.Register(tool, tools.SourceInfo{Kind: tools.SourceExtension}))
+			args, err := registry.Prepare(tool.Decl().Name, json.RawMessage(`{"a":"2","b":3}`))
+			require.NoError(t, err)
+			safe, ok := tool.(tools.ConcurrencySafe)
+			require.True(t, ok)
+			require.True(t, safe.ConcurrencySafe(args))
+			result, err := tool.Execute(context.Background(), tools.Context{}, args)
+			require.NoError(t, err)
+			want := "5"
+			if tool.Decl().Name == "mul" {
+				want = "6"
+			}
+			require.Equal(t, []protocol.UserBlock{protocol.Text{Text: want}}, result.Content)
+		})
+	}
 }

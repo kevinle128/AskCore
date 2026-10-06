@@ -38,40 +38,84 @@ const flushDelay = 2 * time.Millisecond
 // and flushed flushDelay after the first unflushed one, or as soon as the
 // buffer fills; a full buffer blocks on the target, so a slow reader still
 // stalls the run. The first write error sticks: later writes return it
-// without touching the target.
+// without touching the target. When onError is set, the first error, from a
+// Write or from the timer flush, is also passed to it once, after the lock is
+// released, so the run owner learns of a failure that no caller of Write sees.
 type protocolOut struct {
-	mu    sync.Mutex
-	buf   *bufio.Writer
-	timer *time.Timer
-	err   error
+	mu       sync.Mutex
+	buf      *bufio.Writer
+	timer    *time.Timer
+	err      error
+	onError  func(error)
+	notified bool
 }
 
 func newProtocolOut(w io.Writer) *protocolOut {
 	return &protocolOut{buf: bufio.NewWriterSize(w, 64<<10)}
 }
 
-func (o *protocolOut) Write(p []byte) (int, error) {
+// setOnError sets the function that gets the first write error. Call it before
+// the first Write.
+func (o *protocolOut) setOnError(f func(error)) {
 	o.mu.Lock()
 	defer o.mu.Unlock()
+	o.onError = f
+}
+
+// noticeLocked returns the call of onError that err makes due, or nil. The
+// caller holds mu and makes the call after it unlocks.
+func (o *protocolOut) noticeLocked(err error) func() {
+	if err == nil || o.notified || o.onError == nil {
+		return nil
+	}
+	o.notified = true
+	f := o.onError
+	return func() { f(err) }
+}
+
+// fail makes err the sticky error when none is set yet, and reports it to
+// onError once. It is for a failure that never reached Write, such as an event
+// that cannot be encoded.
+func (o *protocolOut) fail(err error) {
+	o.mu.Lock()
+	if o.err == nil {
+		o.err = err
+	}
+	notice := o.noticeLocked(o.err)
+	o.mu.Unlock()
+	if notice != nil {
+		notice()
+	}
+}
+
+func (o *protocolOut) Write(p []byte) (int, error) {
+	o.mu.Lock()
 	if o.err != nil {
-		return 0, o.err
+		err := o.err
+		o.mu.Unlock()
+		return 0, err
 	}
 	n, err := o.buf.Write(p)
-	if err != nil {
+	var notice func()
+	switch {
+	case err != nil:
 		o.err = err
-		return n, err
-	}
-	if o.buf.Buffered() > 0 && o.timer == nil {
-		// The error sticks; the next Write or the final flush returns it.
+		notice = o.noticeLocked(err)
+	case o.buf.Buffered() > 0 && o.timer == nil:
+		// A failure of the timer flush sticks and reaches onError; a Write or
+		// the final flush returns it too.
 		o.timer = time.AfterFunc(flushDelay, func() { _ = o.flush() })
 	}
-	return n, nil
+	o.mu.Unlock()
+	if notice != nil {
+		notice()
+	}
+	return n, err
 }
 
 // flush writes out the buffer and returns the sticky error.
 func (o *protocolOut) flush() error {
 	o.mu.Lock()
-	defer o.mu.Unlock()
 	if o.timer != nil {
 		o.timer.Stop()
 		o.timer = nil
@@ -79,7 +123,26 @@ func (o *protocolOut) flush() error {
 	if o.err == nil {
 		o.err = o.buf.Flush()
 	}
-	return o.err
+	err := o.err
+	notice := o.noticeLocked(err)
+	o.mu.Unlock()
+	if notice != nil {
+		notice()
+	}
+	return err
+}
+
+// flushAsync flushes in its own goroutine and returns a channel that closes
+// when it is done. A write that blocks on a full pipe holds the output lock, so
+// the exit path waits on the channel with a bound and never on the lock. The
+// goroutine ends when the write returns or the process exits.
+func (o *protocolOut) flushAsync() <-chan struct{} {
+	done := make(chan struct{})
+	go func() {
+		_ = o.flush()
+		close(done)
+	}()
+	return done
 }
 
 // failed flushes, then reports the sticky write error, if any, and whether

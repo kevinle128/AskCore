@@ -2,15 +2,22 @@ package agent
 
 import (
 	"context"
-	"encoding/json"
 	"testing"
 
 	"github.com/stretchr/testify/require"
 
 	"AskCore/internal/pipeline"
-	"AskCore/internal/tools"
+	"AskCore/internal/sessions"
 	"AskCore/pkg/protocol"
 )
+
+// stageLog opens a log the way the Agent does, for a loop built by hand.
+func stageLog(t *testing.T) sessions.Writer {
+	t.Helper()
+	d, err := openLog(&sessions.MemoryLog{}, snapshotOf("", nil))
+	require.NoError(t, err)
+	return d.log
+}
 
 // TestTurnStagesOrder verifies that turnStages is ordered as expected.
 // A reordering is a visible test change.
@@ -22,177 +29,78 @@ func TestTurnStagesOrder(t *testing.T) {
 	}
 }
 
-// TestSteerStageFirstTurn verifies that the steer stage behaves correctly on
-// the first turn (no poll, no turn_start) and subsequent turns.
-func TestSteerStageFirstTurn(t *testing.T) {
+// stubInputs is a fixed source of claims for the stage tests, which build the
+// loop by hand.
+type stubInputs struct{ steering []input }
+
+func (s *stubInputs) claimSteering() []input {
+	got := s.steering
+	s.steering = nil
+	return got
+}
+func (s *stubInputs) claimCycle(bool) []input { return s.claimSteering() }
+func (s *stubInputs) nextID() string          { return "stub" }
+
+// TestSteerStageAdmission verifies the steer stage: it opens every turn after
+// admission, and a turn with nothing to run at the start of a cycle ends the
+// cycle instead.
+func TestSteerStageAdmission(t *testing.T) {
+	steerMsg := protocol.UserMessage{
+		Content:   []protocol.UserBlock{protocol.Text{Text: "steering"}},
+		Timestamp: 1,
+	}
 	cases := []struct {
 		name            string
 		turns           int
-		pendingSet      bool
-		expectPoll      bool
+		pending         bool
+		allowEmpty      bool
+		reject          bool
+		expectFlow      flow
 		expectTurnStart bool
+		expectReason    CycleReason
 	}{
-		{
-			name:            "first turn: no poll, no turn_start",
-			turns:           0,
-			pendingSet:      false,
-			expectPoll:      false,
-			expectTurnStart: false,
-		},
-		{
-			name:            "first turn with pending: no poll, no turn_start",
-			turns:           0,
-			pendingSet:      true,
-			expectPoll:      false,
-			expectTurnStart: false,
-		},
-		{
-			name:            "second turn, empty pending: polls steering, emits turn_start",
-			turns:           1,
-			pendingSet:      false,
-			expectPoll:      true,
-			expectTurnStart: true,
-		},
-		{
-			name:            "second turn, pending already set: no poll, emits turn_start",
-			turns:           1,
-			pendingSet:      true,
-			expectPoll:      false,
-			expectTurnStart: true,
-		},
+		{name: "first turn with input", pending: true, expectFlow: flowNext, expectTurnStart: true},
+		{name: "first turn with no input ends the cycle", expectFlow: flowIdle},
+		{name: "first turn with no input after Continue", allowEmpty: true, expectFlow: flowNext, expectTurnStart: true},
+		{name: "later turn with no input is a tool continuation", turns: 1, expectFlow: flowNext, expectTurnStart: true},
+		{name: "rejected input ends the cycle blocked", pending: true, reject: true, expectFlow: flowEndRun, expectReason: ReasonBlocked},
 	}
 
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
 			rec := &eventRecorder{}
-			pollCalled := false
-			steerMsg := protocol.UserMessage{
-				Content:   []protocol.UserBlock{protocol.Text{Text: "steering"}},
-				Timestamp: 1,
+			reg := pipeline.NewRegistry()
+			if tc.reject {
+				reg.OnAdmitStep(func(context.Context, pipeline.AdmitInput, pipeline.Next[pipeline.AdmitInput, pipeline.AdmitDecision]) (pipeline.AdmitDecision, error) {
+					return pipeline.AdmitDecision{Reject: true}, nil
+				})
 			}
-
 			l := &loop{
-				ctx:   context.Background(),
-				cfg:   LoopConfig{Hooks: pipeline.Hooks{}},
-				ac:    pipeline.AgentContext{},
-				emit:  rec.emit,
-				turns: tc.turns,
-				ts:    turnState{results: []protocol.ToolResultMessage{}},
+				log:        stageLog(t),
+				ctx:        context.Background(),
+				cfg:        LoopConfig{Pipeline: reg},
+				ac:         pipeline.AgentContext{},
+				emit:       rec.emit,
+				cycle:      &cycleState{id: "c1", turns: tc.turns},
+				allowEmpty: tc.allowEmpty,
+				ts:         turnState{results: []protocol.ToolResultMessage{}},
 			}
-			if tc.pendingSet {
-				l.pending = append(l.pending, steerMsg)
-			}
-
-			// Set up the hook to track if it's called
-			l.cfg.Hooks.GetSteeringMessages = func(ctx context.Context) ([]protocol.Message, error) {
-				pollCalled = true
-				return []protocol.Message{steerMsg}, nil
+			if tc.pending {
+				l.pending = []input{{id: "i1", msg: steerMsg}}
 			}
 
 			f, err := steerStage{}.run(l)
 			require.NoError(t, err)
-			require.Equal(t, flowNext, f)
-			require.Equal(t, tc.expectPoll, pollCalled, "poll called mismatch")
+			require.Equal(t, tc.expectFlow, f)
+			require.Equal(t, tc.expectReason, l.cycle.reason)
+			require.Empty(t, l.pending, "the claimed input is consumed")
+			require.False(t, l.allowEmpty, "only the first admission may be empty")
 
 			labels := rec.eventLabels()
 			if tc.expectTurnStart {
 				require.Contains(t, labels, "turn_start", "turn_start expected")
 			} else {
 				require.NotContains(t, labels, "turn_start", "turn_start not expected")
-			}
-		})
-	}
-}
-
-// TestToolExecutorSelection verifies that toolExecutor picks the correct
-// strategy: truncated for StopLength, sequential for Sequential tools, else parallel.
-func TestToolExecutorSelection(t *testing.T) {
-	cases := []struct {
-		name             string
-		stopReason       protocol.StopReason
-		toolIsSequential bool
-		expectTruncated  bool
-		expectSequential bool
-	}{
-		{
-			name:             "StopLength yields truncated executor",
-			stopReason:       protocol.StopLength,
-			toolIsSequential: false,
-			expectTruncated:  true,
-			expectSequential: false,
-		},
-		{
-			name:             "StopLength yields truncated even with sequential tool",
-			stopReason:       protocol.StopLength,
-			toolIsSequential: true,
-			expectTruncated:  true,
-			expectSequential: false,
-		},
-		{
-			name:             "Sequential tool yields sequential executor",
-			stopReason:       protocol.StopToolUse,
-			toolIsSequential: true,
-			expectTruncated:  false,
-			expectSequential: true,
-		},
-		{
-			name:             "No sequential tool yields parallel executor",
-			stopReason:       protocol.StopToolUse,
-			toolIsSequential: false,
-			expectTruncated:  false,
-			expectSequential: false,
-		},
-	}
-
-	for _, tc := range cases {
-		t.Run(tc.name, func(t *testing.T) {
-			var tool tools.Tool
-			if tc.toolIsSequential {
-				tool = &sequentialTestTool{
-					funcTestTool: &funcTestTool{name: "seq_tool"},
-				}
-			} else {
-				tool = &funcTestTool{name: "tool"}
-			}
-
-			reg := &tools.Registry{}
-			require.NoError(t, reg.Register(tool, tools.SourceInfo{Kind: "builtin", Name: tool.Decl().Name}))
-
-			l := &loop{
-				ctx: context.Background(),
-				ac:  pipeline.AgentContext{Tools: reg},
-				cfg: LoopConfig{},
-				// The executor reads tools from the snapshot of the turn.
-				ts: turnState{tools: reg.Snapshot()},
-			}
-
-			msg := protocol.AssistantMessage{
-				StopReason: tc.stopReason,
-				Content: []protocol.AssistantBlock{
-					protocol.ToolCall{
-						ID:        "call1",
-						Name:      tool.Decl().Name,
-						Arguments: json.RawMessage("{}"),
-					},
-				},
-			}
-
-			executor := l.toolExecutor(msg, []protocol.ToolCall{
-				{
-					ID:        "call1",
-					Name:      tool.Decl().Name,
-					Arguments: json.RawMessage("{}"),
-				},
-			})
-
-			_, isTruncated := executor.(truncatedExecutor)
-			_, isSequential := executor.(sequentialExecutor)
-			_, isParallel := executor.(parallelExecutor)
-
-			require.Equal(t, tc.expectTruncated, isTruncated, "truncated executor mismatch")
-			require.Equal(t, tc.expectSequential, isSequential, "sequential executor mismatch")
-			if !tc.expectTruncated && !tc.expectSequential {
-				require.True(t, isParallel, "should be parallel executor")
 			}
 		})
 	}
@@ -315,7 +223,12 @@ func TestDecideFlow(t *testing.T) {
 				Content:    []protocol.AssistantBlock{protocol.Text{Text: "response"}},
 			}
 
+			reg := pipeline.NewRegistry()
+			reg.OnCompleteStep(func(ctx context.Context, t pipeline.Turn) (pipeline.TurnDecision, error) {
+				return tc.finishDecision, nil
+			})
 			l := &loop{
+				log:         &sessions.MemoryLog{},
 				ctx:         context.Background(),
 				newMessages: []protocol.Message{},
 				ac:          pipeline.AgentContext{},
@@ -326,24 +239,13 @@ func TestDecideFlow(t *testing.T) {
 					results:   []protocol.ToolResultMessage{},
 					moreTools: tc.moreTools,
 				},
-				cfg: LoopConfig{
-					Hooks: pipeline.Hooks{
-						FinishTurn: func(ctx context.Context, t pipeline.Turn) (pipeline.TurnDecision, error) {
-							return tc.finishDecision, nil
-						},
-						GetSteeringMessages: func(ctx context.Context) ([]protocol.Message, error) {
-							if tc.steeringMsg {
-								return []protocol.Message{
-									protocol.UserMessage{
-										Content:   []protocol.UserBlock{protocol.Text{Text: "steering"}},
-										Timestamp: 1,
-									},
-								}, nil
-							}
-							return nil, nil
-						},
-					},
-				},
+				cfg: LoopConfig{Pipeline: reg},
+			}
+			if tc.steeringMsg {
+				l.in = &stubInputs{steering: []input{{id: "i1", msg: protocol.UserMessage{
+					Content:   []protocol.UserBlock{protocol.Text{Text: "steering"}},
+					Timestamp: 1,
+				}}}}
 			}
 
 			f, err := decideStage{}.run(l)
@@ -405,29 +307,3 @@ func eventLabel(ev protocol.Event) string {
 		return "unknown"
 	}
 }
-
-// funcTestTool is a minimal test tool.
-type funcTestTool struct {
-	name string
-}
-
-func (f *funcTestTool) Decl() protocol.ToolDecl {
-	return protocol.ToolDecl{
-		Name:        f.name,
-		Description: f.name,
-		Parameters:  json.RawMessage(`{"type":"object"}`),
-	}
-}
-
-func (f *funcTestTool) Execute(ctx context.Context, tc tools.Context, args json.RawMessage) (protocol.ToolExecutionResult, error) {
-	return protocol.ToolExecutionResult{
-		Content: []protocol.UserBlock{protocol.Text{Text: "ok"}},
-	}, nil
-}
-
-// sequentialTestTool adds the Sequential marker.
-type sequentialTestTool struct {
-	*funcTestTool
-}
-
-func (sequentialTestTool) Sequential() bool { return true }

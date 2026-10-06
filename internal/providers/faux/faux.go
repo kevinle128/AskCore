@@ -254,6 +254,11 @@ func cloneOptions(o providers.StreamOptions) providers.StreamOptions {
 		t := *o.Temperature
 		o.Temperature = &t
 	}
+	o.Prepared = o.Prepared.Clone()
+	if o.RequireBinding != nil {
+		binding := *o.RequireBinding
+		o.RequireBinding = &binding
+	}
 	return o
 }
 

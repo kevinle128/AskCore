@@ -3,7 +3,9 @@ package agent_test
 import (
 	"context"
 	"errors"
+	"reflect"
 	"regexp"
+	"strconv"
 	"strings"
 	"sync"
 	"testing"
@@ -42,7 +44,7 @@ func newAgent(t testing.TB, p *faux.Provider, m providers.Model, edit func(*agen
 }
 
 func failureTail() []string {
-	return []string{"message_start(assistant)", "message_end(assistant)", "turn_end", "agent_end", "agent_settled"}
+	return []string{"message_start(assistant)", "message_end(assistant)", "turn_end", "cycle_end", "agent_end", "agent_settled"}
 }
 
 func errorText(m protocol.AssistantMessage) string {
@@ -77,19 +79,25 @@ func TestAgentPromptSettles(t *testing.T) {
 	}
 	assert.Equal(t, []string{
 		"agent_start",
+		"cycle_start",
 		"turn_start",
 		"message_start(user)", "message_end(user)",
+		"attempt_start",
 		"message_start(assistant)",
 		"message_update(toolcall_start)", "message_update(toolcall_delta)", "message_update(toolcall_end)",
 		"message_end(assistant)",
+		"attempt_end",
 		"tool_execution_start(c1)", "tool_execution_end(c1)",
 		"message_start(toolResult:c1)", "message_end(toolResult:c1)",
 		"turn_end",
 		"turn_start",
+		"attempt_start",
 		"message_start(assistant)",
 		"message_update(text_start)", "message_update(text_delta)", "message_update(text_end)",
 		"message_end(assistant)",
+		"attempt_end",
 		"turn_end",
+		"cycle_end",
 		"agent_end",
 		"agent_settled",
 	}, rec.eventLabels())
@@ -187,74 +195,150 @@ func TestAgentListenerOrder(t *testing.T) {
 	unsubscribe()
 	calls = nil
 	require.NoError(t, a.Prompt(context.Background(), user("b")))
-	assert.Equal(t, []string{"1:agent_start", "3:agent_start", "1:turn_start", "3:turn_start"}, calls[:4])
+	assert.Equal(t, []string{"1:agent_start", "3:agent_start", "1:cycle_start", "3:cycle_start"}, calls[:4])
 }
 
-func TestAgentListenerError(t *testing.T) {
+func TestFailingListenerDoesNotStopRun(t *testing.T) {
 	p, m := newFaux(t)
-	p.Set(faux.Say("never"))
-	a := newAgent(t, p, m, nil)
-	first, third := &recorder{}, &recorder{}
+	p.Set(faux.Say("answer"))
+	var reported []error
+	a := newAgent(t, p, m, func(c *agent.Config) {
+		c.ListenerError = func(err error) { reported = append(reported, err) }
+	})
+	first, failing, third := &recorder{}, &recorder{failOn: "turn_start"}, &recorder{}
 	a.Subscribe(first.emit)
-	a.Subscribe((&recorder{failOn: "turn_start"}).emit)
+	a.Subscribe(failing.emit)
 	a.Subscribe(third.emit)
 
-	err := a.Prompt(context.Background(), user("hi"))
-	require.ErrorIs(t, err, errEmit)
+	require.NoError(t, a.Prompt(context.Background(), user("hi")))
 
-	assert.Equal(t, append([]string{"agent_start", "turn_start"}, failureTail()...), first.eventLabels())
-	assert.Equal(t, append([]string{"agent_start"}, failureTail()...), third.eventLabels(),
-		"a failing listener stops the later listeners for that event only")
-	assert.Equal(t, 0, p.Calls())
-
+	assert.Equal(t, first.eventLabels(), failing.eventLabels(), "the failing listener stays subscribed and gets every event, agent_settled included")
+	assert.Equal(t, 1, p.Calls(), "the run went on to the model call")
+	assert.Equal(t, first.eventLabels(), third.eventLabels(), "later listeners get every event")
+	assert.Equal(t, "agent_settled", first.eventLabels()[len(first.eventLabels())-1])
+	require.Len(t, reported, 1, "the failure is reported once")
+	assert.ErrorIs(t, reported[0], errEmit)
 	st := a.State()
 	assert.Equal(t, agent.Idle, st.Status)
-	require.Len(t, st.Messages, 1)
-	msg := st.Messages[0].(protocol.AssistantMessage)
-	assert.Equal(t, protocol.StopError, msg.StopReason)
-	assert.Equal(t, "listener failed", errorText(msg))
-	assert.Equal(t, []protocol.AssistantBlock{protocol.Text{Text: ""}}, msg.Content)
-	assert.Equal(t, int64(fixedMillis), msg.Timestamp)
-	assert.Equal(t, m.Provider, msg.Provider)
-	assert.Equal(t, m.ID, msg.Model)
+	assert.Equal(t, "answer", assistantText(lastAssistant(t, st.Messages)))
+	assert.Equal(t, protocol.StopStop, lastAssistant(t, st.Messages).StopReason)
+}
+
+func TestPanickingListenerDoesNotStopLaterListeners(t *testing.T) {
+	p, m := newFaux(t)
+	p.Set(faux.Say("answer"))
+	var reported []error
+	a := newAgent(t, p, m, func(c *agent.Config) {
+		c.ListenerError = func(err error) { reported = append(reported, err) }
+	})
+	first, third := &recorder{}, &recorder{}
+	a.Subscribe(first.emit)
+	panicked := false
+	a.Subscribe(func(ev protocol.Event) error {
+		if label(ev) == "turn_start" {
+			panicked = true
+			panic("listener exploded")
+		}
+		return nil
+	})
+	a.Subscribe(third.emit)
+
+	require.NoError(t, a.Prompt(context.Background(), user("hi")))
+
+	require.True(t, panicked)
+	assert.Equal(t, first.eventLabels(), third.eventLabels())
+	assert.Equal(t, 1, p.Calls())
+	require.Len(t, reported, 1)
+	assert.ErrorContains(t, reported[0], "listener exploded")
+	assert.Equal(t, "answer", assistantText(lastAssistant(t, a.State().Messages)))
+}
+
+func TestFailingListenerWithoutReporterIsDropped(t *testing.T) {
+	p, m := newFaux(t)
+	p.Set(faux.Say("answer"))
+	a := newAgent(t, p, m, nil)
+	a.Subscribe((&recorder{failOn: "turn_start"}).emit)
+	a.Subscribe(func(protocol.Event) error { panic("always") })
+
+	require.NoError(t, a.Prompt(context.Background(), user("hi")))
+
+	assert.Equal(t, "answer", assistantText(lastAssistant(t, a.State().Messages)))
+}
+
+func TestListenerSeesCommittedMessageAtMessageEnd(t *testing.T) {
+	p, m := newFaux(t)
+	p.Set(faux.Say("answer"))
+	a := newAgent(t, p, m, nil)
+	var seen []string
+	a.Subscribe(func(ev protocol.Event) error {
+		if e, ok := ev.(*protocol.MessageEnd); ok {
+			msgs := a.State().Messages
+			last := msgs[len(msgs)-1]
+			seen = append(seen, last.Role()+"="+strconv.FormatBool(reflect.DeepEqual(last, e.Message)))
+		}
+		return nil
+	})
+
+	require.NoError(t, a.Prompt(context.Background(), user("hi")))
+
+	assert.Equal(t, []string{"user=true", "assistant=true"}, seen,
+		"State().Messages ends with the message of message_end when the listener runs")
+}
+
+func TestListenerSeesCommittedEntry(t *testing.T) {
+	p, m := newFaux(t)
+	p.Set(faux.Say("answer"))
+	log := &sessions.MemoryLog{}
+	a := newAgent(t, p, m, withLog(log))
+	var lastKinds []string
+	a.Subscribe(func(ev protocol.Event) error {
+		if label(ev) == "turn_start" {
+			entries := log.Entries()
+			lastKinds = append(lastKinds, reflect.TypeOf(entries[len(entries)-1]).Name())
+		}
+		return nil
+	})
+
+	require.NoError(t, a.Prompt(context.Background(), user("hi")))
+
+	assert.Equal(t, []string{"TurnOpened"}, lastKinds, "the turn_start entry is the last entry when its listener runs")
 }
 
 func TestAgentRunFailure(t *testing.T) {
 	cases := []struct {
-		name   string
-		edit   func(*agent.Config)
-		listen func(protocol.Event) error
-		want   []string
-		text   string
+		name string
+		edit func(*agent.Config)
+		want []string
+		text string
 	}{
 		{
 			name: "PrepareRequest error",
 			edit: func(c *agent.Config) {
-				c.Hooks.PrepareRequest = func(context.Context, pipeline.Request) (*pipeline.RequestUpdate, error) {
+				registryOf(c).OnPrepareRequest(func(context.Context, pipeline.Request, pipeline.Next[pipeline.Request, *pipeline.RequestUpdate]) (*pipeline.RequestUpdate, error) {
 					return nil, errors.New("prepare failed")
-				}
+				})
 			},
-			want: append([]string{"agent_start", "turn_start", "message_start(user)", "message_end(user)"}, failureTail()...),
+			want: append([]string{"agent_start", "cycle_start", "turn_start"}, failureTail()...),
 			text: "prepare failed",
 		},
 		{
 			name: "PrepareRequest panic",
 			edit: func(c *agent.Config) {
-				c.Hooks.PrepareRequest = func(context.Context, pipeline.Request) (*pipeline.RequestUpdate, error) {
+				registryOf(c).OnPrepareRequest(func(context.Context, pipeline.Request, pipeline.Next[pipeline.Request, *pipeline.RequestUpdate]) (*pipeline.RequestUpdate, error) {
 					panic("prepare exploded")
-				}
+				})
 			},
-			want: append([]string{"agent_start", "turn_start", "message_start(user)", "message_end(user)"}, failureTail()...),
+			want: append([]string{"agent_start", "cycle_start", "turn_start"}, failureTail()...),
 			text: "panic: prepare exploded",
 		},
 		{
 			name: "stream setup error",
 			edit: func(c *agent.Config) {
-				c.Hooks.GetAPIKey = func(context.Context, string) (string, error) {
+				c.GetAPIKey = func(context.Context, string) (string, error) {
 					return "", errors.New("no api key for faux")
 				}
 			},
-			want: append([]string{"agent_start", "turn_start", "message_start(user)", "message_end(user)"}, failureTail()...),
+			want: append([]string{"agent_start", "cycle_start", "turn_start", "message_start(user)", "message_end(user)"}, failureTail()...),
 			text: "no api key for faux",
 		},
 		{
@@ -264,25 +348,8 @@ func TestAgentRunFailure(t *testing.T) {
 					panic(errors.New("dial refused"))
 				}
 			},
-			want: append([]string{"agent_start", "turn_start", "message_start(user)", "message_end(user)"}, failureTail()...),
+			want: append([]string{"agent_start", "cycle_start", "turn_start", "message_start(user)", "message_end(user)"}, failureTail()...),
 			text: "panic: dial refused",
-		},
-		{
-			name: "listener panic in a tool batch",
-			listen: func(ev protocol.Event) error {
-				if _, ok := ev.(*protocol.ToolExecutionEnd); ok {
-					panic("listener exploded")
-				}
-				return nil
-			},
-			want: append([]string{
-				"agent_start", "turn_start", "message_start(user)", "message_end(user)",
-				"message_start(assistant)",
-				"message_update(toolcall_start)", "message_update(toolcall_delta)", "message_update(toolcall_end)",
-				"message_end(assistant)",
-				"tool_execution_start(c1)", "tool_execution_end(c1)",
-			}, failureTail()...),
-			text: "panic: listener exploded",
 		},
 	}
 	for _, tc := range cases {
@@ -292,9 +359,6 @@ func TestAgentRunFailure(t *testing.T) {
 			a := newAgent(t, p, m, tc.edit)
 			rec := &recorder{}
 			a.Subscribe(rec.emit)
-			if tc.listen != nil {
-				a.Subscribe(tc.listen)
-			}
 
 			err := a.Prompt(context.Background(), user("hi"))
 			require.EqualError(t, err, tc.text)
@@ -307,7 +371,11 @@ func TestAgentRunFailure(t *testing.T) {
 			assert.Equal(t, tc.text, errorText(msg))
 			st := a.State()
 			assert.Equal(t, agent.Idle, st.Status)
-			assert.Equal(t, msg, st.Messages[len(st.Messages)-1])
+			if strings.HasPrefix(tc.name, "PrepareRequest") {
+				assert.Empty(t, st.Messages)
+			} else {
+				assert.Equal(t, msg, st.Messages[len(st.Messages)-1])
+			}
 		})
 	}
 }
@@ -319,11 +387,11 @@ func TestAgentContextSource(t *testing.T) {
 	var seen [][]string
 	a := newAgent(t, p, m, func(c *agent.Config) {
 		c.SystemPrompt = "be brief"
-		c.NewContext = func() agent.ContextSource { return log }
-		c.Hooks.PrepareRequest = func(_ context.Context, r pipeline.Request) (*pipeline.RequestUpdate, error) {
+		c.NewContext = func() sessions.Writer { return log }
+		registryOf(c).OnPrepareRequest(func(_ context.Context, r pipeline.Request, _ pipeline.Next[pipeline.Request, *pipeline.RequestUpdate]) (*pipeline.RequestUpdate, error) {
 			seen = append(seen, roles(r.Context.Messages))
 			return nil, nil
-		}
+		})
 	})
 	var during [][]string
 	a.Subscribe(func(ev protocol.Event) error {
@@ -356,10 +424,10 @@ func TestAgentContextSourceUserUpdateWins(t *testing.T) {
 	p, m := newFaux(t)
 	p.Set(faux.Say("ok"))
 	a := newAgent(t, p, m, func(c *agent.Config) {
-		c.Hooks.PrepareRequest = func(_ context.Context, r pipeline.Request) (*pipeline.RequestUpdate, error) {
+		registryOf(c).OnPrepareRequest(func(_ context.Context, r pipeline.Request, _ pipeline.Next[pipeline.Request, *pipeline.RequestUpdate]) (*pipeline.RequestUpdate, error) {
 			r.Context.Messages = append(r.Context.Messages, user("injected"))
 			return &pipeline.RequestUpdate{Context: &r.Context}, nil
-		}
+		})
 	})
 	require.NoError(t, a.Prompt(context.Background(), user("hi")))
 	assert.Equal(t, []string{"system", "user", "user"}, roles(p.Requests()[0].Transcript.Messages))
@@ -393,7 +461,7 @@ func TestAgentContinue(t *testing.T) {
 	p.Set(faux.Say("answer"))
 	log := &sessions.MemoryLog{}
 	a := newAgent(t, p, m, func(c *agent.Config) {
-		c.NewContext = func() agent.ContextSource { return log }
+		c.NewContext = func() sessions.Writer { return log }
 	})
 	rec := &recorder{}
 	a.Subscribe(rec.emit)
@@ -401,18 +469,21 @@ func TestAgentContinue(t *testing.T) {
 	require.ErrorIs(t, a.Continue(context.Background()), agent.ErrContinueEmpty)
 	assert.Empty(t, rec.eventLabels())
 
-	require.NoError(t, log.Append(user("pending")))
+	_, err := log.Append(sessions.MessageEntry{Message: user("pending")})
+	require.NoError(t, err)
 	require.NoError(t, a.Continue(context.Background()))
 	assert.Equal(t, []string{
-		"agent_start", "turn_start",
+		"agent_start", "cycle_start", "turn_start",
+		"attempt_start",
 		"message_start(assistant)",
 		"message_update(text_start)", "message_update(text_delta)", "message_update(text_end)",
 		"message_end(assistant)",
-		"turn_end", "agent_end", "agent_settled",
+		"attempt_end",
+		"turn_end", "cycle_end", "agent_end", "agent_settled",
 	}, rec.eventLabels())
 
 	require.ErrorIs(t, a.Continue(context.Background()), agent.ErrContinueFromAssistant)
-	assert.Len(t, rec.eventLabels(), 10)
+	assert.Len(t, rec.eventLabels(), 14)
 	assert.Equal(t, []string{"user", "assistant"}, roles(a.State().Messages))
 }
 
@@ -483,9 +554,9 @@ func TestAgentWaitForIdleContext(t *testing.T) {
 func BenchmarkAgentPrompt(b *testing.B) {
 	p, m := newFaux(b)
 	a := newAgent(b, p, m, func(c *agent.Config) {
-		c.Hooks.FinishTurn = func(context.Context, pipeline.Turn) (pipeline.TurnDecision, error) {
+		registryOf(c).OnCompleteStep(func(context.Context, pipeline.Turn) (pipeline.TurnDecision, error) {
 			return pipeline.End, nil
-		}
+		})
 	})
 	a.Subscribe(func(protocol.Event) error { return nil })
 	prompt := user("go")
@@ -500,4 +571,24 @@ func BenchmarkAgentPrompt(b *testing.B) {
 			b.Fatal(err)
 		}
 	}
+}
+
+func TestPrepareRequestSeesProjectedContextFirst(t *testing.T) {
+	p, m := newFaux(t)
+	p.Set(faux.Say("ok"))
+	log := &sessions.MemoryLog{}
+	_, err := log.Append(sessions.MessageEntry{Message: user("earlier")})
+	require.NoError(t, err)
+	var seen []string
+	a := newAgent(t, p, m, func(c *agent.Config) {
+		c.SystemPrompt = "be brief"
+		c.NewContext = func() sessions.Writer { return log }
+		registryOf(c).OnPrepareRequest(func(_ context.Context, r pipeline.Request, _ pipeline.Next[pipeline.Request, *pipeline.RequestUpdate]) (*pipeline.RequestUpdate, error) {
+			seen = roles(r.Context.Messages)
+			return nil, nil
+		})
+	})
+	require.NoError(t, a.Prompt(context.Background(), user("now")))
+	assert.Equal(t, []string{"system", "user", "user"}, seen, "a config handler sees the system message and the log, not the raw run context")
+	assert.Equal(t, seen, roles(p.Requests()[0].Transcript.Messages))
 }

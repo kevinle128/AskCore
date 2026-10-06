@@ -538,3 +538,60 @@ func TestSnapshotBeforeStartIsPending(t *testing.T) {
 	assert.NotNil(t, snap.Content)
 	assert.Empty(t, snap.Content)
 }
+
+func TestBuilderResumeFromEveryCutEqualsUninterruptedBuild(t *testing.T) {
+	final := exitFinal()
+	evs := exitSequence(final)
+	full := NewBuilder()
+	mustApply(t, full, evs...)
+	want, ok := full.Result()
+	require.True(t, ok)
+
+	for cut := 1; cut < len(evs); cut++ {
+		first := NewBuilder()
+		mustApply(t, first, evs[:cut]...)
+		p := first.Partial()
+
+		resumed := NewBuilder()
+		require.NoError(t, resumed.ResumeFrom(p), "cut %d", cut)
+		assert.Equal(t, first.OpenBlocks(), resumed.OpenBlocks(), "cut %d", cut)
+		assert.Equal(t, first.Snapshot(), resumed.Snapshot(), "cut %d", cut)
+		for _, i := range first.OpenBlocks() {
+			assert.Equal(t, first.RawToolJSON(i), resumed.RawToolJSON(i), "cut %d block %d", cut, i)
+		}
+		mustApply(t, resumed, evs[cut:]...)
+		got, ok := resumed.Result()
+		require.True(t, ok)
+		assert.Equal(t, want, got, "cut %d", cut)
+	}
+}
+
+func TestBuilderResumeFromKeepsToolCallArgumentBytes(t *testing.T) {
+	b := NewBuilder()
+	mustApply(t, b,
+		StartEvent{Message: seedMessage()},
+		ToolCallStartEvent{ContentIndex: 0, ID: "a", ToolName: "echo"},
+		ToolCallDeltaEvent{ContentIndex: 0, Delta: `{"te`},
+		ToolCallDeltaEvent{ContentIndex: 0, Delta: `xt":`},
+	)
+
+	p := b.Partial()
+	// The copy is deep: a later delta does not reach it.
+	mustApply(t, b, ToolCallDeltaEvent{ContentIndex: 0, Delta: `"x"}`})
+
+	assert.Equal(t, map[int][]byte{0: []byte(`{"text":`)}, p.Open)
+	r := NewBuilder()
+	require.NoError(t, r.ResumeFrom(p))
+	mustApply(t, r, ToolCallDeltaEvent{ContentIndex: 0, Delta: `"x"}`})
+	assert.Equal(t, []byte(`{"text":"x"}`), r.RawToolJSON(0))
+}
+
+func TestBuilderResumeFromRejectsBadState(t *testing.T) {
+	done := seedMessage()
+	done.StopReason = StopStop
+	assert.Error(t, NewBuilder().ResumeFrom(Partial{Message: done}))
+	assert.Error(t, NewBuilder().ResumeFrom(Partial{Message: seedMessage(), Open: map[int][]byte{3: nil}}))
+	started := NewBuilder()
+	mustApply(t, started, StartEvent{Message: seedMessage()})
+	assert.Error(t, started.ResumeFrom(Partial{Message: seedMessage()}))
+}

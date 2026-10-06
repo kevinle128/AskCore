@@ -23,6 +23,7 @@ var (
 	ErrAccess            = errors.New("auth: account access denied")
 	ErrCompetingOverride = errors.New("auth: competing credential overrides")
 	ErrShuttingDown      = errors.New("auth: shutting down")
+	ErrBindingChanged    = errors.New("auth: credential billing binding changed")
 	ErrBinding           = errors.New("auth: credential destination mismatch")
 )
 

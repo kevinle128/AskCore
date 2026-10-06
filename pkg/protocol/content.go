@@ -428,8 +428,16 @@ func cloneUserBlocks(in []UserBlock) []UserBlock {
 	}
 	out := make([]UserBlock, len(in))
 	for i, b := range in {
-		if t, ok := b.(Text); ok {
-			b = cloneText(t)
+		switch value := b.(type) {
+		case Text:
+			b = cloneText(value)
+		case *Text:
+			if value != nil {
+				copy := cloneText(*value)
+				b = &copy
+			}
+		case *Image:
+			b = clonePtr(value)
 		}
 		out[i] = b
 	}
@@ -442,10 +450,25 @@ func CloneAssistantBlock(b AssistantBlock) AssistantBlock {
 	switch v := b.(type) {
 	case Text:
 		return cloneText(v)
+	case *Text:
+		if v != nil {
+			copy := cloneText(*v)
+			return &copy
+		}
 	case Thinking:
 		return cloneThinking(v)
+	case *Thinking:
+		if v != nil {
+			copy := cloneThinking(*v)
+			return &copy
+		}
 	case ToolCall:
 		return cloneToolCall(v)
+	case *ToolCall:
+		if v != nil {
+			copy := cloneToolCall(*v)
+			return &copy
+		}
 	}
 	return b
 }

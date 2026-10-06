@@ -4,14 +4,17 @@ import (
 	"bytes"
 	"encoding/json"
 	"reflect"
+	"slices"
+	"strings"
 
 	"AskCore/pkg/protocol"
 )
 
 // CurrentTools replays the tool fields of every system message in msgs and
-// returns the tools the model may call after them, in first-declaration
-// order. A removal drops a tool; a later addition of the same name replaces it.
-// It is Pi's getCurrentTools.
+// returns the tools the model may call after them, in name order, so the
+// order of the declarations never reaches a request (DeepSeek tool-order.spec.ts).
+// A removal drops a tool; a later addition of the same name replaces it.
+// It is Pi's getCurrentTools, with the name order.
 func CurrentTools(msgs []protocol.Message) []protocol.ToolDecl {
 	var out []protocol.ToolDecl
 	for _, m := range msgs {
@@ -38,6 +41,7 @@ func CurrentTools(msgs []protocol.Message) []protocol.ToolDecl {
 			}
 		}
 	}
+	slices.SortStableFunc(out, func(a, b protocol.ToolDecl) int { return strings.Compare(a.Name, b.Name) })
 	return out
 }
 

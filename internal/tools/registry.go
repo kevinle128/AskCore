@@ -19,6 +19,8 @@ import (
 type Registry struct {
 	mu   sync.Mutex
 	snap *Snapshot
+	// last is the ID of the latest registration.
+	last uint64
 }
 
 // Snapshot is an immutable view of the registry at one moment. A nil
@@ -29,6 +31,8 @@ type Snapshot struct {
 }
 
 type entry struct {
+	// id names one registration, so a disposer removes only its own tool.
+	id     uint64
 	tool   Tool
 	src    SourceInfo
 	decl   protocol.ToolDecl
@@ -40,26 +44,52 @@ const schemaURL = "mem:///parameters.json"
 // Register adds a tool. It fails when the tool has no name or no parameters
 // schema, when the schema does not compile, or when the name is taken.
 func (r *Registry) Register(t Tool, src SourceInfo) error {
+	_, err := r.Add(t, src)
+	return err
+}
+
+// Add is Register that also returns the disposer of the registration. The
+// disposer removes this exact tool from the next snapshot. It does nothing when
+// the tool is gone already, and it never removes another tool that took the
+// same name later. It returns a nil disposer when it fails.
+func (r *Registry) Add(t Tool, src SourceInfo) (dispose func(), err error) {
 	decl := t.Decl()
 	if decl.Name == "" {
-		return errors.New("tools: tool has no name")
+		return nil, errors.New("tools: tool has no name")
 	}
 	params, err := compileParameters(decl.Parameters)
 	if err != nil {
-		return fmt.Errorf("tools: tool %q: %w", decl.Name, err)
+		return nil, fmt.Errorf("tools: tool %q: %w", decl.Name, err)
 	}
 	decl.Parameters = bytes.Clone(decl.Parameters)
 	r.mu.Lock()
 	defer r.mu.Unlock()
 	if _, _, taken := r.snap.Lookup(decl.Name); taken {
-		return fmt.Errorf("tools: tool %q is already registered", decl.Name)
+		return nil, fmt.Errorf("tools: tool %q is already registered", decl.Name)
 	}
 	var entries []entry
 	if r.snap != nil {
 		entries = r.snap.entries
 	}
-	r.snap = newSnapshot(append(entries[:len(entries):len(entries)], entry{tool: t, src: src, decl: decl, params: params}))
-	return nil
+	r.last++
+	id := r.last
+	r.snap = newSnapshot(append(entries[:len(entries):len(entries)], entry{id: id, tool: t, src: src, decl: decl, params: params}))
+	return func() { r.remove(id) }, nil
+}
+
+// remove drops the registration with the given ID, if it is still there.
+func (r *Registry) remove(id uint64) {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	if r.snap == nil {
+		return
+	}
+	for _, e := range r.snap.entries {
+		if e.id == id {
+			r.dropLocked(e.decl.Name)
+			return
+		}
+	}
 }
 
 // Unregister removes the tool with the given name and reports whether it was
@@ -67,6 +97,12 @@ func (r *Registry) Register(t Tool, src SourceInfo) error {
 func (r *Registry) Unregister(name string) bool {
 	r.mu.Lock()
 	defer r.mu.Unlock()
+	return r.dropLocked(name)
+}
+
+// dropLocked replaces the snapshot with one that has no tool of that name.
+// The caller holds r.mu.
+func (r *Registry) dropLocked(name string) bool {
 	i, ok := r.snap.find(name)
 	if !ok {
 		return false

@@ -14,7 +14,10 @@ import (
 	"AskCore/pkg/protocol"
 )
 
-func buildResponsesCall(msgs []protocol.Message, model providers.Model, opts providers.StreamOptions) (fantasy.Call, error) {
+// buildResponsesCall builds the call of a Responses request. It reads the
+// effective values from pr only; method is the login method of the credential
+// binding, which shapes the instructions of the ChatGPT profile.
+func buildResponsesCall(msgs []protocol.Message, model providers.Model, pr *providers.Prepared, method string) (fantasy.Call, error) {
 	prompt, err := encodeResponsesPrompt(msgs, model)
 	if err != nil {
 		return fantasy.Call{}, err
@@ -35,7 +38,7 @@ func buildResponsesCall(msgs []protocol.Message, model providers.Model, opts pro
 			ropts.ExtraBody[name] = value
 		}
 	}
-	if opts.Auth.Method == "openai-chatgpt" {
+	if method == "openai-chatgpt" {
 		var supported fantasy.Prompt
 		for _, msg := range prompt {
 			if msg.Role == fantasy.MessageRoleSystem {
@@ -55,19 +58,18 @@ func buildResponsesCall(msgs []protocol.Message, model providers.Model, opts pro
 	if model.Reasoning {
 		ropts.Include = []fopenai.IncludeType{fopenai.IncludeReasoningEncryptedContent}
 	}
-	if opts.CacheRetention != providers.CacheRetentionNone {
-		if key := clampPromptCacheKey(opts.SessionID); key != "" {
-			ropts.PromptCacheKey = &key
-		}
+	if pr.PromptCacheKey != "" {
+		key := pr.PromptCacheKey
+		ropts.PromptCacheKey = &key
 	}
-	if opts.CacheRetention == providers.CacheRetentionLong && compat.SupportsLongCacheRetention {
+	if pr.CacheRetention == providers.CacheRetentionLong && compat.SupportsLongCacheRetention {
 		if ropts.ExtraBody == nil {
 			ropts.ExtraBody = map[string]any{}
 		}
 		ropts.ExtraBody["prompt_cache_retention"] = "24h"
 	}
-	if word, ok := thinkingEffort(model, opts.Reasoning); ok && opts.Reasoning != "" {
-		effort := fopenai.ReasoningEffort(word)
+	if pr.Effort != "" {
+		effort := fopenai.ReasoningEffort(pr.Effort)
 		ropts.ReasoningEffort = &effort
 	}
 	call := fantasy.Call{
@@ -75,18 +77,18 @@ func buildResponsesCall(msgs []protocol.Message, model providers.Model, opts pro
 		Tools:           tools,
 		ProviderOptions: fopenai.NewResponsesProviderOptions(ropts),
 	}
-	if opts.ToolChoice != "" {
+	if pr.ToolChoice != "" {
 		found := false
 		for _, tool := range providers.CurrentTools(msgs) {
-			if tool.Name == opts.ToolChoice {
+			if tool.Name == pr.ToolChoice {
 				found = true
 				break
 			}
 		}
 		if !found {
-			return fantasy.Call{}, fmt.Errorf("unknown Responses tool choice %q", opts.ToolChoice)
+			return fantasy.Call{}, fmt.Errorf("unknown Responses tool choice %q", pr.ToolChoice)
 		}
-		choice := fantasy.SpecificToolChoice(opts.ToolChoice)
+		choice := fantasy.SpecificToolChoice(pr.ToolChoice)
 		call.ToolChoice = &choice
 		if raw, ok := ropts.ExtraBody["tools"]; ok {
 			encoded, err := json.Marshal(raw)
@@ -99,7 +101,7 @@ func buildResponsesCall(msgs []protocol.Message, model providers.Model, opts pro
 			}
 			matches := 0
 			for _, group := range groups {
-				if group["name"] == opts.ToolChoice && (group["type"] == "function" || group["type"] == "custom") {
+				if group["name"] == pr.ToolChoice && (group["type"] == "function" || group["type"] == "custom") {
 					matches++
 				}
 				if group["type"] != "namespace" {
@@ -108,19 +110,19 @@ func buildResponsesCall(msgs []protocol.Message, model providers.Model, opts pro
 				children, _ := group["tools"].([]any)
 				for _, child := range children {
 					tool, ok := child.(map[string]any)
-					if ok && tool["name"] == opts.ToolChoice {
+					if ok && tool["name"] == pr.ToolChoice {
 						matches++
-						ropts.ExtraBody["tool_choice"] = map[string]any{"type": tool["type"], "name": opts.ToolChoice, "namespace": group["name"]}
+						ropts.ExtraBody["tool_choice"] = map[string]any{"type": tool["type"], "name": pr.ToolChoice, "namespace": group["name"]}
 					}
 				}
 			}
 			if matches != 1 {
-				return fantasy.Call{}, fmt.Errorf("responses tool choice %q has %d declarations", opts.ToolChoice, matches)
+				return fantasy.Call{}, fmt.Errorf("responses tool choice %q has %d declarations", pr.ToolChoice, matches)
 			}
 		}
 	}
-	if opts.MaxTokens > 0 && compat.SupportsMaxOutputTokens {
-		limit := int64(max(opts.MaxTokens, 16))
+	if pr.MaxTokens > 0 && compat.SupportsMaxOutputTokens {
+		limit := int64(pr.MaxTokens)
 		call.MaxOutputTokens = &limit
 	}
 	return call, nil

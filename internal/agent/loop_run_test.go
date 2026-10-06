@@ -24,7 +24,7 @@ func TestTwoTurnEventOrder(t *testing.T) {
 	rec := &recorder{}
 
 	msgs, err := agent.Run(context.Background(), []protocol.Message{user("echo hi")},
-		pipeline.AgentContext{Tools: registry(t, tools.Echo{})}, config(p, m, pipeline.Hooks{}), rec.emit)
+		pipeline.AgentContext{Tools: registry(t, tools.Echo{})}, config(p, m, nil), rec.emit)
 	require.NoError(t, err)
 
 	for _, l := range rec.eventLabels() {
@@ -32,19 +32,20 @@ func TestTwoTurnEventOrder(t *testing.T) {
 	}
 	assert.Equal(t, []string{
 		"agent_start",
+		"cycle_start",
 		"turn_start",
 		"message_start(system)", "message_end(system)", "message_start(user)", "message_end(user)",
-		"message_start(assistant)",
+		"attempt_start", "message_start(assistant)",
 		"message_update(toolcall_start)", "message_update(toolcall_delta)", "message_update(toolcall_end)",
-		"message_end(assistant)",
+		"message_end(assistant)", "attempt_end",
 		"tool_execution_start(c1)", "tool_execution_end(c1)",
 		"message_start(toolResult:c1)", "message_end(toolResult:c1)",
 		"turn_end",
 		"turn_start",
-		"message_start(assistant)",
+		"attempt_start", "message_start(assistant)",
 		"message_update(text_start)", "message_update(text_delta)", "message_update(text_end)",
-		"message_end(assistant)",
-		"turn_end",
+		"message_end(assistant)", "attempt_end",
+		"turn_end", "cycle_end",
 		"agent_end",
 	}, rec.eventLabels())
 
@@ -59,96 +60,30 @@ func TestTwoTurnEventOrder(t *testing.T) {
 	assert.Equal(t, roles(msgs), roles(end.Messages))
 }
 
-func TestSteeringPollPoints(t *testing.T) {
-	t.Run("empty queues", func(t *testing.T) {
-		p, m := newFaux(t)
-		p.Set(faux.Reply(faux.ToolCall("echo", map[string]any{"text": "hi"}, faux.ID("c1"))), faux.Say("done"))
-		rec := &recorder{}
-		hooks := pipeline.Hooks{
-			GetSteeringMessages: func(context.Context) ([]protocol.Message, error) { rec.note("steer"); return nil, nil },
-			GetFollowUpMessages: func(context.Context) ([]protocol.Message, error) { rec.note("follow"); return nil, nil },
-			PrepareRequest: func(context.Context, pipeline.Request) (*pipeline.RequestUpdate, error) {
-				rec.note("prepare")
-				return nil, nil
-			},
-		}
-		_, err := agent.Run(context.Background(), []protocol.Message{user("go")},
-			pipeline.AgentContext{Tools: registry(t, tools.Echo{})}, config(p, m, hooks), rec.emit)
-		require.NoError(t, err)
-		assert.Equal(t, []string{
-			"agent_start", "turn_start", "message_start(system)", "message_end(system)", "message_start(user)", "message_end(user)",
-			"steer",
-			"prepare",
-			"message_start(assistant)", "message_update(toolcall_start)", "message_update(toolcall_delta)", "message_update(toolcall_end)", "message_end(assistant)",
-			"tool_execution_start(c1)", "tool_execution_end(c1)", "message_start(toolResult:c1)", "message_end(toolResult:c1)",
-			"turn_end",
-			"steer",
-			"steer",
-			"turn_start",
-			"prepare",
-			"message_start(assistant)", "message_update(text_start)", "message_update(text_delta)", "message_update(text_end)", "message_end(assistant)",
-			"turn_end",
-			"steer",
-			"follow",
-			"agent_end",
-		}, rec.labels())
+func TestPrepareRequestRunsAfterTurnStartAndBeforeAttempt(t *testing.T) {
+	p, m := newFaux(t)
+	p.Set(faux.Reply(faux.ToolCall("echo", map[string]any{"text": "hi"}, faux.ID("c1"))), faux.Say("done"))
+	rec := &recorder{}
+	reg := pipeline.NewRegistry()
+	reg.OnPrepareRequest(func(context.Context, pipeline.Request, pipeline.Next[pipeline.Request, *pipeline.RequestUpdate]) (*pipeline.RequestUpdate, error) {
+		rec.note("prepare")
+		return nil, nil
 	})
-
-	t.Run("steering message skips the second poll", func(t *testing.T) {
-		p, m := newFaux(t)
-		p.Set(faux.Say("one"), faux.Say("two"))
-		rec := &recorder{}
-		polls := 0
-		hooks := pipeline.Hooks{
-			GetSteeringMessages: func(context.Context) ([]protocol.Message, error) {
-				polls++
-				rec.note("steer")
-				if polls == 2 {
-					return []protocol.Message{user("steer")}, nil
-				}
-				return nil, nil
-			},
-		}
-		msgs, err := agent.Run(context.Background(), []protocol.Message{user("go")},
-			pipeline.AgentContext{}, config(p, m, hooks), rec.emit)
-		require.NoError(t, err)
-		assert.Equal(t, []string{
-			"agent_start", "turn_start", "message_start(user)", "message_end(user)",
-			"steer",
-			"message_start(assistant)", "message_update(text_start)", "message_update(text_delta)", "message_update(text_end)", "message_end(assistant)",
-			"turn_end",
-			"steer",
-			"turn_start",
-			"message_start(user)", "message_end(user)",
-			"message_start(assistant)", "message_update(text_start)", "message_update(text_delta)", "message_update(text_end)", "message_end(assistant)",
-			"turn_end",
-			"steer",
-			"agent_end",
-		}, rec.labels())
-		assert.Equal(t, []string{"user", "assistant", "user", "assistant"}, roles(msgs))
-	})
-
-	t.Run("follow-up starts a new turn", func(t *testing.T) {
-		p, m := newFaux(t)
-		p.Set(faux.Say("one"), faux.Say("two"))
-		rec := &recorder{}
-		follows := 0
-		hooks := pipeline.Hooks{
-			GetFollowUpMessages: func(context.Context) ([]protocol.Message, error) {
-				follows++
-				if follows == 1 {
-					return []protocol.Message{user("more")}, nil
-				}
-				return nil, nil
-			},
-		}
-		msgs, err := agent.Run(context.Background(), []protocol.Message{user("go")},
-			pipeline.AgentContext{}, config(p, m, hooks), rec.emit)
-		require.NoError(t, err)
-		assert.Equal(t, []string{"user", "assistant", "user", "assistant"}, roles(msgs))
-		assert.Equal(t, 2, follows)
-		assert.Equal(t, 2, p.Calls())
-	})
+	_, err := agent.Run(context.Background(), []protocol.Message{user("go")},
+		pipeline.AgentContext{Tools: registry(t, tools.Echo{})}, config(p, m, reg), rec.emit)
+	require.NoError(t, err)
+	assert.Equal(t, []string{
+		"agent_start", "cycle_start", "turn_start", "prepare", "message_start(system)", "message_end(system)", "message_start(user)", "message_end(user)",
+		"attempt_start", "message_start(assistant)", "message_update(toolcall_start)", "message_update(toolcall_delta)", "message_update(toolcall_end)", "message_end(assistant)", "attempt_end",
+		"tool_execution_start(c1)", "tool_execution_end(c1)", "message_start(toolResult:c1)", "message_end(toolResult:c1)",
+		"turn_end",
+		"turn_start",
+		"prepare",
+		"attempt_start", "message_start(assistant)", "message_update(text_start)", "message_update(text_delta)", "message_update(text_end)", "message_end(assistant)", "attempt_end",
+		"turn_end",
+		"cycle_end",
+		"agent_end",
+	}, rec.labels())
 }
 
 func TestFinishTurnContinue(t *testing.T) {
@@ -156,15 +91,14 @@ func TestFinishTurnContinue(t *testing.T) {
 	p.Set(faux.Say("first"), faux.Say("second"))
 	rec := &recorder{}
 	decisions := []pipeline.TurnDecision{pipeline.Continue, pipeline.Proceed}
-	hooks := pipeline.Hooks{
-		FinishTurn: func(context.Context, pipeline.Turn) (pipeline.TurnDecision, error) {
-			d := decisions[0]
-			decisions = decisions[1:]
-			return d, nil
-		},
-	}
+	reg := pipeline.NewRegistry()
+	reg.OnCompleteStep(func(context.Context, pipeline.Turn) (pipeline.TurnDecision, error) {
+		d := decisions[0]
+		decisions = decisions[1:]
+		return d, nil
+	})
 	msgs, err := agent.Run(context.Background(), []protocol.Message{user("go")},
-		pipeline.AgentContext{}, config(p, m, hooks), rec.emit)
+		pipeline.AgentContext{}, config(p, m, reg), rec.emit)
 	require.NoError(t, err)
 
 	assert.Equal(t, 2, p.Calls(), "Continue with no tool call gives exactly one more request")
@@ -172,12 +106,12 @@ func TestFinishTurnContinue(t *testing.T) {
 		"the extra request carries the current context and no new message")
 	assert.Equal(t, []string{"user", "assistant", "assistant"}, roles(msgs))
 	assert.Equal(t, []string{
-		"agent_start", "turn_start", "message_start(user)", "message_end(user)",
-		"message_start(assistant)", "message_update(text_start)", "message_update(text_delta)", "message_update(text_end)", "message_end(assistant)",
+		"agent_start", "cycle_start", "turn_start", "message_start(user)", "message_end(user)",
+		"attempt_start", "message_start(assistant)", "message_update(text_start)", "message_update(text_delta)", "message_update(text_end)", "message_end(assistant)", "attempt_end",
 		"turn_end",
 		"turn_start",
-		"message_start(assistant)", "message_update(text_start)", "message_update(text_delta)", "message_update(text_end)", "message_end(assistant)",
-		"turn_end",
+		"attempt_start", "message_start(assistant)", "message_update(text_start)", "message_update(text_delta)", "message_update(text_end)", "message_end(assistant)", "attempt_end",
+		"turn_end", "cycle_end",
 		"agent_end",
 	}, rec.eventLabels())
 }
@@ -186,17 +120,16 @@ func TestFinishTurnContinueSatisfiedByToolResults(t *testing.T) {
 	p, m := newFaux(t)
 	p.Set(faux.Reply(faux.ToolCall("echo", map[string]any{"text": "hi"})), faux.Say("done"), faux.Say("unused"))
 	first := true
-	hooks := pipeline.Hooks{
-		FinishTurn: func(context.Context, pipeline.Turn) (pipeline.TurnDecision, error) {
-			if first {
-				first = false
-				return pipeline.Continue, nil
-			}
-			return pipeline.Proceed, nil
-		},
-	}
+	reg := pipeline.NewRegistry()
+	reg.OnCompleteStep(func(context.Context, pipeline.Turn) (pipeline.TurnDecision, error) {
+		if first {
+			first = false
+			return pipeline.Continue, nil
+		}
+		return pipeline.Proceed, nil
+	})
 	_, err := agent.Run(context.Background(), []protocol.Message{user("go")},
-		pipeline.AgentContext{Tools: registry(t, tools.Echo{})}, config(p, m, hooks), (&recorder{}).emit)
+		pipeline.AgentContext{Tools: registry(t, tools.Echo{})}, config(p, m, reg), (&recorder{}).emit)
 	require.NoError(t, err)
 	assert.Equal(t, 2, p.Calls(), "the tool-result request satisfies Continue")
 }
@@ -205,28 +138,24 @@ func TestFinishTurnEnd(t *testing.T) {
 	p, m := newFaux(t)
 	p.Set(faux.Reply(faux.ToolCall("echo", map[string]any{"text": "hi"}, faux.ID("c1"))), faux.Say("unused"))
 	rec := &recorder{}
-	hooks := pipeline.Hooks{
-		GetSteeringMessages: func(context.Context) ([]protocol.Message, error) { rec.note("steer"); return nil, nil },
-		GetFollowUpMessages: func(context.Context) ([]protocol.Message, error) { rec.note("follow"); return nil, nil },
-		FinishTurn: func(_ context.Context, turn pipeline.Turn) (pipeline.TurnDecision, error) {
-			rec.note("finish:" + strings.Join(roles(turn.NewMessages), ","))
-			return pipeline.End, nil
-		},
-	}
+	reg := pipeline.NewRegistry()
+	reg.OnCompleteStep(func(_ context.Context, turn pipeline.Turn) (pipeline.TurnDecision, error) {
+		rec.note("finish:" + strings.Join(roles(turn.NewMessages), ","))
+		return pipeline.End, nil
+	})
 	_, err := agent.Run(context.Background(), []protocol.Message{user("go")},
-		pipeline.AgentContext{Tools: registry(t, tools.Echo{})}, config(p, m, hooks), rec.emit)
+		pipeline.AgentContext{Tools: registry(t, tools.Echo{})}, config(p, m, reg), rec.emit)
 	require.NoError(t, err)
 
 	assert.Equal(t, 1, p.Calls())
 	assert.Equal(t, []string{
-		"agent_start", "turn_start", "message_start(system)", "message_end(system)", "message_start(user)", "message_end(user)",
-		"steer",
-		"message_start(assistant)", "message_update(toolcall_start)", "message_update(toolcall_delta)", "message_update(toolcall_end)", "message_end(assistant)",
+		"agent_start", "cycle_start", "turn_start", "message_start(system)", "message_end(system)", "message_start(user)", "message_end(user)",
+		"attempt_start", "message_start(assistant)", "message_update(toolcall_start)", "message_update(toolcall_delta)", "message_update(toolcall_end)", "message_end(assistant)", "attempt_end",
 		"tool_execution_start(c1)", "tool_execution_end(c1)", "message_start(toolResult:c1)", "message_end(toolResult:c1)",
 		"finish:system,user,assistant,toolResult:c1",
-		"turn_end",
+		"turn_end", "cycle_end",
 		"agent_end",
-	}, rec.labels(), "no poll hook runs after End")
+	}, rec.labels(), "no poll runs after End")
 }
 
 func TestErrorTail(t *testing.T) {
@@ -249,29 +178,25 @@ func TestErrorTail(t *testing.T) {
 				executed = true
 				return textResult("x"), nil
 			}}
-			hooks := pipeline.Hooks{
-				GetSteeringMessages: func(context.Context) ([]protocol.Message, error) { rec.note("steer"); return nil, nil },
-				GetFollowUpMessages: func(context.Context) ([]protocol.Message, error) { rec.note("follow"); return nil, nil },
-				FinishTurn: func(_ context.Context, turn pipeline.Turn) (pipeline.TurnDecision, error) {
-					rec.note("finish")
-					return pipeline.Continue, nil
-				},
-			}
+			reg := pipeline.NewRegistry()
+			reg.OnCompleteStep(func(_ context.Context, turn pipeline.Turn) (pipeline.TurnDecision, error) {
+				rec.note("finish")
+				return pipeline.Continue, nil
+			})
 			msgs, err := agent.Run(context.Background(), []protocol.Message{user("go")},
-				pipeline.AgentContext{Tools: registry(t, echo)}, config(p, m, hooks), rec.emit)
+				pipeline.AgentContext{Tools: registry(t, echo)}, config(p, m, reg), rec.emit)
 			require.NoError(t, err)
 
 			assert.Equal(t, []string{
-				"agent_start", "turn_start", "message_start(system)", "message_end(system)", "message_start(user)", "message_end(user)",
-				"steer",
-				"message_start(assistant)", "message_update(toolcall_start)", "message_update(toolcall_delta)", "message_update(toolcall_end)", "message_end(assistant)",
+				"agent_start", "cycle_start", "turn_start", "message_start(system)", "message_end(system)", "message_start(user)", "message_end(user)",
+				"attempt_start", "message_start(assistant)", "message_update(toolcall_start)", "message_update(toolcall_delta)", "message_update(toolcall_end)", "message_end(assistant)", "attempt_end",
 				"finish",
-				"turn_end",
+				"turn_end", "cycle_end",
 				"agent_end",
 			}, rec.labels())
 			assert.False(t, executed)
 			assert.Equal(t, 1, p.Calls(), "the Continue decision is ignored")
-			turnEnd := rec.events[len(rec.events)-2].(*protocol.TurnEnd)
+			turnEnd := rec.events[len(rec.events)-3].(*protocol.TurnEnd)
 			assert.Equal(t, []protocol.ToolResultMessage{}, turnEnd.ToolResults)
 			last := lastAssistant(t, msgs)
 			assert.Equal(t, tc.reason, last.StopReason)
@@ -283,7 +208,7 @@ func TestErrorTail(t *testing.T) {
 
 func TestContinue(t *testing.T) {
 	p, m := newFaux(t)
-	cfg := config(p, m, pipeline.Hooks{})
+	cfg := config(p, m, nil)
 
 	t.Run("empty context", func(t *testing.T) {
 		rec := &recorder{}
@@ -309,9 +234,9 @@ func TestContinue(t *testing.T) {
 		msgs, err := agent.Continue(context.Background(), pipeline.AgentContext{Messages: history}, cfg, rec.emit)
 		require.NoError(t, err)
 		assert.Equal(t, []string{
-			"agent_start", "turn_start",
-			"message_start(assistant)", "message_update(text_start)", "message_update(text_delta)", "message_update(text_end)", "message_end(assistant)",
-			"turn_end", "agent_end",
+			"agent_start", "cycle_start", "turn_start",
+			"attempt_start", "message_start(assistant)", "message_update(text_start)", "message_update(text_delta)", "message_update(text_end)", "message_end(assistant)", "attempt_end",
+			"turn_end", "cycle_end", "agent_end",
 		}, rec.eventLabels())
 		assert.Equal(t, []string{"assistant"}, roles(msgs), "the result holds only what the run added")
 		assert.Equal(t, "again", assistantText(lastAssistant(t, msgs)))
@@ -323,23 +248,43 @@ func TestHookErrorReturned(t *testing.T) {
 	boom := errors.New("hook failed")
 	cases := []struct {
 		name  string
-		hooks pipeline.Hooks
+		setup func(cfg *agent.LoopConfig, reg *pipeline.Registry)
 	}{
-		{"TransformContext", pipeline.Hooks{TransformContext: func(context.Context, []protocol.Message) ([]protocol.Message, error) { return nil, boom }}},
-		{"ConvertToLLM", pipeline.Hooks{ConvertToLLM: func([]protocol.Message) ([]protocol.Message, error) { return nil, boom }}},
-		{"GetAPIKey", pipeline.Hooks{GetAPIKey: func(context.Context, string) (string, error) { return "", boom }}},
-		{"PrepareRequest", pipeline.Hooks{PrepareRequest: func(context.Context, pipeline.Request) (*pipeline.RequestUpdate, error) { return nil, boom }}},
-		{"FinishTurn", pipeline.Hooks{FinishTurn: func(context.Context, pipeline.Turn) (pipeline.TurnDecision, error) { return pipeline.Proceed, boom }}},
-		{"GetSteeringMessages", pipeline.Hooks{GetSteeringMessages: func(context.Context) ([]protocol.Message, error) { return nil, boom }}},
-		{"GetFollowUpMessages", pipeline.Hooks{GetFollowUpMessages: func(context.Context) ([]protocol.Message, error) { return nil, boom }}},
+		{"ConvertToLLM", func(cfg *agent.LoopConfig, _ *pipeline.Registry) {
+			cfg.ConvertToLLM = func([]protocol.Message) ([]protocol.Message, error) { return nil, boom }
+		}},
+		{"GetAPIKey", func(cfg *agent.LoopConfig, _ *pipeline.Registry) {
+			cfg.GetAPIKey = func(context.Context, string) (string, error) { return "", boom }
+		}},
+		{"PrepareRequest", func(_ *agent.LoopConfig, reg *pipeline.Registry) {
+			reg.OnPrepareRequest(func(context.Context, pipeline.Request, pipeline.Next[pipeline.Request, *pipeline.RequestUpdate]) (*pipeline.RequestUpdate, error) {
+				return nil, boom
+			})
+		}},
+		{"ExecuteModel", func(_ *agent.LoopConfig, reg *pipeline.Registry) {
+			reg.OnExecuteModel(func(context.Context, pipeline.ModelCall, pipeline.Next[pipeline.ModelCall, *pipeline.ModelOutcome]) (*pipeline.ModelOutcome, error) {
+				return nil, boom
+			})
+		}},
+		{"CompleteStep", func(_ *agent.LoopConfig, reg *pipeline.Registry) {
+			reg.OnCompleteStep(func(context.Context, pipeline.Turn) (pipeline.TurnDecision, error) { return pipeline.Proceed, boom })
+		}},
+		{"AdmitStep", func(_ *agent.LoopConfig, reg *pipeline.Registry) {
+			reg.OnAdmitStep(func(context.Context, pipeline.AdmitInput, pipeline.Next[pipeline.AdmitInput, pipeline.AdmitDecision]) (pipeline.AdmitDecision, error) {
+				return pipeline.AdmitDecision{}, boom
+			})
+		}},
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
 			p, m := newFaux(t)
 			p.Set(faux.Say("hi"))
 			rec := &recorder{}
+			reg := pipeline.NewRegistry()
+			cfg := config(p, m, reg)
+			tc.setup(&cfg, reg)
 			msgs, err := agent.Run(context.Background(), []protocol.Message{user("go")},
-				pipeline.AgentContext{}, config(p, m, tc.hooks), rec.emit)
+				pipeline.AgentContext{}, cfg, rec.emit)
 			require.ErrorIs(t, err, boom)
 			assert.Same(t, boom, err, "the error is returned unchanged")
 			assert.Nil(t, msgs)
@@ -355,7 +300,7 @@ func TestEmitErrorEndsRun(t *testing.T) {
 			p.Set(faux.Reply(faux.Text("x"), faux.ToolCall("echo", map[string]any{"text": "hi"}, faux.ID("c1"))), faux.Say("done"))
 			rec := &recorder{failOn: failOn}
 			_, err := agent.Run(context.Background(), []protocol.Message{user("go")},
-				pipeline.AgentContext{Tools: registry(t, tools.Echo{})}, config(p, m, pipeline.Hooks{}), rec.emit)
+				pipeline.AgentContext{Tools: registry(t, tools.Echo{})}, config(p, m, nil), rec.emit)
 			require.ErrorIs(t, err, errEmit)
 			labels := rec.eventLabels()
 			assert.Equal(t, failOn, labels[len(labels)-1], "nothing is emitted after the failing event")
@@ -369,20 +314,19 @@ func TestPrepareRequestReplacesContext(t *testing.T) {
 	other := m
 	other.ID = "faux-2"
 	calls := 0
-	hooks := pipeline.Hooks{
-		PrepareRequest: func(_ context.Context, r pipeline.Request) (*pipeline.RequestUpdate, error) {
-			calls++
-			if calls > 1 {
-				return nil, nil
-			}
-			assert.Equal(t, protocol.ThinkingOff, r.ThinkingLevel)
-			replaced := r.Context
-			replaced.Messages = []protocol.Message{user("projected")}
-			return &pipeline.RequestUpdate{Context: &replaced, ThinkingLevel: protocol.ThinkingHigh}, nil
-		},
-	}
+	reg := pipeline.NewRegistry()
+	reg.OnPrepareRequest(func(_ context.Context, r pipeline.Request, _ pipeline.Next[pipeline.Request, *pipeline.RequestUpdate]) (*pipeline.RequestUpdate, error) {
+		calls++
+		if calls > 1 {
+			return nil, nil
+		}
+		assert.Equal(t, protocol.ThinkingOff, r.ThinkingLevel)
+		replaced := r.Context
+		replaced.Messages = []protocol.Message{user("projected")}
+		return &pipeline.RequestUpdate{Context: &replaced, ThinkingLevel: protocol.ThinkingHigh}, nil
+	})
 	msgs, err := agent.Run(context.Background(), []protocol.Message{user("go")},
-		pipeline.AgentContext{Tools: registry(t, tools.Echo{})}, config(p, m, hooks), (&recorder{}).emit)
+		pipeline.AgentContext{Tools: registry(t, tools.Echo{})}, config(p, m, reg), (&recorder{}).emit)
 	require.NoError(t, err)
 
 	reqs := p.Requests()
@@ -402,22 +346,22 @@ func TestGetAPIKeyFallback(t *testing.T) {
 	p, m := newFaux(t)
 	p.Set(faux.Say("a"), faux.Say("b"))
 	keys := []string{"", "fresh"}
+	reg := pipeline.NewRegistry()
+	reg.OnCompleteStep(func(_ context.Context, turn pipeline.Turn) (pipeline.TurnDecision, error) {
+		if len(turn.NewMessages) == 2 {
+			return pipeline.Continue, nil
+		}
+		return pipeline.Proceed, nil
+	})
 	cfg := agent.LoopConfig{
 		Model: m, Stream: p.Stream, Options: providers.StreamOptions{APIKey: "static"},
-		Hooks: pipeline.Hooks{
-			GetAPIKey: func(_ context.Context, provider string) (string, error) {
-				assert.Equal(t, "faux", provider)
-				k := keys[0]
-				keys = keys[1:]
-				return k, nil
-			},
-			FinishTurn: func(_ context.Context, turn pipeline.Turn) (pipeline.TurnDecision, error) {
-				if len(turn.NewMessages) == 2 {
-					return pipeline.Continue, nil
-				}
-				return pipeline.Proceed, nil
-			},
+		GetAPIKey: func(_ context.Context, provider string) (string, error) {
+			assert.Equal(t, "faux", provider)
+			k := keys[0]
+			keys = keys[1:]
+			return k, nil
 		},
+		Pipeline: reg,
 	}
 	_, err := agent.Run(context.Background(), []protocol.Message{user("go")}, pipeline.AgentContext{}, cfg, (&recorder{}).emit)
 	require.NoError(t, err)
@@ -425,4 +369,31 @@ func TestGetAPIKeyFallback(t *testing.T) {
 	require.Len(t, reqs, 2)
 	assert.Equal(t, "static", reqs[0].Options.APIKey)
 	assert.Equal(t, "fresh", reqs[1].Options.APIKey)
+}
+
+func TestPrepareRequestModelSwitchStaysForLaterRequests(t *testing.T) {
+	p, m := newFaux(t, faux.WithModels(faux.ModelDef{ID: "faux-1"}, faux.ModelDef{ID: "faux-2"}))
+	p.Set(faux.Reply(faux.ToolCall("echo", map[string]any{"text": "hi"}, faux.ID("c1"))), faux.Say("done"))
+	other, ok := p.Model("faux-2")
+	require.True(t, ok)
+	calls := 0
+	reg := pipeline.NewRegistry()
+	reg.OnPrepareRequest(func(_ context.Context, r pipeline.Request, _ pipeline.Next[pipeline.Request, *pipeline.RequestUpdate]) (*pipeline.RequestUpdate, error) {
+		calls++
+		if calls == 1 {
+			return &pipeline.RequestUpdate{Model: &other}, nil
+		}
+		assert.Equal(t, "faux-2", r.Model.ID, "the second request starts from the switched model")
+		return nil, nil
+	})
+
+	_, err := agent.Run(context.Background(), []protocol.Message{user("go")},
+		pipeline.AgentContext{Tools: registry(t, tools.Echo{})}, config(p, m, reg), (&recorder{}).emit)
+	require.NoError(t, err)
+
+	reqs := p.Requests()
+	require.Len(t, reqs, 2)
+	assert.Equal(t, "faux-2", reqs[0].Model.ID, "the switch applies to the request it was made for")
+	assert.Equal(t, "faux-2", reqs[1].Model.ID, "and stays for the later request with no new update")
+	assert.Equal(t, 2, calls)
 }

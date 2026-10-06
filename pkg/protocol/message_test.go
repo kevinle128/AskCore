@@ -404,3 +404,44 @@ func TestToolExecutionResultJSON(t *testing.T) {
 	require.NoError(t, err)
 	assert.Equal(t, `{"content":[]}`, string(b))
 }
+
+func TestCloneMessageCopiesPointerUserAndToolResultBlocks(t *testing.T) {
+	for _, kind := range []string{"user value", "user pointer", "tool result value", "tool result pointer"} {
+		t.Run(kind, func(t *testing.T) {
+			text := &Text{Text: "original", TextSignature: sp("signature")}
+			image := &Image{Data: "YQ==", MimeType: "image/png"}
+			content := []UserBlock{text, image}
+			var message Message
+			switch kind {
+			case "user value":
+				message = UserMessage{Content: content}
+			case "user pointer":
+				message = &UserMessage{Content: content}
+			case "tool result value":
+				message = ToolResultMessage{Content: content}
+			case "tool result pointer":
+				message = &ToolResultMessage{Content: content}
+			}
+			clone := CloneMessage(message)
+			var copied []UserBlock
+			switch value := clone.(type) {
+			case UserMessage:
+				copied = value.Content
+			case *UserMessage:
+				copied = value.Content
+			case ToolResultMessage:
+				copied = value.Content
+			case *ToolResultMessage:
+				copied = value.Content
+			}
+			copied[0].(*Text).Text = "changed"
+			*copied[0].(*Text).TextSignature = "changed"
+			copied[1].(*Image).Data = "Yg=="
+			copied[1].(*Image).MimeType = "image/jpeg"
+			require.Equal(t, "original", text.Text)
+			require.Equal(t, "signature", *text.TextSignature)
+			require.Equal(t, "YQ==", image.Data)
+			require.Equal(t, "image/png", image.MimeType)
+		})
+	}
+}

@@ -1,9 +1,11 @@
 package agent
 
 import (
+	"context"
 	"slices"
 
 	"AskCore/internal/pipeline"
+	"AskCore/internal/sessions"
 	"AskCore/internal/tools"
 	"AskCore/pkg/protocol"
 )
@@ -17,12 +19,12 @@ const (
 	// flowNextTurn starts a new turn: tool results or steering messages are
 	// pending.
 	flowNextTurn
-	// flowIdle means nothing is pending: check follow-ups, else end the run.
+	// flowIdle means nothing is pending: check the queues, else end the run.
 	flowIdle
 	// flowIdleContinue is flowIdle, but FinishTurn asked for one more request
 	// when nothing else selects one.
 	flowIdleContinue
-	// flowEndRun emits agent_end and stops without polling any queue.
+	// flowEndRun emits agent_end and stops without claiming from any queue.
 	flowEndRun
 )
 
@@ -41,6 +43,8 @@ type turnState struct {
 	results []protocol.ToolResultMessage
 	// moreTools is set when a tool batch ran and did not ask to terminate.
 	moreTools bool
+	// ranTool is set when at least one tool body started in this turn.
+	ranTool bool
 	// tools is the tool set of this turn. The model is told about it before
 	// the request, and the act stage runs calls against it, so the declared
 	// and the executable tools are the same even if the registry changes.
@@ -48,7 +52,7 @@ type turnState struct {
 }
 
 // failed reports a message that ended in an error or an abort. Such a turn
-// runs no tools and polls no queue.
+// runs no tools and claims nothing from a queue.
 func (t *turnState) failed() bool {
 	return t.msg.StopReason == protocol.StopError || t.msg.StopReason == protocol.StopAborted
 }
@@ -71,38 +75,108 @@ func (l *loop) runTurn() (flow, error) {
 	panic("agent: last turn stage returned flowNext: " + turnStages[len(turnStages)-1].name())
 }
 
-// steerStage opens a turn after the first: it polls steering messages when
-// none are pending and emits turn_start. Then it takes the tool snapshot of
-// the turn, declares tool changes, and adds the pending messages to the
-// context.
+// steerStage opens every turn. It dispatches AdmitStep with the input that the
+// loop claimed for the turn, none after a tool batch. A rejection ends the
+// cycle with reason blocked and no turn. When the first turn of a cycle is left
+// with no input at all, the cycle ends completed with no turn. Otherwise it
+// publishes turn_start, takes the tool snapshot of the turn, declares tool
+// changes, and adds the admitted messages to the context.
 type steerStage struct{}
 
 func (steerStage) name() string { return "steer" }
 
 func (steerStage) run(l *loop) (flow, error) {
-	if l.turns > 0 {
-		// Poll again only if the earlier poll was empty, so a one-at-a-time
-		// queue never delivers two messages in a turn.
-		if len(l.pending) == 0 {
-			var err error
-			if l.pending, err = l.pollSteering(); err != nil {
-				return flowEndRun, err
-			}
-		}
-		if err := l.emit(&protocol.TurnStart{}); err != nil {
+	dec, err := l.admit()
+	if err != nil {
+		return flowEndRun, err
+	}
+	allowEmpty := l.allowEmpty
+	l.allowEmpty = false
+	if dec.Reject {
+		if err := l.rejectPending(); err != nil {
 			return flowEndRun, err
 		}
+		l.cycle.settle(ReasonBlocked)
+		return flowEndRun, nil
+	}
+	if len(dec.Messages) == 0 && l.cycle.turns == 0 && !allowEmpty {
+		l.pending = nil
+		return flowIdle, nil
+	}
+	if err := l.openTurn(); err != nil {
+		return flowEndRun, err
 	}
 	l.ts = turnState{results: []protocol.ToolResultMessage{}, tools: l.ac.Tools.Snapshot()}
-	for _, m := range declareToolChanges(l.ac.Messages, l.ts.tools, l.pending) {
-		if err := l.emitMessage(m); err != nil {
-			return flowEndRun, err
+	claimed := l.pending
+	l.pending = nil
+	l.claimed = claimed
+	l.stagedInputCount = len(dec.Messages)
+	l.stagedIDs = nil
+	declared := declareToolChanges(l.ac.Messages, l.ts.tools, dec.Messages)
+	// A tool declaration that the loop added has no input. It goes before the
+	// first message that is not a system message.
+	synthetic := -1
+	if len(declared) == len(dec.Messages)+1 {
+		synthetic = slices.IndexFunc(dec.Messages, func(m protocol.Message) bool {
+			_, ok := m.(protocol.SystemMessage)
+			return !ok
+		})
+		if synthetic < 0 {
+			synthetic = len(dec.Messages)
 		}
+	}
+	l.staged = declared
+	next := 0
+	for i, m := range declared {
+		id := ""
+		if i != synthetic {
+			if next < len(claimed) {
+				id = claimed[next].id
+			}
+			next++
+		}
+		l.stagedIDs = append(l.stagedIDs, id)
 		l.ac.Messages = append(l.ac.Messages, m)
-		l.newMessages = append(l.newMessages, m)
+	}
+	return flowNext, nil
+}
+
+// dropUnentered acknowledges the claimed inputs that no admitted message
+// carries, which happens when a handler rewrote the messages to fewer. The
+// admitted messages take the claimed inputs in order.
+func (l *loop) dropUnentered(claimed []input, entered int) error {
+	if entered >= len(claimed) {
+		return nil
+	}
+	var entries []sessions.Entry
+	for _, in := range claimed[entered:] {
+		entries = append(entries, sessions.InputOutcome{InputID: in.id, Accepted: false, Reason: "dropped"})
+	}
+	return l.commit(entries...)
+}
+
+// admit is the only caller of the AdmitStep point. The handlers get copies of
+// the claimed messages.
+func (l *loop) admit() (pipeline.AdmitDecision, error) {
+	return l.cfg.Pipeline.AdmitStep(l.ctx, pipeline.AdmitInput{
+		CycleID:  l.cycleID(),
+		Turn:     l.cycle.turns + 1,
+		Messages: cloneMessages(messagesOf(l.pending)),
+	})
+}
+
+// rejectPending acknowledges every claimed message as rejected, once, and
+// drops them: a rejected claim is consumed.
+func (l *loop) rejectPending() error {
+	entries := make([]sessions.Entry, len(l.pending))
+	for i, in := range l.pending {
+		entries[i] = sessions.InputOutcome{InputID: in.id, Accepted: false, Reason: "rejected"}
 	}
 	l.pending = nil
-	return flowNext, nil
+	if len(entries) == 0 {
+		return nil
+	}
+	return l.commit(entries...)
 }
 
 // prepareStage lets the request hook change the run state before the request.
@@ -111,7 +185,11 @@ type prepareStage struct{}
 func (prepareStage) name() string { return "prepare" }
 
 func (prepareStage) run(l *loop) (flow, error) {
-	return flowNext, l.prepareRequest()
+	err := runGuarded(l.prepareRequest)
+	if err != nil {
+		return flowEndRun, l.preparationFailed(err)
+	}
+	return flowNext, nil
 }
 
 // reasonStage sends one model request and stores the assistant message.
@@ -142,12 +220,13 @@ func (actStage) run(l *loop) (flow, error) {
 	if len(calls) == 0 {
 		return flowNext, nil
 	}
-	batch, err := l.toolExecutor(l.ts.msg, calls).run(l, l.ts.msg, calls)
+	batch, err := l.runToolBatch(l.ts.msg, calls)
 	if err != nil {
 		return flowEndRun, err
 	}
 	l.ts.results = batch.messages
 	l.ts.moreTools = !batch.terminate
+	l.ts.ranTool = batch.ran
 	return flowNext, nil
 }
 
@@ -164,6 +243,15 @@ func (observeStage) run(l *loop) (flow, error) {
 		l.ac.Messages = append(l.ac.Messages, r)
 		l.newMessages = append(l.newMessages, r)
 	}
+	if len(l.ts.results) > 0 && l.ctx.Err() != nil {
+		msg := abortedMessage(l.cfg.Model, l.clock, context.Cause(l.ctx))
+		if err := l.emitMessage(msg); err != nil {
+			return flowEndRun, err
+		}
+		l.ac.Messages = append(l.ac.Messages, msg)
+		l.newMessages = append(l.newMessages, msg)
+		l.ts.msg = msg
+	}
 	return flowNext, nil
 }
 
@@ -176,31 +264,58 @@ func (decideStage) name() string { return "decide" }
 func (decideStage) run(l *loop) (flow, error) {
 	ts := &l.ts
 	l.turns++
+	l.cycle.settleTurn(ts.msg.StopReason, l.failureCode)
 	decision, err := l.finishTurn(*l.turn(ts.msg, ts.results))
 	if err != nil {
 		return flowEndRun, err
 	}
-	if err := l.emit(&protocol.TurnEnd{Message: ts.msg, ToolResults: ts.results}); err != nil {
+	if err := l.closeTurn(ts.msg, ts.results); err != nil {
 		return flowEndRun, err
 	}
-	// The decision of FinishTurn does not count for a failed message: the
-	// run ends without a queue poll.
+	// The decision of CompleteStep does not count for a failed message: the
+	// run ends without a queue claim. An explicit End also ends the run before
+	// StopTurn, so StopTurn can never override it.
 	if ts.failed() || decision == pipeline.End {
 		return flowEndRun, nil
 	}
-	if l.pending, err = l.pollSteering(); err != nil {
-		return flowEndRun, err
-	}
+	// The turn boundary takes all steering messages, after the whole tool
+	// batch. A cancelled run takes none.
+	l.pending = append(l.pending, l.takeSteering()...)
 	if ts.moreTools || len(l.pending) > 0 {
 		return flowNextTurn, nil
 	}
-	if decision == pipeline.Continue {
+	// The cycle has no required work left. StopTurn runs after a reply that
+	// was cut off at the token limit as well: a handler can steer the cycle on.
+	stop, err := l.stopTurn()
+	if err != nil {
+		return flowEndRun, err
+	}
+	if l.ctx.Err() != nil {
+		// A handler cancelled the run: the turn that a Continue or a steering
+		// message would start does not run.
+		l.cycle.settle(ReasonAborted)
+		return flowEndRun, nil
+	}
+	if stop == pipeline.End {
+		return flowEndRun, nil
+	}
+	l.pending = append(l.pending, l.takeSteering()...)
+	if len(l.pending) > 0 {
+		return flowNextTurn, nil
+	}
+	// A reply cut off at the token limit ends the cycle unless steering is
+	// queued: a Continue decision does not ask for another request.
+	if (decision == pipeline.Continue || stop == pipeline.Continue) && ts.msg.StopReason != protocol.StopLength {
 		return flowIdleContinue, nil
 	}
 	return flowIdle, nil
 }
 
-// endRun emits agent_end with the messages that this run added.
+// endRun closes the open cycle and emits agent_end with the messages that
+// this run added.
 func (l *loop) endRun() error {
+	if err := l.closeCycle(); err != nil {
+		return err
+	}
 	return l.emit(&protocol.AgentEnd{Messages: slices.Clip(l.newMessages)})
 }

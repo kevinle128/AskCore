@@ -281,6 +281,76 @@ func (b *Builder) Snapshot() AssistantMessage {
 	return snap
 }
 
+// Partial is the state of an unfinished builder, for a client that joins in the
+// middle of a stream. Message is Snapshot. Open maps each open block to the raw
+// bytes received for it: the text of a text or thinking block, and the argument
+// delta bytes of a tool call block, which Message does not show. Blocks that are
+// not in Open have ended.
+type Partial struct {
+	Message AssistantMessage
+	Open    map[int][]byte
+}
+
+// Partial returns a deep copy of the state of the builder.
+func (b *Builder) Partial() Partial {
+	p := Partial{Message: b.Snapshot()}
+	for i := range b.blocks {
+		if !b.blocks[i].open {
+			continue
+		}
+		if p.Open == nil {
+			p.Open = map[int][]byte{}
+		}
+		var raw []byte
+		if len(b.blocks[i].buf) > 0 {
+			raw = append([]byte{}, b.blocks[i].buf...)
+		}
+		p.Open[i] = raw
+	}
+	return p
+}
+
+// ResumeFrom seeds an empty builder from p and keeps the blocks of p.Open open,
+// so the events that follow the cut apply as they would have to the builder
+// that p came from. The message must be pending, and every open index must name
+// a block of it.
+func (b *Builder) ResumeFrom(p Partial) error {
+	if b.started || b.done {
+		return errors.New("protocol: builder is not empty")
+	}
+	m := p.Message.Clone()
+	if m.StopReason != StopPending {
+		return fmt.Errorf("protocol: resume message has stop reason %q, want pending", m.StopReason)
+	}
+	if m.Content == nil {
+		m.Content = []AssistantBlock{}
+	}
+	blocks := make([]blockState, len(m.Content))
+	for i, blk := range m.Content {
+		switch blk.(type) {
+		case Text:
+			blocks[i].kind = kindText
+		case Thinking:
+			blocks[i].kind = kindThinking
+		case ToolCall:
+			blocks[i].kind = kindToolCall
+		default:
+			return fmt.Errorf("protocol: resume content[%d] has an unsupported block %T", i, blk)
+		}
+	}
+	for i, raw := range p.Open {
+		if i < 0 || i >= len(blocks) {
+			return fmt.Errorf("protocol: resume names open block %d of %d", i, len(blocks))
+		}
+		blocks[i].open = true
+		if len(raw) > 0 {
+			blocks[i].buf = append([]byte{}, raw...)
+		}
+	}
+	b.started, b.msg, b.blocks = true, m, blocks
+	return nil
+}
+
 // Result returns a deep copy of the final message once a terminal event was
 // applied. The second value is false before that.
 func (b *Builder) Result() (AssistantMessage, bool) {

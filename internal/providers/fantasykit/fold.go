@@ -204,7 +204,13 @@ func Fold(a *providers.Assembler, parts fantasy.StreamResponse, opt Options) {
 					raw = "stop"
 				}
 			}
-			finish(a, part, raw, opt)
+			blocks := len(texts) + len(tools)
+			for _, tb := range thinks {
+				if tb.index >= 0 {
+					blocks++
+				}
+			}
+			finish(a, part, raw, blocks, opt)
 			return
 		}
 	}
@@ -248,7 +254,10 @@ func rawStop(w interface{ StopReason() string }) string {
 	return w.StopReason()
 }
 
-func finish(a *providers.Assembler, part fantasy.StreamPart, raw string, opt Options) {
+// finish settles the stream at the finish part. blocks counts the content
+// blocks of the message; a completed stop with none of them is an empty
+// response and not a success.
+func finish(a *providers.Assembler, part fantasy.StreamPart, raw string, blocks int, opt Options) {
 	u := protocol.Usage{
 		Input:      part.Usage.InputTokens,
 		Output:     part.Usage.OutputTokens,
@@ -259,7 +268,11 @@ func finish(a *providers.Assembler, part fantasy.StreamPart, raw string, opt Opt
 	if opt.Usage != nil {
 		u = opt.Usage(part)
 	}
-	a.SetUsage(u)
+	// A finish part that carries no usage keeps the last sample. One that does
+	// replaces it: the final count is the total, never an addition.
+	if u != (protocol.Usage{}) {
+		a.SetUsage(u)
+	}
 	meta := providers.Metadata{}
 	if opt.Meta != nil {
 		meta = opt.Meta(part)
@@ -280,6 +293,11 @@ func finish(a *providers.Assembler, part fantasy.StreamPart, raw string, opt Opt
 	reason, err := opt.MapStop(raw)
 	if err != nil {
 		a.Fail(protocol.StopError, err.Error(), err)
+		return
+	}
+	if reason == protocol.StopStop && blocks == 0 {
+		const text = "provider returned no content"
+		a.Fail(protocol.StopError, text, providers.NewFailure(providers.CodeEmptyResponse, 0, 0, text, nil))
 		return
 	}
 	a.Done(reason)

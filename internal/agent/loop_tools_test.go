@@ -50,7 +50,7 @@ type toolRun struct {
 	p    *faux.Provider
 }
 
-func runTools(t *testing.T, ctx context.Context, reg *tools.Registry, hooks pipeline.Hooks, wrap func(agent.Emit) agent.Emit, steps ...faux.Step) toolRun {
+func runTools(t *testing.T, ctx context.Context, reg *tools.Registry, handlers *pipeline.Registry, wrap func(agent.Emit) agent.Emit, steps ...faux.Step) toolRun {
 	t.Helper()
 	p, m := newFaux(t)
 	p.Set(steps...)
@@ -62,7 +62,7 @@ func runTools(t *testing.T, ctx context.Context, reg *tools.Registry, hooks pipe
 	var msgs []protocol.Message
 	var err error
 	within(t, 5*time.Second, func() {
-		msgs, err = agent.Run(ctx, []protocol.Message{user("go")}, pipeline.AgentContext{Tools: reg}, config(p, m, hooks), emit)
+		msgs, err = agent.Run(ctx, []protocol.Message{user("go")}, pipeline.AgentContext{Tools: reg}, config(p, m, handlers), emit)
 	})
 	require.NoError(t, err)
 	return toolRun{msgs: msgs, rec: rec, p: p}
@@ -79,12 +79,13 @@ func TestToolCompletionOrderAndSourceOrder(t *testing.T) {
 	}}
 	var seen [][]string
 	var mu sync.Mutex
-	hooks := pipeline.Hooks{BeforeToolCall: func(_ context.Context, info pipeline.ToolCallInfo) (*pipeline.BeforeToolCallResult, error) {
+	hooks := pipeline.NewRegistry()
+	hooks.OnBeforeTool(func(_ context.Context, info pipeline.ToolCallInfo, _ nextBefore) (*pipeline.BeforeToolCallResult, error) {
 		mu.Lock()
 		seen = append(seen, roles(info.Context.Messages))
 		mu.Unlock()
 		return nil, nil
-	}}
+	})
 	wrap := func(next agent.Emit) agent.Emit {
 		return func(e protocol.Event) error {
 			err := next(e)
@@ -94,19 +95,24 @@ func TestToolCompletionOrderAndSourceOrder(t *testing.T) {
 			return err
 		}
 	}
-	r := runTools(t, context.Background(), registry(t, a, okTool("b")), hooks, wrap,
+	r := runTools(t, context.Background(), registry(t, safeTool{funcTool: a}, safeTool{funcTool: &funcTool{name: "b", run: func(context.Context, tools.Context, json.RawMessage) (protocol.ToolExecutionResult, error) {
+		once.Do(func() { close(bEnded) })
+		return textResult("b ok"), nil
+	}}}), hooks, wrap,
 		faux.Reply(call("a", "a", nil), call("b", "b", nil)), faux.Say("done"))
 
 	assert.Equal(t, []string{
 		"tool_execution_start(a)", "tool_execution_start(b)",
-		"tool_execution_end(b)", "tool_execution_end(a)",
+		"tool_execution_end(a)",
 		"message_start(toolResult:a)", "message_end(toolResult:a)",
+		"tool_execution_end(b)",
 		"message_start(toolResult:b)", "message_end(toolResult:b)",
 	}, toolLabels(r.rec.eventLabels()))
 	assert.Equal(t, [][]string{{"system", "user", "assistant"}, {"system", "user", "assistant"}}, seen,
 		"no result joins the context during the batch")
 	assert.Equal(t, []string{"system", "user", "assistant", "toolResult:a", "toolResult:b"}, roles(r.p.Requests()[1].Transcript.Messages))
 	assert.Equal(t, "a ok", resultText(toolResults(r.msgs)["a"].Content))
+	assert.Equal(t, "b ok", resultText(toolResults(r.msgs)["b"].Content))
 }
 
 func TestToolParallelOverlap(t *testing.T) {
@@ -123,14 +129,14 @@ func TestToolParallelOverlap(t *testing.T) {
 			return textResult(name + " ok"), nil
 		}}
 	}
-	r := runTools(t, context.Background(), registry(t, barrier("a"), barrier("b")), pipeline.Hooks{}, nil,
+	r := runTools(t, context.Background(), registry(t, safeTool{funcTool: barrier("a")}, safeTool{funcTool: barrier("b")}), nil, nil,
 		faux.Reply(call("a", "a", nil), call("b", "b", nil)), faux.Say("done"))
 	res := toolResults(r.msgs)
 	assert.False(t, res["a"].IsError, resultText(res["a"].Content))
 	assert.False(t, res["b"].IsError, resultText(res["b"].Content))
 }
 
-func TestToolSequentialSwitch(t *testing.T) {
+func TestUndeclaredToolRunsAloneBetweenSafeCalls(t *testing.T) {
 	var active, peak atomic.Int32
 	counting := func(name string) *funcTool {
 		return &funcTool{name: name, run: func(context.Context, tools.Context, json.RawMessage) (protocol.ToolExecutionResult, error) {
@@ -146,36 +152,45 @@ func TestToolSequentialSwitch(t *testing.T) {
 			return textResult(name + " ok"), nil
 		}}
 	}
-	reg := registry(t, counting("a"), sequentialTool{counting("s")})
-	r := runTools(t, context.Background(), reg, pipeline.Hooks{}, nil,
+	reg := registry(t, safeTool{funcTool: counting("a")}, counting("s"))
+	r := runTools(t, context.Background(), reg, nil, nil,
 		faux.Reply(call("a", "a1", nil), call("s", "s1", nil), call("a", "a2", nil)), faux.Say("done"))
 
 	assert.Equal(t, int32(1), peak.Load())
 	assert.Equal(t, []string{
-		"tool_execution_start(a1)", "tool_execution_end(a1)", "message_start(toolResult:a1)", "message_end(toolResult:a1)",
-		"tool_execution_start(s1)", "tool_execution_end(s1)", "message_start(toolResult:s1)", "message_end(toolResult:s1)",
+		"tool_execution_start(a1)", "tool_execution_start(s1)", "tool_execution_end(a1)", "message_start(toolResult:a1)", "message_end(toolResult:a1)",
+		"tool_execution_end(s1)", "message_start(toolResult:s1)", "message_end(toolResult:s1)",
 		"tool_execution_start(a2)", "tool_execution_end(a2)", "message_start(toolResult:a2)", "message_end(toolResult:a2)",
 	}, toolLabels(r.rec.eventLabels()))
 }
 
 func TestToolPreflightFailures(t *testing.T) {
 	var before, after []string
-	hooks := pipeline.Hooks{
-		BeforeToolCall: func(_ context.Context, info pipeline.ToolCallInfo) (*pipeline.BeforeToolCallResult, error) {
-			before = append(before, info.Call.ID)
-			if info.Call.ID == "blocked" {
-				return &pipeline.BeforeToolCallResult{Block: true, Reason: "not allowed"}, nil
-			}
-			if info.Call.ID == "silent" {
-				return &pipeline.BeforeToolCallResult{Block: true}, nil
-			}
-			return nil, nil
-		},
-		AfterToolCall: func(_ context.Context, info pipeline.ToolResultInfo) (*pipeline.AfterToolCallResult, error) {
-			after = append(after, info.Call.ID)
-			return nil, nil
-		},
-	}
+	control := &recorder{}
+	observed := map[string]pipeline.ToolResultInfo{}
+	hooks := pipeline.NewRegistry()
+	hooks.OnBeforeTool(func(_ context.Context, info pipeline.ToolCallInfo, _ nextBefore) (*pipeline.BeforeToolCallResult, error) {
+		control.note("before:" + info.Call.ID)
+		defer control.note("before_return:" + info.Call.ID)
+		before = append(before, info.Call.ID)
+		if info.Call.ID == "blocked" {
+			return &pipeline.BeforeToolCallResult{Block: true, Reason: "not allowed"}, nil
+		}
+		if info.Call.ID == "silent" {
+			return &pipeline.BeforeToolCallResult{Block: true}, nil
+		}
+		return nil, nil
+	})
+	hooks.OnExecuteTool(func(ctx context.Context, in pipeline.ExecuteToolInput, next pipeline.Next[pipeline.ExecuteToolInput, protocol.ToolExecutionResult]) (protocol.ToolExecutionResult, error) {
+		control.note("execute:" + in.Call.ID)
+		return next(ctx, in)
+	})
+	hooks.OnAfterTool(func(_ context.Context, info pipeline.ToolResultInfo, _ nextAfter) (*pipeline.AfterToolCallResult, error) {
+		control.note("after:" + info.Call.ID)
+		observed[info.Call.ID] = info
+		after = append(after, info.Call.ID)
+		return nil, nil
+	})
 	r := runTools(t, context.Background(), registry(t, tools.Echo{}), hooks, nil,
 		faux.Reply(
 			call("nope", "unknown", nil),
@@ -196,18 +211,37 @@ func TestToolPreflightFailures(t *testing.T) {
 		assert.True(t, res[id].IsError, id)
 		assert.Equal(t, text, resultText(res[id].Content), id)
 		assert.JSONEq(t, `{}`, string(res[id].Details), id)
+		wire, err := json.Marshal(res[id])
+		require.NoError(t, err)
+		var fields map[string]json.RawMessage
+		require.NoError(t, json.Unmarshal(wire, &fields))
+		assert.JSONEq(t, `{}`, string(fields["details"]), id)
+		for _, key := range []string{"error", "name", "code", "errorName", "errorCode"} {
+			assert.NotContains(t, fields, key, id)
+		}
 	}
 	assert.False(t, res["ok"].IsError)
 	assert.Equal(t, "fine", resultText(res["ok"].Content))
-	assert.Equal(t, []string{"blocked", "silent", "ok"}, before, "BeforeToolCall runs only for valid calls")
-	assert.Equal(t, []string{"ok"}, after, "AfterToolCall runs only for executed calls")
+	assert.Equal(t, []string{"unknown", "blocked", "silent", "ok"}, before, "unknown names reach policy; invalid known arguments do not")
+	assert.Equal(t, []string{"unknown", "blocked", "silent", "ok"}, after, "post-control sees body failures, denied calls and success")
+	assert.Equal(t, []string{
+		"before:unknown", "before_return:unknown", "execute:unknown", "after:unknown",
+		"before:blocked", "before_return:blocked", "after:blocked",
+		"before:silent", "before_return:silent", "after:silent",
+		"before:ok", "before_return:ok", "execute:ok", "after:ok",
+	}, control.labels(), "validation and denial skip execution; execution follows completed pre-control")
+	for id, info := range observed {
+		assert.Equal(t, res[id].IsError, info.IsError, id)
+		assert.Equal(t, resultText(res[id].Content), resultText(info.Result.Content), id)
+	}
 	assert.Equal(t, []string{"system", "user", "assistant", "toolResult:unknown", "toolResult:invalid", "toolResult:blocked", "toolResult:silent", "toolResult:ok", "assistant"}, roles(r.msgs))
 }
 
 func TestToolBlockTerminate(t *testing.T) {
-	hooks := pipeline.Hooks{BeforeToolCall: func(context.Context, pipeline.ToolCallInfo) (*pipeline.BeforeToolCallResult, error) {
+	hooks := pipeline.NewRegistry()
+	hooks.OnBeforeTool(func(context.Context, pipeline.ToolCallInfo, nextBefore) (*pipeline.BeforeToolCallResult, error) {
 		return &pipeline.BeforeToolCallResult{Block: true, Reason: "stop here", Terminate: true}, nil
-	}}
+	})
 	r := runTools(t, context.Background(), registry(t, tools.Echo{}), hooks, nil,
 		faux.Reply(call("echo", "c1", map[string]any{"text": "x"})), faux.Say("unused"))
 	assert.Equal(t, 1, r.p.Calls(), "a batch where every result terminates ends the run")
@@ -224,16 +258,15 @@ func TestToolArgs(t *testing.T) {
 			tc.Update(textResult("half"))
 			return textResult("ok"), nil
 		}}
-		hooks := pipeline.Hooks{
-			BeforeToolCall: func(_ context.Context, info pipeline.ToolCallInfo) (*pipeline.BeforeToolCallResult, error) {
-				hookRaw, hookPrepared = info.Call.Arguments, info.Args
-				return nil, nil
-			},
-			AfterToolCall: func(_ context.Context, info pipeline.ToolResultInfo) (*pipeline.AfterToolCallResult, error) {
-				afterArgs = info.Args
-				return nil, nil
-			},
-		}
+		hooks := pipeline.NewRegistry()
+		hooks.OnBeforeTool(func(_ context.Context, info pipeline.ToolCallInfo, _ nextBefore) (*pipeline.BeforeToolCallResult, error) {
+			hookRaw, hookPrepared = info.Call.Arguments, info.Args
+			return nil, nil
+		})
+		hooks.OnAfterTool(func(_ context.Context, info pipeline.ToolResultInfo, _ nextAfter) (*pipeline.AfterToolCallResult, error) {
+			afterArgs = info.Args
+			return nil, nil
+		})
 		r := runTools(t, context.Background(), registry(t, tool), hooks, nil,
 			faux.Reply(call("num", "c1", map[string]any{"n": "5"})), faux.Say("done"))
 
@@ -251,27 +284,6 @@ func TestToolArgs(t *testing.T) {
 		}
 	})
 
-	t.Run("BeforeToolCall replaces the args", func(t *testing.T) {
-		var executed, afterArgs json.RawMessage
-		tool := &funcTool{name: "num", schema: schema, run: func(_ context.Context, _ tools.Context, args json.RawMessage) (protocol.ToolExecutionResult, error) {
-			executed = args
-			return textResult("ok"), nil
-		}}
-		hooks := pipeline.Hooks{
-			BeforeToolCall: func(context.Context, pipeline.ToolCallInfo) (*pipeline.BeforeToolCallResult, error) {
-				return &pipeline.BeforeToolCallResult{Args: json.RawMessage(`{"n":7}`)}, nil
-			},
-			AfterToolCall: func(_ context.Context, info pipeline.ToolResultInfo) (*pipeline.AfterToolCallResult, error) {
-				afterArgs = info.Args
-				return nil, nil
-			},
-		}
-		runTools(t, context.Background(), registry(t, tool), hooks, nil,
-			faux.Reply(call("num", "c1", map[string]any{"n": 5})), faux.Say("done"))
-		assert.JSONEq(t, `{"n":7}`, string(executed))
-		assert.JSONEq(t, `{"n":7}`, string(afterArgs))
-	})
-
 	t.Run("PrepareArguments runs before validation", func(t *testing.T) {
 		var executed json.RawMessage
 		tool := preparingTool{&funcTool{name: "num", schema: schema,
@@ -287,7 +299,7 @@ func TestToolArgs(t *testing.T) {
 				return json.Marshal(map[string]int{"n": legacy.Count})
 			},
 		}}
-		r := runTools(t, context.Background(), registry(t, tool), pipeline.Hooks{}, nil,
+		r := runTools(t, context.Background(), registry(t, tool), nil, nil,
 			faux.Reply(call("num", "c1", map[string]any{"count": 3})), faux.Say("done"))
 		assert.JSONEq(t, `{"n":3}`, string(executed))
 		assert.False(t, toolResults(r.msgs)["c1"].IsError)
@@ -301,10 +313,11 @@ func TestToolLateUpdateDropped(t *testing.T) {
 		tc.Update(textResult("partial"))
 		return textResult("ok"), nil
 	}}
-	hooks := pipeline.Hooks{AfterToolCall: func(context.Context, pipeline.ToolResultInfo) (*pipeline.AfterToolCallResult, error) {
+	hooks := pipeline.NewRegistry()
+	hooks.OnAfterTool(func(context.Context, pipeline.ToolResultInfo, nextAfter) (*pipeline.AfterToolCallResult, error) {
 		saved(textResult("late"))
 		return nil, nil
-	}}
+	})
 	r := runTools(t, context.Background(), registry(t, tool), hooks, nil,
 		faux.Reply(call("u", "c1", nil)), faux.Say("done"))
 	assert.Equal(t, []string{
@@ -328,11 +341,12 @@ func TestAfterToolCallOverride(t *testing.T) {
 	}}
 	var seenResult string
 	var seenErr bool
-	hooks := pipeline.Hooks{AfterToolCall: func(_ context.Context, info pipeline.ToolResultInfo) (*pipeline.AfterToolCallResult, error) {
+	hooks := pipeline.NewRegistry()
+	hooks.OnAfterTool(func(_ context.Context, info pipeline.ToolResultInfo, _ nextAfter) (*pipeline.AfterToolCallResult, error) {
 		seenResult, seenErr = resultText(info.Result.Content), info.IsError
 		isErr := true
 		return &pipeline.AfterToolCallResult{Content: []protocol.UserBlock{protocol.Text{Text: "over"}}, IsError: &isErr}, nil
-	}}
+	})
 	r := runTools(t, context.Background(), registry(t, tool), hooks, nil,
 		faux.Reply(call("t", "c1", nil)), faux.Say("done"))
 
@@ -349,7 +363,7 @@ func TestAfterToolCallOverride(t *testing.T) {
 }
 
 func TestToolDuplicateID(t *testing.T) {
-	r := runTools(t, context.Background(), registry(t, tools.Echo{}), pipeline.Hooks{}, nil,
+	r := runTools(t, context.Background(), registry(t, tools.Echo{}), nil, nil,
 		faux.Reply(call("echo", "d", map[string]any{"text": "one"}), call("echo", "d", map[string]any{"text": "two"})), faux.Say("done"))
 	var results []protocol.ToolResultMessage
 	for _, m := range r.msgs {
@@ -374,36 +388,49 @@ func TestToolFailuresBecomeResults(t *testing.T) {
 	cases := []struct {
 		name  string
 		tool  tools.Tool
-		hooks pipeline.Hooks
+		setup func(reg *pipeline.Registry)
 		text  string
 	}{
-		{"Execute panic", failing(func() (protocol.ToolExecutionResult, error) { panic("kaboom") }), pipeline.Hooks{}, "kaboom"},
-		{"Execute error panic value", failing(func() (protocol.ToolExecutionResult, error) { panic(errors.New("err value")) }), pipeline.Hooks{}, "err value"},
+		{"Execute panic", failing(func() (protocol.ToolExecutionResult, error) { panic("kaboom") }), nil, "kaboom"},
+		{"Execute error panic value", failing(func() (protocol.ToolExecutionResult, error) { panic(errors.New("err value")) }), nil, "err value"},
 		{"Execute error", failing(func() (protocol.ToolExecutionResult, error) {
 			return protocol.ToolExecutionResult{}, errors.New("disk full")
-		}), pipeline.Hooks{}, "disk full"},
-		{"BeforeToolCall panic", failing(ok), pipeline.Hooks{BeforeToolCall: func(context.Context, pipeline.ToolCallInfo) (*pipeline.BeforeToolCallResult, error) {
-			panic("before broke")
-		}}, "before broke"},
-		{"BeforeToolCall error", failing(ok), pipeline.Hooks{BeforeToolCall: func(context.Context, pipeline.ToolCallInfo) (*pipeline.BeforeToolCallResult, error) {
-			return nil, errors.New("before failed")
-		}}, "before failed"},
-		{"AfterToolCall panic", failing(ok), pipeline.Hooks{AfterToolCall: func(context.Context, pipeline.ToolResultInfo) (*pipeline.AfterToolCallResult, error) {
-			panic("after broke")
-		}}, "after broke"},
-		{"AfterToolCall error", failing(ok), pipeline.Hooks{AfterToolCall: func(context.Context, pipeline.ToolResultInfo) (*pipeline.AfterToolCallResult, error) {
-			return nil, errors.New("after failed")
-		}}, "after failed"},
+		}), nil, "disk full"},
+		{"BeforeTool panic", failing(ok), func(reg *pipeline.Registry) {
+			reg.OnBeforeTool(func(context.Context, pipeline.ToolCallInfo, nextBefore) (*pipeline.BeforeToolCallResult, error) {
+				panic("before broke")
+			})
+		}, "before broke"},
+		{"BeforeTool error", failing(ok), func(reg *pipeline.Registry) {
+			reg.OnBeforeTool(func(context.Context, pipeline.ToolCallInfo, nextBefore) (*pipeline.BeforeToolCallResult, error) {
+				return nil, errors.New("before failed")
+			})
+		}, "before failed"},
+		{"AfterTool panic", failing(ok), func(reg *pipeline.Registry) {
+			reg.OnAfterTool(func(context.Context, pipeline.ToolResultInfo, nextAfter) (*pipeline.AfterToolCallResult, error) {
+				panic("after broke")
+			})
+		}, "after broke"},
+		{"AfterTool error", failing(ok), func(reg *pipeline.Registry) {
+			reg.OnAfterTool(func(context.Context, pipeline.ToolResultInfo, nextAfter) (*pipeline.AfterToolCallResult, error) {
+				return nil, errors.New("after failed")
+			})
+		}, "after failed"},
 		{"PrepareArguments panic", preparingTool{&funcTool{name: "t", run: func(context.Context, tools.Context, json.RawMessage) (protocol.ToolExecutionResult, error) {
 			return ok()
-		}, prepare: func(json.RawMessage) (json.RawMessage, error) { panic("prepare broke") }}}, pipeline.Hooks{}, "prepare broke"},
+		}, prepare: func(json.RawMessage) (json.RawMessage, error) { panic("prepare broke") }}}, nil, "prepare broke"},
 		{"PrepareArguments error", preparingTool{&funcTool{name: "t", run: func(context.Context, tools.Context, json.RawMessage) (protocol.ToolExecutionResult, error) {
 			return ok()
-		}, prepare: func(json.RawMessage) (json.RawMessage, error) { return nil, errors.New("bad shape") }}}, pipeline.Hooks{}, "bad shape"},
+		}, prepare: func(json.RawMessage) (json.RawMessage, error) { return nil, errors.New("bad shape") }}}, nil, "bad shape"},
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
-			r := runTools(t, context.Background(), registry(t, tc.tool), tc.hooks, nil,
+			var reg *pipeline.Registry
+			if tc.setup != nil {
+				reg = pipeline.NewRegistry()
+				tc.setup(reg)
+			}
+			r := runTools(t, context.Background(), registry(t, tc.tool), reg, nil,
 				faux.Reply(call("t", "c1", nil)), faux.Say("done"))
 			res := toolResults(r.msgs)["c1"]
 			assert.True(t, res.IsError)
@@ -414,126 +441,72 @@ func TestToolFailuresBecomeResults(t *testing.T) {
 	}
 }
 
-func TestLengthGuard(t *testing.T) {
-	var hooked []string
-	hooks := pipeline.Hooks{
-		BeforeToolCall: func(_ context.Context, info pipeline.ToolCallInfo) (*pipeline.BeforeToolCallResult, error) {
-			hooked = append(hooked, "before:"+info.Call.ID)
-			return nil, nil
-		},
-		AfterToolCall: func(_ context.Context, info pipeline.ToolResultInfo) (*pipeline.AfterToolCallResult, error) {
-			hooked = append(hooked, "after:"+info.Call.ID)
-			return nil, nil
-		},
-	}
-	executed := false
-	tool := &funcTool{name: "write", run: func(context.Context, tools.Context, json.RawMessage) (protocol.ToolExecutionResult, error) {
-		executed = true
-		return textResult("ok"), nil
-	}}
-	r := runTools(t, context.Background(), registry(t, tool, tools.Echo{}), hooks, nil,
-		faux.Reply(call("write", "a", nil), call("echo", "b", map[string]any{"text": "x"})).Stop(protocol.StopLength),
-		faux.Say("done"))
-
-	assert.False(t, executed)
-	assert.Empty(t, hooked)
-	assert.Equal(t, 2, r.p.Calls())
-	assert.Equal(t, []string{
-		"tool_execution_start(a)", "tool_execution_end(a)", "message_start(toolResult:a)", "message_end(toolResult:a)",
-		"tool_execution_start(b)", "tool_execution_end(b)", "message_start(toolResult:b)", "message_end(toolResult:b)",
-	}, toolLabels(r.rec.eventLabels()))
-	res := toolResults(r.msgs)
-	assert.Equal(t, `Tool call "write" was not executed: the response hit the output token limit, so its arguments may be truncated. Re-issue the tool call with complete arguments.`, resultText(res["a"].Content))
-	assert.Equal(t, `Tool call "echo" was not executed: the response hit the output token limit, so its arguments may be truncated. Re-issue the tool call with complete arguments.`, resultText(res["b"].Content))
-	assert.True(t, res["a"].IsError)
-	assert.True(t, res["b"].IsError)
-}
-
 func TestAbortParallelBatch(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 	var executed atomic.Int32
+	started := make(chan struct{})
 	counted := func(name string) *funcTool {
-		return &funcTool{name: name, run: func(context.Context, tools.Context, json.RawMessage) (protocol.ToolExecutionResult, error) {
+		return &funcTool{name: name, run: func(ctx context.Context, tc tools.Context, _ json.RawMessage) (protocol.ToolExecutionResult, error) {
 			executed.Add(1)
+			if tc.CallID == "a" {
+				close(started)
+				<-ctx.Done()
+			}
 			return textResult(name + " ok"), nil
 		}}
 	}
-	hooks := pipeline.Hooks{BeforeToolCall: func(_ context.Context, info pipeline.ToolCallInfo) (*pipeline.BeforeToolCallResult, error) {
+	hooks := pipeline.NewRegistry()
+	hooks.OnBeforeTool(func(_ context.Context, info pipeline.ToolCallInfo, _ nextBefore) (*pipeline.BeforeToolCallResult, error) {
 		if info.Call.ID == "b" {
+			<-started
 			cancel()
 		}
 		return nil, nil
-	}}
-	r := runTools(t, ctx, registry(t, counted("t")), hooks, nil,
+	})
+	r := runTools(t, ctx, registry(t, safeTool{funcTool: counted("t")}), hooks, nil,
 		faux.Reply(call("t", "a", nil), call("t", "b", nil), call("t", "c", nil)), faux.Say("unused"))
 
-	labels := r.rec.eventLabels()
-	i := indexOf(labels, "tool_execution_start(a)")
-	require.GreaterOrEqual(t, i, 0)
-	assert.Equal(t, []string{
-		"tool_execution_start(a)", "tool_execution_start(b)",
-		"tool_execution_end(b)", "tool_execution_end(a)",
-		"message_start(toolResult:a)", "message_end(toolResult:a)",
-		"message_start(toolResult:b)", "message_end(toolResult:b)",
-		"turn_end",
-		"turn_start",
-		"message_start(assistant)", "message_end(assistant)",
-		"turn_end",
-		"agent_end",
-	}, labels[i:])
 	res := toolResults(r.msgs)
-	assert.Equal(t, "Operation aborted", resultText(res["a"].Content))
-	assert.Equal(t, "Operation aborted", resultText(res["b"].Content))
-	assert.True(t, res["a"].IsError)
-	assert.True(t, res["b"].IsError)
-	assert.NotContains(t, res, "c")
-	assert.Equal(t, int32(0), executed.Load())
-	assert.Equal(t, 2, r.p.Calls(), "the loop makes one more request with the cancelled context")
-	assert.Equal(t, protocol.StopAborted, lastAssistant(t, r.msgs).StopReason)
+	require.Len(t, res, 3)
+	require.Equal(t, "Operation aborted", resultText(res["a"].Content))
+	for _, id := range []string{"b", "c"} {
+		require.True(t, res[id].IsError)
+		require.Equal(t, "Tool call aborted before dispatch", resultText(res[id].Content))
+	}
+	require.Equal(t, int32(1), executed.Load())
+	require.Equal(t, 1, r.p.Calls())
+	require.Equal(t, protocol.StopAborted, lastAssistant(t, r.msgs).StopReason)
+	require.Equal(t, 1, strings.Count(strings.Join(r.rec.eventLabels(), ","), "turn_start"))
 }
 
 func TestAbortSequentialBatch(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
-	first := sequentialTool{&funcTool{name: "s", run: func(context.Context, tools.Context, json.RawMessage) (protocol.ToolExecutionResult, error) {
+	first := exclusiveTool{&funcTool{name: "s", run: func(context.Context, tools.Context, json.RawMessage) (protocol.ToolExecutionResult, error) {
 		cancel()
 		return textResult("s ok"), nil
 	}}}
-	r := runTools(t, ctx, registry(t, first, okTool("t")), pipeline.Hooks{}, nil,
+	r := runTools(t, ctx, registry(t, first, okTool("t")), nil, nil,
 		faux.Reply(call("s", "a", nil), call("t", "b", nil), call("t", "c", nil)), faux.Say("unused"))
 
-	labels := r.rec.eventLabels()
-	i := indexOf(labels, "tool_execution_start(a)")
-	require.GreaterOrEqual(t, i, 0)
-	assert.Equal(t, []string{
-		"tool_execution_start(a)", "tool_execution_end(a)",
-		"message_start(toolResult:a)", "message_end(toolResult:a)",
-		"turn_end",
-		"turn_start",
-		"message_start(assistant)", "message_end(assistant)",
-		"turn_end",
-		"agent_end",
-	}, labels[i:])
-	assert.Equal(t, "s ok", resultText(toolResults(r.msgs)["a"].Content))
-	assert.Equal(t, 2, r.p.Calls())
-}
-
-func indexOf(xs []string, x string) int {
-	for i, v := range xs {
-		if v == x {
-			return i
-		}
-	}
-	return -1
+	res := toolResults(r.msgs)
+	require.Len(t, res, 3)
+	require.Equal(t, "Operation aborted", resultText(res["a"].Content))
+	require.Equal(t, "Tool call aborted before dispatch", resultText(res["b"].Content))
+	require.Equal(t, "Tool call aborted before dispatch", resultText(res["c"].Content))
+	require.Equal(t, 1, r.p.Calls())
+	require.Equal(t, protocol.StopAborted, lastAssistant(t, r.msgs).StopReason)
 }
 
 func BenchmarkLoopTurn(b *testing.B) {
 	p, m := newFaux(b)
 	reg := registry(b, tools.Echo{})
-	cfg := config(p, m, pipeline.Hooks{FinishTurn: func(context.Context, pipeline.Turn) (pipeline.TurnDecision, error) {
+	handlers := pipeline.NewRegistry()
+	handlers.OnCompleteStep(func(context.Context, pipeline.Turn) (pipeline.TurnDecision, error) {
 		return pipeline.End, nil
-	}})
+	})
+	cfg := config(p, m, handlers)
 	prompts := []protocol.Message{user("go")}
 	emit := func(protocol.Event) error { return nil }
 	b.ReportAllocs()
@@ -544,4 +517,66 @@ func BenchmarkLoopTurn(b *testing.B) {
 			b.Fatal(err)
 		}
 	}
+}
+
+func TestBeforeToolBlockWithReason(t *testing.T) {
+	executed := 0
+	tool := &funcTool{name: "t", run: func(context.Context, tools.Context, json.RawMessage) (protocol.ToolExecutionResult, error) {
+		executed++
+		return textResult("ran"), nil
+	}}
+	hooks := pipeline.NewRegistry()
+	hooks.OnBeforeTool(func(context.Context, pipeline.ToolCallInfo, nextBefore) (*pipeline.BeforeToolCallResult, error) {
+		return &pipeline.BeforeToolCallResult{Block: true, Reason: "policy says no"}, nil
+	})
+	r := runTools(t, context.Background(), registry(t, tool), hooks, nil,
+		faux.Reply(call("t", "c1", nil)), faux.Say("done"))
+
+	res := toolResults(r.msgs)["c1"]
+	assert.True(t, res.IsError, "a deny is an error result")
+	assert.Equal(t, "policy says no", resultText(res.Content), "the model gets the reason")
+	assert.Equal(t, "c1", res.ToolCallID)
+	assert.Zero(t, executed, "the body never runs")
+	assert.Equal(t, 2, r.p.Calls(), "the loop goes on")
+}
+
+func TestAfterToolReplacedContentDropsStructuredContent(t *testing.T) {
+	tool := &funcTool{name: "t", run: func(context.Context, tools.Context, json.RawMessage) (protocol.ToolExecutionResult, error) {
+		return protocol.ToolExecutionResult{
+			Content:           []protocol.UserBlock{protocol.Text{Text: "orig"}},
+			StructuredContent: json.RawMessage(`{"s":1}`),
+		}, nil
+	}}
+	hooks := pipeline.NewRegistry()
+	hooks.OnAfterTool(func(context.Context, pipeline.ToolResultInfo, nextAfter) (*pipeline.AfterToolCallResult, error) {
+		return &pipeline.AfterToolCallResult{Content: []protocol.UserBlock{protocol.Text{Text: "replaced"}}}, nil
+	})
+	r := runTools(t, context.Background(), registry(t, tool), hooks, nil,
+		faux.Reply(call("t", "c1", nil)), faux.Say("done"))
+
+	res := toolResults(r.msgs)["c1"]
+	assert.Equal(t, "c1", res.ToolCallID, "the replacement keeps the call ID")
+	assert.Equal(t, "replaced", resultText(res.Content))
+	assert.Nil(t, r.rec.toolEnds()["c1"].Result.StructuredContent, "structured content may not match the new content")
+	assert.False(t, res.IsError)
+}
+
+func TestExecuteToolHandlerWrapsBody(t *testing.T) {
+	runs := 0
+	tool := &funcTool{name: "t", run: func(context.Context, tools.Context, json.RawMessage) (protocol.ToolExecutionResult, error) {
+		runs++
+		return textResult("body"), nil
+	}}
+	hooks := pipeline.NewRegistry()
+	hooks.OnExecuteTool(func(ctx context.Context, in pipeline.ExecuteToolInput, next pipeline.Next[pipeline.ExecuteToolInput, protocol.ToolExecutionResult]) (protocol.ToolExecutionResult, error) {
+		assert.Equal(t, "c1", in.Call.ID)
+		res, err := next(ctx, in)
+		res.Content = []protocol.UserBlock{protocol.Text{Text: resultText(res.Content) + "+wrapped"}}
+		return res, err
+	})
+	r := runTools(t, context.Background(), registry(t, tool), hooks, nil,
+		faux.Reply(call("t", "c1", nil)), faux.Say("done"))
+
+	assert.Equal(t, 1, runs)
+	assert.Equal(t, "body+wrapped", resultText(toolResults(r.msgs)["c1"].Content))
 }

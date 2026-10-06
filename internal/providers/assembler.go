@@ -289,6 +289,9 @@ func (a *Assembler) Fail(reason protocol.StopReason, msg string, err error) {
 	if err == nil {
 		err = errors.New(msg)
 	}
+	if reason == protocol.StopError {
+		err = typedFailure(msg, err)
+	}
 	a.finish(reason, msg, err)
 }
 
@@ -447,7 +450,7 @@ func (a *Assembler) seal() {
 		a.safeFinish(protocol.StopAborted, abortedMessage, a.abortErr())
 		return
 	}
-	a.safeFinish(protocol.StopError, incompleteMessage, ErrStreamIncomplete)
+	a.safeFinish(protocol.StopError, incompleteMessage, NewFailure(CodeStreamClosed, 0, 0, incompleteMessage, nil))
 }
 
 // safeFinish runs finish and, if that panics, settles with a plain error

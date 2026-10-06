@@ -184,19 +184,31 @@ func (p *adapter) produce(ctx context.Context, a *providers.Assembler, m provide
 		a.Fail(protocol.StopError, msg, fmt.Errorf("%w: %s", providers.ErrAuthentication, msg))
 		return
 	}
-	switch opts.CacheRetention {
+	retention := opts.CacheRetention
+	if opts.Prepared != nil {
+		retention = opts.Prepared.CacheRetention
+	}
+	switch retention {
 	case "", providers.CacheRetentionNone, providers.CacheRetentionShort:
 	case providers.CacheRetentionLong:
 		a.Fail(protocol.StopError, `cache retention "long" is not supported`, errors.New(`cache retention "long" is not supported`))
 		return
 	default:
-		msg := fmt.Sprintf("cache retention %q is not supported", opts.CacheRetention)
+		msg := fmt.Sprintf("cache retention %q is not supported", retention)
 		a.Fail(protocol.StopError, msg, errors.New(msg))
 		return
 	}
 
 	msgs := providers.TransformMessages(req.Messages, m, p.cfg.now, p.cfg.normalize)
-	doc, diags, err := buildDocument(msgs, m, opts, nil)
+	pr := opts.Prepared
+	if pr == nil {
+		var err error
+		if pr, err = p.compute(m, msgs, opts); err != nil {
+			a.Fail(protocol.StopError, err.Error(), err)
+			return
+		}
+	}
+	doc, diags, err := buildDocument(msgs, m, pr, opts.Auth.Method == "anthropic-oauth")
 	if err != nil {
 		a.Fail(protocol.StopError, err.Error(), err)
 		return
@@ -215,6 +227,7 @@ func (p *adapter) produce(ctx context.Context, a *providers.Assembler, m provide
 
 	runCtx, cancel := context.WithCancelCause(ctx)
 	defer cancel(nil)
+	runCtx = fantasykit.TrackBody(runCtx)
 
 	idle := fantasykit.StartIdle(p.cfg.idle, cancel)
 	defer idle.Stop()

@@ -5,27 +5,30 @@ import (
 	"slices"
 
 	"AskCore/internal/pipeline"
+	"AskCore/internal/sessions"
 	"AskCore/pkg/protocol"
 )
 
-// ContextSource is the message log that an Agent runs on. The Agent appends
-// each message on its message_end, so a partial message never enters it, and
-// projects Messages into every request. State reads Messages from another
-// goroutine than the one that appends.
-type ContextSource interface {
-	Append(m protocol.Message) error
-	Messages() []protocol.Message
-}
-
-// projectContext returns the hooks of the run that project the log into every
-// request: the request context becomes the system message plus src.Messages().
-// The Agent composes them in front of the user hooks, so a user hook sees the
-// projected context.
-func projectContext(src ContextSource, system []protocol.Message) pipeline.Hooks {
-	return pipeline.Hooks{
-		PrepareRequest: func(_ context.Context, r pipeline.Request) (*pipeline.RequestUpdate, error) {
-			r.Context.Messages = append(slices.Clip(system), src.Messages()...)
-			return &pipeline.RequestUpdate{Context: &r.Context}, nil
-		},
+// projectContext returns the PrepareRequest handler of the run that projects
+// the log into every request: the request context becomes the system message
+// plus src.Messages(). The Agent registers it before the handlers of the
+// config, so those handlers see the projected context. Its update keeps every
+// field of the inner update; the projected context is the default, and an
+// inner update that returns a context wins.
+func projectContext(src sessions.Writer, system []protocol.Message) pipeline.PrepareRequestHandler {
+	return func(ctx context.Context, r pipeline.Request, next pipeline.Next[pipeline.Request, *pipeline.RequestUpdate]) (*pipeline.RequestUpdate, error) {
+		r.Context.Messages = append(slices.Clip(system), src.Messages()...)
+		r.Context.Messages = append(r.Context.Messages, freezeMessages(r.StagedMessages)...)
+		upd, err := next(ctx, r)
+		if err != nil {
+			return nil, err
+		}
+		if upd == nil {
+			upd = &pipeline.RequestUpdate{}
+		}
+		if upd.Context == nil {
+			upd.Context = &r.Context
+		}
+		return upd, nil
 	}
 }

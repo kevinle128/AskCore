@@ -5,7 +5,6 @@ import (
 	"encoding/json"
 	"fmt"
 	"strings"
-	"unicode/utf8"
 
 	"AskCore/internal/providers"
 	"AskCore/pkg/protocol"
@@ -15,11 +14,15 @@ type document struct {
 	body []byte
 }
 
-func buildDocument(msgs []protocol.Message, model providers.Model, opts providers.StreamOptions, estimateIn func([]byte) int) (document, []protocol.Diagnostic, error) {
+// buildDocument builds the request document. It reads the effective values
+// from pr only; oauth adds the binding-dependent shaping of the subscription
+// profile. A pr.MaxTokens of zero leaves the output limit out, which is how
+// the size estimate for the clamp is made.
+func buildDocument(msgs []protocol.Message, model providers.Model, pr *providers.Prepared, oauth bool) (document, []protocol.Diagnostic, error) {
 	extra := map[string]any{}
 	var diags []protocol.Diagnostic
 	codec := toolNames{forward: map[string]string{}, reverse: map[string]string{}}
-	if opts.Auth.Method == "anthropic-oauth" {
+	if oauth {
 		var err error
 		codec, err = newToolNames(msgs)
 		if err != nil {
@@ -28,7 +31,7 @@ func buildDocument(msgs []protocol.Message, model providers.Model, opts provider
 	}
 
 	sys := encodeSystem(msgs)
-	if opts.Auth.Method == "anthropic-oauth" {
+	if oauth {
 		sys = append([]map[string]any{{"type": "text", "text": "You are Claude Code, Anthropic's official CLI for Claude."}}, sys...)
 	}
 	if len(sys) > 0 {
@@ -41,45 +44,35 @@ func buildDocument(msgs []protocol.Message, model providers.Model, opts provider
 	for _, tool := range tools {
 		tool["name"] = codec.encode(tool["name"].(string))
 	}
-	messages, err := encodeMessagesWithNames(msgs, opts.Auth.Method == "anthropic-oauth")
+	messages, err := encodeMessagesWithNames(msgs, oauth)
 	if err != nil {
 		return document{}, nil, err
 	}
 	extra["messages"] = messages
-	if opts.ToolChoice != "" {
-		if opts.Auth.Method != "anthropic-oauth" {
+	if pr.ToolChoice != "" {
+		if !oauth {
 			for _, t := range providers.CurrentTools(msgs) {
 				codec.forward[t.Name] = t.Name
 			}
 		}
-		wire, ok := codec.forward[opts.ToolChoice]
+		wire, ok := codec.forward[pr.ToolChoice]
 		if !ok {
-			return document{}, nil, fmt.Errorf("tool choice %q is not declared", opts.ToolChoice)
+			return document{}, nil, fmt.Errorf("tool choice %q is not declared", pr.ToolChoice)
 		}
 		extra["tool_choice"] = map[string]any{"type": "tool", "name": wire}
 	}
 
-	level := opts.Reasoning
-	if model.Provider == providers.ProviderAnthropic && opts.ToolChoice != "" {
-		if level != "" && level != protocol.ThinkingOff {
-			return document{}, nil, fmt.Errorf("%w: forced tool choice cannot use Anthropic thinking", providers.ErrUnsupportedRequest)
-		}
-		level = protocol.ThinkingOff
-	}
-	if level == "" {
-		level = protocol.ThinkingMedium
-	}
-	if level == protocol.ThinkingOff {
+	if pr.Thinking == protocol.ThinkingOff {
 		extra["thinking"] = map[string]any{"type": "disabled"}
-		if opts.Temperature != nil {
-			extra["temperature"] = *opts.Temperature
+		if pr.Temperature != nil {
+			extra["temperature"] = *pr.Temperature
 		}
 	} else {
-		extra["output_config"] = map[string]any{"effort": effortOf(level)}
+		extra["output_config"] = map[string]any{"effort": pr.Effort}
 		if model.Provider == providers.ProviderAnthropic && model.Reasoning {
 			extra["thinking"] = map[string]any{"type": "adaptive"}
 		}
-		if opts.Temperature != nil {
+		if pr.Temperature != nil {
 			diags = append(diags, protocol.Diagnostic{
 				Type:  "unsupported_setting",
 				Error: &protocol.DiagnosticError{Message: "temperature"},
@@ -87,27 +80,37 @@ func buildDocument(msgs []protocol.Message, model providers.Model, opts provider
 		}
 	}
 
-	if opts.CacheRetention == providers.CacheRetentionShort {
+	if pr.CacheRetention == providers.CacheRetentionShort {
 		applyCacheControl(tools, messages)
 	}
 	if len(tools) > 0 {
 		extra["tools"] = tools
 	}
-
-	raw, err := json.Marshal(extra)
-	if err != nil {
-		return document{}, diags, err
+	if pr.MaxTokens > 0 {
+		extra["max_tokens"] = pr.MaxTokens
 	}
-	est := utf8.RuneCount(raw) / 4
-	if estimateIn != nil {
-		est = estimateIn(raw)
-	}
-	extra["max_tokens"] = clampMaxTokens(model, opts, est)
 	body, err := json.Marshal(extra)
 	if err != nil {
 		return document{}, diags, err
 	}
 	return document{body: body}, diags, nil
+}
+
+// effectiveThinking is the thinking level that a request uses: the requested
+// level, medium when none was asked, and off when the model is an Anthropic
+// model and the request forces a tool.
+func effectiveThinking(model providers.Model, opts providers.StreamOptions) (protocol.ThinkingLevel, error) {
+	level := opts.Reasoning
+	if model.Provider == providers.ProviderAnthropic && opts.ToolChoice != "" {
+		if level != "" && level != protocol.ThinkingOff {
+			return "", fmt.Errorf("%w: forced tool choice cannot use Anthropic thinking", providers.ErrUnsupportedRequest)
+		}
+		level = protocol.ThinkingOff
+	}
+	if level == "" {
+		level = protocol.ThinkingMedium
+	}
+	return level, nil
 }
 
 func effortOf(level protocol.ThinkingLevel) string {

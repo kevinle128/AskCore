@@ -2,6 +2,7 @@ package agent
 
 import (
 	"slices"
+	"strings"
 	"time"
 
 	"AskCore/internal/providers"
@@ -36,7 +37,8 @@ func declareToolChanges(committed []protocol.Message, snap *tools.Snapshot, pend
 		baseline[sysAt] = withToolChanges(pendingSys, nil, nil)
 	}
 	declared := providers.CurrentTools(append(slices.Clip(committed), baseline...))
-	added, removed := providers.ToolChanges(declared, snap.Decls())
+	added, removed := providers.ToolChanges(declared, sortedDecls(snap.Decls()))
+	slices.SortStableFunc(removed, func(a, b protocol.ToolRef) int { return strings.Compare(a.Name, b.Name) })
 	unchanged := len(added) == 0 && len(removed) == 0
 
 	if sysAt >= 0 {

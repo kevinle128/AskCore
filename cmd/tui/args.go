@@ -1,10 +1,12 @@
 package main
 
 import (
+	"context"
 	"fmt"
 	"net/http"
 	"slices"
 	"strings"
+	"time"
 
 	"AskCore/internal/providers"
 	"AskCore/internal/providers/anthropic"
@@ -34,6 +36,8 @@ type options struct {
 	// transport carries the provider HTTP. Nil uses http.DefaultTransport.
 	// Tests set a cassette here; ASK_CAPTURE sets a recording one.
 	transport http.RoundTripper
+	// wait is the retry clock. Nil uses the production timer.
+	wait func(context.Context, time.Duration) error
 }
 
 // diagnostic is one parse problem. Any error ends the program with exit 1; a

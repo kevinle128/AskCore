@@ -70,7 +70,7 @@ func TestCompletionsReplayHoldsSystemUntilSyntheticResultJSON(t *testing.T) {
 		protocol.UserMessage{Content: []protocol.UserBlock{protocol.Text{Text: "next"}}},
 	}
 	msgs := completionMessages(t, completionsReplayBody(t, history, nil))
-	require.Len(t, msgs, 6)
+	require.Len(t, msgs, 7)
 	assistant := msgs[2].(map[string]any)
 	assert.Equal(t, "plan", assistant["content"])
 	assert.NotContains(t, assistant, "reasoning_content")
@@ -80,7 +80,7 @@ func TestCompletionsReplayHoldsSystemUntilSyntheticResultJSON(t *testing.T) {
 	assert.Equal(t, "call_missing", result["tool_call_id"])
 	assert.Contains(t, result["content"], "No result provided")
 	assert.Contains(t, msgs[4].(map[string]any)["content"], "later rule")
-	assert.NotContains(t, mustJSONReplay(t, msgs), "aborted")
+	assert.Equal(t, "aborted", msgs[5].(map[string]any)["content"])
 	assert.NotContains(t, mustJSONReplay(t, msgs), "errored")
 	assert.NotContains(t, mustJSONReplay(t, msgs), sig)
 }
@@ -221,7 +221,7 @@ func TestCompletionsAbortKeepsPartialAndErrorBodyIsBounded(t *testing.T) {
 	assert.LessOrEqual(t, len(*failed.ErrorMessage), 540)
 }
 
-func TestResponsesDropsFailedReasoningOnlyTurnsJSON(t *testing.T) {
+func TestResponsesReplaysInterruptedAndDropsErrorReasoningOnlyTurnsJSON(t *testing.T) {
 	for _, stop := range []protocol.StopReason{protocol.StopAborted, protocol.StopError} {
 		for _, signed := range []bool{false, true} {
 			sig := "opaque"
@@ -232,10 +232,14 @@ func TestResponsesDropsFailedReasoningOnlyTurnsJSON(t *testing.T) {
 			errText := "failed"
 			input := responsesReplayInput(t, []protocol.Message{protocol.UserMessage{Content: []protocol.UserBlock{protocol.Text{Text: "first"}}}, protocol.AssistantMessage{API: string(providers.APIAnthropicMessages), Provider: providers.ProviderTokenPlan, Model: providers.ModelDeepSeekFlash, StopReason: stop, ErrorMessage: &errText, Content: []protocol.AssistantBlock{thinking, protocol.Text{Text: ""}}}, protocol.UserMessage{Content: []protocol.UserBlock{protocol.Text{Text: "next"}}}})
 			assert.Empty(t, responseItems(input, "reasoning"))
-			for _, item := range responseItems(input, "message") {
-				assert.NotEqual(t, "assistant", item["role"])
+			if stop == protocol.StopAborted {
+				assert.Contains(t, mustJSONReplay(t, input), "secret")
+			} else {
+				for _, item := range responseItems(input, "message") {
+					assert.NotEqual(t, "assistant", item["role"])
+				}
+				assert.NotContains(t, mustJSONReplay(t, input), "secret")
 			}
-			assert.NotContains(t, mustJSONReplay(t, input), "secret")
 			assert.NotContains(t, mustJSONReplay(t, input), "opaque")
 			assert.NotContains(t, mustJSONReplay(t, input), "failed")
 		}

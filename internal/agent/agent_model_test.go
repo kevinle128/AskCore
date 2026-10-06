@@ -61,13 +61,11 @@ func TestSetModelSwitchesWireAndPinsKey(t *testing.T) {
 			Model:    anthModel,
 			BoundKey: providers.BoundKey{Provider: anthModel.Provider, Secret: anthKey},
 			Options:  providers.StreamOptions{APIKey: anthKey},
-			Hooks: pipeline.Hooks{
-				GetAPIKey: func(_ context.Context, provider string) (string, error) {
-					if provider == providers.ProviderOpenAI {
-						return compKey, nil
-					}
-					return "", nil
-				},
+			GetAPIKey: func(_ context.Context, provider string) (string, error) {
+				if provider == providers.ProviderOpenAI {
+					return compKey, nil
+				}
+				return "", nil
 			},
 		},
 	})
@@ -113,12 +111,12 @@ func TestSetModelSwitchesAnthropicToResponsesRequestJSON(t *testing.T) {
 	a, err := agent.New(agent.Config{Registry: reg, LoopConfig: agent.LoopConfig{
 		Model: anthModel, BoundKey: providers.BoundKey{Provider: anthModel.Provider, Secret: anthKey},
 		Options: providers.StreamOptions{APIKey: anthKey},
-		Hooks: pipeline.Hooks{GetAPIKey: func(_ context.Context, provider string) (string, error) {
+		GetAPIKey: func(_ context.Context, provider string) (string, error) {
 			if provider == providers.ProviderOpenAI {
 				return compKey, nil
 			}
 			return "", nil
-		}},
+		},
 	}})
 	require.NoError(t, err)
 	require.NoError(t, a.Prompt(context.Background(), user("first")))
@@ -188,12 +186,12 @@ func TestAnthropicToolHistoryReplaysToResponses(t *testing.T) {
 	a, err := agent.New(agent.Config{Registry: wires, Tools: reg, LoopConfig: agent.LoopConfig{
 		Model: anthModel, BoundKey: providers.BoundKey{Provider: anthModel.Provider, Secret: anthKey},
 		Options: providers.StreamOptions{APIKey: anthKey, Reasoning: protocol.ThinkingMedium},
-		Hooks: pipeline.Hooks{GetAPIKey: func(_ context.Context, provider string) (string, error) {
+		GetAPIKey: func(_ context.Context, provider string) (string, error) {
 			if provider == providers.ProviderOpenAI {
 				return compKey, nil
 			}
 			return "", nil
-		}},
+		},
 	}})
 	require.NoError(t, err)
 	require.NoError(t, a.Prompt(context.Background(), user("first")))
@@ -278,26 +276,25 @@ func TestPrepareRequestSwitchesWireWithinActiveToolRun(t *testing.T) {
 		return textResult("echo:ping"), nil
 	}})
 	prepares := 0
-	hooks := pipeline.Hooks{
-		PrepareRequest: func(_ context.Context, r pipeline.Request) (*pipeline.RequestUpdate, error) {
-			prepares++
-			if prepares == 1 {
-				assert.Equal(t, providers.APIAnthropicMessages, r.Model.API)
-				return nil, nil
-			}
+	handlers := pipeline.NewRegistry()
+	handlers.OnPrepareRequest(func(_ context.Context, r pipeline.Request, _ pipeline.Next[pipeline.Request, *pipeline.RequestUpdate]) (*pipeline.RequestUpdate, error) {
+		prepares++
+		if prepares == 1 {
 			assert.Equal(t, providers.APIAnthropicMessages, r.Model.API)
-			return &pipeline.RequestUpdate{Model: &respModel}, nil
-		},
+			return nil, nil
+		}
+		assert.Equal(t, providers.APIAnthropicMessages, r.Model.API)
+		return &pipeline.RequestUpdate{Model: &respModel}, nil
+	})
+	msgs, err := agent.Run(context.Background(), []protocol.Message{user("first")}, pipeline.AgentContext{Tools: reg}, agent.LoopConfig{
+		Model: anthModel, Stream: wires.Stream, BoundKey: providers.BoundKey{Provider: anthModel.Provider, Secret: anthKey},
+		Options: providers.StreamOptions{APIKey: anthKey, Reasoning: protocol.ThinkingMedium}, Pipeline: handlers,
 		GetAPIKey: func(_ context.Context, provider string) (string, error) {
 			if provider == providers.ProviderOpenAI {
 				return compKey, nil
 			}
 			return "", nil
 		},
-	}
-	msgs, err := agent.Run(context.Background(), []protocol.Message{user("first")}, pipeline.AgentContext{Tools: reg}, agent.LoopConfig{
-		Model: anthModel, Stream: wires.Stream, BoundKey: providers.BoundKey{Provider: anthModel.Provider, Secret: anthKey},
-		Options: providers.StreamOptions{APIKey: anthKey, Reasoning: protocol.ThinkingMedium}, Hooks: hooks,
 	}, func(protocol.Event) error { return nil })
 	require.NoError(t, err)
 	assert.Equal(t, 2, prepares)

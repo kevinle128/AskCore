@@ -44,6 +44,7 @@ type Step struct {
 	stop     *protocol.StopReason
 	usage    *protocol.Usage
 	errMsg   *string
+	failure  *providers.Failure
 	respID   *string
 	ts       *int64
 	delay    time.Duration
@@ -94,6 +95,17 @@ func (s Step) WithUsage(u protocol.Usage) Step { c := u.Clone(); s.usage = &c; r
 // Error sets the error message of an error or aborted reply.
 func (s Step) Error(msg string) Step { s.errMsg = &msg; return s }
 
+// Err makes the step end in an error that carries the typed failure f. The
+// result error is f itself, so a caller finds the code, the status and the
+// Retry-After delay with errors.As. The error message is the text of f unless
+// Error sets another one. A step without a typed failure ends with a plain
+// error, which has no provider code.
+func (s Step) Err(f *providers.Failure) Step {
+	r := protocol.StopError
+	s.stop, s.failure = &r, f
+	return s
+}
+
 // ResponseID sets the response id of the result.
 func (s Step) ResponseID(id string) Step { s.respID = &id; return s }
 
@@ -136,6 +148,9 @@ func (s Step) overlay(inner Step) (Step, error) {
 	}
 	if inner.errMsg == nil {
 		inner.errMsg = s.errMsg
+	}
+	if inner.failure == nil {
+		inner.failure = s.failure
 	}
 	if inner.respID == nil {
 		inner.respID = s.respID

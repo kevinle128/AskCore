@@ -23,8 +23,8 @@ import (
 
 func TestMain(m *testing.M) { goleak.VerifyTestMain(m) }
 
-// recorder logs every event and every hook call of a run in one ordered list.
-// Hooks run on tool goroutines too, so it locks.
+// recorder logs every event and every handler call of a run in one ordered list.
+// Handlers run on tool goroutines too, so it locks.
 type recorder struct {
 	mu     sync.Mutex
 	log    []string
@@ -125,8 +125,22 @@ func registry(t testing.TB, ts ...tools.Tool) *tools.Registry {
 	return r
 }
 
-func config(p *faux.Provider, m providers.Model, h pipeline.Hooks) agent.LoopConfig {
-	return agent.LoopConfig{Model: m, Stream: p.Stream, Hooks: h}
+// Next continuations of the tool points, short for handler signatures.
+type (
+	nextBefore = pipeline.Next[pipeline.ToolCallInfo, *pipeline.BeforeToolCallResult]
+	nextAfter  = pipeline.Next[pipeline.ToolResultInfo, *pipeline.AfterToolCallResult]
+)
+
+// registryOf returns the pipeline registry of c and creates it on first use.
+func registryOf(c *agent.Config) *pipeline.Registry {
+	if c.Pipeline == nil {
+		c.Pipeline = pipeline.NewRegistry()
+	}
+	return c.Pipeline
+}
+
+func config(p *faux.Provider, m providers.Model, reg *pipeline.Registry) agent.LoopConfig {
+	return agent.LoopConfig{Model: m, Stream: p.Stream, Pipeline: reg}
 }
 
 func user(text string) protocol.Message {
@@ -210,10 +224,10 @@ func (p preparingTool) PrepareArguments(raw json.RawMessage) (json.RawMessage, e
 	return p.prepare(raw)
 }
 
-// sequentialTool adds the Sequential marker to a funcTool.
-type sequentialTool struct{ *funcTool }
+// exclusiveTool makes the execution mode explicit.
+type exclusiveTool struct{ *funcTool }
 
-func (sequentialTool) Sequential() bool { return true }
+func (exclusiveTool) ConcurrencySafe(json.RawMessage) bool { return false }
 
 func textResult(s string) protocol.ToolExecutionResult {
 	return protocol.ToolExecutionResult{Content: []protocol.UserBlock{protocol.Text{Text: s}}}
@@ -244,36 +258,36 @@ func within(t *testing.T, d time.Duration, fn func()) {
 func TestNoGoroutineLeak(t *testing.T) {
 	cases := []struct {
 		name  string
-		setup func(p *faux.Provider) (context.Context, pipeline.Hooks, func())
+		setup func(p *faux.Provider) (context.Context, *pipeline.Registry, func())
 	}{
-		{"normal end", func(p *faux.Provider) (context.Context, pipeline.Hooks, func()) {
+		{"normal end", func(p *faux.Provider) (context.Context, *pipeline.Registry, func()) {
 			p.Set(faux.Reply(faux.ToolCall("echo", map[string]any{"text": "hi"})), faux.Say("done"))
-			return context.Background(), pipeline.Hooks{}, func() {}
+			return context.Background(), nil, func() {}
 		}},
-		{"abort", func(p *faux.Provider) (context.Context, pipeline.Hooks, func()) {
+		{"abort", func(p *faux.Provider) (context.Context, *pipeline.Registry, func()) {
 			ctx, cancel := context.WithCancel(context.Background())
 			p.Set(faux.Say(strings.Repeat("slow words ", 50)).Pace(200))
 			go func() { time.Sleep(20 * time.Millisecond); cancel() }()
-			return ctx, pipeline.Hooks{}, cancel
+			return ctx, nil, cancel
 		}},
-		{"hook error", func(p *faux.Provider) (context.Context, pipeline.Hooks, func()) {
+		{"handler error", func(p *faux.Provider) (context.Context, *pipeline.Registry, func()) {
 			p.Set(faux.Reply(faux.ToolCall("echo", map[string]any{"text": "hi"})), faux.Say("done"))
-			return context.Background(), pipeline.Hooks{
-				FinishTurn: func(context.Context, pipeline.Turn) (pipeline.TurnDecision, error) {
-					return pipeline.Proceed, errors.New("finish failed")
-				},
-			}, func() {}
+			reg := pipeline.NewRegistry()
+			reg.OnCompleteStep(func(context.Context, pipeline.Turn) (pipeline.TurnDecision, error) {
+				return pipeline.Proceed, errors.New("finish failed")
+			})
+			return context.Background(), reg, func() {}
 		}},
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
 			defer goleak.VerifyNone(t)
 			p, m := newFaux(t)
-			ctx, hooks, cancel := tc.setup(p)
+			ctx, reg, cancel := tc.setup(p)
 			defer cancel()
 			rec := &recorder{}
 			_, _ = agent.Run(ctx, []protocol.Message{user("hi")},
-				pipeline.AgentContext{Tools: registry(t, tools.Echo{})}, config(p, m, hooks), rec.emit)
+				pipeline.AgentContext{Tools: registry(t, tools.Echo{})}, config(p, m, reg), rec.emit)
 			require.NotEmpty(t, rec.eventLabels())
 		})
 	}

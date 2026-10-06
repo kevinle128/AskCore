@@ -12,8 +12,8 @@ import (
 
 func TestOAuthToolNameAndChoice(t *testing.T) {
 	msgs := providers.NormalizeRequest(providers.Request{Tools: []protocol.ToolDecl{{Name: "read", Parameters: json.RawMessage(`{"type":"object"}`)}}})
-	opts := providers.StreamOptions{ToolChoice: "read", Auth: providers.AuthSnapshot{Method: "anthropic-oauth"}}
-	doc, _, err := buildDocument(msgs.Messages, Model(), opts, nil)
+	pr := &providers.Prepared{ToolChoice: "read", Thinking: protocol.ThinkingMedium, Effort: "medium"}
+	doc, _, err := buildDocument(msgs.Messages, Model(), pr, true)
 	require.NoError(t, err)
 	var body map[string]any
 	require.NoError(t, json.Unmarshal(doc.body, &body))

@@ -11,7 +11,7 @@ import (
 )
 
 func TestIndentedUnknownEventStaysOneJSONLLine(t *testing.T) {
-	ev, err := DecodeEvent([]byte("{\n  \"type\": \"queue_update\",\n  \"steering\": [\"a\"]\n}"))
+	ev, err := DecodeEvent([]byte("{\n  \"type\": \"test_unknown_event\",\n  \"steering\": [\"a\"]\n}"))
 	require.NoError(t, err)
 	require.IsType(t, &RawEvent{}, ev)
 	var buf bytes.Buffer
@@ -112,7 +112,7 @@ func TestBuilderSeedWithoutStopReasonIsPending(t *testing.T) {
 }
 
 func TestRawEventEnvelopeChangesAreWrittenBack(t *testing.T) {
-	ev, err := DecodeEvent([]byte(`{"seq":1,"ts":5,"sessionId":"s","runId":"r","type":"queue_update","extra":{"k":[1,2]}}`))
+	ev, err := DecodeEvent([]byte(`{"seq":1,"ts":5,"sessionId":"s","runId":"r","type":"test_unknown_event","extra":{"k":[1,2]}}`))
 	require.NoError(t, err)
 	env := ev.Env()
 	env.Seq = 42
@@ -126,6 +126,6 @@ func TestRawEventEnvelopeChangesAreWrittenBack(t *testing.T) {
 	require.Equal(t, uint64(42), raw.Seq)
 	require.Equal(t, "r2", raw.RunID)
 	require.Equal(t, "s", raw.SessionID)
-	require.Equal(t, "queue_update", raw.Type)
+	require.Equal(t, "test_unknown_event", raw.Type)
 	require.Contains(t, string(out), `"extra":{"k":[1,2]}`)
 }
