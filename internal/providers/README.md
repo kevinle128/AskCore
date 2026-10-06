@@ -1,46 +1,63 @@
 # `internal/providers`
 
-LLM access. The package keeps three things apart. An **Api** is a wire protocol (for example `anthropic-messages`, `openai-completions`, `openai-responses`). A **Provider** is a vendor endpoint that speaks one Api. A **Model** is one model of a provider, with its limits and prices. A vendor quirk of an Api is a compat record kept as data, not as code branches. OpenAI-compatible vendors share one adapter.
+This package owns model access at the wire boundary.
+A wire API is a protocol, a provider is a serving endpoint, and a model belongs to that provider.
+Keep authentication methods separate from provider identity; [access terms](../../docs/CONTEXT.md) own this vocabulary.
 
-## What belongs here
+## Source owners
 
-- The `Provider` interface and chat request/response types (`types.go`)
-- The Api, Provider and Model types and the model catalog (`api.go`, `model.go`, `catalog.go`)
-- The compat record (`compat.go`)
-- Optional capability interfaces (`ThinkingCapable`, `CapabilitiesAware`)
-- Vendor implementations (`anthropic*.go`, `openai*.go`, …)
-- Provider registry and adapter registry
-- Shared SSE stream reader, provider-level retry and error classification
-
-## What does not belong here
-
-| Code | Put it in |
+| Responsibility | Owner |
 |---|---|
-| Agent-level retry of a turn | `internal/agent` |
-| Subprocess agents over ACP | `internal/providers/acp` |
-| Tools | `internal/tools` |
-| Reading `auth.json` and settings | `internal/settings` (a constructor receives a credential resolver function) |
+| Provider and request contracts | [types.go](types.go), [model.go](model.go), [api.go](api.go) |
+| Catalog and compatibility data | [catalog.go](catalog.go), [compat.go](compat.go) |
+| One settled stream result and message assembly | [stream.go](stream.go), [assembler.go](assembler.go) |
+| Typed failure codes and transport classification | [failure.go](failure.go), [errors.go](errors.go) |
+| Serving registration and captured retry policy | [registry.go](registry.go), [retry.go](retry.go) |
+| Safe effective preparation and real wire encoding | [prepare.go](prepare.go) |
+| History conversion, interrupted replay, and tool declarations | [convert.go](convert.go), [transform.go](transform.go), [transcript.go](transcript.go) |
+| Request-local credentials and safe binding | [auth.go](auth.go) |
 
-## Main interfaces
+Wire adapters are [anthropic](anthropic/) and [openai](openai/).
+A vendor using an existing API is catalog and compatibility data, not a second adapter package.
+Each adapter chooses its own libraries.
+[fantasykit](fantasykit/) is adapter infrastructure; its types must not reach the core contract.
+[Faux](faux/) supplies scripted product behavior for offline tests.
+[Cassettes](cassette/) record and replay provider HTTP; see [test guidance](../../docs/testing-llm-cassettes.md).
 
-- `Provider` (dewee `internal/providers/types.go:54`)
-- `ThinkingCapable` (dewee `internal/providers/types.go:72`)
-- `ProviderAdapter` (dewee `internal/providers/capabilities.go:30`)
+## Preparation and recovery boundary
 
-## File names
+Preparation captures safe effective request values and the serving registration's retry policy.
+This record is the reason exact request rebuild can agree with the adapter instead of duplicating adapter defaults.
+Registrations without a preparer retain policy capture and compute adapter values at stream start.
+The Prepared and PolicyOnly contracts are owned by prepare.go.
 
-`<vendor>.go`, `<vendor>_<topic>.go`, `adapter_<vendor>.go`, `api.go`, `model.go`, `compat.go`, `registry.go`, `types.go`
+Adapters return typed failures rather than deciding Agent lifecycle transitions.
+The failure codes and Retry-After parsing are owned by failure.go.
+The Agent [recovery owner](../agent/recover.go) selects eligible retries and [sessions](../sessions/entry.go) owns their safe records.
+Provider SDK retries stay disabled so one recorded Agent attempt does not hide multiple wire requests.
 
-## Imports
+Interrupted replay must not execute tool calls from an incomplete answer.
+The replay owner is transform.go, including unsigned thinking projected as plain text.
+Visible failed output is not erased; the Agent's Pi retry events explain the next request.
 
-- Allowed: `tracing`, third-party vendor SDKs
-- Denied: `internal/tools`, `internal/agent`, `internal/settings` (receive the credential through a resolver function); `internal/gateway`, `internal/http`, `internal/channels/<vendor>` (core packages do not import transport); `internal/acp`, `internal/leader` (adapters wrap the core, never the reverse); `internal/config`
+## Request authentication
 
-## Rules
+Providers receive resolved request-local credentials, never an auth service or store handle.
+Keep credentials and account identity out of Prepared and session records.
+Retry must pin method, profile, and billing class; token refresh can preserve that binding.
+A subscription failure must not silently select a billed API-key route.
+The [app resolver](../app/module_auth.go) owns the binding check and [auth](../auth/README.md) owns login and refresh.
 
-- One model is shared everywhere. Add a DTO or a separate type with a mapper only when the data is really different (design section 6).
-- Receive dependencies and typed config through constructors. `internal/app` wires them with fx.
-- Create an interface only when there is a second implementation or a test seam.
-- Credentials come from the caller. This package never reads `auth.json` and never stores a key.
+Final HTTP guards belong in [Messages profiles](anthropic/profile.go) and [Responses profiles](openai/profiles.go).
+They prevent access material from reaching the wrong destination or mixing with ambient headers.
+Do not add a second subscription adapter for the same wire API.
+The compiled catalog describes capabilities; account discovery separately establishes access.
 
-Design reference: [docs/ask-architecture-reference.md](../../docs/ask-architecture-reference.md)
+## File names and imports
+
+Keep core contracts in existing topic files and wire implementation in the API sub-package.
+Use `<api>/<topic>.go` for real adapter boundaries; vendors remain data where the wire is shared.
+Allowed imports are pkg/protocol and tracing.
+Vendor SDKs and fantasy belong only in adapter packages and fantasykit.
+Do not import tools, agent, settings, auth, transport packages, acp, leader, or config.
+See [architecture import rules](../../docs/ask-architecture-reference.md#8-import-rules).

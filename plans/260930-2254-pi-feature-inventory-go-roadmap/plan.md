@@ -18,7 +18,8 @@ Note: the user CLAUDE.md asks for `tasks/todo.md`. The session hook allows markd
 
 ## Constraints
 
-- Source of truth: Pi at `/Users/dale/Desktop/workspace/opensources/pi`, commit `2bbfcca4`, version `0.99.1`. GitNexus repo name: `pi` (index is current).
+- Initial inventory reference: Pi at `/Users/dale/Desktop/workspace/opensources/pi`, commit `2bbfcca4`, version `0.99.1`.
+  Provider follow-up uses `4c6fb7cfe` (1.0.1), as recorded in roadmap revision 5 and the source audits.
 - Changelogs: `packages/coding-agent/CHANGELOG.md` (5979 lines, 281 releases, 0.10.0 on 2025-11-25 to 0.99.1), `packages/ai` (2203), `packages/tui` (1214), `packages/agent` (754), plus 8 small ones.
 - Prior research to reuse (verify, do not copy): `/Users/dale/Desktop/workspace/opensources/ask/plans/reports/researcher-260930-*.md` (12 reports, including Pi agent core, Pi extension system, Goose vs Pi).
 - Target stack: AskCore package map in `internal/README.md`; `go.mod` pins `bubbletea v1.3.10` + `lipgloss v1.1.0`, with `charm.land/lipgloss/v2` indirect (known conflict note in `go.mod`).
@@ -77,11 +78,20 @@ Each lane scans its area in rings. It goes to the next ring only after the curre
 | 2026-10-01 | Milestone M1 (must-have): Phase 0, H1-H13, H14 session tree, H15, W1 dashboard, X1 external Go extensions, T0, T1. M2 (nice-to-have): H16 MCP, X2 shell hooks, H17, T2, X3, Windows. The user picked W1 and H14 as must-have; MCP and shell hooks were not picked. |
 | 2026-10-01 | D3 changed again: no permission popups ("PI No permission popups, Chúng ta cũng sẽ chưa làm nhé") and no built-in policy handler in M1. To block a command, write an external extension. The policy handler moves to M2. |
 | 2026-10-01 | Codex review blocker B1: keep M1 small. `/login` (API key and OAuth) and extension UI dialogs are M2. In M1 the API key comes from an env var or `~/.ask/auth.json`; X1's M1 exit drops the `confirm` dialog. |
+| 2026-10-01 | `transformMessages` = option C: the pure function, H-PROV-27 and the replay part of H-TOOL-21 move from H4 to H3, because the H3 Anthropic adapter is the first caller (`AI:api/anthropic-messages.ts:1057`). H4 keeps the per-vendor tool-call id rules and the cross-API replay tests. Source: `plans/261001-0836-h1-messages-events-faux/plan.md` section 6. |
+| 2026-10-05 | H4 port analysis (`plans/reports/xia-261005-1408-h4-more-wire-apis-pi-port-analysis.md`), one question per turn. Targets A: Token Plan `/compatible-mode/v1` for Completions (live probe run), OpenAI `gpt-5.5` for Responses. Patch fantasy ("sửa fantasy, chúng ta có source mà"); D22 stays; fork through a `go.mod` `replace` to `github.com/kevinle128/fantasy`. `OPENAI_API_KEY` only. Thinking level as Pi (clamped level only). Package shape: "fantasy là ở tầng infrastructure, các adapter sử dụng cái gì là việc của adapter": one adapter for each wire API, `fantasykit` for shared plumbing, vendors as data. No id-collision guard, as Pi. H4 renders mid-conversation system messages. Cost "làm giống PI" in H4. Switch shown by Go tests only. Pi reference moves to `4c6fb7cfe`. Roadmap revision 5, inventory section 19, providers README and architecture reference updated. |
+| 2026-10-06 | Distribute the provider interview across phases because H4 cannot deliver it all. H4 owns wire/replay; H5 Pi builtin contracts; H7 catalog/configuration and one-credential store; new H7a native Anthropic/ChatGPT/xAI auth, profiles and minimal headless login/logout after H7. H8/H9/H13 integrate persistence, retry and switching; H17/T2 retain breadth and full gateway/TUI auth. This supersedes Q1's H4 timing and the older API-key-only scope, not accepted behavior. |
 | 2026-09-30 | The user's goal is to learn how to build a harness. The roadmap puts harness features first. Extension and TUI phases come after the harness core. Each harness phase must teach one harness concept and end with a working, testable result. |
 
 ## Verified findings (lock)
 
 - The shipping session store is `SessionManager` JSONL v3. Verified by `pi/packages/coding-agent/src/core/session-manager.ts:41`. The v4 `AgentHarness` store is used only in `src/experimental`. That code is excluded from the build (`tsconfig.build.json:19`) and gated by `PI_EXPERIMENTAL=1` (`src/core/experimental.ts:1`).
+
+## Current provider planning
+
+[Roadmap revision 7](./roadmap.md) owns the current allocation: subscription delivery now precedes full H5-H7 because Alibaba Token Plan expires soon.
+[H7a execution detail](./phase-h7a-subscription-auth.md), its [deep TDD implementation plan](../261006-0157-h7a-subscription-auth/plan.md), and the [provider design](../261005-2139-provider-auth-design/plan.md) define subscription delivery.
+The H4 report is a cross-phase decision record, not an H4 implementation checklist.
 
 ## Acceptance criteria
 

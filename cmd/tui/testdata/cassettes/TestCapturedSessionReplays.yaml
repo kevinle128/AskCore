@@ -1,0 +1,318 @@
+---
+version: 2
+interactions:
+    - id: 0
+      request:
+        proto: HTTP/1.1
+        proto_major: 1
+        proto_minor: 1
+        content_length: 447
+        host: ""
+        body: '{"max_tokens":384000,"messages":[{"content":[{"text":"Use the echo tool with the text captured, then reply with only the word ok.","type":"text"}],"role":"user"}],"model":"deepseek-v4.1-flash","output_config":{"effort":"medium"},"tools":[{"description":"Return the given text unchanged.","input_schema":{"properties":{"text":{"description":"The text to return.","type":"string"}},"required":["text"],"type":"object"},"name":"echo"}],"stream":true}'
+        headers:
+            Anthropic-Version:
+                - "2023-06-01"
+            Content-Type:
+                - application/json
+        url: https://token-plan.ap-southeast-1.maas.aliyuncs.com/apps/anthropic/v1/messages
+        method: POST
+      response:
+        proto: HTTP/2.0
+        proto_major: 2
+        proto_minor: 0
+        content_length: -1
+        body: |+
+            event:ping
+            data:{"type":"ping"}
+
+            event:message_start
+            data:{"type":"message_start","message":{"id":"msg_85a5faaa-c0fe-4740-9a82-24dffb1dd7df","type":"message","role":"assistant","model":"deepseek-v4.1-flash","content":[],"stop_reason":null,"stop_sequence":null,"usage":{"input_tokens":59,"output_tokens":0}}}
+
+            event:content_block_start
+            data:{"type":"content_block_start","index":0,"content_block":{"type":"thinking","thinking":"","signature":""}}
+
+            event:content_block_delta
+            data:{"type":"content_block_delta","index":0,"delta":{"type":"thinking_delta","thinking":"The"}}
+
+            event:content_block_delta
+            data:{"type":"content_block_delta","index":0,"delta":{"type":"thinking_delta","thinking":" user wants me to use the"}}
+
+            event:content_block_delta
+            data:{"type":"content_block_delta","index":0,"delta":{"type":"thinking_delta","thinking":" echo tool with \""}}
+
+            event:content_block_delta
+            data:{"type":"content_block_delta","index":0,"delta":{"type":"thinking_delta","thinking":"the text captured\". H"}}
+
+            event:content_block_delta
+            data:{"type":"content_block_delta","index":0,"delta":{"type":"thinking_delta","thinking":"mm, there's no prior"}}
+
+            event:content_block_delta
+            data:{"type":"content_block_delta","index":0,"delta":{"type":"thinking_delta","thinking":" context"}}
+
+            event:content_block_delta
+            data:{"type":"content_block_delta","index":0,"delta":{"type":"thinking_delta","thinking":" with"}}
+
+            event:content_block_delta
+            data:{"type":"content_block_delta","index":0,"delta":{"type":"thinking_delta","thinking":" captured text. The"}}
+
+            event:content_block_delta
+            data:{"type":"content_block_delta","index":0,"delta":{"type":"thinking_delta","thinking":" instruction says \"Use the echo"}}
+
+            event:content_block_delta
+            data:{"type":"content_block_delta","index":0,"delta":{"type":"thinking_delta","thinking":" tool with the text captured,"}}
+
+            event:content_block_delta
+            data:{"type":"content_block_delta","index":0,"delta":{"type":"thinking_delta","thinking":" then reply with only the word"}}
+
+            event:content_block_delta
+            data:{"type":"content_block_delta","index":0,"delta":{"type":"thinking_delta","thinking":" ok.\"\n\nThere's no captured"}}
+
+            event:content_block_delta
+            data:{"type":"content_block_delta","index":0,"delta":{"type":"thinking_delta","thinking":" text provided"}}
+
+            event:content_block_delta
+            data:{"type":"content_block_delta","index":0,"delta":{"type":"thinking_delta","thinking":". I should probably"}}
+
+            event:content_block_delta
+            data:{"type":"content_block_delta","index":0,"delta":{"type":"thinking_delta","thinking":" just"}}
+
+            event:content_block_delta
+            data:{"type":"content_block_delta","index":0,"delta":{"type":"thinking_delta","thinking":" echo something"}}
+
+            event:content_block_delta
+            data:{"type":"content_block_delta","index":0,"delta":{"type":"thinking_delta","thinking":". But"}}
+
+            event:content_block_delta
+            data:{"type":"content_block_delta","index":0,"delta":{"type":"thinking_delta","thinking":" the instruction"}}
+
+            event:content_block_delta
+            data:{"type":"content_block_delta","index":0,"delta":{"type":"thinking_delta","thinking":" is ambiguous —"}}
+
+            event:content_block_delta
+            data:{"type":"content_block_delta","index":0,"delta":{"type":"thinking_delta","thinking":" \"the text captured\" refers"}}
+
+            event:content_block_delta
+            data:{"type":"content_block_delta","index":0,"delta":{"type":"thinking_delta","thinking":" to something"}}
+
+            event:content_block_delta
+            data:{"type":"content_block_delta","index":0,"delta":{"type":"thinking_delta","thinking":" in"}}
+
+            event:content_block_delta
+            data:{"type":"content_block_delta","index":0,"delta":{"type":"thinking_delta","thinking":" the conversation,"}}
+
+            event:content_block_delta
+            data:{"type":"content_block_delta","index":0,"delta":{"type":"thinking_delta","thinking":" but"}}
+
+            event:content_block_delta
+            data:{"type":"content_block_delta","index":0,"delta":{"type":"thinking_delta","thinking":" there's nothing"}}
+
+            event:content_block_delta
+            data:{"type":"content_block_delta","index":0,"delta":{"type":"thinking_delta","thinking":". I could"}}
+
+            event:content_block_delta
+            data:{"type":"content_block_delta","index":0,"delta":{"type":"thinking_delta","thinking":" echo..."}}
+
+            event:content_block_delta
+            data:{"type":"content_block_delta","index":0,"delta":{"type":"thinking_delta","thinking":" H"}}
+
+            event:content_block_delta
+            data:{"type":"content_block_delta","index":0,"delta":{"type":"thinking_delta","thinking":"mm. Perhaps"}}
+
+            event:content_block_delta
+            data:{"type":"content_block_delta","index":0,"delta":{"type":"thinking_delta","thinking":" the safest is to"}}
+
+            event:content_block_delta
+            data:{"type":"content_block_delta","index":0,"delta":{"type":"thinking_delta","thinking":" call"}}
+
+            event:content_block_delta
+            data:{"type":"content_block_delta","index":0,"delta":{"type":"thinking_delta","thinking":" echo with the user"}}
+
+            event:content_block_delta
+            data:{"type":"content_block_delta","index":0,"delta":{"type":"thinking_delta","thinking":"'s message text? Or"}}
+
+            event:content_block_delta
+            data:{"type":"content_block_delta","index":0,"delta":{"type":"thinking_delta","thinking":" maybe"}}
+
+            event:content_block_delta
+            data:{"type":"content_block_delta","index":0,"delta":{"type":"thinking_delta","thinking":" just"}}
+
+            event:content_block_delta
+            data:{"type":"content_block_delta","index":0,"delta":{"type":"thinking_delta","thinking":" call echo with some"}}
+
+            event:content_block_delta
+            data:{"type":"content_block_delta","index":0,"delta":{"type":"thinking_delta","thinking":" placeholder"}}
+
+            event:content_block_delta
+            data:{"type":"content_block_delta","index":0,"delta":{"type":"thinking_delta","thinking":".\n\nI"}}
+
+            event:content_block_delta
+            data:{"type":"content_block_delta","index":0,"delta":{"type":"thinking_delta","thinking":" think I"}}
+
+            event:content_block_delta
+            data:{"type":"content_block_delta","index":0,"delta":{"type":"thinking_delta","thinking":" should call echo with the text"}}
+
+            event:content_block_delta
+            data:{"type":"content_block_delta","index":0,"delta":{"type":"thinking_delta","thinking":" from"}}
+
+            event:content_block_delta
+            data:{"type":"content_block_delta","index":0,"delta":{"type":"thinking_delta","thinking":" the user's message ("}}
+
+            event:content_block_delta
+            data:{"type":"content_block_delta","index":0,"delta":{"type":"thinking_delta","thinking":"their"}}
+
+            event:content_block_delta
+            data:{"type":"content_block_delta","index":0,"delta":{"type":"thinking_delta","thinking":" instruction"}}
+
+            event:content_block_delta
+            data:{"type":"content_block_delta","index":0,"delta":{"type":"thinking_delta","thinking":"),"}}
+
+            event:content_block_delta
+            data:{"type":"content_block_delta","index":0,"delta":{"type":"thinking_delta","thinking":" then reply \""}}
+
+            event:content_block_delta
+            data:{"type":"content_block_delta","index":0,"delta":{"type":"thinking_delta","thinking":"ok\"."}}
+
+            event:content_block_delta
+            data:{"type":"content_block_delta","index":0,"delta":{"type":"thinking_delta","thinking":" Let"}}
+
+            event:content_block_delta
+            data:{"type":"content_block_delta","index":0,"delta":{"type":"thinking_delta","thinking":" me echo"}}
+
+            event:content_block_delta
+            data:{"type":"content_block_delta","index":0,"delta":{"type":"thinking_delta","thinking":" the user's"}}
+
+            event:content_block_delta
+            data:{"type":"content_block_delta","index":0,"delta":{"type":"thinking_delta","thinking":" message text.\n\nActually, \""}}
+
+            event:content_block_delta
+            data:{"type":"content_block_delta","index":0,"delta":{"type":"thinking_delta","thinking":"the text captured\" -"}}
+
+            event:content_block_delta
+            data:{"type":"content_block_delta","index":0,"delta":{"type":"thinking_delta","thinking":" maybe they"}}
+
+            event:content_block_delta
+            data:{"type":"content_block_delta","index":0,"delta":{"type":"thinking_delta","thinking":" mean the text of the prompt"}}
+
+            event:content_block_delta
+            data:{"type":"content_block_delta","index":0,"delta":{"type":"thinking_delta","thinking":" itself"}}
+
+            event:content_block_delta
+            data:{"type":"content_block_delta","index":0,"delta":{"type":"thinking_delta","thinking":". I'll echo the"}}
+
+            event:content_block_delta
+            data:{"type":"content_block_delta","index":0,"delta":{"type":"thinking_delta","thinking":" user's instruction"}}
+
+            event:content_block_delta
+            data:{"type":"content_block_delta","index":0,"delta":{"type":"thinking_delta","thinking":" text.\n\nThen"}}
+
+            event:content_block_delta
+            data:{"type":"content_block_delta","index":0,"delta":{"type":"thinking_delta","thinking":" reply only"}}
+
+            event:content_block_delta
+            data:{"type":"content_block_delta","index":0,"delta":{"type":"thinking_delta","thinking":" with"}}
+
+            event:content_block_delta
+            data:{"type":"content_block_delta","index":0,"delta":{"type":"thinking_delta","thinking":" \"ok\".\n\n"}}
+
+            event:content_block_delta
+            data:{"type":"content_block_delta","index":0,"delta":{"type":"thinking_delta","thinking":"Let"}}
+
+            event:content_block_delta
+            data:{"type":"content_block_delta","index":0,"delta":{"type":"thinking_delta","thinking":" me do the tool"}}
+
+            event:content_block_delta
+            data:{"type":"content_block_delta","index":0,"delta":{"type":"thinking_delta","thinking":" call first"}}
+
+            event:content_block_delta
+            data:{"type":"content_block_delta","index":0,"delta":{"type":"thinking_delta","thinking":"."}}
+
+            event:content_block_delta
+            data:{"type":"content_block_delta","index":0,"delta":{"type":"signature_delta","signature":""}}
+
+            event:content_block_stop
+            data:{"type":"content_block_stop","index":0}
+
+            event:content_block_start
+            data:{"type":"content_block_start","index":1,"content_block":{"type":"tool_use","id":"toolu_6179d71151bb479bac94c64f","name":"echo","input":{}}}
+
+            event:content_block_delta
+            data:{"type":"content_block_delta","index":1,"delta":{"type":"input_json_delta","partial_json":""}}
+
+            event:content_block_delta
+            data:{"type":"content_block_delta","index":1,"delta":{"type":"input_json_delta","partial_json":"{"}}
+
+            event:content_block_delta
+            data:{"type":"content_block_delta","index":1,"delta":{"type":"input_json_delta","partial_json":"\"text\": \"Use the echo tool"}}
+
+            event:content_block_delta
+            data:{"type":"content_block_delta","index":1,"delta":{"type":"input_json_delta","partial_json":" with the tex"}}
+
+            event:content_block_delta
+            data:{"type":"content_block_delta","index":1,"delta":{"type":"input_json_delta","partial_json":"t captured, then reply with only"}}
+
+            event:content_block_delta
+            data:{"type":"content_block_delta","index":1,"delta":{"type":"input_json_delta","partial_json":" the word ok.\"}"}}
+
+            event:content_block_stop
+            data:{"type":"content_block_stop","index":1}
+
+            event:message_delta
+            data:{"type":"message_delta","delta":{"stop_reason":"tool_use","stop_sequence":null},"usage":{"input_tokens":56,"output_tokens":241,"cache_creation_input_tokens":0,"cache_read_input_tokens":256,"prompt_tokens_details":{"cached_tokens":256}}}
+
+            event:message_stop
+            data:{"type":"message_stop"}
+
+        headers:
+            Content-Type:
+                - text/event-stream; charset=utf-8
+        status: 200 OK
+        code: 200
+        duration: 0s
+    - id: 1
+      request:
+        proto: HTTP/1.1
+        proto_major: 1
+        proto_minor: 1
+        content_length: 1789
+        host: ""
+        body: '{"max_tokens":384000,"messages":[{"content":[{"text":"Use the echo tool with the text captured, then reply with only the word ok.","type":"text"}],"role":"user"},{"content":[{"signature":"","thinking":"The user wants me to use the echo tool with \"the text captured\". Hmm, there''s no prior context with captured text. The instruction says \"Use the echo tool with the text captured, then reply with only the word ok.\"\n\nThere''s no captured text provided. I should probably just echo something. But the instruction is ambiguous — \"the text captured\" refers to something in the conversation, but there''s nothing. I could echo... Hmm. Perhaps the safest is to call echo with the user''s message text? Or maybe just call echo with some placeholder.\n\nI think I should call echo with the text from the user''s message (their instruction), then reply \"ok\". Let me echo the user''s message text.\n\nActually, \"the text captured\" - maybe they mean the text of the prompt itself. I''ll echo the user''s instruction text.\n\nThen reply only with \"ok\".\n\nLet me do the tool call first.","type":"thinking"},{"id":"toolu_6179d71151bb479bac94c64f","input":{"text":"Use the echo tool with the text captured, then reply with only the word ok."},"name":"echo","type":"tool_use"}],"role":"assistant"},{"content":[{"content":[{"text":"Use the echo tool with the text captured, then reply with only the word ok.","type":"text"}],"tool_use_id":"toolu_6179d71151bb479bac94c64f","type":"tool_result"}],"role":"user"}],"model":"deepseek-v4.1-flash","output_config":{"effort":"medium"},"tools":[{"description":"Return the given text unchanged.","input_schema":{"properties":{"text":{"description":"The text to return.","type":"string"}},"required":["text"],"type":"object"},"name":"echo"}],"stream":true}'
+        headers:
+            Anthropic-Version:
+                - "2023-06-01"
+            Content-Type:
+                - application/json
+        url: https://token-plan.ap-southeast-1.maas.aliyuncs.com/apps/anthropic/v1/messages
+        method: POST
+      response:
+        proto: HTTP/2.0
+        proto_major: 2
+        proto_minor: 0
+        content_length: -1
+        body: |+
+            event:ping
+            data:{"type":"ping"}
+
+            event:message_start
+            data:{"type":"message_start","message":{"id":"msg_ecac2bef-6040-4bc0-b139-988999b52d42","type":"message","role":"assistant","model":"deepseek-v4.1-flash","content":[],"stop_reason":null,"stop_sequence":null,"usage":{"input_tokens":59,"output_tokens":0}}}
+
+            event:content_block_start
+            data:{"type":"content_block_start","index":0,"content_block":{"type":"text","text":""}}
+
+            event:content_block_delta
+            data:{"type":"content_block_delta","index":0,"delta":{"type":"text_delta","text":"ok"}}
+
+            event:content_block_stop
+            data:{"type":"content_block_stop","index":0}
+
+            event:message_delta
+            data:{"type":"message_delta","delta":{"stop_reason":"end_turn","stop_sequence":null},"usage":{"input_tokens":581,"output_tokens":2,"cache_creation_input_tokens":0,"cache_read_input_tokens":0,"prompt_tokens_details":{"cached_tokens":0}}}
+
+            event:message_stop
+            data:{"type":"message_stop"}
+
+        headers:
+            Content-Type:
+                - text/event-stream; charset=utf-8
+        status: 200 OK
+        code: 200
+        duration: 0s

@@ -50,11 +50,11 @@ Process model          leader (local router, client), acp (ACP adapter over the 
   │  ACP (JSON-RPC) over a Unix socket, a WebSocket or stdio
   ▼
 Runtime core            agent (two-level loop, steer and follow-up queues)
-                        ├─ pipeline (ordered hook points of one turn)
-                        ├─ sessions (entry tree), scheduler (lanes), bus (event fan-out), workspace
+                        ├─ pipeline (typed control points)
+                        ├─ sessions (in-memory log; persistent tree planned), scheduler (planned lanes), bus (replay/follow), workspace
   │
   ▼
-Capabilities            providers, tools, mcp, skills, bootstrap, hooks, sandbox, tracing
+Capabilities            auth, providers, tools, mcp, skills, bootstrap, hooks, sandbox, tracing
 Files under ~/.ask      settings (auth.json, settings.json)
   │
   ▼
@@ -75,23 +75,24 @@ Go has no classes. A "class" is a struct with methods. The rule is **one package
 | `internal/app` | fx modules and lifecycle | `cmd/gateway*.go` |
 | `internal/config` | viper start-up config, env overlay (a `daemon`/`cloud` mode setting is added when the first feature needs it) | `internal/config` |
 | `internal/settings` | `~/.ask/auth.json` (credentials, mode 0600, file lock) and `settings.json` (user and trusted project) | |
+| `internal/auth` | Native login, refresh, local logout, verified identity, and account access checks; see [package boundaries](../internal/auth/README.md) | |
 | `internal/logs` | zap logger factory, runtime log ring | `cmd/gateway.go:106`, `internal/logs` |
 | `internal/gateway` | HTTP (echo), WS and gRPC servers, method router, rate limit, gRPC service implementations (`grpc_*.go`) | `internal/gateway` |
 | `internal/gateway/methods` | WS RPC method handlers | `internal/gateway/methods` |
 | `internal/http` | REST `/v1/*` handlers. The package name is `http`, as in dewee; importers use the alias `httpapi` so it does not hide `net/http` | `internal/http` |
-| `internal/agent` | Pi's two-level `Loop`, steer and follow-up queues, the typed Go API, system prompt builder | `internal/agent` |
+| `internal/agent` | single execution driver, input claims, tool coordinator, recovery, and typed Go API | `internal/agent` |
 | `internal/acp` | ACP adapter over the agent's Go API, `_ask/*` methods | |
 | `internal/leader` | local router on a Unix socket, `ConnectOrSpawn` client | |
-| `internal/pipeline` | ordered hook points of one turn, `TurnState`, one file for each step | `internal/pipeline` |
+| `internal/pipeline` | typed control contracts, around middleware, decisions, and scoped handler registries | `internal/pipeline` |
 | `internal/providers` | Api, Provider and Model types, compat record, LLM vendors, registry; `acp/` for subprocess agents | `internal/providers` |
 | `internal/tools` | tool registry, every builtin tool (no built-in approval policy) | `internal/tools` |
 | `internal/mcp` | MCP client bridge | `internal/mcp` |
 | `internal/skills` | SKILL.md metadata discovery, explicit reload | `internal/skills` |
 | `internal/bootstrap` | `AGENTS.md` discovery and loading; `templates/` is a data folder for embedded `.md` templates (not a Go package) | `internal/bootstrap` |
 | `internal/memory` | parked | `internal/memory` |
-| `internal/sessions` | session entry tree and context builder | `internal/sessions` |
+| `internal/sessions` | typed in-memory log; persistent tree and branch projection remain planned | `internal/sessions` |
 | `internal/scheduler` | lanes and concurrency limits | `internal/scheduler` |
-| `internal/bus` | event publisher with bounded fan-out, channel messages | `internal/bus` |
+| `internal/bus` | bounded replay ring and followers; publication belongs to agent | `internal/bus` |
 | `internal/hooks` | sync and notify event dispatch; `handlers/` for command and HTTP handlers | `internal/hooks` |
 | `internal/permissions` | RBAC for gateway and HTTP callers | `internal/permissions` |
 | `internal/sandbox` | isolated command execution | `internal/sandbox` |
@@ -112,7 +113,7 @@ Ask has no `thirdparty/` folder. A vendor goes to the package of the capability 
 
 | Vendor kind | Location | Example |
 |---|---|---|
-| LLM API | `internal/providers/<vendor>*.go` | `anthropic.go`, `openai.go`, `acp/` |
+| LLM API | `internal/providers/<api>/`, one adapter for each wire API; a vendor is data (provider and model records) | `anthropic/`, `openai/`, `acp/`; shared fantasy plumbing in `fantasykit/` |
 | Chat platform | `internal/channels/<vendor>/` | `channels/telegram/` |
 | Backend of one tool | `internal/tools/<tool>_<vendor>.go` | `web_search_brave.go`, `web_search_tavily.go` |
 | Infrastructure client | its own package | `cache/` (Redis), `messaging/` (asynq), `sandbox/` (Docker) |
@@ -125,7 +126,7 @@ Ask has no `thirdparty/` folder. A vendor goes to the package of the capability 
 
 ## 4. Where interfaces live
 
-1. **A main interface is in the package that owns the concept**, usually in `types.go`: `tools.Tool`, `providers.Provider`, `agent.Agent`, `pipeline.Step`, `channels.Channel`, `hooks.Handler`, `sandbox.Sandbox`, `tracing.SpanExporter`.
+1. **A main interface is in the package that owns the concept**, usually in `types.go`: `tools.Tool`, `providers.Provider`, `agent.Agent`, `pipeline.Around`, `channels.Channel`, `hooks.Handler`, `sandbox.Sandbox`, `tracing.SpanExporter`.
 2. **Storage interfaces are in `internal/store`**, one file for each entity (`<entity>_store.go`). The implementation is in `store/gormstore`. `store.Stores` collects all store interfaces. A large interface is made from small ones (dewee `AgentStore` at `internal/store/agent_store.go:912-973`), and a consumer asks for the smallest one that it needs.
 3. **A small private interface is at the consumer**, lower-case, in the file that uses it (dewee `humanHandoffAgentStore` at `internal/tools/human_handoff.go:27`).
 
@@ -139,7 +140,7 @@ Create an interface only when there is a real second implementation or a test se
 |---|---|---|
 | Embedded base struct | Shared state and behavior for all implementations of one kind | `channels.BaseChannel` (dewee `internal/channels/channel.go:224`); `store.BaseModel` for ID and timestamps |
 | Shared helper package | Code shared by sibling implementations | dewee `internal/store/base` |
-| Optional capability interface | A feature that only some implementations have, found by type assertion | `tools.AsyncTool`, `channels.StreamingChannel`, `providers.ThinkingCapable` |
+| Optional capability interface | A feature that only some implementations have, found by type assertion | `tools.ConcurrencySafe`, `channels.StreamingChannel`, `providers.ThinkingCapable` |
 | Registry | Select an implementation by name at runtime | `tools.Registry`, `providers.Registry` |
 
 ---
@@ -173,36 +174,37 @@ Exception: the soft-delete marker `DeletedAt gorm.DeletedAt` carries `json:"-"`.
 - `cmd/server/main.go` only runs `fx.New(app.Module).Run()`, or applies migrations and exits when it gets `-migrate`.
 - `internal/app/app_test.go` runs `fx.ValidateApp`, so a missing dependency fails in `go test`.
 
-### 7.2 Runtime flow of one message
+### 7.2 Runtime ownership and lifecycle
 
-The agent runs Pi's two-level loop. One agent serves one session.
+One Agent serves one session and owns one active execution driver.
+Control handlers can change decisions; observers must not become a second execution owner.
+The session log is the execution record, and the model context is a projection of its message entries.
+SQLite persistence and branch selection remain roadmap work; the current writer is in memory.
 
-```
-Telegram/Slack ─► channels/<vendor> (embeds BaseChannel) ─► bus.InboundMessage
-WS / REST / gRPC ─► gateway ─► gateway/methods, http ─► ACP client of the leader ─┐
-TUI ─► ACP client of the leader;  headless ─► agent Go API (direct)               │
-                                                                                   ▼
-        scheduler (lanes: main / subagent / team / cron) grants a run slot
-                                                                                   ▼
-        agent (one session)
-          outer loop: wait for input, then take the next follow-up message when idle
-            inner loop, while a tool call or a steer message is pending:
-              transformContext ─► prepareRequest ─► model call (providers)
-              ─► for each tool call: beforeToolCall ─► run tool ─► afterToolCall
-              ─► steer messages are delivered after the whole tool batch
-            finishTurn ─► sessions append entries (store) ─► compaction when needed
-                                                                                   ▼
-        bus events (one stream, many watchers) ─► leader fan-out ─► clients;  tracing records spans
-```
+| Boundary | Owner | Reason |
+|---|---|---|
+| Input admission, steering, follow-up, removal, abort, and disposal | [Agent API](../internal/agent/agent.go) and [input claims](../internal/agent/queue.go) | One owner prevents queued input from falling between a closing run and idle |
+| Turn order and completion | [turn stages](../internal/agent/loop_stage.go) and [driver](../internal/agent/loop_run.go) | Lifecycle order stays visible in one driver rather than in extension callbacks |
+| AdmitStep, PrepareRequest, ExecuteModel, RecoverModel, BeforeTool, ExecuteTool, AfterTool, CompleteStep, and StopTurn | [pipeline contracts](../internal/pipeline/points.go) and [dispatch](../internal/pipeline/registry.go) | Controls use typed inputs and explicit decisions; they do not own the loop |
+| Model attempts and retry | [attempt owner](../internal/agent/loop_stream.go), [recovery](../internal/agent/recover.go), and [provider preparation](../internal/providers/prepare.go) | A retry uses the captured serving policy and preserves its billing binding |
+| Tool bodies and uncertain outcomes | [coordinator](../internal/agent/tool_coordinator.go) and [repair](../internal/agent/tool_repair.go) | Started work must finish before the run settles; repair never repeats a tool |
+| Log writes and exact request rebuild | [writer contract](../internal/sessions/writer.go) and [request log](../internal/agent/request_log.go) | The driver is the only writer and safe preparation values permit reconstruction without credentials |
+| Ordered local observation and remote follow | [publication](../internal/agent/emit.go), [consistent follow cut](../internal/agent/follow.go), and [bounded ring](../internal/bus/follow.go) | Local callbacks and nonblocking followers have separate backpressure contracts |
 
-Notes:
+Input uses the DeepSeek claim model.
+A turn boundary claims all steering input; a cycle boundary claims all steering input and one follow-up.
+AfterTool alone supplies added context that does not wake an idle Agent.
+These claims belong to the Agent, not the scheduler.
+The scheduler remains the planned owner of run lanes and concurrency limits.
+Abort ends current work; disposal also closes future admission and waits for started bodies.
 
-- `pipeline` holds the ordered steps of each hook point. `agent` calls them. `hooks` dispatches the lifecycle events to handlers and extensions.
-- Sessions are a tree of typed entries. The model context is a projection of one branch.
-- There are two queues for each session. A steer message is delivered after the current tool batch. A follow-up message is delivered when the agent is idle. Each queue delivers `all` messages or `one-at-a-time`.
-- There is no `interrupt` queue mode. Abort is a separate call on the agent.
-- The scheduler limits concurrent runs. It does not own the queues.
-- Design source: `plans/260930-2254-pi-feature-inventory-go-roadmap/roadmap.md` (section 2).
+The external JSON contract keeps Pi's turn and retry projection.
+A durable Ask turn can contain several model attempts, while Pi turn_start opens for each attempt.
+Failed attempts record safe outcome, failure, usage, and binding facts rather than raw assistant content.
+That content stays outside model history even when streamed output was already visible.
+For current domain terms, dispatch constraints, and follow semantics, read the [Agent](../internal/agent/README.md), [pipeline](../internal/pipeline/README.md), and [protocol](../pkg/protocol/README.md) guides.
+The [conformance matrix](../plans/261006-0933-lifecycle-event-pipeline-redesign/conformance-matrix.md) records tested behavior and deliberate upstream differences.
+It is execution evidence; it does not replace these package boundaries.
 
 ### 7.3 Process model: leader, clients and headless mode (ACP)
 
@@ -271,7 +273,8 @@ Ask does **not** copy these Grok parts: zombie-leader eviction, the acquire-slot
 
 **Fallback.** When the TUI cannot connect to the leader, it may build its own agent in process, as headless mode does. Grok does this (`PG/app/mod.rs:1107-1113`). The TUI uses one `AgentClient` interface with two implementations: `remote` (ACP over the leader socket, or over WebSocket to a remote agent) and `direct` (the in-process Go API). The UI code is the same for both.
 
-**Concurrent writers.** Headless mode and the leader can run at the same time and use the same data. The per-session cross-process lock (roadmap H8) and the `auth.json` file lock (roadmap D2) keep this safe.
+**Concurrent credential writers.** The [credential transaction](../internal/settings/README.md#credential-transaction) owns cross-process auth writes on one authoritative local filesystem.
+Session locking for concurrent headless and leader use remains planned under H8.
 
 **Editors.** Because the agent speaks standard ACP, an ACP editor (for example Zed) can run Ask as an agent over stdio (`ask acp`), as Grok does with `grok agent stdio`.
 
@@ -286,6 +289,26 @@ Ask does **not** copy these Grok parts: zombie-leader eviction, the acquire-slot
 | `internal/app` | fx modules: `AgentModule` (agent, providers, tools, sessions, settings, hooks), `LeaderServerModule`, `GatewayModule` |
 | `cmd/tui` (`ask`) | `ask` = TUI + `AgentClient` (remote). `ask -p` = `AgentModule` + `AgentClient` (direct). `ask leader` = `AgentModule` + ACP adapter + `LeaderServerModule`. `ask acp` = `AgentModule` + ACP adapter on stdio. |
 | `cmd/server` | `GatewayModule` + leader client |
+
+---
+
+### 7.4 Native credentials
+
+The headless auth route is an Ask adaptation of Pi's interactive login and logout.
+[cmd/tui](../cmd/tui/headless.go) dispatches it before prompt parsing or inference capture.
+[NewNativeAuth](../internal/app/auth_native.go) composes the real local store and native protocols without database or leader setup.
+[BindAuth](../internal/app/module_auth.go) connects one resolver to idle model readiness and each final model request.
+The agent owns canonical messages and events; auth does not own a second agent loop.
+
+Keep rotating grants, identity validation, and account discovery in [auth](../internal/auth/README.md).
+Keep file transactions in [settings](../internal/settings/README.md) and final HTTP guards in [provider adapters](../internal/providers/README.md#request-authentication).
+Providers receive a request-local snapshot with access material and destination binding, without refresh tokens, ID tokens, or a store handle.
+Auth HTTP is private and separate from inference capture.
+
+The product keeps one saved credential/account per provider and uses local-only logout.
+Deleting a ChatGPT record also removes the saved issued client; no client registration is retained for later sign-in.
+This policy does not establish compliance with all OpenAI account or session guidance.
+See the [operating guide](../README.md#native-auth-and-headless-prompts) for method selection and callback forwarding, and the [storage guide](../internal/settings/README.md#credential-transaction) for refresh recovery and shutdown limits.
 
 ---
 
@@ -312,6 +335,8 @@ Allowed: `tools` imports `providers`.
 | One composition root | Only `internal/app` and `cmd/server` import `store/gormstore` |
 | Core does not import adapters | `agent`, `pipeline`, `tools`, `providers`, `store`, `sessions`, `hooks`, `bus` must not import `acp`, `leader` |
 | Config through constructors | Only `internal/app` and `cmd/*` import `internal/config`. Runtime settings and credentials are files that `internal/settings` owns |
+| Providers receive resolved credentials | Providers must not import `internal/auth` or `internal/settings` |
+| Settings uses standard library only | `internal/settings` must not import other internal packages or dependencies |
 
 ---
 
@@ -321,12 +346,13 @@ Allowed: `tools` imports `providers`.
 |---|---|---|
 | A new builtin tool | `internal/tools/<family>_*.go` | `tools.Tool`; add it to the `tools` fx group |
 | A new backend of a tool | `internal/tools/<tool>_<vendor>.go` | the tool's backend interface (for example `SearchProvider`) |
-| A new LLM vendor | `internal/providers/<vendor>*.go` | `providers.Provider` |
+| A new LLM vendor | its provider and model records (data); a new adapter `internal/providers/<api>/` only for a new wire API | `providers.Provider` for a new adapter |
 | A new chat platform | `internal/channels/<vendor>/` | `channels.Channel`, embed `BaseChannel` |
-| A new hook-point step of a turn | `internal/pipeline/<name>_step.go` | `pipeline.Step` |
+| A new control handler | `internal/pipeline/<name>.go` | Register a typed handler with `pipeline.Registry`; stages stay private to agent |
 | A new session entry type | `internal/sessions/entry.go` | |
-| A new event type | `pkg/protocol` | the publisher is in `bus`, sync dispatch in `hooks` |
+| A new event type | `pkg/protocol` | Agent publishes lifecycle events; bus owns replay and follow; hooks owns the planned extension adapter |
 | A new user setting or credential | `internal/settings/` | |
+| Native login, refresh, or account access | `internal/auth/` | Reuse the app composition and existing provider adapters |
 | A new ACP method or update mapping | `internal/acp/`, types in `pkg/protocol` | |
 | A new persisted entity | model and interface in `internal/store/<entity>_store.go`, implementation in `internal/store/gormstore/<entity>.go`, SQL in `migrations/` | add the interface to `store.Stores` |
 | A new REST endpoint | `internal/http/<resource>.go` | call `store` interfaces or core packages; DTO only under section 6 |
@@ -340,7 +366,13 @@ Allowed: `tools` imports `providers`.
 ## 10. Database and entry points
 
 - **Database:** SQLite for both daemon and cloud mode (user decision, 2026-09-30). One migration folder, `migrations/`. PostgreSQL and its own migration folder are added only when cloud mode needs them.
-- **Entry points:** two binaries (user decision, 2026-09-30). `cmd/server` is the daemon (`ask-server`); operational commands (for example `migrate`) are flags or subcommands of it. `cmd/tui` is the `ask` binary (user decision, 2026-10-01, Grok model). It has three modes: the interactive TUI, headless mode (`ask -p`) and the leader (`ask leader`). The TUI and the daemon are ACP clients of the leader. Headless mode calls the agent's Go API in process. See section 7.3.
+- **Entry points:** two binaries (user decision, 2026-09-30).
+  `cmd/server` is the daemon (`ask-server`); operational commands (for example `migrate`) are flags or subcommands of it.
+  `cmd/tui` is the `ask` binary (user decision, 2026-10-01, Grok model).
+  It has the interactive TUI, headless mode (`ask -p`), leader (`ask leader`), and native auth commands (`ask auth`).
+  The TUI and the daemon are ACP clients of the leader.
+  Headless mode calls the agent's Go API in process.
+  See section 7.3.
 
 ---
 

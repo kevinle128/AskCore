@@ -1,0 +1,8 @@
+################ lane 3 json error
+$ ./ask --mode json "fail boom" | tail -1 | jq -c "{type,seq}"; echo "ask_exit=${PIPESTATUS[0]}"
+--- stdout
+{"type":"agent_settled","seq":9}
+ask_exit=0
+--- stderr
+--- exit 0
+

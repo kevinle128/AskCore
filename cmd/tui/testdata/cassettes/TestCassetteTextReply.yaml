@@ -1,0 +1,132 @@
+---
+version: 2
+interactions:
+    - id: 0
+      request:
+        proto: HTTP/1.1
+        proto_major: 1
+        proto_minor: 1
+        content_length: 422
+        host: ""
+        body: '{"max_tokens":384000,"messages":[{"content":[{"text":"Reply with exactly the word pong and nothing else.","type":"text"}],"role":"user"}],"model":"deepseek-v4.1-flash","output_config":{"effort":"medium"},"tools":[{"description":"Return the given text unchanged.","input_schema":{"properties":{"text":{"description":"The text to return.","type":"string"}},"required":["text"],"type":"object"},"name":"echo"}],"stream":true}'
+        headers:
+            Anthropic-Version:
+                - "2023-06-01"
+            Content-Type:
+                - application/json
+        url: https://token-plan.ap-southeast-1.maas.aliyuncs.com/apps/anthropic/v1/messages
+        method: POST
+      response:
+        proto: HTTP/2.0
+        proto_major: 2
+        proto_minor: 0
+        content_length: -1
+        body: |+
+            event:ping
+            data:{"type":"ping"}
+
+            event:message_start
+            data:{"type":"message_start","message":{"id":"msg_bf35e605-679d-4c0e-a85b-9d7a42ddefc9","type":"message","role":"assistant","model":"deepseek-v4.1-flash","content":[],"stop_reason":null,"stop_sequence":null,"usage":{"input_tokens":52,"output_tokens":0}}}
+
+            event:content_block_start
+            data:{"type":"content_block_start","index":0,"content_block":{"type":"thinking","thinking":"","signature":""}}
+
+            event:content_block_delta
+            data:{"type":"content_block_delta","index":0,"delta":{"type":"thinking_delta","thinking":"The"}}
+
+            event:content_block_delta
+            data:{"type":"content_block_delta","index":0,"delta":{"type":"thinking_delta","thinking":" user wants exactly"}}
+
+            event:content_block_delta
+            data:{"type":"content_block_delta","index":0,"delta":{"type":"thinking_delta","thinking":" \"pong\". But"}}
+
+            event:content_block_delta
+            data:{"type":"content_block_delta","index":0,"delta":{"type":"thinking_delta","thinking":" I"}}
+
+            event:content_block_delta
+            data:{"type":"content_block_delta","index":0,"delta":{"type":"thinking_delta","thinking":" have a tool \""}}
+
+            event:content_block_delta
+            data:{"type":"content_block_delta","index":0,"delta":{"type":"thinking_delta","thinking":"echo\""}}
+
+            event:content_block_delta
+            data:{"type":"content_block_delta","index":0,"delta":{"type":"thinking_delta","thinking":" that returns text"}}
+
+            event:content_block_delta
+            data:{"type":"content_block_delta","index":0,"delta":{"type":"thinking_delta","thinking":" unchanged. I"}}
+
+            event:content_block_delta
+            data:{"type":"content_block_delta","index":0,"delta":{"type":"thinking_delta","thinking":" should"}}
+
+            event:content_block_delta
+            data:{"type":"content_block_delta","index":0,"delta":{"type":"thinking_delta","thinking":" just reply"}}
+
+            event:content_block_delta
+            data:{"type":"content_block_delta","index":0,"delta":{"type":"thinking_delta","thinking":" \"pong\". No"}}
+
+            event:content_block_delta
+            data:{"type":"content_block_delta","index":0,"delta":{"type":"thinking_delta","thinking":" tool"}}
+
+            event:content_block_delta
+            data:{"type":"content_block_delta","index":0,"delta":{"type":"thinking_delta","thinking":" needed. Though"}}
+
+            event:content_block_delta
+            data:{"type":"content_block_delta","index":0,"delta":{"type":"thinking_delta","thinking":" maybe using"}}
+
+            event:content_block_delta
+            data:{"type":"content_block_delta","index":0,"delta":{"type":"thinking_delta","thinking":" echo would"}}
+
+            event:content_block_delta
+            data:{"type":"content_block_delta","index":0,"delta":{"type":"thinking_delta","thinking":" confirm"}}
+
+            event:content_block_delta
+            data:{"type":"content_block_delta","index":0,"delta":{"type":"thinking_delta","thinking":"..."}}
+
+            event:content_block_delta
+            data:{"type":"content_block_delta","index":0,"delta":{"type":"thinking_delta","thinking":" but"}}
+
+            event:content_block_delta
+            data:{"type":"content_block_delta","index":0,"delta":{"type":"thinking_delta","thinking":" the instruction says reply with exactly"}}
+
+            event:content_block_delta
+            data:{"type":"content_block_delta","index":0,"delta":{"type":"thinking_delta","thinking":" the word p"}}
+
+            event:content_block_delta
+            data:{"type":"content_block_delta","index":0,"delta":{"type":"thinking_delta","thinking":"ong."}}
+
+            event:content_block_delta
+            data:{"type":"content_block_delta","index":0,"delta":{"type":"thinking_delta","thinking":" Just"}}
+
+            event:content_block_delta
+            data:{"type":"content_block_delta","index":0,"delta":{"type":"thinking_delta","thinking":" reply"}}
+
+            event:content_block_delta
+            data:{"type":"content_block_delta","index":0,"delta":{"type":"thinking_delta","thinking":"."}}
+
+            event:content_block_delta
+            data:{"type":"content_block_delta","index":0,"delta":{"type":"signature_delta","signature":""}}
+
+            event:content_block_stop
+            data:{"type":"content_block_stop","index":0}
+
+            event:content_block_start
+            data:{"type":"content_block_start","index":1,"content_block":{"type":"text","text":""}}
+
+            event:content_block_delta
+            data:{"type":"content_block_delta","index":1,"delta":{"type":"text_delta","text":"pong"}}
+
+            event:content_block_stop
+            data:{"type":"content_block_stop","index":1}
+
+            event:message_delta
+            data:{"type":"message_delta","delta":{"stop_reason":"end_turn","stop_sequence":null},"usage":{"input_tokens":306,"output_tokens":58,"cache_creation_input_tokens":0,"cache_read_input_tokens":0,"prompt_tokens_details":{"cached_tokens":0}}}
+
+            event:message_stop
+            data:{"type":"message_stop"}
+
+        headers:
+            Content-Type:
+                - text/event-stream; charset=utf-8
+        status: 200 OK
+        code: 200
+        duration: 0s

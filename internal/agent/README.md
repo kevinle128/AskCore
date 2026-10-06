@@ -1,48 +1,78 @@
 # `internal/agent`
 
-The agent runtime. `Loop` runs Pi's two-level loop: the outer loop takes the next follow-up message when the agent is idle, and the inner loop runs model calls and tool calls until no tool call and no steer message is left. One agent serves one session. The prompt builder assembles the system prompt from the context files, the skills metadata and the tool list.
+The Agent is the execution owner for one session.
+It owns input delivery, lifecycle order, model recovery, tool coordination, and local observation.
+Control handlers and observers must not become a second loop or writer.
 
-## What belongs here
+## Source owners
 
-- `Loop` and its run logic (`loop_*.go`): the two loops, tool batches, retry, compaction trigger and abort
-- The steer and follow-up queues of one session (`queue.go`). Steer messages are delivered after the current tool batch. Follow-up messages are delivered when the agent is idle. Each queue has the mode `all` or `one-at-a-time`
-- System prompt assembly (`systemprompt*.go`)
-- The `Agent` interface, the typed Go API, and the run request and result types (`types.go`). Headless mode and the ACP adapter both call this API
-- The adapter that turns loop state into `pipeline` dependencies (`loop_pipeline_adapter.go`)
-
-## What does not belong here
-
-| Code | Put it in |
+| Responsibility | Owner |
 |---|---|
-| Hook points of one turn | `internal/pipeline` |
-| Tool implementations | `internal/tools` |
-| LLM vendor code | `internal/providers` |
-| Session log and context projection | `internal/sessions` |
-| Lanes and concurrency limits | `internal/scheduler` |
-| ACP mapping and the leader socket | `internal/acp`, `internal/leader` |
-| HTTP/WS handlers | `internal/http`, `internal/gateway` |
+| Public API, one active run, failure guard, abort, and disposal | [agent.go](agent.go), [types.go](types.go) |
+| Turn stages and transitions | [loop_stage.go](loop_stage.go), [loop_run.go](loop_run.go) |
+| Steering, follow-up, removal, and non-waking tool context | [queue.go](queue.go) |
+| Preparation, staged input commit, and settled model attempts | [loop_stream.go](loop_stream.go), [attempt.go](attempt.go), [context_source.go](context_source.go) |
+| Captured retry policy and Pi projection | [recover.go](recover.go), [retry_events.go](retry_events.go) |
+| Safe request deltas and exact in-memory rebuild | [request_log.go](request_log.go) |
+| Tool snapshot, body pool, exclusive barriers, and ordered outcomes | [tool_coordinator.go](tool_coordinator.go), [loop_tools.go](loop_tools.go) |
+| Repair of an uncertain open turn without re-execution | [tool_repair.go](tool_repair.go) |
+| Cycle identity and termination reasons | [lifecycle.go](lifecycle.go) |
+| Ordered local listeners and posted events | [emit.go](emit.go) |
+| Consistent follow snapshot, stream baseline, cursor, and epoch | [follow.go](follow.go) |
+| System prompt and tool declaration changes | [systemprompt.go](systemprompt.go), [loop_tool_changes.go](loop_tool_changes.go) |
 
-## Main interfaces
+## Lifecycle decisions
 
-- `Agent` and the run request/result types (`types.go`)
-- Hook points are declared in `pipeline`. The loop calls them in order
+A cycle is the work for one admitted input batch.
+A durable Ask turn can contain retry attempts; the Pi event projection starts a wire turn for each attempt.
+This distinction preserves the public JSON contract without making retry repeat admission.
+See [protocol terminology](../../pkg/protocol/README.md).
 
-## File names
+Preparation must succeed before admitted input enters history.
+A preparation failure publishes the failure tail but saves neither the staged input nor its error wrapper.
+The sole-writer and safe request-record constraints are in [sessions](../sessions/README.md).
+Failed attempts record safe outcome, failure, usage, and binding facts.
+Their assistant content stays outside model history; visible streamed output remains visible through the Pi retry sequence.
+Retry must preserve the selected credential's method, profile, and billing class.
 
-`loop_<topic>.go`, `queue*.go`, `systemprompt*.go`, `types.go`, `loop_pipeline_adapter.go`
+Input uses claims rather than delivery modes.
+Steering is claimed at a turn boundary; a cycle claim also takes one follow-up.
+AfterTool context uses the same staged admission path without waking an idle Agent.
+Abort and disposal are separate operations because stopping current work must not always end the session.
 
-## Imports
+A tool body that started must finish before the run settles or disposal completes.
+Drain has no time bound; a tool must cooperate with cancellation.
+Repair records uncertainty rather than repeating a potentially external side effect.
+See [coordinator](tool_coordinator.go), [repair](tool_repair.go), and [tool cancellation contract](../tools/types.go).
 
-- Allowed: `pipeline`, `providers`, `tools`, `store`, `sessions`, `skills`, `bootstrap`, `hooks`, `settings`, `tracing`, `bus`, `workspace`
-- Denied: `internal/gateway`, `internal/http`, `internal/channels/<vendor>` (core packages do not import transport); `internal/acp`, `internal/leader` (adapters wrap the core, never the reverse); `internal/config` (receive typed config through the constructor)
+## Extension and observation boundaries
 
-## Rules
+The public control surface is [pipeline.Registry](../pipeline/registry.go).
+Turn stages stay private to this package.
+A new control handler registers with that surface; it does not insert a second execution driver.
+The application registry and each Agent registry have separate ownership.
 
-- One model is shared everywhere. Add a DTO or a separate type with a mapper only when the data is really different (design section 6).
-- Receive dependencies and typed config through constructors. `internal/app` wires them with fx.
-- Create an interface only when there is a second implementation or a test seam.
-- The queues belong to the loop. There is no `interrupt` mode. Abort is a separate call on the `Agent`.
-- One agent serves one session. A `Router` is not needed until multi-agent routing is.
-- The loop is the only place that calls the hook points of `pipeline`.
+Local listeners are synchronous and ordered; the follow path provides bounded nonblocking observation.
+A listener failure must not alter the model or tool outcome.
+Callbacks can queue input or abort, but must not call blocking Dispose or WaitForIdle on their own invocation.
+There is no runtime goroutine guard for those blocking calls.
+The lock and re-entry contract is owned by [emit.go](emit.go) and [agent.go](agent.go).
+Never hold the Agent state lock while calling handlers, providers, tools, the log, or listeners.
 
-Design reference: [docs/ask-architecture-reference.md](../../docs/ask-architecture-reference.md)
+## Package boundaries
+
+Tool implementations belong in tools; wire adapters belong in providers.
+Control contracts belong in pipeline; log types belong in sessions; replay buffering belongs in bus.
+Run lanes remain the planned responsibility of scheduler.
+Transport and ACP adapters wrap this typed API and must not be imported here.
+
+## File names and imports
+
+Keep loop topics in `loop_<topic>.go` and use existing topic files for queues, recovery, repair, and publication.
+Stages stay unexported and their order is owned by loop_stage.go.
+Allowed imports include pipeline, providers, tools, sessions, bus, store, settings, skills, bootstrap, hooks, tracing, and workspace.
+Do not import gateway, http, channel vendors, acp, leader, or config.
+The [architecture import rules](../../docs/ask-architecture-reference.md#8-import-rules) and depguard own enforcement.
+
+[Architecture](../../docs/ask-architecture-reference.md) owns package decisions.
+The [conformance matrix](../../plans/261006-0933-lifecycle-event-pipeline-redesign/conformance-matrix.md) owns tested upstream differences.
