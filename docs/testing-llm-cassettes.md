@@ -10,10 +10,23 @@ They do not prove live subscription eligibility or provider approval.
 |---|---|---|
 | 1. Cassettes | Errors in the provider's HTTP handling, SSE parsing and event mapping, found on real replies | `cmd/tui/headless_record_test.go`, `cmd/tui/testdata/cassettes/` |
 | 2. Faux provider | Agent loop logic: tools, turns, aborts | `internal/providers/faux`, `cmd/tui/headless_test.go` |
-| 3. Hand-written faults | HTTP 429/500, a cut stream, bad JSON, a connection reset, SIGINT | `cmd/tui/headless_fault_test.go` |
+| 3. Hand-written faults and lifecycle fixtures | HTTP 429/500, a cut stream, bad JSON, a connection reset, retry, tool concurrency, steering, follow-up, slow listeners, and SIGINT | `cmd/tui/headless_fault_test.go`, `cmd/tui/headless_lifecycle_test.go` |
 | 4. Live smoke | Changes in the vendor API. Run it by hand only: `ASK_LIVE=1 go test -run Live ./cmd/tui` | `cmd/tui/headless_live_test.go` |
 
-Layers 1 and 3 go through `newHeadlessAgent` and `runHeadless`. This is the same setup and run code as `ask -p`. Only the HTTP transport is replaced.
+Layers 1 and 3 go through `newHeadlessAgent` and `runHeadless`.
+This is the same setup and run code as `ask -p`.
+Cassettes replace only the HTTP transport.
+The lifecycle fixture also supplies extra tools and records retry waits instead of sleeping.
+Its channel gates check overlap and exclusive execution without a timing guess.
+A slow listener checks that every event still reaches JSON output in publication order.
+The signal fixture checks that invoked tools return before disposal completes.
+
+The scripted faux retry fixture uses the product faux provider, provider registry, Agent constructor, builtin tools, and runHeadless.
+It checks print output and exit status, the durable RetryScheduled entry, and the JSON auto_retry_start event.
+It builds those components directly because newHeadlessAgent installs its fixed faux demo script on each request.
+It does not replace that demo script or add a production test seam.
+The main lifecycle and signal fixtures cover the full headless constructor with the real HTTP adapter.
+An Agent failure fixture injects a session writer failure and checks uncertain tool outcomes without running a tool again.
 
 ## How a cassette works
 
@@ -90,5 +103,7 @@ Never put credentials, authorization codes, ID tokens, or account hints in an ev
 
 - Replay serves the whole response at once. It does not replay SSE timing. The faux provider tests cover chunking and pacing.
 - Record reads the whole response before the client gets it. A reply that streams for longer than the 5-minute idle limit records as an idle timeout. Only `Content-Type` is kept in the response headers, so code that reads rate-limit or request-id headers sees none of them on replay.
-- The Token Plan adapter does not retry (`MaxRetries(0)`). So HTTP 429 and 500 end the run after one request.
+- The Token Plan adapter does not retry HTTP requests itself (`MaxRetries(0)`).
+  The Agent applies the serving provider's captured retry policy to transient failures.
+  Fault tests record its delays and check recovery or exhaustion without paid requests.
 - The idle timeout of `ask -p` is fixed at 5 minutes. It is tested at the provider level (`TestStreamIdleTimeoutAndActiveStream`), not through `ask -p`.

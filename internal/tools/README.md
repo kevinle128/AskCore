@@ -1,54 +1,51 @@
 # `internal/tools`
 
-Everything an agent can call as a tool. The package is flat: a filename prefix groups the files of one tool family. Tools run without an approval step. A user who wants to block a command writes an extension that handles the `tool_call` event.
+This package owns what the model can call: declarations, registration, argument preparation, and tool bodies.
+Tool execution order belongs in Agent, not in the registry.
+Tools have no built-in approval policy; an extension can block a call through the control adapter.
 
-## What belongs here
+## Source owners
 
-- The `Tool` interface, the optional `Sequential` and `ArgumentPreparer` interfaces, and the per-call `Context` (`types.go`). A tool returns `protocol.ToolExecutionResult`.
-- `SourceInfo`, where a registered tool came from (`source.go`)
-- `Registry` and `Snapshot` (`registry.go`), argument coercion (`coerce.go`) and validation with the model-facing error text (`validate.go`)
-- Builtin tools, one prefix for each family: `echo` (`echo.go`), `filesystem_*`, `shell*`, `web_fetch*`, `web_search*`, `subagent_*`, `skill_*`, …
-- Tool backends by vendor: `<tool>_<vendor>.go` (for example `web_search_brave.go`)
-
-## What does not belong here
-
-| Code | Put it in |
+| Responsibility | Owner |
 |---|---|
-| Remote MCP tools | `internal/mcp` (it registers a bridge tool here) |
-| LLM vendor code | `internal/providers` |
-| Sandbox runtime | `internal/sandbox` |
-| Role-based access for the gateway | `internal/permissions` |
+| Tool, ConcurrencySafe, ArgumentPreparer, and call context | [types.go](types.go) |
+| Provenance | [source.go](source.go) |
+| Registration, snapshots, and declaration projection | [registry.go](registry.go) |
+| Argument coercion and validation | [coerce.go](coerce.go), [validate.go](validate.go) |
+| Current builtin Echo | [echo.go](echo.go) |
 
-## Main interfaces
+## Decisions and constraints
 
-- `Tool`: `Decl()` and `Execute(ctx, Context, args)`. `ctx` is the abort signal.
-- Optional capability interfaces: `Sequential` (one such tool makes its whole batch sequential) and `ArgumentPreparer` (rewrites raw arguments before validation). Pass dependencies through the constructor, not through dewee-style `*Aware` setters.
-- `Registry` is copy-on-write: `Register` and `Unregister` replace the current `Snapshot`, and a `Snapshot` never changes. The agent loop takes one snapshot for each turn, so a tool added or removed during a run takes effect on the next turn
-- Tool backend interfaces, for example `SearchProvider` (dewee `internal/tools/web_search.go:44`)
+Concurrency approval belongs to the snapshot tool and the validated arguments of that call.
+No declaration, a false answer, or a classifier panic requires exclusive execution.
+An exclusive call is a barrier rather than a reason to make the entire batch serial.
+The [Agent coordinator](../agent/tool_coordinator.go) owns the rolling pool and ordering.
 
-## File names
+Arguments are prepared once and frozen before control handlers and the body.
+A pre-tool control may allow, deny, or cancel; it cannot mutate the executable arguments.
+The model-facing declaration is an allowlist and carries no host callback or concurrency classifier.
+See [registry tests](registry_test.go) and [validation tests](validate_test.go).
 
-`<family>_<topic>.go`; vendor backend `<tool>_<vendor>.go`; add each tool to the fx value group `tools`
+Cancellation must finish started work without leaving external side effects running.
+Tool bodies must return promptly when their context is cancelled; process tools must stop the entire process group.
+The Agent waits without a time bound and stays busy until bodies return.
+The interface godoc in types.go owns this tool author contract.
 
-## Registry rules
+Tools are taken from one immutable snapshot for each turn.
+A registry change can affect a later request only after the model is told about the changed declarations.
+Input schemas compile at registration so an invalid schema cannot enter a request.
+No permission popup or separate approval layer is part of the current registry.
 
-- `Register` rejects a tool with no name, no parameters schema, a schema that does not compile, or a name that is taken. The schema compiles once, at `Register`. A `$ref` to a file or URL is rejected.
-- `Lookup` is exact and case-sensitive. `Decls` returns declarations in registration order.
-- `Prepare` returns the arguments `Execute` sees. Missing or `null` input becomes `{}`. Then a non-required `null` property is removed when its schema rejects `null`, values are coerced, and the result is validated.
-- Coercion is one table for every schema (roadmap D21, Pi's `AI:utils/validation.ts:59-131`). A string becomes a number or integer, `"true"`/`"false"`/`1`/`0` become booleans, a number or boolean becomes a string, `null` becomes the zero value of a required field. `"5.7"` is never truncated to an integer. With several types the first listed type that changes the value wins. An `anyOf` or `oneOf` arm that already validates keeps the value.
-- A validation error uses Pi's text and TypeBox's messages, with the raw arguments echoed and capped at 2 KiB plus `... (truncated)`.
+## Package boundaries
 
-## Imports
+MCP bridges belong in mcp and provider wire code belongs in providers.
+A tool can call providers, but providers must not depend on tools.
+Sandbox policy belongs in sandbox and gateway RBAC belongs in permissions.
 
-- Allowed: `providers` (tools that call a model), `store`, `sandbox`, `bus`, `skills`, `workspace`, `tracing`
-- Denied: `internal/agent`; `internal/gateway`, `internal/http`, `internal/channels/<vendor>` (core packages do not import transport); `internal/acp`, `internal/leader` (adapters wrap the core, never the reverse); `internal/config`
+## File names and imports
 
-## Rules
-
-- One model is shared everywhere. Add a DTO or a separate type with a mapper only when the data is really different (design section 6).
-- Receive dependencies and typed config through constructors. `internal/app` wires them with fx.
-- Create an interface only when there is a second implementation or a test seam.
-- Code that runs tools for a turn reads a `Snapshot`, not the live `Registry`, so the tools it runs are the tools the model was told about.
-- There is no built-in allow, deny or approval policy. A later policy handler will be a hook handler, not a file in this package.
-
-Design reference: [docs/ask-architecture-reference.md](../../docs/ask-architecture-reference.md)
+Use `<family>_<topic>.go` and `<tool>_<vendor>.go` when a real tool or backend needs that boundary.
+Pass dependencies through constructors.
+Allowed imports include providers, store, sandbox, bus, skills, workspace, and tracing.
+Do not import agent, transport packages, acp, leader, or config.
+See [architecture](../../docs/ask-architecture-reference.md).

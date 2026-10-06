@@ -161,7 +161,7 @@ AskCore/
 │   ├── http/              # REST handlers
 │   ├── store/             # Models + store interfaces; gormstore/ = GORM implementation
 │   ├── migrations/        # Migration runner
-│   └── ...                # Agent runtime packages (scaffold): agent, pipeline, providers, tools, ...
+│   └── ...                # Agent runtime and capabilities; see internal/README.md
 ├── migrations/            # SQL files (SQLite)
 ├── pkg/protocol/          # WS wire contract
 ├── proto/                 # gRPC definitions

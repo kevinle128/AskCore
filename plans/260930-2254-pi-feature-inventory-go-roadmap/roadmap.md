@@ -5,6 +5,15 @@ Revision 4 (2026-10-01): the H2 port analysis `plans/reports/xia-261001-h2-agent
 Revision 5 (2026-10-05): the H4 port analysis `plans/reports/xia-261005-1408-h4-more-wire-apis-pi-port-analysis.md` and the user decisions recorded there are applied (D11, D22, H1, H3, H4, H9, H17 text, and section 9).
 Revision 6 (2026-10-06): distribute the accepted provider/auth and tool-contract design across H4, H5, H7, new H7a, H8, H9, H13, H17 and the TUI phases; H4 is not the whole provider program.
 Revision 7 (2026-10-06): prioritize Anthropic/ChatGPT/xAI subscription delivery because the user's Alibaba Token Plan expires soon; pull credential persistence into H7a and remove full H5-H7 prerequisites.
+Revision 8 (2026-10-06): D19 is revised by the user to the DeepSeek tool-outcome model; the earlier H2/H3 Pi abort model is historical.
+Revision 9 (2026-10-06): add D23 (user): every model request can be rebuilt from the session log, by logging the hook changes for each Attempt.
+Revision 10 (2026-10-06): add D24 (user): the lifecycle and Event Pipeline redesign is one phase before H8, with a DeepSeek behavior conformance check.
+Revision 11 (2026-10-06): add D25 (user): DeepSeek is the default for the lifecycle redesign, with listed exceptions.
+Revision 12 (2026-10-06): D25 overrides D1 inside the lifecycle redesign (user); the Pi queue modes `all` / `one-at-a-time` are removed there.
+Revision 13 (2026-10-06): add D26 (user): admitted input is committed after request preparation, as DeepSeek; D20 is narrowed on that path.
+Revision 14 (2026-10-06): after the source audit `plans/reports/review-261006-1104-deepseek-lifecycle-source-audit.md`: D19 reaffirmed (no drain bound), add D27 (input removal, non-waking added context), D28 (provider Prepare step for the D23 record), D29 (Dispose separate from abort). D29 queue handling corrected to "cleared", as DeepSeek (user, 2026-10-06).
+Revision 15 (2026-10-06): the lifecycle redesign is implemented (plan `261006-0933-lifecycle-event-pipeline-redesign`).
+The implemented control points, in-memory request reconstruction, queues, retry, tool outcomes, disposal, and follow path are removed from the remaining H8, H9, H11, and H12 work.
 Reference: Pi 1.0.1, commit `4c6fb7cfe`, at `/Users/dale/Desktop/workspace/opensources/pi` (user, 2026-10-05; before that Pi 0.99.1, commit `2bbfcca4`). Line citations written before 2026-10-05 are at `2bbfcca4`. Each phase checks and fixes the citations it uses.
 Inputs: `inventory-harness.md` (H-*), `inventory-extensions.md` (E-*), `inventory-tui.md` (T-*), `timeline.md`, the edge-case report `plans/reports/researcher-260930-2254-pi-edge-cases.md` (E§N; the top-30 list is E§24#N), and the waku report `plans/reports/researcher-260930-2254-waku-watch-it-think.md`.
 
@@ -51,15 +60,23 @@ The user answers these one per turn, in this order. Each blocked phase starts wi
 | D15 | Fullscreen (alt-screen) in the first TUI milestone | T1, T2 | Inline only first, or both | **Decided (must have first): inline only** in the first TUI milestone. Fullscreen is later. |
 | D16 | External agent protocol | H13 | **Decided (user, 2026-10-01): ACP** (Agent Client Protocol, JSON-RPC 2.0, JSON) plus `_ask/*` extension methods and `_meta` is the only protocol between the agent process and anything outside it (leader socket, remote agent over WebSocket, editors over stdio). Inside the process and in headless mode: direct Go calls. No protobuf on ACP links; protobuf/gRPC only for internal service APIs and OTLP (Grok does the same: `plans/reports/researcher-261001-0117-grok-protobuf-usage.md`). | Done. |
 | D17 | ACP Go SDK | H13 | **A:** `coder/acp-go-sdk` v0.13.5 (no release or maintainer reply since June 2026, per a fork's README). **B:** the fork `lx-wnk/acp-go-sdk` v1.21.0, tracks ACP schema 1.21.0, same module path (needs `replace`). **C:** `caelis-labs/acp-go-sdk` v1.4.0. **D:** generate our own types from the ACP JSON schema. | Keep open until a conformance check passes at H13a: pin the SDK and the ACP schema version separately; prove custom `_ask/*` methods, preserved `_meta`, notifications and `session/cancel` through the leader; map each M1 Go API call to ACP. Note: an ACP `session/prompt` response ends the turn and carries a stop reason, while Pi's `prompt` response only means "accepted"; define when the ACP response is sent relative to `agent_settled` (after retries and compaction). Check the current ACP schema for standard usage updates before adding `_ask/*` usage methods. The same Go API tests run against the direct and the remote client. |
-| D18 | Terminal record of JSON mode before H9 | H2 | **A:** pull a minimal `agent_settled` into H2. **B:** end at `agent_end` until H9. **C:** defer JSON mode to H8. | **Decided (user, 2026-10-01): A.** H2 emits `agent_settled` right after `agent_end`. H9 moves the emit point after retry and compaction. A JSON reader never changes. |
-| D19 | Abort in the middle of a tool batch | H2, H3 | **A:** deviate: every unstarted call gets "Operation aborted". **B:** as Pi: prepared calls get "Operation aborted"; calls after the break point get no events and no result; the loop makes one more stream call with the aborted signal; `transformMessages` (H3) synthesizes "No result provided" at replay. | **Decided (user, 2026-10-01): B, as Pi** (`A:agent-loop.ts:575-577,613-643`; `AI:api/transform-messages.ts:158-180`). The H2 pairing test covers the loop part only. The full pairing test after abort is in H3. |
+| D18 | Terminal record of JSON mode before H9 | H2 | **A:** pull a minimal `agent_settled` into H2. **B:** end at `agent_end` until H9. **C:** defer JSON mode to H8. | **Decided (user, 2026-10-01): A.** H2 emits `agent_settled` right after `agent_end`. The lifecycle redesign now places it after retry and queued work; future compaction must remain inside that final boundary. A JSON reader never changes. |
+| D19 | Abort in the middle of a tool batch | H2, H3 | **A:** deviate: every unstarted call gets "Operation aborted". **B:** as Pi: prepared calls get "Operation aborted"; calls after the break point get no events and no result; the loop makes one more stream call with the aborted signal; `transformMessages` (H3) synthesizes "No result provided" at replay. | **Decided (user, 2026-10-01): B, as Pi** (`A:agent-loop.ts:575-577,613-643`; `AI:api/transform-messages.ts:158-180`). The H2 pairing test covers the loop part only. The full pairing test after abort is in H3. **Revised (user, 2026-10-06): DeepSeek model** (answer "B" to the question in `plans/reports/review-261006-0848-lifecycle-pipeline-report-audit.md`). Normal cancellation records an outcome for every call of the batch: `TOOL_ABORTED_BEFORE_DISPATCH` for a call that never started, `ABORTED` for a started body, and drains started bodies before the Step closes. Crash or unexpected failure repair appends `TOOL_NOT_STARTED` or `TOOL_OUTCOME_UNKNOWN` results for the open tail only, and never re-executes a tool (DeepSeek `5badb15`: `packages/core/agent-loop/src/tool-calls.ts:221-260`, `packages/core/session/src/repair.ts:14-197`). **Implemented by the lifecycle redesign.** The earlier H2/H3 Pi abort behavior is history, not the current contract. Design: `plans/reports/architecture-261006-ask-lifecycle-event-pipeline.md` section 9.4. **Reaffirmed (user, 2026-10-06):** started bodies drain with no time bound, as DeepSeek (`tool-calls.ts:233`) and Pi (`A:agent-loop.ts:646`); the Agent stays busy until they return. Each tool must return promptly on `ctx` cancel; process tools kill the whole process group (Pi `bash.ts:126-144`), enforced in H5. |
 | D20 | Hook and stream failure contract | H2 | **A:** recover inside the loop. **B:** as Pi. | **Decided (user, 2026-10-01): B, as Pi.** A throw or panic in a tool, `prepareArguments`, validation, `beforeToolCall` or `afterToolCall` becomes an error tool result (`A:agent-loop.ts:769-775,841-847,892-895`). An error from `transformContext`, `convertToLlm`, `getApiKey`, `prepareRequest`, `finishTurn` or the stream function is not caught by the loop. The loop returns it, and the `Agent` wrapper builds the error assistant message plus `message_start`, `message_end`, `turn_end` and `agent_end` (`A:agent.ts:523-548`). |
 | D21 | Tool argument coercion | H2 | Pi runs TypeBox `Value.Convert` for TypeBox schemas and a custom table (`AI:utils/validation.ts:59-131`) for plain JSON schemas. Ask has only JSON schemas. | **Decided (user, 2026-10-01):** one Go coercion table for all schemas, based on Pi's custom table plus the union rule (an arm that already validates is kept). No truncation of floats to integers (TypeBox turns `"5.7"` into 5; Ask does not). |
-| D22 | Provider wire layer | H2 (Go version), H3, H4, H17 | **A:** Ask's own adapters over HTTP and the H1 SSE reader (Pi's way). **B:** `charm.land/fantasy` (Apache-2.0, v0.45.2, needs Go 1.27.0) behind one Ask adapter. | **Decided (user, 2026-10-01): B.** Go is raised to 1.27.0 (done: build, `go test ./...` and `golangci-lint` pass; a scratch copy with fantasy v0.45.2 also passes `go test -race ./...` and lint). Ask's `pkg/protocol` messages and `providers.Stream` stay the core contract. One adapter maps Ask messages to `fantasy.Call` and `fantasy.StreamPart` to the H1 `Assembler`. Fantasy types never leave that adapter package. Fantasy's own agent loop, retry and tool runner are not used: the loop is H2, retry is H9 (fantasy v0.45.2 already sets the SDK retries to 0 in its Anthropic and OpenAI providers, `providers/anthropic/anthropic.go:277`, `providers/openai/openai.go:168`; keep a lock-in test). `transformMessages` stays in Ask (H3). The H1 SSE reader stays unused unless a provider needs it. The dependency is added by the first PR that imports it. **Placement (user, 2026-10-02, option A):** the fantasy adapter is built in H3, not H2. H2 runs on faux only. **Update (user, 2026-10-05):** (1) Fantasy v0.45.2 cannot replay OpenAI Responses reasoning statelessly. The user chose to patch fantasy ("sửa fantasy, chúng ta có source mà"), so D22 stays. Ask uses the fork through `replace charm.land/fantasy => github.com/kevinle128/fantasy <pseudo-version>` in `go.mod` (a local `go.work` is allowed during fork work). The fork already has `bff4512` (inline reasoning replay with `store:false`, encrypted content from `output_item.done`), `76fdec8` (Chat stream must end with `finish_reason`) and `9a5405c` (Anthropic large tool numbers). Fork work still open: F1 message item id and `phase` on replay, F2 function-call item id, F3 Responses `ExtraBody`, F4 status and raw reason on Responses stream errors, F8 the echoed `service_tier` (H4 port analysis, "State of the fantasy fork"). (2) Fantasy is infrastructure ("fantasy là ở tầng infrastructure, các adapter sử dụng cái gì là việc của adapter"). There is one adapter package for each wire API, named for what it serves: `internal/providers/anthropic/` and `internal/providers/openai/`. Each adapter chooses its own libraries. The shared fantasy plumbing (StreamPart-to-Assembler fold, idle timeout, error mapping, witness) is one infrastructure package, for example `internal/providers/fantasykit/`. A vendor such as Alibaba Token Plan is data (provider and model records), not a package. Core files in `internal/providers/*.go` and packages outside providers do not import fantasy or the vendor SDKs (depguard). |
+| D22 | Provider wire layer | H2 (Go version), H3, H4, H17 | **A:** Ask's own adapters over HTTP and the H1 SSE reader (Pi's way). **B:** `charm.land/fantasy` (Apache-2.0, v0.45.2, needs Go 1.27.0) behind one Ask adapter. | **Decided (user, 2026-10-01): B.** Go is raised to 1.27.0 (done: build, `go test ./...` and `golangci-lint` pass; a scratch copy with fantasy v0.45.2 also passes `go test -race ./...` and lint). Ask's `pkg/protocol` messages and `providers.Stream` stay the core contract. One adapter maps Ask messages to `fantasy.Call` and `fantasy.StreamPart` to the H1 `Assembler`. Fantasy types never leave that adapter package. Fantasy's own agent loop, retry and tool runner are not used: the loop is H2 and Agent retry is implemented by the lifecycle redesign (fantasy v0.45.2 already sets the SDK retries to 0 in its Anthropic and OpenAI providers, `providers/anthropic/anthropic.go:277`, `providers/openai/openai.go:168`; keep a lock-in test). `transformMessages` stays in Ask (H3). The H1 SSE reader stays unused unless a provider needs it. The dependency is added by the first PR that imports it. **Placement (user, 2026-10-02, option A):** the fantasy adapter is built in H3, not H2. H2 runs on faux only. **Update (user, 2026-10-05):** (1) Fantasy v0.45.2 cannot replay OpenAI Responses reasoning statelessly. The user chose to patch fantasy ("sửa fantasy, chúng ta có source mà"), so D22 stays. Ask uses the fork through `replace charm.land/fantasy => github.com/kevinle128/fantasy <pseudo-version>` in `go.mod` (a local `go.work` is allowed during fork work). The fork already has `bff4512` (inline reasoning replay with `store:false`, encrypted content from `output_item.done`), `76fdec8` (Chat stream must end with `finish_reason`) and `9a5405c` (Anthropic large tool numbers). Fork work still open: F1 message item id and `phase` on replay, F2 function-call item id, F3 Responses `ExtraBody`, F4 status and raw reason on Responses stream errors, F8 the echoed `service_tier` (H4 port analysis, "State of the fantasy fork"). (2) Fantasy is infrastructure ("fantasy là ở tầng infrastructure, các adapter sử dụng cái gì là việc của adapter"). There is one adapter package for each wire API, named for what it serves: `internal/providers/anthropic/` and `internal/providers/openai/`. Each adapter chooses its own libraries. The shared fantasy plumbing (StreamPart-to-Assembler fold, idle timeout, error mapping, witness) is one infrastructure package, for example `internal/providers/fantasykit/`. A vendor such as Alibaba Token Plan is data (provider and model records), not a package. Core files in `internal/providers/*.go` and packages outside providers do not import fantasy or the vendor SDKs (depguard). |
+| D23 | Rebuild each model request from the session log | H8, H12 | **A:** as DeepSeek ("model-visible means logged", DeepSeek `5badb15` `docs/architecture.md:127`): for each Attempt, log enough to rebuild the exact request. **B:** do not save the transient request projection. **C:** save only a safe summary and hash for each Attempt. **D:** defer to H8. | **Decided (user, 2026-10-06): A.** For each Attempt, log the difference that request and context hooks made against the selected history (added, removed or changed messages, system prompt, tool set, model and options), not a full copy of the request. The selected history plus these entries must rebuild the exact request the model saw. Credentials, tokens and account identity are never logged. These entries are not ordinary model messages. The entry types and D23 request rebuild are implemented in memory; H8 persists them in SQLite and the dashboard (H12) can show the rebuilt request. |
+| D24 | Placement of the lifecycle and Event Pipeline redesign | H2 to H12 | **A:** one redesign phase now, before H8. **B:** a small lifecycle core before H8, the rest in H8, H9, H11 and H12. **C:** all in H9. **D:** defer. | **Decided (user, 2026-10-06): A.** One thorough redesign phase lands before H8, based on `plans/reports/architecture-261006-ask-lifecycle-event-pipeline.md` and its audit `plans/reports/review-261006-0848-lifecycle-pipeline-report-audit.md`. It must be tested in depth and its behavior compared against DeepSeek (`5badb15`) test by test; each divergence from DeepSeek is deliberate and recorded. |
+| D25 | Default when Ask and DeepSeek differ in the lifecycle redesign | D24 phase | **A:** DeepSeek by default. **B:** Pi / current Ask by default. **C:** decide each case. | **Decided (user, 2026-10-06): A.** Follow DeepSeek (`5badb15`) by default. Exceptions: decisions already recorded as decided (D4, D11, D18, D20, the tool registry snapshot of 2026-10-05, `End > Continue > Proceed`, all-results tool termination, no proactive mid-turn compaction) and the external JSON event stream of `ask -p --mode json`, which stays Pi-compatible. Each exception is a divergence row in the conformance matrix with a reason and its own test. The user is asked again only for exceptions that are real trade-offs. **Scope against D1 (user, 2026-10-06): D25 overrides D1 inside the lifecycle redesign.** Where Pi and DeepSeek differ in lifecycle behavior (for example, the Pi `all` / `one-at-a-time` queue modes), DeepSeek wins. D1 still holds outside the lifecycle (the dewee package model, sessions as an entry tree). |
+| D26 | When the user message is saved: before or after request preparation | D24 phase | **A:** as DeepSeek (`agent-loop/src/agent.ts:408-423`): save admitted input only after request preparation succeeds. **B:** as Pi: save at admission, before preparation. **C:** DeepSeek timing plus a saved D20 error message. **D:** defer to H8. | **Decided (user, 2026-10-06): A.** Admitted input is committed right after the first attempt's request preparation succeeds. On a preparation failure or a cancel during preparation, nothing is committed: no user message and no error message. This narrows D20 on this path: the Agent wrapper still publishes the error events (message_start, message_end, turn_end, agent_end), but the error message is not saved to history. The JSON stream differs from Pi on this one failure path (no user message before the error). A retry never commits the input twice. A missing credential fails inside the stream call, after the commit, so it still gives a saved assistant error. **Implemented by the lifecycle redesign.** |
+| D27 | Input removal by ID and non-waking added context | D24 phase | **A:** both, as DeepSeek (`inbox.ts:152`; `agent.ts:535-536`). **B:** removal only. **C:** neither. **D:** defer. | **Decided (user, 2026-10-06): A.** The Agent gets `Remove(inputID)` for a pending input that the model has not received. `AfterTool` can return added context that enters the next step without waking the Agent (DeepSeek `additionalContexts`, used by `hooks-codex` PostToolUse). **Implemented by the lifecycle redesign.** |
+| D28 | Where the D23 request record is taken | D24 phase, H8 | **A:** a provider `Prepare` step, as DeepSeek (`llm/src/index.ts:889-891`, `adapterDefaults` in `agent-loop/src/agent.ts:609-613`). **B:** log the redacted wire body. **C:** narrow D23 to the logical request. **D:** defer to H8. | **Decided (user, 2026-10-06): A.** Each adapter computes the safe effective values once in `Prepare` (clamped max tokens, sampling, endpoint path, non-secret headers). The Agent logs that result, and `Stream` uses the same prepared values. Every value that is not logged (credentials, secret headers) is named. Tests compare the rebuilt request with the body the real adapter sends (`httptest`), with defaults and after a model switch. **Implemented by the lifecycle redesign.** |
+| D29 | Disposal separate from abort | D24 phase | **A:** `Dispose()` as DeepSeek (`agent-loop/src/index.ts:526-556`; disposed cause blocks wake, `agent.ts:200,220`). **B:** abort only, with a no-wake flag for headless exit. **C:** defer to H13. | **Decided (user, 2026-10-06): A.** `Dispose()` is memoized, closes admission (later calls return `ErrDisposed`), cancels with cause `disposed` (no wake; queues cleared, as DeepSeek `agent-loop/src/index.ts:543` with `agent.ts:175-177`; corrected by the user on 2026-10-06 because the earlier "queues kept" text misdescribed DeepSeek), waits for started tools to drain (D19), closes the writer, and publishes `agent_disposed`. Headless uses it for SIGINT and SIGTERM. **Implemented by the lifecycle redesign.** |
 
 ## 2. Phase 0: architecture alignment (documentation only)
 
 Status: done (2026-10-01).
+The comparison below is historical scaffold and Pi evidence; current lifecycle ownership is in the package guides and the implemented H2 contracts.
 
 - **Waits on:** D1, D2, D3, D4.
 - **Why:** the scaffold READMEs describe a dewee chat-bot runtime. Every later phase builds on these contracts, so fix them first.
@@ -90,7 +107,7 @@ P0 ─► H1 events ─► H2 loop ─► H3 first provider ─► H4 more provi
       H7 models+credentials ◄──────────────────────────────────────────────────────────────┘
           │
           ▼
-      H8 session log ─► H9 queues+retry ─► H10 compaction ─► H11 bus+hooks ─► H12 observability ─► H13 gateway
+      H8 durable log ─► H9 overflow+usage ─► H10 compaction ─► H11 extensions ─► H12 observability ─► H13 gateway
                                                                                                     │
             ┌────────────────────┬────────────────────────┬─────────────────────────────────────────┤
             ▼                    ▼                        ▼                                         ▼
@@ -103,9 +120,11 @@ Rules behind this order (all checked by the review):
 - The faux provider and the partial-JSON parser (H1) come before the loop (H2).
 - H2 runs in memory (`--no-session` semantics) behind a context-source interface. H8 swaps in the session projection without a rewrite.
 - The settings (H6) come before the catalog, credentials and resolution (H7). Tools (H5) use hard-coded defaults until H6 wires the settings.
-- The session log (H8) comes before retry (H9) and compaction (H10), because both use `context_edit`.
+- The in-memory lifecycle log and retry are implemented before H8.
+  H8 makes that log durable; H10 adds compaction entries and projection.
 - Agent-core events come in H1. Session events (`agent_settled`, `queue_update`, `compaction_*`, `auto_retry_*`, `entry_appended`) come in the phase that emits them.
-- The bus (H11) comes before the observability core (H12). The gateway event feed (H13) comes before W1 and the T2 inspector.
+- The follow ring and typed dispatch are implemented; H11 maps extension handlers onto them.
+  The gateway event feed (H13) comes before W1 and the T2 inspector.
 
 ## 4. Harness track
 
@@ -135,64 +154,29 @@ Rules behind this order (all checked by the review):
 
 ### H2: The agent loop, plus print and JSON mode (in memory)
 
-- **Waits on:** D5. Uses D18 to D21 (all decided).
-- **Concept:** call the model, run the tool calls, feed the results back, and stop when the model stops.
-- **Read in Pi:** `A:agent-loop.ts` (940 lines), `A:types.ts`, `A:agent.ts:230-612`, `AI:utils/validation.ts`, `C:modes/print-mode.ts`, `C:modes/json-event.ts`, `C:core/output-guard.ts`, `C:cli/args.ts`, `C:cli/initial-message.ts`, `C:cli/file-processor.ts`, `C:main.ts:80-122`. The port analysis with `file:line` evidence: `plans/reports/xia-261001-h2-agent-loop-pi-port-analysis.md`.
-- **Owns:**
-  - H-LOOP-01 (entry points `Run` and `Continue`; `Continue` with an assistant tail or an empty context is an error).
-  - H-LOOP-02 (two-level loop). Port `runLoop` (`A:agent-loop.ts:163-321`) 1:1, with `lastCompletedTurn` and `explicitContinuation`. `finishTurn` `continue` gives exactly one more request.
-  - H-LOOP-08 (abort through `context.Context`). Abort in the middle of a batch follows Pi (D19).
-  - H-LOOP-09 (parallel and sequential modes). One sequential tool makes the whole batch sequential. Parallel: preflight in source order, `tool_execution_end` in completion order, result messages in source order after the batch. No concurrency limit.
-  - H-LOOP-10 (the tool pipeline). Events and hooks see the raw arguments; `execute` sees the validated ones. `afterToolCall` runs only for calls that executed. Updates after settle are ignored.
-  - H-LOOP-11 (the truncated-output guard). The error text is byte-exact with `A:agent-loop.ts:493`.
-  - H-LOOP-13 (error ends the run). `finishTurn` is still called; its decision is ignored.
-  - H-LOOP-14, core hook set: `transformContext`, `convertToLlm`, `getApiKey`, `prepareRequest`, `finishTurn`, `beforeToolCall`, `afterToolCall`, plus the two poll hooks `getSteeringMessages` and `getFollowUpMessages`. The poll hooks return empty lists until H9 fills them. `prepareNextTurn` and the rest are in H11. Failure contract per D20.
-  - H-LOOP-17, part: state, one active run, ordered listeners, `WaitForIdle`, `Reset` (an error while running), and the run-failure path of D20. The queues are in H9.
-  - H-TOOL-12 (argument coercion, per D21). The validation error echoes the raw arguments with a size cap (Pi has no cap).
-  - H-TOOL-13 (the result shape). The tool result message holds `content` (empty is `[]`), `details`, `usage`, `isError` and `timestamp`. `structuredContent` and `terminate` are in events only. `toolName` is the name that the model sent.
-  - H-TOOL-21, loop part: the length guard and the error/aborted path give one result per call; prepared calls get "Operation aborted" on abort. Unprocessed calls after an abort are repaired in H3 (D19).
-  - H-MODE-01 (mode selection: `--mode json` > print if `-p` or stdin/stdout is not a TTY > interactive; `--mode text` does not force print).
-  - H-MODE-02 (print mode), H-MODE-03 (JSON mode; P1, pulled; the session header record is added in H8, and Pi skips it when there is no header).
-  - H-CONF-09, basic flags: `-p`, `--mode`, `--provider`, `--model`, `--api-key`, `--thinking`, `--`, positional messages, piped stdin and `@file` (text only).
-- **Also builds:**
-  - A minimal `agent_settled` event right after `agent_end` (D18; H-LOOP-21 stays owned by H9).
-  - One tool-context struct: ctx, cwd, abort signal, update callback (timeline lesson 5).
-  - `SourceInfo` provenance on tools (lesson 6), kept in the registry, as in Pi. The registry rejects a tool without a schema and a duplicate name.
-  - A context-source interface with an in-memory log. It plugs in at `prepareRequest`, the hook that Pi's session uses to project the session log into each request (`C:core/agent-session.ts:746-769`). H8 swaps in the session projection there.
-  - The initial system message with the system prompt and all tool declarations (`createInitialSystemMessage`, timestamp 0). The tool set is fixed for a run; the tool-delta messages (H-LOOP-15) come in H8.
-  - Hook points as typed function fields, one for each hook point. Ordered multi-handler steps come in H11. The `pipeline` README is updated to match.
-  - The output guard: in print and JSON mode, stdout carries protocol output only, through one writer. Logs go to stderr. A stdout write error (for example EPIPE) gives exit 1. Stdout is flushed before exit.
-- **CLI and mode rules (from Pi unless marked):**
-  - Stdin (trimmed), `@file` text and `messages[0]` are joined with no separator. The other messages run as sequential prompts. A thrown error stops the rest; an assistant error does not.
-  - Print mode writes the text blocks of the last assistant message, each followed by `\n`. Error or aborted: the message on stderr and exit 1. JSON mode: exit 0 on an assistant error; exit 1 only on a thrown error.
-  - SIGTERM exits 143 and SIGHUP exits 129, after cleanup. **Deviation:** SIGINT cancels the run context and exits 130 (Pi has no handler).
-  - `-p` consumes the next token as the message unless it starts with `@` or `-`. `--` makes the rest messages or files.
-  - `--mode` with a missing or invalid value: an error, exit 1. `--thinking` with an invalid value: a warning, the default is kept. `--api-key` without a model: an error, exit 1.
-  - **Deviation:** `--provider`, `--model` and `--api-key` without a value, and unknown `--flags`, are errors until X1 (Pi stores them for extensions).
-  - A prompt that starts with `/` is literal text until H15 (Pi gives it to commands, skills and templates).
-  - `@file`: a missing file or a read error gives exit 1; an empty file is skipped; the text is wrapped in `<file name="...">`. Images wait for H3 (H-PROV-27).
-  - JSON mode: one record per LF, each prompt ends with `agent_settled`, and a slow reader stalls the loop (backpressure, as in Pi).
-- **Packages:** `agent`, `pipeline` (hook points, per D1), `tools` (interface, registry, validation, a test `echo` tool), `cmd/tui` (headless `ask -p`, per D5).
-- **Tests:**
-  - The full event order of a two-turn run with tools.
-  - `finishTurn`: `continue` without tools gives exactly one extra request; `end` skips the poll hooks.
-  - An error or aborted assistant message: `finishTurn` is called, then `turn_end(msg, [])` and `agent_end`, and its tool calls do not run.
-  - The pairing invariant, loop part (E§24#1): after length truncation, and on the error/aborted path. Abort in the middle of a batch: prepared calls get "Operation aborted", later calls get no events, and one more stream call returns aborted (D19). The full invariant after abort is tested in H3.
-  - A stream that ends without a terminal event becomes an error message, not a hang.
-  - D20: a panic in a tool, in `beforeToolCall` and in `afterToolCall` each give an error result; an error from `prepareRequest` or the stream function gives the wrapper's error message and `agent_end`.
-  - Result order versus event order (the second tool finishes first). One sequential tool makes the batch sequential.
-  - Pipeline: unknown tool, validation error text, block with and without a reason, hook mutates the arguments, update after settle ignored, `afterToolCall` skipped for blocked and invalid calls.
-  - Coercion table (D21): `"5"` to 5 for an integer, `"5.7"` is not an integer, null in `anyOf` kept, optional null removed, missing input is `{}`, an arm that already validates is kept.
-  - A goroutine-leak test with `goleak` (E§24#19): after a normal end, after abort, and after the JSON reader closes the pipe.
-  - JSON-mode LF framing with no line limit, U+2028 inside a string, `agent_settled` per prompt (E§24#29).
-  - Output guard: a stray stdout write goes to stderr; EPIPE gives exit 1.
-  - CLI: stdin plus message join, `-p` token rule, `--`, invalid `--mode`, missing flag values, exit codes 0, 1, 130, 143.
-  - Print mode opens no network listener.
-- **Do not rebuild:**
-  - `shouldStopAfterTurn` (removed in 0.87.0).
-  - Cumulative `message`/`partial` in `message_update` (removed in 0.84.0).
-  - Agent state as the history. This is temporary here and replaced by the log in H8.
-- **Exit:** `ask -p "hello"` and `ask --mode json` run in process against the faux provider and the echo tool, with the right exit codes.
+- **Status:** implemented, including the lifecycle redesign.
+- **Concept:** one Agent driver owns execution, history order, and lifecycle boundaries.
+- **Current owners:** [Agent API](../../internal/agent/agent.go), [turn stages](../../internal/agent/loop_stage.go), [typed control points](../../internal/pipeline/README.md), and [headless entry](../../cmd/tui/headless.go).
+- **Delivered contracts:**
+  - H-LOOP-08 and H-TOOL-21 use the revised D19 outcome model.
+    Every requested call gets an outcome on normal cancellation; started bodies drain without a time limit and no further model request is made.
+    The earlier Pi model that left unanswered calls for replay is historical.
+  - H-LOOP-09: a call runs alone unless its tool declares itself concurrency-safe for these arguments; an exclusive call is a barrier.
+    Classification uses the turn snapshot and frozen validated arguments, with a bounded rolling pool.
+    See [tool coordinator](../../internal/agent/tool_coordinator.go).
+  - H-LOOP-10 and H-LOOP-14 use the typed pipeline registry.
+    A pre-tool hook can allow, deny, or cancel; arguments are frozen.
+    Host controls use validated copies while Pi tool events preserve the raw arguments.
+  - H-LOOP-11 drops tool calls from a truncated max-tokens message and stops normal continuation.
+    A Continue decision alone cannot start another request; queued steering can continue the same cycle with its max-tokens reason retained.
+    See [model attempt](../../internal/agent/loop_stream.go) and [turn stages](../../internal/agent/loop_stage.go).
+  - H-LOOP-17 includes the input queues and separate disposal contract, not a future H9 queue implementation.
+  - D26 commits admitted input after preparation; D27 supplies removal and non-waking AfterTool context; D28 captures provider preparation; D29 separates disposal from abort.
+- **Evidence:** the [lifecycle conformance matrix](../261006-0933-lifecycle-event-pipeline-redesign/conformance-matrix.md) owns the named acceptance checks and deliberate divergences.
+- **CLI contract:** the [headless runner](../../cmd/tui/headless.go), [print projection](../../cmd/tui/headless_print.go), and [JSON projection](../../cmd/tui/headless_json.go) own framing, errors, output failure, and signal exit codes.
+  JSON remains Pi-compatible, except for the D26 preparation failure path.
+- **Exit:** headless prompts run in process with no leader or database.
+  Persistent session selection remains H8 and the interactive client remains T1/H13.
 
 ### H3: The first real provider (Anthropic)
 
@@ -217,9 +201,11 @@ Rules behind this order (all checked by the review):
 - **Tests:**
   - Thinking signatures round-trip unchanged (E§24#2).
   - An idle stream times out, but a long active stream does not.
-  - `transformMessages` table tests: errored and aborted assistant messages dropped, missing tool results synthesized (also at the end of the list), foreign thinking becomes text, signatures dropped across models, image placeholder for a non-vision model.
+  - `transformMessages` table tests: error messages and empty interrupted messages are dropped; nonblank aborted text and thinking replay without tool calls, and unsigned thinking becomes plain text.
+    Missing tool results are synthesized, foreign thinking becomes text, signatures are dropped across models, and non-vision models get an image placeholder.
   - A multi-turn session with an errored assistant message and an unfinished tool call is accepted by the API.
-  - The full pairing invariant after abort (E§24#1, D19): abort in the middle of a parallel batch leaves calls without results in the loop; the next request through `transformMessages` has exactly one result per call ("No result provided" for the orphans), and the API accepts it.
+  - The earlier Pi orphan-result replay model is historical.
+    The implemented D19 coordinator gives every batch call an outcome and repairs an uncertain open turn without re-executing tools; see H2 and the lifecycle conformance matrix.
 - **Exit:** `-p` works against a real Anthropic model.
 
 ### H4: More wire APIs and cross-provider replay
@@ -250,9 +236,10 @@ Rules behind this order (all checked by the review):
   - A guard against the openai-go SDK reading `OPENAI_BASE_URL`, `OPENAI_ORG_ID`, `OPENAI_PROJECT_ID`, `OPENAI_CUSTOM_HEADERS` and the other `OPENAI_*` variables on its own: always pass the key and base URL from the record, and remove the org, project and custom headers.
   - Shared tool-call id normalizers (Anthropic, Completions, Responses) and a deterministic `shortHash`. No collision guard (user, 2026-10-05, follow Pi).
   - Responses replay slots: the reasoning item JSON in `ThinkingSignature`, `{v:1,id,phase}` in `TextSignature`, `call_id|item_id` in `ToolCall.ID`. Port Pi `bc2d8dc1c`: drop the item id when the model differs or the prefix does not match the item type (`fc_` or `ctc_`).
-  - Per-wire rendering of mid-conversation system messages and tool deltas for Anthropic, Completions and Responses (user, 2026-10-05). H8 only creates the entries (H-LOOP-15).
+  - Per-wire rendering of mid-conversation system messages and tool deltas for Anthropic, Completions and Responses (user, 2026-10-05). The lifecycle redesign creates in-memory entries (H-LOOP-15); H8 persists them.
   - One session id per headless process for the prompt cache key. H8 replaces it.
-  - Error data for H9: status and body in the error text, the stream-end errors mapped to `ErrStreamIncomplete`, and the retry pattern `model is at capacity` (Pi `3874b3e98`).
+  - Typed provider failures and recovery policy capture are implemented by the lifecycle redesign.
+    H9 retains overflow detection and usage accounting, not another text-pattern retry classifier.
 - **Packages:** `providers` (core types, registry, normalizers, `calculateCost`), `providers/openai` (new adapter), `providers/anthropic` (the H3 adapter, moved from `tokenplan`), `providers/fantasykit` (shared plumbing), `agent` (`SetModel`).
 - **Tests:**
   - Replay across all chosen APIs (E§24#2, E§24#3), as offline golden-payload tests on the request JSON (scenarios S1 to S35, except S7 because there is no collision guard). The servers accept invalid input, so live acceptance proves little.
@@ -355,12 +342,14 @@ Rules behind this order (all checked by the review):
 ### H8: The session log
 
 - **Waits on:** D10.
+- **Already delivered:** typed in-memory entries, the sole-writer log, request preparation capture, and D23 rebuild.
+  See [session owners](../../internal/sessions/README.md) and [request log](../../internal/agent/request_log.go).
 - **Concept:** an append-only, typed entry tree is the only source of truth. The provider context is a projection of it.
 - **Read in Pi:** `C:core/session-manager.ts`, `CD:session-format.md`, `C:core/agent-session.ts:1096-1125`.
 - **Owns:**
-  - H-SESS-03 (entry types).
+  - Persist the implemented H-SESS-03 entry types in SQLite; do not define a second lifecycle entry model.
   - H-SESS-06 (the context builder).
-  - H-SESS-07 (single-writer ordering).
+  - Extend the implemented single-writer contract to SQLite transactions and cross-process ownership.
   - H-SESS-10, P0 part (`-c`, `--session`).
   - H-SESS-15 (a lock across processes: a SQLite lease row, so headless `ask -p` and the leader cannot write one session together). The lease contract:
     - Acquire, renew and release are explicit. Each lease has an ownership generation.
@@ -369,7 +358,7 @@ Rules behind this order (all checked by the review):
     - Every database-owning mode (headless, leader, daemon) uses the same bounded busy timeout for SQLite, and one serialized migration path at startup (today migrations run only from the server module: `internal/app/app.go:43-44,87-88`).
   - H-SESS-01, H-SESS-02 (P1, pulled: entry types kept, SQLite storage, schema version).
   - H-COMPACT-13 (`context_edit`).
-  - H-LOOP-15 (P1, pulled: system-section and tool-declaration entries, which H10's checkpoint needs).
+  - Persist the implemented system snapshots, request deltas, and tool declarations for H10 checkpoints and D23 rebuild after resume.
   - H-PROV-19, session restore part.
   - The session header record in JSON mode.
 - **Packages:** `sessions`, `store`, `store/gormstore`, `migrations`.
@@ -388,29 +377,21 @@ Rules behind this order (all checked by the review):
   - The v4 lane store.
 - **Exit:** kill the process after a turn, resume with `-c`, and continue with the same model.
 
-### H9: Queues, abort, retry, usage
+### H9: Overflow detection and usage accounting
 
-- **Waits on:** D11.
-- **Concept:** one run is a state machine. Steering, follow-ups, abort and retry are its transitions.
-- **Read in Pi:** `A:agent.ts:299-304`, `C:core/agent-session.ts:1883-1940` (prompt), `:2317-2380` (`clearQueue` and `abort`), `:3611-3712` (retry), `AI:utils/retry.ts`, `AI:utils/overflow.ts`, `C:core/usage-totals.ts`.
-- **Owns:**
-  - H-LOOP-03 to H-LOOP-07 (the queues, with ids instead of text matching).
-  - H-LOOP-17, queue part.
-  - H-LOOP-21 (`agent_settled` and the session events). H2 already emits a minimal `agent_settled` right after `agent_end` (D18). H9 moves it after retry, compaction and queued work, and adds `agent_end.willRetry`.
-  - H-RETRY-01 to H-RETRY-04 (retry, with the patterns as data).
-  - H-RETRY-06 (overflow detection).
-  - H-RETRY-07, except the pricing part, which H4 owns (user, 2026-10-05). H9 keeps the usage totals across turns and the usage entries.
-  - H-RETRY-08, H-RETRY-09 (totals and the context-usage estimate).
-  - H-RETRY-10 (P1, pulled: usage entries).
-- **Packages:** `agent`, `providers` (error classification), `scheduler` (lanes only).
-- **Tests:**
-  - E§24#28 (steer waits for the tool batch).
-  - E§24#5, #6, #8 (classification, retry, usage).
-  - A 429 is not classified as overflow; exhausted subscription allowance is not a transient rate limit and cannot trigger billed fallback. Mid-stream public output cannot be transparently replayed.
-- **Do not rebuild:**
-  - `queueMessage` and `queueMode`.
-  - Allowing `prompt()` while streaming.
-- **Exit:** a faux provider that returns 429 twice and then succeeds gives one turn, correct `auto_retry_*` events and a correct cost.
+- **Already delivered:** queues, abort, typed transient retry, billing binding pins, and final agent_settled placement.
+  See [Agent owners](../../internal/agent/README.md) and [provider failures](../../internal/providers/failure.go).
+- **Concept:** keep context overflow separate from transient failures and account for all completed work.
+- **Read in Pi:** `AI:utils/overflow.ts` and `C:core/usage-totals.ts`.
+- **Remaining work:**
+  - H-RETRY-06: overflow detection.
+  - H-RETRY-07: usage totals across turns and usage entries; H4 owns pricing.
+  - H-RETRY-08 and H-RETRY-09: totals and the context-usage estimate.
+  - H-RETRY-10: persistent usage entries.
+- **Retained retry decision:** a retry after visible output is shown on the wire through the Pi auto_retry sequence; the failed attempt is log-only.
+  Retry does not erase visible output or silently change a subscription request to a billed API-key route.
+- **Tests:** a 429 is not overflow; subscription quota exhaustion is not transient; totals include usage across attempts and turns; the estimate agrees with the selected context.
+- **Exit:** overflow classification and cumulative cost agree with the recorded requests and usage entries.
 
 ### H10: Compaction
 
@@ -434,59 +415,40 @@ Rules behind this order (all checked by the review):
   - A separate turn-prefix summary store.
 - **Exit:** a long faux session crosses the threshold, compacts, and continues with the correct context and totals.
 
-### H11: Event bus and internal extensions (compiled-in Go)
+### H11: Internal extensions (compiled-in Go)
 
 - **Waits on:** D4.
-- **Concept:** every extension point is an event. Some events only notify. Others must answer before the harness continues.
-- **Read in Pi:** `C:core/extensions/types.ts:1545-1612`, `C:core/extensions/runner.ts`, `CD:extensions.md`, `inventory-extensions.md` section 4.
-- **Build:**
-  - The 41-event taxonomy.
-  - The sync/notify split (19/22) with the merge rules.
-  - Fail-closed on `tool_call`; `user_bash` gets only its type and policy here and is tested in H15.
-  - The rest of the H-LOOP-14 hooks.
-  - No deadline for these compiled-in handlers (D4). The deadline mechanism for out-of-process calls is built in X1 and documented as a departure from Pi 0.31.0.
-- **Owns (P1, pulled):**
-  - H-LOOP-12 (early termination).
-  - H-COMPACT-12 (compaction hooks).
-  - H-PROMPT-03 (`forceSystemPrompt`).
-- **Packages:** `hooks`, `hooks/handlers`, `bus`.
-- **Tests:**
-  - A blocking handler stops the tool, and the model sees the reason.
-  - A panic on a notify event does not stop the run.
-  - A panic on `tool_call` blocks the call.
-  - Handlers run in load order.
-- **Do not rebuild:** system messages inside the `context` event (removed in 0.87.0).
-- **Exit:** a test-only handler (not shipped) that denies `rm -rf` blocks the call in print mode, and the model sees the reason.
+- **Already delivered:** typed around and decision dispatch, handler ownership and scopes, early termination, and ordered observation.
+  See [pipeline contracts](../../internal/pipeline/README.md) and [Agent publication](../../internal/agent/emit.go).
+- **Concept:** map extension events onto the existing control and observation paths without adding a second loop.
+- **Read in Pi:** `C:core/extensions/types.ts`, `C:core/extensions/runner.ts`, `CD:extensions.md`, and `inventory-extensions.md` section 4.
+- **Remaining work:**
+  - Map the 41-event taxonomy, including sync versus notify policy, to the existing typed dispatch.
+  - Add compiled-in handlers and the extension adapter.
+  - Fail closed on tool_call; user_bash policy is completed and tested in H15.
+  - Connect compaction hooks (H-COMPACT-12) and forceSystemPrompt (H-PROMPT-03).
+  - Keep compiled-in handlers without deadlines; X1 owns out-of-process deadlines under D4.
+- **Packages:** hooks and hooks/handlers, registered through pipeline rather than new turn stages.
+- **Tests:** load-order mapping, notify failure containment, and fail-closed tool_call.
+- **Exit:** a test-only extension denial reaches the model through the existing tool result path.
 
 ### H12: Observability core ("Watch it think", part 1)
 
-- **Waits on:** D12 (decided).
-- **Concept:** one event stream, many watchers. The loop never knows who watches. This is the waku pattern (`waku/app.py:63`, `waku/ops/tracing.py:161-167`).
-- **Read:** the waku report, sections 4, 5 and 7.
-- **Build:**
-  - Bus fan-out with one bounded queue for each subscriber and a drop counter.
-  - Redaction and bounded previews before publish.
-  - A tracing collector with real-duration spans (run, then turn, then tool attempt), exported through `tracing/otelexport`.
-  - Hang detection.
-- **Owns (P1, pulled):**
-  - H-TELEM-04 (telemetry spans).
-  - H-SEC-07 (secrets stay out of logs).
-- **Packages:** `bus`, `tracing`, `tracing/otelexport`, `app`.
-- **Tests:**
-  - A blocked subscriber does not slow a faux run.
-  - A secret never reaches a subscriber.
-  - Queue overflow, then reconnect during a run: replay has no gap and no duplicate.
-  - A cursor older than the buffer, and a leader restart (new epoch), both give `resync` plus a snapshot.
-  - Spans have real durations.
-- **Do not copy:**
-  - Waku's per-event file writes, its line-count cursor and its unredacted traces.
-  - Anything under `waku/ops/static/` or `hosted/`.
-- **Replay contract (needed by H13 and W1):**
-  - `seq` is monotonic per leader process. A leader `epoch` (new on each start) goes with it, so a client can tell a restart.
-  - The bus keeps a bounded replay buffer **before** fan-out. A slow live subscriber may drop events, but a reconnecting client replays from the buffer, and the switch from replay to live is atomic (no gap, no duplicate).
-  - A cursor older than the buffer, or from another epoch, gets an explicit `resync` answer plus a state snapshot. It never gets a silent gap.
-  - Replay covers events only. Commands are never resubmitted.
-- **Exit:** a print-mode run exports a trace tree to a local OTel viewer, and a test subscriber sees every event in `seq` order.
+- **Waits on:** D12.
+- **Already delivered:** Agent.Follow, its consistent snapshot and stream baseline, the bounded replay ring and followers, cursor resume, and explicit resync.
+  See [follow owner](../../internal/agent/follow.go) and [ring owner](../../internal/bus/follow.go).
+- **Concept:** monitoring reads the execution record without owning execution or changing its outcome.
+- **Read:** the waku report, sections 4, 5, and 7.
+- **Remaining work:**
+  - Define dashboard redaction policy and bounded previews; the current trusted in-process follow path is not a redaction boundary.
+  - Add run, turn, model attempt, and tool spans with real durations.
+  - Export through tracing/otelexport and add hang detection.
+  - Integrate the existing cursor and resync contract with H13 and W1.
+- **Owns:** H-TELEM-04 and the dashboard/log exposure part of H-SEC-07.
+- **Tests:** secrets never reach dashboard subscribers, span durations are real, and hang detection distinguishes a slow operation from a lost completion.
+  Existing follow tests remain the regression owner for replay, cursor gaps, epochs, and slow followers.
+- **Do not copy:** Waku's per-event file writes, line-count cursor, unredacted traces, or hosted/static application.
+- **Exit:** a print-mode run exports a trace tree to a local OTel viewer and the dashboard uses a redacted view of the existing follow stream.
 
 ### H13: Leader, ACP adapter and gateway (Pi's RPC mode, multi-client)
 
@@ -777,7 +739,7 @@ Fork scope (user, 2026-10-05): fix F1, F2, F3, F4 and F8 in the fork before H4 s
 The user requested roadmap allocation because H4 cannot deliver the complete design.
 This scheduling update supersedes interview Q1's H4 timing only; native headless login stays with subscription delivery in H7a, and the accepted behavior remains unchanged.
 The [H4 report](../reports/xia-261005-1408-h4-more-wire-apis-pi-port-analysis.md) records the decisions; the [design plan](../261005-2139-provider-auth-design/plan.md) holds shared contracts and validation.
-H4 owns wire/replay, H5 builtin contracts, H6 settings/trust, H7 catalog/credential persistence, H7a subscription lifecycle/profiles, H8 durable selection provenance, H9 error/retry integration, H13 public switching, H17 breadth/scoped models/proxy, T1 model/auth status and T2 full auth dialogs.
+H4 owns wire/replay, H5 builtin contracts, H6 settings/trust, H7 catalog/credential persistence, H7a subscription lifecycle/profiles, H8 durable selection provenance, H9 overflow and usage accounting, H13 public switching, H17 breadth/scoped models/proxy, T1 model/auth status and T2 full auth dialogs.
 Keep one provider with injected supported auth methods and one saved credential; each model record selects one API.
 Pi is the initial remote catalog source; user overrides win, active model snapshots survive background refresh, and custom JSON defaults follow Pi.
 All phase exits are cumulative dependencies; no phase may weaken an accepted contract to avoid work.

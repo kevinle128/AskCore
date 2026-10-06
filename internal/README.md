@@ -11,7 +11,7 @@ Full design: [docs/ask-architecture-reference.md](../docs/ask-architecture-refer
 | Composition root | `app` (fx), `config`, `logs` |
 | Files under `~/.ask` | `settings` (`auth.json`, `settings.json`) |
 | Transport | `gateway` (+ `methods`), `http`, `channels` |
-| Runtime core | `agent` (two-level loop, queues), `pipeline` (hook points of one turn), `sessions` (entry tree), `scheduler` (lanes), `bus` (event fan-out), `workspace` (cwd, project root, trust), `cron` |
+| Runtime core | `agent` (two-level loop, queues), `pipeline` (typed control points), `sessions` (typed in-memory log; persistent tree planned), `scheduler` (planned lanes), `bus` (replay ring and followers), `workspace` (cwd, project root, trust), `cron` |
 | Process model | `leader` (local router and client), `acp` (ACP adapter over the agent) |
 | Capabilities | [auth](auth/README.md) (native credentials), `providers` (+ `acp`: subprocess agents), `tools`, `mcp`, `skills`, `bootstrap`, `hooks` (+ `handlers`), `permissions` (gateway RBAC), `sandbox`, `tracing` (+ `otelexport`). Parked: `memory`, `crypto` |
 | Storage | `store` (models + interfaces), `store/gormstore` (GORM implementation), `migrations` (runner) |
@@ -45,9 +45,9 @@ Wire contract: `pkg/protocol` (WS) and `proto/` (gRPC, generated code only).
 | A tool backend by vendor | `tools/<tool>_<vendor>.go` |
 | An LLM vendor | `providers/<vendor>*.go` |
 | A chat platform | `channels/<vendor>/` |
-| A hook-point step of a turn | `pipeline/<name>_step.go` |
+| A typed control handler | `pipeline/<name>.go`; register it with `pipeline.Registry` |
 | A session entry type | `sessions/entry.go` |
-| An event type | `pkg/protocol` (publisher in `bus`, sync dispatch in `hooks`) |
+| An event type | `pkg/protocol`; agent publishes lifecycle events and bus owns replay/follow |
 | A user setting or the credentials file | `settings/` |
 | Native login, refresh, or account access | [auth/](auth/README.md), composed in [app](app/README.md) |
 | An ACP method or `session/update` mapping | `acp/` (types in `pkg/protocol`) |

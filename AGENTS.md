@@ -45,7 +45,7 @@ AskCore/
 │   ├── config/  logs/     # Config (viper) and zap logger
 │   ├── gateway/           # HTTP (echo) and gRPC servers, gRPC services; methods/ for WS RPC
 │   ├── http/              # REST handlers (import alias httpapi)
-│   ├── agent/ pipeline/ scheduler/ bus/ sessions/ workspace/ cron/   # Runtime core (scaffold)
+│   ├── agent/ pipeline/ scheduler/ bus/ sessions/ workspace/ cron/   # Runtime core and planned capabilities
 │   ├── auth/ providers/ tools/ mcp/ skills/ memory/ bootstrap/ hooks/ # Capabilities
 │   ├── permissions/ sandbox/ crypto/ channels/ tracing/              # (scaffold)
 │   ├── store/             # Models + store interfaces; gormstore/ = GORM implementation
