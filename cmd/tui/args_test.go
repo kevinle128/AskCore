@@ -5,7 +5,7 @@ import (
 
 	"github.com/stretchr/testify/assert"
 
-	"AskCore/internal/providers/tokenplan"
+	"AskCore/internal/providers/anthropic"
 )
 
 func TestArgs(t *testing.T) {
@@ -43,14 +43,14 @@ func TestArgs(t *testing.T) {
 		{"--mode invalid", []string{"--mode", "x", "-p", "hi"}, base(func(o *options) { o.print = true; o.messages = []string{"hi"} }),
 			[]string{`Error: Invalid mode "x". Valid values: text, json`}},
 		{"--mode rpc is not an Ask mode", []string{"--mode", "rpc"}, base(nil), []string{`Error: Invalid mode "rpc". Valid values: text, json`}},
-		{"--provider", []string{"--provider", "openai"}, base(func(o *options) { o.provider = "openai" }), nil},
-		{"token plan defaults the model", []string{"--provider", tokenplan.ProviderID}, base(func(o *options) {
-			o.provider = tokenplan.ProviderID
-			o.model = tokenplan.ModelID
+		{"--provider", []string{"--provider", "openai"}, base(func(o *options) { o.provider = "openai"; o.model = "gpt-5.5" }), nil},
+		{"token plan defaults the model", []string{"--provider", anthropic.ProviderID}, base(func(o *options) {
+			o.provider = anthropic.ProviderID
+			o.model = anthropic.ModelID
 		}), nil},
-		{"token plan api key does not need --model", []string{"--provider", tokenplan.ProviderID, "--api-key", "k"}, base(func(o *options) {
-			o.provider = tokenplan.ProviderID
-			o.model = tokenplan.ModelID
+		{"token plan api key does not need --model", []string{"--provider", anthropic.ProviderID, "--api-key", "k"}, base(func(o *options) {
+			o.provider = anthropic.ProviderID
+			o.model = anthropic.ModelID
 			o.apiKey = "k"
 		}), nil},
 		{"--provider missing", []string{"--provider"}, base(nil), []string{"Error: --provider requires a value"}},

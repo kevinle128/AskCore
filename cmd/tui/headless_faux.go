@@ -8,8 +8,9 @@ import (
 	"strings"
 
 	"AskCore/internal/providers"
+	"AskCore/internal/providers/anthropic"
 	"AskCore/internal/providers/faux"
-	"AskCore/internal/providers/tokenplan"
+	"AskCore/internal/providers/openai"
 	"AskCore/pkg/protocol"
 )
 
@@ -72,16 +73,29 @@ func openProvider(o options, getenv func(string) string) (providers.StreamFn, pr
 	switch o.provider {
 	case defaultProvider:
 		return fauxStream(o.model, getenv)
-	case tokenplan.ProviderID:
+	case anthropic.ProviderID:
 		return tokenPlanStream(o.model, getenv, o.transport)
+	case providers.ProviderAnthropic, providers.ProviderOpenAI, providers.ProviderXAI:
+		m, err := providers.Find(providers.Ref{Provider: o.provider, ID: o.model})
+		if err != nil {
+			return nil, providers.Model{}, err
+		}
+		env := func(k string) (string, bool) { v := getenv(k); return v, v != "" }
+		client := &http.Client{Transport: o.transport}
+		if m.API == providers.APIAnthropicMessages {
+			p := anthropic.New(anthropic.WithEnv(env), anthropic.WithHTTPClient(client))
+			return p.Stream, m, nil
+		}
+		p := openai.NewResponses(openai.WithEnv(env), openai.WithHTTPClient(client))
+		return p.Stream, m, nil
 	default:
 		return nil, providers.Model{}, fmt.Errorf("provider %q is not available", o.provider)
 	}
 }
 
 func tokenPlanStream(modelID string, getenv func(string) string, rt http.RoundTripper) (providers.StreamFn, providers.Model, error) {
-	m := tokenplan.ModelFor(modelID)
-	opts := []tokenplan.Option{tokenplan.WithEnv(func(k string) (string, bool) {
+	m := anthropic.ModelFor(modelID)
+	opts := []anthropic.Option{anthropic.WithEnv(func(k string) (string, bool) {
 		v := getenv(k)
 		if v == "" {
 			return "", false
@@ -89,9 +103,9 @@ func tokenPlanStream(modelID string, getenv func(string) string, rt http.RoundTr
 		return v, true
 	})}
 	if rt != nil {
-		opts = append(opts, tokenplan.WithHTTPClient(&http.Client{Transport: rt}))
+		opts = append(opts, anthropic.WithHTTPClient(&http.Client{Transport: rt}))
 	}
-	p := tokenplan.New(opts...)
+	p := anthropic.New(opts...)
 	return p.Stream, m, nil
 }
 

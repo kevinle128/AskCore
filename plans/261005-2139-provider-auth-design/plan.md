@@ -1,10 +1,10 @@
 ---
-title: "H4 extensible provider and authentication design"
+title: "Provider and authentication design across H4 and later phases"
 status: proposed
 created: 2026-10-05
 ---
 
-# H4 provider and authentication design
+# Provider and authentication design across H4 and later phases
 
 ## Outcome and scope
 
@@ -14,10 +14,12 @@ Allow users to add compatible API-key providers and models through user configur
 Make a new login protocol a small auth implementation.
 Switch providers, models, and auth methods within one session through one shared selection operation.
 Keep transcript semantics, tool execution, and credential storage independent from vendor request rules.
-This document is a proposed design and execution plan; it does not implement Go behavior.
+This document records accepted behavior and proposed execution contracts across several roadmap phases; it does not implement Go behavior.
+The user requested phase allocation on 2026-10-06 because H4 cannot deliver the complete design.
+Use [roadmap revision 6](../260930-2254-pi-feature-inventory-go-roadmap/roadmap.md) for schedule ownership.
 
 The user's current request expands the earlier API-key-only scope.
-The [roadmap](../260930-2254-pi-feature-inventory-go-roadmap/plan.md) remains the prior decision record.
+The [roadmap](../260930-2254-pi-feature-inventory-go-roadmap/roadmap.md) is the current phase-allocation authority.
 The accepted file-store choice, one adapter per wire API, vendor-as-data model, fantasy infrastructure boundary, and existing public hooks remain constraints.
 Use the [source audit](../reports/researcher-261005-2139-h4-subscription-source-audit.md) with the four earlier OAuth reports.
 Use the [Pi catalog and identity audit](../reports/researcher-261005-2151-pi-provider-model-catalog.md) for model sources, availability and name ambiguity.
@@ -84,6 +86,11 @@ Usage and estimated catalog cost keep their existing meaning.
 An estimated cost is not an invoice or a guarantee that subscription inference has no extra charge.
 
 Provider records declare allowed auth-method/profile combinations for each API and allowed endpoint origins for account-bound credentials.
+Each provider receives an injected `[]AuthMethod` containing its supported authentication strategies.
+The collection contains method behavior and metadata, not stored secrets.
+Validate unique method IDs within the provider and select exactly one method for each request.
+The selected method/API binding determines the request profile.
+Do not create separate provider identities solely for API-key and OAuth authentication.
 Model compatibility records declare reasoning, tool changes, cache, and replay support.
 The profile can narrow those capabilities for a subscription route.
 An unsupported combination fails before the HTTP request.
@@ -116,11 +123,12 @@ Implementation must update actual depguard rules with these package boundaries; 
 ## Adding providers and models
 
 Keep built-in provider/model definitions in versioned data owned by the providers package.
-Load custom provider/model definitions from user `settings.json` through the settings owner and pass them to the registry at composition.
+Load custom provider/model definitions from user model configuration through the settings owner and pass them to the registry at composition.
 Secrets stay in `auth.json` or the process environment, never in provider/model definitions.
 The same validator handles built-in and user records.
-Initially require unique custom provider IDs; reject a duplicate built-in ID instead of silently changing its endpoint or auth profile.
-Explicit built-in override support can be added with a documented merge contract if needed.
+Require unique IDs for new custom providers; reject duplicate definitions.
+Interview Q9=A accepts explicit field overrides for existing model metadata, including built-in model records, following Pi.
+An override references an existing provider/model identity; it is not a duplicate provider declaration and cannot silently change endpoint or auth bindings.
 Project configuration may reference known model targets after trust checks; it cannot silently replace account-bound endpoint definitions or credentials.
 
 | Addition | Required change | Rebuild Ask? |
@@ -159,12 +167,25 @@ The endpoint and model values are placeholders.
 }
 ```
 
-Prices and optional compatibility flags are separate validated fields; absent prices mean unknown cost, not zero cost.
+Prices and optional compatibility flags are separate validated fields.
+Interview Q11=B accepts Pi defaults for new custom JSON model definitions: name equals ID, input is text-only, reasoning is disabled, context is 128000 tokens, output limit is 16384 tokens, and omitted prices are zero.
+Apply these defaults on the custom-definition path, including a definition that replaces a catalog model with the same ID.
+An ordinary partial metadata override instead preserves the catalog values of fields the user did not supply.
+Resolve a custom model's API and base URL from its definition, then provider configuration, then applicable catalog defaults; fail if either remains missing.
+Reject explicitly invalid or nonpositive limits rather than replacing them with defaults.
+Defaults are configuration values, not verified limits or proof of free inference.
+Do not introduce a generic tools capability default that Pi does not define.
 Do not infer advanced capabilities from an OpenAI-compatible label.
-One provider can expose several APIs when its model records select them explicitly.
+Interview Q2=B accepts Pi's model-owned routing: each provider-scoped model record has one canonical API.
+One provider can expose several APIs across different model records.
+Do not add named routes or a separate public API selector for the same provider/model identity.
+Alternative endpoint configurations use explicit records and do not split providers solely by auth method.
 Refresh user configuration by validating a complete replacement catalog, then atomically publish its immutable snapshot.
 Invalid reloads leave the last valid catalog active and report the error.
 An in-flight request retains the old definitions until it settles.
+Interview Q10=A also keeps the selected session model snapshot unchanged after ordinary background catalog refresh.
+Reselection, an explicit model update or a new session obtains the latest validated record; background refresh does not silently replace the active model.
+Credential freshness is independent: auth still resolves or refreshes on each request as required; the model snapshot does not pin an expired token.
 Do not mutate an adapter or endpoint underneath a running stream.
 If a reload removes the selected target, let an already-started request settle and block the next request with an unknown-target error until a valid target is selected.
 
@@ -190,6 +211,16 @@ A discovery failure retains cached metadata with its freshness state and does no
 
 Pi itself has generated baselines, a central `pi.dev` overlay and extension/configuration layers.
 Ask adopts the catalog and refresh boundaries but does not need a hosted catalog service for this scope.
+Interview Q3=B accepts a remote metadata overlay like Pi in addition to the local baseline and user definitions.
+Support persisted cache, revalidation, offline use and replacement of newer provider-scoped metadata.
+Interview Q7=A selects Pi's public catalog as the initial remote source, through a small Ask schema adapter.
+Default the configurable source base URL to `https://pi.dev`; request provider shards at `/api/models/providers/<sourceProviderID>?types=chat`.
+Do not send inference credentials to this service or import Pi runtime types into Ask core contracts.
+Validate explicit source/provider mapping and preserve Ask endpoint/auth bindings.
+Retain local baseline/cache after HTTP or schema failure; no Ask-hosted catalog service is required.
+Interview Q9=A composes baseline plus a valid newer remote overlay, then custom definitions, then explicit field overrides.
+Supplied override fields win; omitted fields retain the underlying values.
+Do not add Pi's extension framework merely to reproduce its metadata precedence.
 The detailed evidence and differences are in the linked catalog audit.
 
 ### Qualified identity
@@ -215,9 +246,11 @@ Show configured, needs-login, unavailable, or entitlement-unknown status separat
 Opening a picker does not refresh every provider or require every vendor to be online.
 Search uses model/provider display names; selection stores qualified IDs and method IDs.
 Disambiguate short names when more than one target matches.
-For an omitted method, use the preset/session choice or configured provider method default.
-If neither exists, select the only configured allowed method; if several exist, require a method choice.
-Do not choose between API billing and subscription allowance based on whichever token happens to resolve first.
+Follow Pi for credential selection: an explicit API-key override takes precedence when supported; otherwise use the stored credential type.
+With no stored credential, resolve ambient credentials through the supported API-key method.
+A stored API-key record with no key can use that method's environment resolution.
+A stored OAuth failure is an error and must not fall back to API-key billing.
+If a preset or session requires another method, report the mismatch and require login or a matching explicit override; do not rewrite the stored credential during selection.
 
 For convenience, support named presets, an ordered favorites list, and the previous selected target.
 A preset references a target and reasoning preference; it does not copy endpoint or model metadata.
@@ -327,6 +360,41 @@ Verify the actual outgoing HTTP request with conflicting environment credentials
 Patch the approved fantasy fork only if its existing SDK-option seams cannot express the required behavior.
 The adapter can use a native SDK when that is simpler and more reliable, as the accepted infrastructure decision permits.
 
+### Accepted builtin naming reference
+
+The user selected Pi as the tool-name reference after reviewing Claude Code naming differences.
+Use the Claude Code compatibility table in Pi `4c6fb7cfe`, `packages/ai/src/api/anthropic-messages.ts:101-119`.
+This is Pi's compatibility naming table, not Pi's own coding-agent tool registry and not a claim about the latest Claude Code build.
+The reference names are:
+
+`Read`, `Write`, `Edit`, `Bash`, `Grep`, `Glob`, `AskUserQuestion`, `EnterPlanMode`, `ExitPlanMode`, `KillShell`, `NotebookEdit`, `Skill`, `Task`, `TaskOutput`, `TodoWrite`, `WebFetch`, `WebSearch`.
+
+New Ask builtins with matching semantics use those names directly, so their Anthropic wire conversion is the identity operation.
+This naming choice does not add all listed tool implementations to H4.
+Keep existing public tool names and persisted transcript names; a later rename requires an explicit compatibility migration.
+Names outside the reference table, including custom and MCP tool names, are not renamed merely to resemble Claude Code.
+Do not automatically alias `find` to `Glob`, `Agent` to `Task`, or `TaskStop` to `KillShell`; a different tool name alone does not prove equivalent semantics.
+The tool owner defines canonical names; the provider adapter applies only the compatibility conversion needed for the selected profile.
+
+### Accepted builtin input, behavior and output contract
+
+The user accepted Pi as the reference for builtin input schemas, behavior and output on 2026-10-06.
+Keep one canonical tool contract across providers, with the previously selected compatibility names.
+Do not copy Claude Code input schemas solely because the wire name matches a Claude Code tool.
+For example, Pi's read input uses `path`, optional one-based line `offset`, and optional line `limit`; its bash input uses `command` and optional timeout in seconds.
+Source: Pi `packages/coding-agent/src/core/tools/read.ts:14`, `bash.ts:40`.
+
+The tool owner defines and validates argument fields, units, defaults, errors, cancellation, truncation and execution behavior.
+Schema, description and implementation must agree; do not change argument meaning for a different LLM provider.
+Use existing `tools.Tool`, registry preparation and validation, and `protocol.ToolExecutionResult` rather than adding a parallel provider-specific tool contract.
+Keep model-facing `Content`, UI/log `Details`, and optional programmatic `StructuredContent` distinct.
+Structured results match an output schema where the tool supplies one; they do not automatically become model-facing content.
+Source: Pi `packages/agent/src/types.ts:424`; Ask `pkg/protocol/message.go:395`, `internal/tools/types.go`.
+The wire adapter serializes canonical tool declarations and model-facing results into the provider protocol and applies the selected name codec where needed.
+It does not own builtin argument semantics or execution.
+Custom/MCP tools retain their declared contracts; do not reshape them into builtin Pi schemas.
+Existing public contracts require an explicit compatibility migration if a later builtin changes them; this reference decision does not move every builtin's implementation phase into H4.
+
 ### Tool-name codec
 
 Build a codec from the immutable request tool snapshots.
@@ -346,13 +414,17 @@ Preserve existing API-key records and unknown fields on updates.
 Add explicit OAuth method identity, access/refresh tokens, actual expiry, granted scopes, optional refresh-not-before time, and method-owned metadata.
 ChatGPT metadata includes issued client ID, verified account identity and retained ID-token hint.
 Bind those fields as one record; do not replace an account's credentials using an unrelated returned identity.
-Keep credentials for each `(providerID, authMethodID)` so API keys and subscriptions can coexist without repeated login.
-This refines the initial one-credential-per-provider proposal to satisfy convenient method switching.
-Use one account per provider/method initially; replacing that account is explicit.
-Retaining several accounts for the same method or adding an account picker is a separate feature.
+Store one type-tagged credential per provider ID, following Pi.
+A provider supports several injected auth methods, but the store contains only one selected method and one account for that provider.
+The user's clarification supersedes the earlier per-method storage interpretation of Q5=A.
+Successful login through another method or account explicitly replaces the provider's current credential.
+Keep the current credential if login fails or persistence fails before atomic replacement.
+If replacement succeeds but durability confirmation fails, report an uncertain commit and re-read the store.
+Do not claim that the old credential is preserved after replacement.
+There is no saved method collection, account picker, or requirement to retain the previous API key after OAuth login.
+An environment key or request override can coexist with a stored OAuth record without becoming another saved credential.
 Selection preferences live in settings/session state, not in the secret store.
-Accept legacy provider-level API-key records as the provider's `api-key` method and migrate only on a successful locked update.
-Use a tagged per-provider method collection for providers with several saved methods; keep existing single-method records readable.
+Keep legacy provider-level API-key records readable; do not migrate them into a method collection.
 Reject ambiguous legacy OAuth imports until their method can be established from explicit import configuration.
 Method metadata can evolve without changing the agent or wire adapters.
 
@@ -367,15 +439,23 @@ Refresh procedure:
 1. Read the selected credential and test its validity.
 2. Acquire the cross-process credential-store lock with cancellation and a deadline.
 3. Re-read the current record and recheck method, identity, deletion, and validity.
-4. Refresh only if that current record still needs it, with a bounded HTTP deadline.
-5. Validate the complete token response and merge the method metadata.
-6. Persist the rotated credential before releasing the lock or allowing inference.
+4. Reject unresolved refresh-attempt state; otherwise durably fence the current generation before a rotating grant is sent.
+5. Refresh only if that current record still needs it, with a bounded HTTP deadline.
+6. Validate the complete token response and merge the method metadata.
+7. Persist the rotated credential and clear its matching attempt fence before releasing the lock or allowing inference.
 
 Cancellation can stop waiting or an in-flight token exchange.
 After a successful token response rotates a refresh token, cancellation must not skip durable persistence.
 Complete that short local commit with its own bounded context, then report the canceled inference request.
 A save failure is an error, not a successful login or refresh.
 Do not retry a rotation request blindly after an ambiguous network outcome.
+Persist a pending refresh-attempt fence before network I/O so that an error or process restart cannot cause another caller to reuse an uncertain rotating grant.
+If fence durability fails, send no exchange.
+Only a validated durable replacement or explicit successful login/logout can clear the unresolved state.
+A crash before sending can conservatively require reauthentication; this is not a distributed transaction.
+CLI shutdown waits for registered auth work through its bounded exchange and local commit budgets, rather than only the inference grace.
+A second ordinary signal cannot shorten a validated commit; forced death or blocked OS sync remains an uncertainty limit protected by the durable fence.
+The user approved this correction with the other five plan review changes on 2026-10-06.
 
 Lock a stable sidecar path because atomic rename replaces the auth-file inode.
 Write a same-directory temporary file with mode 0600, sync it, rename it, and sync the directory before success.
@@ -390,7 +470,9 @@ Capture a record revision at start and compare it under the final commit lock so
 Expose callback acceptance, token validation, and credential save as distinct states.
 Only the last state means login complete.
 Logout removes local credentials under the same lock; it does not claim server revocation.
-Method-specific logout deletes only that method's credential; removing all provider credentials requires an explicit provider-wide operation.
+Logout removes the provider's one saved credential, including its issued-client metadata.
+The user confirmed this Pi behavior on 2026-10-06; no separate client registration or account collection remains after logout.
+If a method-specific operation is exposed, reject a mismatched method rather than deleting a credential for another method.
 
 ## Auth protocols and discovery
 
@@ -406,12 +488,16 @@ xAI retains device authorization with response validation, server polling interv
 Login prompts and browser launch use injected interaction functions shared by both runtimes.
 
 Static provider/model records remain the default catalog.
+Interview Q3=B adds automatic remote metadata overlays like Pi, with a cached baseline available offline.
 Add authenticated discovery only where the selected route supplies account-specific access, initially ChatGPT.
 Follow the route's documented model identifiers and visibility filter, rather than assuming the ordinary API-key catalog is the account's entitlement.
 Source: [models and inference](https://developers.openai.com/siwc/token-sharing-open-source/models-and-inference).
 Use the same auth resolver for discovery and inference.
 Discovery narrows the usable catalog; it does not invent prices, context limits or reasoning support.
-Keep verified model metadata separate from entitlement, and return a clear error when entitlement cannot be established.
+Keep verified model metadata separate from entitlement.
+Interview Q4=A permits inference when account access is unknown and authentication and required capabilities are valid.
+Known denial remains a selection error; an unknown state does not prove permission.
+Classify the real inference response without silently selecting another method or provider.
 Subscription profiles must track the current [preview contract](https://developers.openai.com/siwc/token-sharing-open-source/preview-limitations) and [token timing](https://developers.openai.com/siwc/token-sharing-open-source/token-reference).
 
 ## Errors and observation
@@ -425,6 +511,17 @@ A request ID, provider ID, method ID, profile ID, duration and outcome are suffi
 Do not log token endpoint bodies or secret-bearing headers.
 
 ## Decisions and alternatives
+
+### Accepted decision: one provider with injected auth methods
+
+Status: accepted by the user on 2026-10-05.
+Context: a provider can support API-key authentication, subscription authentication, or both.
+Choice: one provider with an injected `[]AuthMethod`, using Composition and Strategy.
+Alternative: separate `AnthropicAPIKey` and `AnthropicOAuth` providers.
+Consequence: adapter and model data remain shared; one credential is saved per provider; its type selects the method and profile unless a supported explicit request override applies.
+Use separate provider records for independent endpoint/service configurations, not just different authentication methods.
+The provider/auth decision and interview Q1-Q11 policies are individually accepted.
+Concrete package contracts, public command syntax and execution details remain proposed until the design is reviewed as a whole.
 
 ### Decision: separate auth lifecycle from wire conversion
 
@@ -450,7 +547,7 @@ Consequence: unusual behavior needs small compiled Go functions; ordinary compat
 ### Decision: qualified targets and one selection transaction
 
 Context: model names overlap across providers and the same model can use API or subscription credentials.
-Choice: qualified provider/model/method targets, method-scoped saved credentials and one session-owned selection operation.
+Choice: qualified provider/model/method targets, one type-tagged saved credential per provider and one session-owned selection operation.
 Alternative: independent UI setters for provider, model, endpoint, and key.
 Consequence: picker, shortcuts and headless reuse the same checks; changes wait for a safe request boundary and failed switches retain valid state.
 
@@ -463,25 +560,38 @@ Consequence: refreshes within one home serialize, but token rotation and logout 
 The network-success/disk-failure boundary cannot be made atomic with a remote auth server.
 Surface that failure and request reauthentication when recovery is not safe.
 
-## Execution phases
+## Roadmap allocation
 
-| Phase | Scope and files | Exit condition |
+This is a cross-phase design, not a single H4 implementation plan.
+The latest scheduling decision supersedes Q1's H4 delivery date only; minimal login stays coupled to subscription inference in H7a.
+Priority update (2026-10-06): H7a starts after H3 alongside required H4 Responses work because Alibaba Token Plan expires soon; full H5-H7 are not prerequisites.
+All other accepted behavior and existing public-contract compatibility remain intact.
+
+| Roadmap owner | Scope | Exit condition |
 |---|---|---|
-| 1. Contracts | Providers catalog, target/runtime auth types, runner and registration; settings custom definitions; app wiring; focused hook compatibility tests | User-configured compatible providers need no rebuild; key-only callers retain behavior; final target chooses the correct resolver. |
-| 2. Store and auth | `settings` credential/lock files; new `auth` capability and method implementations | Concurrent refresh, logout, cancellation, restart and failed-save tests pass. |
-| 3. Wire profiles | Messages and Responses adapters; existing transcript/tool snapshot helpers; fantasy fork only if needed | Offline JSON/header/replay/name tests pass for all key/subscription pairings. |
-| 4. Product integration | Shared login and selection operations, presets/favorites, headless/leader integration, session changes, subscription discovery and usage hints | Three provider flows and API/subscription switching are usable without repeated login; failed switches preserve state. |
-| 5. Live acceptance and docs | Controlled account probes; smallest owning package docs, architecture import map and depguard rules | Endpoint behavior verified; no secrets in artifacts; source/version evidence recorded. |
+| H4 | Wire adapters, compat, cost, key-only in-memory selection and replay | Existing Go-test switch/replay exit; no catalog/store or native login. |
+| H5 | Pi builtin names/input/behavior/output | Coding tools preserve shared argument semantics and model-facing output boundaries. |
+| H6 | Settings layering and trust | Untrusted project input cannot change account-bound endpoint/auth configuration. |
+| H7 | Provider/model configuration, Pi overlay/cache and overrides/defaults; reuse H7a's store | Add compatible providers without recompilation; validate refresh and integration with shared credentials. |
+| H7a, priority | Shared secure credential persistence/precedence, native Anthropic/ChatGPT/xAI auth, refresh/discovery, profiles and headless login/logout | Deliver each usable subscription as ready using compiled records; all three are required for phase completion. |
+| H8 | Durable qualified selection and provenance | Resume IDs/preferences without tokens; resolve credentials per request. |
+| H9 | Allowance/auth/rate-limit classification and retry | No billed fallback or transparent replay after public output. |
+| H13 | Shared listing/switching through leader/direct clients | Validated selection at a safe request boundary; retain prior state on failure. |
+| H17 | Additional providers/auth, proxy, scoped/favorite cycling and gateway login | Reuse the core resolver and auth lifecycle. |
+| T1/T2 | Model/auth status and selection; full login dialogs in T2 | UI consumes shared operations without protocol logic or token storage. |
 
-Use the active H4 wire-API work as a dependency; do not overwrite the separate tool-snapshot or cassette-testing workstreams.
-Login operation support is part of this expanded scope.
-Full TUI dialog styling and the existing later-phase command UX can consume those operations without putting protocol logic in the UI.
-Before implementation, update the owning roadmap's H4 and auth-command dependencies to reflect the new scope instead of retaining conflicting API-key-only statements.
+See [H7a execution detail](../260930-2254-pi-feature-inventory-go-roadmap/phase-h7a-subscription-auth.md) and the [deep TDD implementation plan](../261006-0157-h7a-subscription-auth/plan.md).
+Use the existing wire work as a dependency; preserve separate tool-snapshot and cassette-testing workstreams.
+Login runs on the inference host and writes to its Ask home, with documented provider-native interaction or callback forwarding for remote use.
+Local-client credential transfer stays outside H7a; full TUI login remains later.
+The validation below is cumulative across owner phases, not an H4 exit checklist.
 
 ## Validation and acceptance
 
 - Table-driven adapter checks inspect the actual outgoing JSON and headers for every supported pairing, including conflicting environment credentials.
 - Anthropic checks cover current and historical definitions, additions/removals, forced choice, reverse streaming names, and unchanged custom names.
+- Shared tool-contract checks preserve input schema and argument meaning across provider switches; wire names may change, canonical arguments do not.
+- Result conversion sends model-facing content and preserves error state and call pairing, without exposing UI/log details or programmatic results by default.
 - Requests in parallel prove that mappings and auth material never leak between providers or sessions.
 - Store tests use two processes or equivalent OS-lock contention and establish one refresh, preserved unrelated records, and valid JSON after replacement.
 - Cancel-after-rotation and save-failure tests establish that credentials are not silently lost and success is not reported early.
@@ -489,9 +599,15 @@ Before implementation, update the owning roadmap's H4 and auth-command dependenc
 - xAI checks cover every device polling state, reasoning-model conditions and missing replacement refresh tokens.
 - Headless and leader checks use the same services; live account checks confirm transport behavior after offline checks pass.
 - Add a compatible provider and model using only user configuration; a validated reload makes the target selectable without recompilation.
-- Duplicate IDs, malformed definitions and unsupported method/API combinations fail validation while the prior catalog stays usable.
+- Duplicate declarations, malformed definitions and unsupported method/API combinations fail validation while the prior catalog stays usable.
+- Explicit model metadata overrides survive remote refresh; omitted fields receive current underlying values.
+- Custom JSON definitions use Pi defaults; partial overrides preserve unspecified catalog fields, and invalid explicit limits fail.
+- Ordinary catalog refresh leaves the selected session model snapshot unchanged; reselection uses the latest record without changing an in-flight request.
 - Switch Messages to Responses and back in one transcript containing tool calls/results and thinking; stored history stays unchanged.
-- Switch API key to subscription and back on one provider without replacing either credential or leaking auth headers.
+- Login with an API key, replace it through subscription login, then replace it through API-key login on the same provider.
+  Each successful login leaves exactly one saved credential, and a failed login or save before commit preserves the prior record.
+  A save failure after replacement must report uncertain commit state.
+- Verify explicit API-key override, stored credential selection, ambient resolution with no saved credential, and no API-key fallback after OAuth failure.
 - Select during streaming and tool execution; apply only at the next safe boundary and retain original response provenance.
 - Failed auth, unknown entitlement and smaller-context targets do not silently change the target or charge the previous one.
 - Presets, favorites, previous-target selection and startup/default precedence use the same qualified target resolver.
@@ -509,4 +625,6 @@ Preserve credential files and unknown records through rollback rather than rewri
 
 - Live credentials are needed to prove account eligibility and endpoint acceptance for the three subscription paths.
 - Anthropic integration permission is a separate provider-contract question recorded in the earlier research; successful wire compatibility does not resolve it.
-- The current request specifies provider support and architecture, but does not select a complete login-command UX; shared operations are sufficient to keep that later decision independent.
+- Minimal headless login/logout is prioritized in H7a after H3, alongside required Responses adapter work; login runs on the inference host and the selected headless surface is `ask auth login --provider <id>` and `ask auth logout --provider <id>`, adapted from Pi interactive operations.
+- Pi's public catalog and metadata policies are accepted; source/schema validation and refresh behavior require implementation checks.
+  Direct HTTP checks returned 200 without credentials for Anthropic, OpenAI, xAI and Qwen Token Plan; Ask schema conversion and source/provider mapping are required.

@@ -11,7 +11,7 @@ The agent runtime. `Run` and `Continue` run Pi's two-level loop: the outer loop 
 - Tool declarations (`loop_tool_changes.go`): before each request, the tools the transcript declares are compared with the tool snapshot of the turn, and a difference becomes `ToolsAdded` / `ToolsRemoved` on a system message (Pi `declareToolChanges`)
 - One model call (`loop_stream.go`): context transform, conversion, API key, stream, and the partial message that the final message replaces
 - One tool batch (`loop_tools.go`): the `toolExecutor` strategy (truncated, sequential, parallel), preflight, `BeforeToolCall` and `AfterToolCall`, the output-length guard, and abort
-- The `Agent` wrapper (`agent.go`): one active run, `Prompt`, `Continue`, `Abort`, `WaitForIdle`, `Reset`, `State`, and the run-failure path that turns a returned error or a panic of the loop into an error assistant message, `agent_end` and `agent_settled`
+- The `Agent` wrapper (`agent.go`): one active run, `Prompt`, `Continue`, `Abort`, `WaitForIdle`, `Reset`, `SetModel`, `SetThinkingLevel`, `State`, and the run-failure path that turns a returned error or a panic of the loop into an error assistant message, `agent_end` and `agent_settled`
 - Event dispatch (`emit.go`): the envelope (`seq` across runs, `runId` per run, `ts`, `sessionId`) and the listeners, called in subscribe order on the run goroutine
 - `ContextSource` and the `PrepareRequest` projection of it into every request (`context_source.go`); `sessions.MemoryLog` is the in-memory source
 - `Config`, `State`, `Status` and `ErrBusy` (`types.go`)

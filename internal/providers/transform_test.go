@@ -189,7 +189,7 @@ func TestTransformMessages(t *testing.T) {
 			},
 		},
 		{
-			name:  "orphan tool result kept",
+			name:  "orphan tool result dropped",
 			model: model,
 			in: []protocol.Message{
 				protocol.ToolResultMessage{
@@ -198,13 +198,7 @@ func TestTransformMessages(t *testing.T) {
 					Content:    []protocol.UserBlock{protocol.Text{Text: "late"}},
 				},
 			},
-			want: []protocol.Message{
-				protocol.ToolResultMessage{
-					ToolCallID: "orphan",
-					ToolName:   "echo",
-					Content:    []protocol.UserBlock{protocol.Text{Text: "late"}},
-				},
-			},
+			want: []protocol.Message{},
 		},
 	}
 

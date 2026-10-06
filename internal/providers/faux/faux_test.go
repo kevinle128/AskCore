@@ -140,7 +140,7 @@ func TestFuncSeesCallStateAndRequest(t *testing.T) {
 	temp := 0.5
 	ctx := context.WithValue(context.Background(), ctxKey{}, "request")
 	m2, _ := p.Model("m2")
-	s := p.Stream(ctx, m2, req(userMsg("one")), providers.StreamOptions{SessionID: "sid", Temperature: &temp})
+	s := p.Stream(ctx, m2, req(userMsg("one")), providers.StreamOptions{SessionID: "sid", Temperature: &temp, ToolChoice: "echo"})
 	drain(s)
 	m1, _ := p.Model("m1")
 	s = p.Stream(ctx, m1, req(userMsg("two")), providers.StreamOptions{MaxTokens: 7})
@@ -151,6 +151,7 @@ func TestFuncSeesCallStateAndRequest(t *testing.T) {
 	assert.Equal(t, 2, seen[1].Number)
 	assert.Equal(t, "m2", seen[0].Model.ID)
 	assert.Equal(t, "sid", seen[0].Options.SessionID)
+	assert.Equal(t, "echo", seen[0].Options.ToolChoice)
 	assert.InDelta(t, 0.5, *seen[0].Options.Temperature, 0)
 	assert.Equal(t, 7, seen[1].Options.MaxTokens)
 	assert.Equal(t, req(userMsg("one")), seen[0].Request)
@@ -164,7 +165,9 @@ func TestFuncSeesCallStateAndRequest(t *testing.T) {
 	// The records are copies.
 	temp = 0.9
 	*recs[0].Options.Temperature = 0.1
+	recs[0].Options.ToolChoice = "changed"
 	again := p.Requests()
+	assert.Equal(t, "echo", again[0].Options.ToolChoice)
 	assert.InDelta(t, 0.5, *again[0].Options.Temperature, 0)
 }
 

@@ -6,7 +6,8 @@ import (
 	"slices"
 	"strings"
 
-	"AskCore/internal/providers/tokenplan"
+	"AskCore/internal/providers"
+	"AskCore/internal/providers/anthropic"
 	"AskCore/pkg/protocol"
 )
 
@@ -146,13 +147,20 @@ func parseArgs(argv []string) (options, []diagnostic) {
 		}
 	}
 
-	if o.apiKey != "" && o.model == "" && o.provider != tokenplan.ProviderID {
+	if o.apiKey != "" && o.model == "" && o.provider != anthropic.ProviderID {
 		fail("--api-key requires a model to be specified via --model")
 	}
 	if o.model == "" {
-		if o.provider == tokenplan.ProviderID {
-			o.model = tokenplan.ModelID
-		} else {
+		switch o.provider {
+		case anthropic.ProviderID:
+			o.model = anthropic.ModelID
+		case providers.ProviderAnthropic:
+			o.model = providers.ModelClaudeSonnet46
+		case providers.ProviderOpenAI:
+			o.model = providers.ModelGPT55
+		case providers.ProviderXAI:
+			o.model = providers.ModelGrok47
+		default:
 			o.model = defaultModel
 		}
 	}
@@ -163,11 +171,12 @@ const usage = `ask - the Ask agent harness
 
 Usage:
   ask [options] [--] [@files...] [messages...]
+  ask auth --help
 
 Options:
   --print, -p           Non-interactive mode: run the prompt, print the reply and exit
   --mode <mode>         Output mode: text (default) or json
-  --provider <name>     Provider name: faux (default) or alibaba-token-plan
+  --provider <name>     Provider name: faux (default), alibaba-token-plan, anthropic, openai, xai
   --model <id>          Model id (default: faux-1, or deepseek-v4.1-flash for alibaba-token-plan)
   --api-key <key>       API key for the provider (requires --model)
   --thinking <level>    Thinking level: off, minimal, low, medium, high, xhigh, max

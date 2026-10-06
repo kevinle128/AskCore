@@ -21,9 +21,15 @@ var (
 type LoopConfig struct {
 	Model  providers.Model
 	Stream providers.StreamFn
+	// Ready checks the same binding rules as Stream before an idle model switch.
+	Ready func(context.Context, providers.Model, string) error
 	// Options go to every request. An empty Reasoning means "off". APIKey
-	// is the fallback when Hooks.GetAPIKey returns an empty key.
+	// is the fallback when BoundKey is empty and Hooks.GetAPIKey is nil
+	// or returns an empty key.
 	Options providers.StreamOptions
+	// BoundKey is the --api-key pin. ResolveKey applies it only when
+	// Provider matches, so the secret never goes to another host.
+	BoundKey providers.BoundKey
 	// Cwd is passed to every tool call.
 	Cwd   string
 	Hooks pipeline.Hooks

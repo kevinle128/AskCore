@@ -6,6 +6,14 @@ Composition root. fx modules that build every package, bind implementations to i
 
 - fx modules and lifecycle hooks
 
+## Native headless composition
+
+[NewNativeAuth](auth_native.go) is the ordinary constructor for native credential methods and the local settings store.
+[BindAuth](module_auth.go) installs the same resolver for model readiness and each inference request; `AuthWait` owns shutdown drain.
+[cmd/tui](../../cmd/tui/headless.go) uses these constructors without the database, gateway, or leader.
+Keep this composition reusable by later fx runtimes instead of adding command-specific auth services.
+Auth and inference use separate HTTP clients so capture cannot record token exchange, identity keys, or account discovery.
+
 ## What does not belong here
 
 | Code | Put it in |

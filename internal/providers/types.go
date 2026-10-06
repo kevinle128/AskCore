@@ -41,6 +41,10 @@ type StreamOptions struct {
 	Temperature *float64
 	Reasoning   protocol.ThinkingLevel
 	APIKey      string
+	// ToolChoice selects one declared tool by its canonical name.
+	ToolChoice string
+	// Auth is a request-local typed credential. Its zero value preserves legacy APIKey callers.
+	Auth AuthSnapshot
 }
 
 // StreamFn starts one model call. It never fails at call time: a failure is a

@@ -15,7 +15,7 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
-	"AskCore/internal/providers/tokenplan"
+	"AskCore/internal/providers/anthropic"
 )
 
 // These tests feed hand-written HTTP faults to the real Token Plan adapter
@@ -25,7 +25,7 @@ import (
 // returns the exit code, stdout and stderr.
 func runFault(t *testing.T, rt http.RoundTripper, sigs <-chan os.Signal) (int, string, string) {
 	t.Helper()
-	o := options{provider: tokenplan.ProviderID, model: tokenplan.ModelID, transport: rt}
+	o := options{provider: anthropic.ProviderID, model: anthropic.ModelID, transport: rt}
 	ag, err := newHeadlessAgent(o, func(k string) string {
 		if k == "ASK_ALIBABA_TOKEN_PLAN_API_KEY" {
 			return "test-key"

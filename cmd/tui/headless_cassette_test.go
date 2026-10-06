@@ -14,8 +14,8 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
+	"AskCore/internal/providers/anthropic"
 	"AskCore/internal/providers/cassette"
-	"AskCore/internal/providers/tokenplan"
 )
 
 // recordEnv makes useCassette record from the real model instead of
@@ -59,7 +59,7 @@ func useCassette(t *testing.T, model string) (options, func(string) string) {
 			t.Errorf("%v\nre-record with: %s=1 go test -run '^%s$' ./cmd/tui", err, recordEnv, t.Name())
 		}
 	})
-	return options{provider: tokenplan.ProviderID, model: model, transport: rec}, getenv
+	return options{provider: anthropic.ProviderID, model: model, transport: rec}, getenv
 }
 
 // rtFunc is an http.RoundTripper made from a function.
@@ -106,7 +106,7 @@ data:{"type":"message_stop"}
 func TestTokenPlanUsesInjectedTransport(t *testing.T) {
 	var seen *http.Request
 	rt := sseResponse(http.StatusOK, sseText("pong"))
-	o := options{provider: tokenplan.ProviderID, model: tokenplan.ModelID, transport: rtFunc(func(r *http.Request) (*http.Response, error) {
+	o := options{provider: anthropic.ProviderID, model: anthropic.ModelID, transport: rtFunc(func(r *http.Request) (*http.Response, error) {
 		seen = r
 		return rt(r)
 	})}
@@ -129,7 +129,7 @@ func TestTokenPlanUsesInjectedTransport(t *testing.T) {
 func TestCaptureWritesCassette(t *testing.T) {
 	dir := t.TempDir()
 	var errb bytes.Buffer
-	o := options{provider: tokenplan.ProviderID, model: tokenplan.ModelID}
+	o := options{provider: anthropic.ProviderID, model: anthropic.ModelID}
 	getenv := func(k string) string {
 		switch k {
 		case captureEnv:
@@ -156,7 +156,7 @@ func TestCaptureWritesCassette(t *testing.T) {
 	// The captured file replays the same run.
 	rec, err := cassette.New(path, cassette.Replay)
 	require.NoError(t, err)
-	o2 := options{provider: tokenplan.ProviderID, model: tokenplan.ModelID, transport: rec}
+	o2 := options{provider: anthropic.ProviderID, model: anthropic.ModelID, transport: rec}
 	ag, err = newHeadlessAgent(o2, getenv)
 	require.NoError(t, err)
 	out.Reset()

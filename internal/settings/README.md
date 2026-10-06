@@ -15,11 +15,36 @@ The files under `~/.ask/` (override with `ASK_HOME`) and the project `.ask/` fol
 | Start-up config of the process | `internal/config` |
 | The trust decision for a project | `internal/workspace` (this package receives it through the constructor) |
 | Encryption at rest | `internal/crypto` (parked) |
-| Using a credential to call a model | `internal/providers` (the caller passes a resolver function) |
+| Login, refresh, and account access checks | [internal/auth](../auth/README.md) |
+| Sending a resolved credential to a model | [internal/providers](../providers/README.md) |
 
-## Main interfaces
+## Credential transaction
 
-- None required
+The credential transaction owner is [AuthStore](auth.go).
+`NewAuthStore` selects `ASK_HOME` or `~/.ask` unless given an absolute home.
+`Read` returns one provider record and the store-wide revision.
+`Replace` and `Logout` compare that revision, so a logout of an absent provider still rejects an earlier login attempt.
+The store keeps unknown JSON fields and reads Pi-style root provider records with API keys.
+An OAuth record needs an explicit method tag.
+
+Each transaction locks `auth.json.lock`, reads fresh data, writes a 0600 temporary file, syncs it, renames it, and syncs the 0700 owner directory.
+A failure before rename keeps the old file.
+A directory-sync failure returns `ErrIndeterminate`, because the replacement may be visible.
+`FenceRefresh` first stores a pending attempt for the current generation; only the matching `CommitRefresh`, an explicit login, or logout can clear it.
+`Refresh` holds the sidecar lock while it stores the fence, runs one bounded exchange, and commits the validated replacement.
+If exchange fails or replacement commit fails before rename, the pending fence stays in the file.
+A failure after rename has an indeterminate outcome.
+A crash before the token request can therefore require a new sign-in.
+Do not clear a pending fence by hand or retry an uncertain rotating grant.
+Recover through explicit login or local logout on the inference host.
+See the [operating commands](../../README.md#native-auth-and-headless-prompts).
+
+Refresh permits a 15-second exchange and a separate five-second replacement commit that does not inherit caller cancellation.
+The [app shutdown wait](../app/module_auth.go) stops new auth work and permits a 20-second drain.
+These budgets cannot interrupt a blocked OS sync call, and a forced kill can interrupt any operation.
+The durable fence prevents automatic grant reuse after an uncertain rotation.
+A network rotation and a disk commit cannot form one atomic transaction.
+This store assumes one authoritative local filesystem and does not coordinate distributed replicas.
 
 ## File names
 

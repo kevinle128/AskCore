@@ -3,6 +3,8 @@
 Date: 2026-09-30, revision 3 (the review and its re-check are applied). The review in `plans/reports/code-reviewer-260930-2254-roadmap-review.md` is applied; section 8 maps each finding to its fix.
 Revision 4 (2026-10-01): the H2 port analysis `plans/reports/xia-261001-h2-agent-loop-pi-port-analysis.md` is applied (D18 to D21, and the H2, H3, H9 text).
 Revision 5 (2026-10-05): the H4 port analysis `plans/reports/xia-261005-1408-h4-more-wire-apis-pi-port-analysis.md` and the user decisions recorded there are applied (D11, D22, H1, H3, H4, H9, H17 text, and section 9).
+Revision 6 (2026-10-06): distribute the accepted provider/auth and tool-contract design across H4, H5, H7, new H7a, H8, H9, H13, H17 and the TUI phases; H4 is not the whole provider program.
+Revision 7 (2026-10-06): prioritize Anthropic/ChatGPT/xAI subscription delivery because the user's Alibaba Token Plan expires soon; pull credential persistence into H7a and remove full H5-H7 prerequisites.
 Reference: Pi 1.0.1, commit `4c6fb7cfe`, at `/Users/dale/Desktop/workspace/opensources/pi` (user, 2026-10-05; before that Pi 0.99.1, commit `2bbfcca4`). Line citations written before 2026-10-05 are at `2bbfcca4`. Each phase checks and fixes the citations it uses.
 Inputs: `inventory-harness.md` (H-*), `inventory-extensions.md` (E-*), `inventory-tui.md` (T-*), `timeline.md`, the edge-case report `plans/reports/researcher-260930-2254-pi-edge-cases.md` (E§N; the top-30 list is E§24#N), and the waku report `plans/reports/researcher-260930-2254-waku-watch-it-think.md`.
 
@@ -11,7 +13,7 @@ Inputs: `inventory-harness.md` (H-*), `inventory-extensions.md` (E-*), `inventor
 - **Goal of the user:** learn how to build an agent harness. The harness comes first. Each harness phase teaches **one concept** and ends with a **runnable, testable result**.
 - **Milestones:** see section 0b. M1 is must-have; M2 is nice-to-have.
 - **Order (M1 first, then M2):**
-  1. M1: Phase 0, then H1 to H13, then W1, H14, H15 and X1, then T1. T0 (the inline prototype) runs in parallel from H2 on, because it lives in a scratch module.
+  1. M1: Phase 0, H1-H3, then priority H7a alongside H4's required Responses adapter; finish H4, then H5-H7 and H8-H13, then W1, H14, H15, X1 and T1. T0 runs independently from H2 in a scratch module.
   2. M2: H16, X2, H17, T2, X3 and the built-in permission policy, in any order the user picks.
 - **Each phase lists:** the decisions it waits on, the concept, the Pi files to read, the inventory ids it owns, its tests (edge cases), what it must not rebuild, and its exit.
 - **Ownership rule:** each P0 inventory row is owned by exactly one phase. Other phases may use a row, but they do not own it. A P1 row that a P0 exit needs is pulled forward and marked "(P1, pulled)". Section 6 places or defers all other P1 rows.
@@ -21,8 +23,8 @@ Inputs: `inventory-harness.md` (H-*), `inventory-extensions.md` (E-*), `inventor
 
 | Milestone | Phases | Decided |
 |---|---|---|
-| **M1: must-have** | Phase 0, H1 to H13, H14 (session tree), H15 (skills, templates, `/reload`), W1 (web monitoring dashboard), X1 (external Go extensions), T0 (inline prototype gate), T1 (TUI core, inline only) | User, 2026-10-01. W1 and H14 were chosen as must-have. |
-| **M2: nice-to-have** | `/login` and `/logout` (API key and OAuth), extension UI dialogs in the TUI, built-in permission policy (allow, deny, ask), H16 (MCP client), X2 (shell hooks), H17 (more providers, OAuth, proxy), T2 (overlays, images, TUI inspector, fullscreen), X3 (packages), Windows | User, 2026-10-01: MCP and shell hooks are not must-have. |
+| **M1: must-have** | Phase 0, H1-H3, priority H7a plus required H4 wire work, remaining H4-H7, H8-H13, H14, H15, W1, X1, T0 and T1 | User, 2026-10-01; subscription delivery pulled first on 2026-10-06. |
+| **M2: nice-to-have** | Full TUI/gateway login/logout and extension UI dialogs, built-in permission policy (allow, deny, ask), H16 (MCP client), X2 (shell hooks), H17 (more providers/auth methods, scoped models, proxy), T2 (overlays, images, TUI inspector, fullscreen), X3 (packages), Windows | User, 2026-10-01: MCP and shell hooks are not must-have. |
 
 Rule for M1 work: when a phase has a P0 part and a P1 part, M1 builds the P0 part and the P1 parts that an M1 exit needs. Every other P1 or P2 row waits for M2.
 
@@ -40,7 +42,7 @@ The user answers these one per turn, in this order. Each blocked phase starts wi
 | D6 | Minimum provider set for launch | H4 (Anthropic is in every option, so the first provider phase does not wait) | **A:** Anthropic + OpenAI-compatible. **B:** A + OpenAI Responses. **C:** more. | **Decided (user, 2026-10-01): B.** `anthropic-messages` (H3), `openai-completions` with the compat record and `openai-responses` (H4). Google, Bedrock and Mistral stay in H17. |
 | D7 | Ask names: config dir, project dir, env prefix | H5 (child env names), H6 | Suggested: `~/.ask/`, `.ask/` in the project, `ASK_*` | **Decided (user, 2026-10-01):** `~/.ask/` (override `ASK_HOME`), project `.ask/`, env prefix `ASK_*`, binaries `ask` (`cmd/tui`) and `ask-server` (`cmd/server`). |
 | D8 | Windows and WSL at launch | H5, T1 | Yes or no | **Decided (user rule "must have first", 2026-10-01): no.** Unix only at launch (macOS, Linux). Windows, WSL and PowerShell are later. |
-| D9 | Anthropic OAuth with Claude Code identity headers | H7 (precedence), H17 (flows) | **A:** API keys only. **B:** copy Pi's OAuth identity. | **Decided (must have first): A, API keys only.** Anthropic OAuth with Claude Code identity is not built. |
+| D9 | Subscription auth and Anthropic identity profiles | H7a (store/flows/profiles) | **A:** API keys only. **B:** copy Pi's OAuth identity. | **Superseded by the provider interview and priority update (2026-10-05/06).** Required Anthropic, ChatGPT and xAI access is prioritized after H3, alongside required Responses work. One provider supports injected auth methods but saves one credential. Full TUI login remains later. |
 | D10 | Crash-resume in the middle of a turn | H8 | **A:** no (Pi's shipping behavior). **B:** yes (Pi's experimental v4 and `durable`). | **Decided (must have first): A, no crash-resume.** Keep the session schema open for it. |
 | D11 | Retry jitter | H9 | **A:** copy Pi (no jitter, `AI:utils/retry.ts:122-126`). **B:** full jitter. | **Decided (must have first): A, copy Pi (no jitter)** for now; add jitter when many sessions share one daemon. Scope (2026-10-05): this is the agent-level retry delay. Pi's provider-level retry has jitter (`AI:utils/provider-retry.ts:66`), but it is off while provider `maxRetries` is 0, which is the Ask default. |
 | D12 | "Watch it think" (from waku-agent) | H12, W1, T2 | **Decided (user, 2026-09-30):** a read-only web monitoring dashboard served by the daemon, plus a TUI inspector and OTel export. The web has no chat and no control. | Done. The docs rule is narrowed. |
@@ -224,6 +226,7 @@ Rules behind this order (all checked by the review):
 
 - **Waits on:** D6 (decided B), D22 (updated 2026-10-05), and the fantasy fork work F1 to F4 and F8 that the Responses adapter needs.
 - **Concept:** "compatible" APIs hide real differences. Keep the quirks as data. Replay history across vendors.
+- **Boundary (2026-10-06):** API-key wire foundation and in-memory replay only. H5 owns builtin contracts, H7 catalog/store, H7a subscription lifecycle/profiles/headless login, and H13 public switching. Native login is no longer an H4 exit.
 - **Analysis:** `plans/reports/xia-261005-1408-h4-more-wire-apis-pi-port-analysis.md` and its five lane reports (`researcher-261005-1354-h4-*`). The edge-case lists there (Completions 38, Responses 36, replay scenarios S1 to S35) are the test source.
 - **Targets (user, 2026-10-05, option A):**
   - `openai-completions`: Alibaba Token Plan at `https://token-plan.ap-southeast-1.maas.aliyuncs.com/compatible-mode/v1`, model `deepseek-v4.1-flash`, the same key as H3. A live probe on 2026-10-05 confirmed it: thinking in `reasoning_content`, `enable_thinking:false` turns it off, the `developer` role is rejected. Compat as Pi's `qwen-token-plan`: `thinkingFormat:"qwen"`, `supportsDeveloperRole:false`, `supportsStore:false`. Cost 0 (subscription).
@@ -265,7 +268,7 @@ Rules behind this order (all checked by the review):
   - `reasoningEffortMap` and `sendSessionIdHeader`.
   - Per-thinking-level model variants.
   - The Gemini CLI and Antigravity providers.
-  - The ChatGPT sign-in heuristic (`AI:api/openai-responses.ts:40-47`).
+  - Token-prefix sign-in heuristics; H7a uses explicit method/profile identity.
 - **Exit:** one in-memory conversation switches between Anthropic and OpenAI with correct thinking replay, shown by the Go tests above (user, 2026-10-05: tests only; the user-facing switch is H13 `set_model` and `/model`, and H17 `cycle_model`).
 
 ### H5: Built-in tools
@@ -280,11 +283,14 @@ Rules behind this order (all checked by the review):
   - H-TOOL-22 (shell and child env; Unix only if D8 = no).
   - H-TOOL-23 (process-tree kill with `Setpgid` and `WaitDelay`).
   - H-SEC-03 (the no-approval stance, per D3).
+- **Contract (2026-10-06):** reference Pi for builtin input, behavior and output; use its Claude Code compatibility names where semantics match. Preserve custom/MCP contracts and existing names. No `find -> Glob` semantic alias.
+- **Output:** reuse H2's result contract: model-facing content, UI/log details and optional programmatic structured content; provider serialization remains in wire adapters.
 - **Configuration:** hard-coded defaults here. H6 wires the settings.
 - **Packages:** `tools` (`filesystem_*`, `shell*`, `search_*`), `sandbox` (local implementation), `workspace` (session cwd).
 - **Tests:**
   - E§24#12, #13 (process kill, bash output).
   - E§24#15, #16, #17, #18 (edit normalization, write serialization, paths, content sniffing).
+  - Pi contract parity for names, fields, units, defaults, errors and output limits; the same canonical arguments work across providers.
 - **Do not rebuild:**
   - The `glob` and `think` tools.
   - The single-shape edit.
@@ -318,24 +324,33 @@ Rules behind this order (all checked by the review):
   - A pre-trust read of `sessionDir`.
 - **Exit:** an `AGENTS.md` file and a skill change the agent's behavior, and an untrusted project's `.ask/` config is ignored.
 
-### H7: Model catalog, resolution and credentials
+### H7: Model catalog and resolution
 
-- **Waits on:** D2 (credential store), D9 (precedence without OAuth).
-- **Concept:** model data is data. Credentials have one write path, protected by a lock.
+- **Waits on:** H6, D2 and the accepted provider interview; use H4's model/wire contracts.
+- **Concept:** model data is data; configuration and refreshed catalogs reuse one validated registry and H7a's credential resolver.
 - **Read in Pi:** `C:core/model-resolver.ts`, `C:core/model-config.ts`, `C:core/auth-storage.ts`, `CD:models.md`.
 - **Owns:**
-  - H-PROV-16 (bundled catalog; P1, pulled; the remote refresh is later).
-  - H-PROV-17 (`models.json`).
+  - H-PROV-16 (P1, pulled): generated baseline plus Pi remote overlay through an Ask schema adapter, validated cache, ETag/304 and offline catalog operation.
+  - H-PROV-17 (`models.json`): compatible provider/model registration without rebuilding; explicit field overrides win after remote refresh. New custom JSON models use Pi defaults (128000 context, 16384 output, text-only, reasoning off, zero omitted prices).
   - H-PROV-19 (resolution and patterns; the session restore part is in H8).
-  - H-AUTH-01 (precedence).
-  - H-AUTH-02, H-AUTH-03 (`~/.ask/auth.json` with mode 0600, a cross-process file lock and read-merge-write, per D2).
+- **Uses:** H7a owns H-AUTH-01/02/03 precedence and credential persistence; model configuration integrates that same store and resolver, without another implementation.
 - **Packages:** `providers`, `settings`.
 - **Tests:**
   - A model-id parsing table.
-  - Credential concurrency from two processes (E§24#20).
-  - E§24#30 (data files with overrides).
+  - Model-config resolution uses H7a's saved credentials and respects account/method replacement; the two-process store tests are owned by H7a.
+  - E§24#30 (data files with overrides); malformed remote/config data retains the last valid catalog, custom defaults follow Pi, and background refresh does not replace the selected model snapshot.
 - **Do not rebuild:** API keys in the settings.
 - **Exit:** `--model anthropic/<id>:high` resolves, and a key saved in `auth.json` is used.
+
+### H7a: Subscription auth and request profiles (priority lane)
+
+- **Waits on:** H3 Messages and H2 tool/result contracts; OpenAI/xAI inference additionally needs H4's Responses adapter. Native auth/store work starts now; full H4, H5, H6 and H7 are not gates.
+- **Concept:** credential lifecycle and request shaping are separate from wire serialization.
+- **Owns:** H-AUTH-01/02/03 shared precedence and locked credential persistence, H-AUTH-06 for Anthropic/ChatGPT/xAI, H-AUTH-07 shared mechanics, H-AUTH-11 shaping and H-AUTH-10 shared operations/headless commands; breadth and gateway/TUI transport stay H17/T2.
+- **Build:** injected supported auth methods, explicit profiles, native login/refresh, safe one-credential replacement and per-request auth. Use compiled provider/model records and existing tools; remote catalog, project settings and complete builtins follow later.
+- **Profiles:** Anthropic names/headers/system/betas including named tool choice; ChatGPT public Responses restrictions; xAI device auth and model-gated reasoning. Unknown account access permits inference; known denial does not.
+- **Exit:** headless login/logout and inference work for the three subscriptions on the inference host; refresh/replacement and key/subscription request tests pass without billed fallback.
+- **Execution detail:** [H7a subscription auth](./phase-h7a-subscription-auth.md); [accepted design](../261005-2139-provider-auth-design/plan.md).
 
 ### H8: The session log
 
@@ -360,13 +375,13 @@ Rules behind this order (all checked by the review):
 - **Packages:** `sessions`, `store`, `store/gormstore`, `migrations`.
 - **Tests:**
   - Write ordering (E§24#10).
-  - Resume restores the model and thinking level.
+  - Resume restores the qualified provider/model, method provenance and effective thinking level; it never restores a token snapshot.
   - `context_edit` omits an entry from context and keeps it in history.
   - Two processes cannot write one session.
   - A paused writer whose lease expired cannot write after a new owner took the lease.
   - Two processes write two different sessions at the same time without SQLite busy errors.
   - Two processes start on a fresh database at the same time, and migrations run once.
-  - After headless changes an API key in `auth.json`, a running leader uses the new key on its next request.
+  - After headless replaces a credential, a leader resolves the latest record for its next request; a method mismatch requires explicit selection instead of silently changing billing.
   - Schema migration.
 - **Do not rebuild:**
   - `agent.state.messages` as the history (removed in 0.87.0).
@@ -391,7 +406,7 @@ Rules behind this order (all checked by the review):
 - **Tests:**
   - E§24#28 (steer waits for the tool batch).
   - E§24#5, #6, #8 (classification, retry, usage).
-  - A 429 is not classified as overflow.
+  - A 429 is not classified as overflow; exhausted subscription allowance is not a transient rate limit and cannot trigger billed fallback. Mid-stream public output cannot be transparently replayed.
 - **Do not rebuild:**
   - `queueMessage` and `queueMode`.
   - Allowing `prompt()` while streaming.
@@ -498,7 +513,7 @@ Rules behind this order (all checked by the review):
   - WS upgrades need an `Origin` allow-list, never `*`.
 - **Owns:**
   - H-MODE-06 (framing semantics mapped to ACP over the leader socket and WS; no gRPC agent API).
-  - H-MODE-07, P0 part (prompting, state, `set_model`, `get_available_models`, thinking level, compact). `cycle_model` comes in H17 with scoped models.
+  - H-MODE-07, P0 part (prompting, state, `set_model`, `get_available_models`, thinking level, compact). Shared resolution uses qualified provider/model/method, readiness and capabilities; selection commits at a safe request boundary and failed selection leaves the previous target intact. `cycle_model` comes in H17 with scoped models.
   - H-MODE-08, for the commands above. The `bash` semantics come in H15 and the `get_entries` cursor in H14.
   - H-MODE-09 (closes Pi's gaps: auth, multi-client).
   - H-MODE-13 (stateless SDK rules).
@@ -590,14 +605,14 @@ Rules behind this order (all checked by the review):
   - An untrusted project `mcp.json` does not load.
 - **Exit:** an MCP server's tools are callable, and an untrusted project's `mcp.json` is ignored.
 
-### H17: Provider breadth, auth flows and network
+### H17: Provider breadth, additional auth flows and network
 
-- **Waits on:** D9.
+- **Waits on:** H7a for shared auth operations and H13 for gateway/scoped selection.
 - **Concept:** breadth is data plus flows. Each new vendor is a compat record and quirk data. Each login is a flow with timeouts and fallbacks.
 - **Read in Pi:** `AI:auth/oauth/pkce.ts`, `AI:auth/oauth/callback-server.ts`, `AI:auth/oauth/device-code.ts`, `AI:api/bedrock-converse-stream.ts`, `AI:api/google-generative-ai.ts`, `CD:providers.md`.
 - **Owns:**
   - H-PROV-05 (Bedrock, Google, Mistral), H-PROV-13 (thinking budgets), H-PROV-14 (vendors other than Anthropic and OpenAI), H-PROV-20 (scoped models and the `cycle_model` RPC).
-  - H-AUTH-04 (command keys), H-AUTH-05 (vendors other than Anthropic, OpenAI and Alibaba Token Plan), H-AUTH-06 (the P1 subset: ChatGPT and Copilot, plus Anthropic only if D9 = B; not legacy Codex), H-AUTH-07 (flow mechanics), H-AUTH-10 and H-SLASH-10 (`/login`, `/logout` as a gateway method, which T1 `/login` needs), H-AUTH-12 (proxy).
+  - H-AUTH-04 (command keys), H-AUTH-05 (vendors other than Anthropic, OpenAI and Alibaba Token Plan), H-AUTH-06 (additional methods such as Copilot, not legacy Codex), H-AUTH-07 (additional flow bindings), H-AUTH-10 gateway transport and H-SLASH-10 (`/login`, `/logout`; reuse H7a operations), H-AUTH-12 (proxy).
   - H-TOOL-20 (image resize).
   - H-PKG-05 (offline mode).
 - **Tests:**
@@ -675,7 +690,7 @@ Rules behind this order (all checked by the review):
   - keybindings;
   - themes;
   - width and Unicode handling.
-- **Harness rows that T1 commands need:** H-SESS-18 (H13), H-SESS-20 (H14) and the H-SESS-10 picker (built in T1), H-AUTH-10 (H17). `/session` and `/resume` are enabled when their phase is done. **`/login` is M2** (user, 2026-10-01): in M1 the user sets an API key with an environment variable (for example `ANTHROPIC_API_KEY`) or in `~/.ask/auth.json`, and the TUI shows that hint when no key is found.
+- **Harness rows that T1 commands need:** H-SESS-18 (H13), H-SESS-20 (H14) and the H-SESS-10 picker (built in T1), H7/H7a model/auth readiness. `/session` and `/resume` are enabled when their phase is done. Full TUI `/login` remains M2 (H17 transport, T2 dialogs); M1 can use H7a headless login on the inference host or environment API keys. Show provider, model, auth method and readiness without assuming entitlement.
 - **Constraint:** the TUI uses one `AgentClient` interface: `remote` (ACP to the leader, or to a remote agent) and `direct` (in-process Go API, the fallback when no leader is reachable). Headless mode uses `direct` (D5).
 - **Tests:** E§24#23 to #27.
 - **Exit:** a full session in the terminal works: prompt, stream, steer, abort, compact, and resume. The terminal is restored on every exit path.
@@ -684,7 +699,7 @@ Rules behind this order (all checked by the review):
 
 - **Waits on:** D12 (decided), D15. Needs W1 (the shared stage table) and X1 (the extension UI subset).
 - **Build:**
-  - Overlays, images (Kitty placeholders), and the extension UI subset.
+  - Overlays, images (Kitty placeholders), extension UI and full login/logout dialogs using H7a operations through H17 gateway transport. Scoped/favorite cycling uses H17; tool/MCP contracts stay with their owners.
   - Optional alt-screen mode (D15).
   - The "Watch it think" TUI inspector: a view over the gateway event feed with the same stage table as W1.
 - **Exit:** the inspector and the web dashboard show the same run with the same stages.
@@ -746,6 +761,7 @@ Source: `plans/reports/xia-261005-1408-h4-more-wire-apis-pi-port-analysis.md`. T
 | Thinking level on a switch | (a) as Pi: store only the clamped level | H4 "Also builds", test S30 |
 | Package shape | Fantasy is infrastructure. One adapter package for each wire API, shared plumbing in one infrastructure package, vendors as data. | D22 update, H3, H4 "Packages" |
 | Tool-call id collisions | (b) as Pi: no guard | H4 "Also builds", tests (S7 removed) |
+| Tool result after an aborted or errored call | Drop the result when its tool call does not survive replay, an intentional departure from Pi pass-through behavior (user, 2026-10-06). | H4 replay scenario S16 and `TransformMessages` |
 | Mid-conversation system messages | (a) H4 renders them on all three wires; H8 only creates the entries | H4 "Also builds" |
 | Cost | (c) as Pi: prices, tiers, `calculateCost` and service tier pricing in H4 | H1, H4, H9, section 8 |
 | Switch demo | (a) Go tests only, as Pi's agent-level tests | H4 "Exit" |
@@ -755,3 +771,22 @@ Source: `plans/reports/xia-261005-1408-h4-more-wire-apis-pi-port-analysis.md`. T
 Upstream (user, 2026-10-05, option a): send each fantasy fix to `charmbracelet/fantasy` as a PR once it has tests and works in Ask; use the fork until upstream accepts it, then remove the `replace`.
 
 Fork scope (user, 2026-10-05): fix F1, F2, F3, F4 and F8 in the fork before H4 starts ("bao giờ xong thì mới bắt đầu làm H4"). The work is handed off to a Codex agent: brief `plans/reports/handoff-261005-1600-fantasy-fork-responses-fixes.md`, result report `plans/reports/codex-261005-fantasy-fork-responses-fixes.md`. F1 and F2 are not proven necessary by a live OpenAI test (no key yet). **Done 2026-10-05:** all five fixes are pushed (final SHA `08976763bfea`, commits `b8c979f`, `9a2008a`, `a855426`, `88f560d`, `0897676`). `replace charm.land/fantasy => github.com/kevinle128/fantasy v0.0.0-20261005094512-08976763bfea` is in `go.mod` (applied 2026-10-05 at the user's request; `go build`, `go test ./...`, `go test -race` on providers and agent, and golangci-lint pass; `go mod tidy` also moved `github.com/charmbracelet/x/exp/slice` to v0.1.0); the result report gives the adapter mapping for the new metadata types. **Upstream (2026-10-05):** PR #407 (closes #406) is restored to its six commits; the five Responses fixes are in issue #411 and PR #412 (depends on #407). Fork `main` and branch `feat/openai-responses-replay-metadata` both hold `08976763bfea`. Remove the `replace` when both PRs are merged and released.
+
+## 10. Provider/auth interview allocation (2026-10-06)
+
+The user requested roadmap allocation because H4 cannot deliver the complete design.
+This scheduling update supersedes interview Q1's H4 timing only; native headless login stays with subscription delivery in H7a, and the accepted behavior remains unchanged.
+The [H4 report](../reports/xia-261005-1408-h4-more-wire-apis-pi-port-analysis.md) records the decisions; the [design plan](../261005-2139-provider-auth-design/plan.md) holds shared contracts and validation.
+H4 owns wire/replay, H5 builtin contracts, H6 settings/trust, H7 catalog/credential persistence, H7a subscription lifecycle/profiles, H8 durable selection provenance, H9 error/retry integration, H13 public switching, H17 breadth/scoped models/proxy, T1 model/auth status and T2 full auth dialogs.
+Keep one provider with injected supported auth methods and one saved credential; each model record selects one API.
+Pi is the initial remote catalog source; user overrides win, active model snapshots survive background refresh, and custom JSON defaults follow Pi.
+All phase exits are cumulative dependencies; no phase may weaken an accepted contract to avoid work.
+
+## 11. Subscription delivery priority (2026-10-06)
+
+The user needs replacement access before Alibaba Token Plan expires; H7a is the next product-delivery priority, not a phase waiting behind H5-H7.
+Implement the shared secure credential store first, then deliver Anthropic using Messages; OpenAI ChatGPT and xAI/Grok use Responses as that H4 adapter becomes available.
+Auth strategy work for all three can proceed independently after shared contracts are fixed; integrate each provider without waiting for the other two.
+The first live subscription prompt is a delivery checkpoint; retain the exit that all three flows work before H7a is complete.
+Remote catalog, full builtin tools, project trust/settings, public switching and TUI keep their phase ownership; H7 integrates the credential store built here.
+Preserve all accepted security, refresh, profile and no-billed-fallback requirements; do not make an expired Alibaba account an acceptance dependency.

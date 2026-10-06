@@ -22,7 +22,20 @@ LLM access. The package keeps three things apart. An **Api** is a wire protocol 
 | Agent-level retry of a turn | `internal/agent` |
 | Subprocess agents over ACP | `internal/providers/acp` |
 | Tools | `internal/tools` |
-| Reading `auth.json` and settings | `internal/settings` (a constructor receives a credential resolver function) |
+| Reading `auth.json` and settings | [internal/settings](../settings/README.md) |
+| Native login, refresh, and account access checks | [internal/auth](../auth/README.md) |
+
+## Request authentication
+
+[AuthSnapshot](auth.go) is the request-local contract from the app-composed resolver.
+Adapters never import auth services or the credential store.
+Keep subscription profiles at the final HTTP boundary so a vendor SDK cannot send access material to a different destination or mix ambient account headers.
+The owning guards are [Messages profiles](anthropic/profile.go) and [Responses profiles](openai/profiles.go).
+They share the existing wire adapters with API-key requests; do not add a second subscription adapter.
+
+[The compiled catalog](catalog.go) owns model capabilities.
+[Account discovery](../auth/discovery.go) checks ChatGPT access separately, because a compiled model can be unavailable to an account.
+A known access denial stops the request without a model or API-key fallback.
 
 ## Main interfaces
 
@@ -39,7 +52,7 @@ Sub-packages: `anthropic/` and `openai/` (wire adapters, one file for each Api o
 ## Imports
 
 - Allowed: `pkg/protocol` (message, content, usage and stream event types), `tracing`. Third-party vendor SDKs and `charm.land/fantasy` only in the adapter sub-packages and `fantasykit/` (depguard); the core files never import them
-- Denied: `internal/tools`, `internal/agent`, `internal/settings` (receive the credential through a resolver function); `internal/gateway`, `internal/http`, `internal/channels/<vendor>` (core packages do not import transport); `internal/acp`, `internal/leader` (adapters wrap the core, never the reverse); `internal/config`
+- Denied: `internal/tools`, `internal/agent`, `internal/settings`, `internal/auth` (receive resolved request credentials); `internal/gateway`, `internal/http`, `internal/channels/<vendor>` (core packages do not import transport); `internal/acp`, `internal/leader` (adapters wrap the core, never the reverse); `internal/config`
 
 ## Rules
 

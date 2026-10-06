@@ -21,7 +21,7 @@ import (
 	"go.uber.org/goleak"
 
 	"AskCore/internal/agent"
-	"AskCore/internal/providers/tokenplan"
+	"AskCore/internal/providers/anthropic"
 	"AskCore/pkg/protocol"
 )
 
@@ -61,8 +61,8 @@ func TestPrint(t *testing.T) {
 		{"assistant error", "", []string{"-p", "fail boom"}, result{"", "boom\n", 1}},
 		{"first prompt fails, second runs", "", []string{"-p", "fail boom", "second"}, result{"second\n", "", 0}},
 		{"last prompt fails", "", []string{"-p", "first", "fail late"}, result{"", "late\n", 1}},
-		{"unknown provider", "", []string{"--provider", "openai", "-p", "hi"},
-			result{"", "Error: provider \"openai\" is not available\n", 1}},
+		{"unknown provider", "", []string{"--provider", "unavailable", "-p", "hi"},
+			result{"", "Error: provider \"unavailable\" is not available\n", 1}},
 		{"unknown model", "", []string{"--model", "gpt", "-p", "hi"},
 			result{"", "Error: model \"gpt\" not found for provider \"faux\"\n", 1}},
 		{"stdin joins the message", "a", []string{"-p", "b"}, result{"ab\n", "", 0}},
@@ -98,16 +98,34 @@ func TestPrintBadPaceEnv(t *testing.T) {
 	assert.Equal(t, result{"", "Error: ASK_FAUX_TPS must be a non-negative number, got \"fast\"\n", 1}, got)
 }
 
-var volatileFields = regexp.MustCompile(`"(ts|timestamp)":\d+|"runId":"[0-9a-f]{32}"`)
+var volatileFields = regexp.MustCompile(`"(ts|timestamp)":\d+|"runId":"[0-9a-f]{32}"|"sessionId":"[0-9a-fA-F-]{36}"`)
 
-// normalize replaces the clock and run id values, which change per run.
+// normalize replaces the clock, run id and session id values, which change per run.
 func normalize(jsonl string) string {
 	return volatileFields.ReplaceAllStringFunc(jsonl, func(s string) string {
 		if strings.HasPrefix(s, `"runId"`) {
 			return `"runId":"R"`
 		}
+		if strings.HasPrefix(s, `"sessionId"`) {
+			return `"sessionId":""`
+		}
 		return s[:strings.IndexByte(s, ':')+1] + "0"
 	})
+}
+
+func TestHeadlessAssignsSessionID(t *testing.T) {
+	ag := newAgent(t, "")
+	var sid string
+	ag.Subscribe(func(ev protocol.Event) error {
+		if sid == "" {
+			sid = ev.Env().SessionID
+		}
+		return nil
+	})
+	require.NoError(t, ag.Prompt(context.Background(), protocol.UserMessage{
+		Content: []protocol.UserBlock{protocol.Text{Text: "hello"}},
+	}))
+	assert.Regexp(t, `^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$`, sid)
 }
 
 func TestJSONHelloLines(t *testing.T) {
@@ -117,13 +135,13 @@ func TestJSONHelloLines(t *testing.T) {
 {"seq":2,"ts":0,"sessionId":"","runId":"R","type":"turn_start"}
 {"seq":3,"ts":0,"sessionId":"","runId":"R","type":"message_start","message":{"role":"user","content":[{"type":"text","text":"hello"}],"timestamp":0}}
 {"seq":4,"ts":0,"sessionId":"","runId":"R","type":"message_end","message":{"role":"user","content":[{"type":"text","text":"hello"}],"timestamp":0}}
-{"seq":5,"ts":0,"sessionId":"","runId":"R","type":"message_start","message":{"role":"assistant","content":[],"api":"faux","provider":"faux","model":"faux-1","usage":{"input":54,"output":0,"cacheRead":0,"cacheWrite":0,"totalTokens":54,"cost":{"input":0,"output":0,"cacheRead":0,"cacheWrite":0,"total":0}},"stopReason":"pending","timestamp":0}}
-{"seq":6,"ts":0,"sessionId":"","runId":"R","type":"message_update","assistantMessageEvent":{"type":"text_start","contentIndex":0,"content":{"type":"text","text":""}},"usage":{"input":54,"output":2,"cacheRead":0,"cacheWrite":0,"totalTokens":56,"cost":{"input":0,"output":0,"cacheRead":0,"cacheWrite":0,"total":0}}}
-{"seq":7,"ts":0,"sessionId":"","runId":"R","type":"message_update","assistantMessageEvent":{"type":"text_delta","contentIndex":0,"delta":"hello"},"usage":{"input":54,"output":2,"cacheRead":0,"cacheWrite":0,"totalTokens":56,"cost":{"input":0,"output":0,"cacheRead":0,"cacheWrite":0,"total":0}}}
-{"seq":8,"ts":0,"sessionId":"","runId":"R","type":"message_update","assistantMessageEvent":{"type":"text_end","contentIndex":0,"content":"hello"},"usage":{"input":54,"output":2,"cacheRead":0,"cacheWrite":0,"totalTokens":56,"cost":{"input":0,"output":0,"cacheRead":0,"cacheWrite":0,"total":0}}}
-{"seq":9,"ts":0,"sessionId":"","runId":"R","type":"message_end","message":{"role":"assistant","content":[{"type":"text","text":"hello"}],"api":"faux","provider":"faux","model":"faux-1","thinkingLevel":"off","usage":{"input":54,"output":2,"cacheRead":0,"cacheWrite":0,"totalTokens":56,"cost":{"input":0,"output":0,"cacheRead":0,"cacheWrite":0,"total":0}},"stopReason":"stop","timestamp":0}}
-{"seq":10,"ts":0,"sessionId":"","runId":"R","type":"turn_end","message":{"role":"assistant","content":[{"type":"text","text":"hello"}],"api":"faux","provider":"faux","model":"faux-1","thinkingLevel":"off","usage":{"input":54,"output":2,"cacheRead":0,"cacheWrite":0,"totalTokens":56,"cost":{"input":0,"output":0,"cacheRead":0,"cacheWrite":0,"total":0}},"stopReason":"stop","timestamp":0},"toolResults":[]}
-{"seq":11,"ts":0,"sessionId":"","runId":"R","type":"agent_end","messages":[{"role":"user","content":[{"type":"text","text":"hello"}],"timestamp":0},{"role":"assistant","content":[{"type":"text","text":"hello"}],"api":"faux","provider":"faux","model":"faux-1","thinkingLevel":"off","usage":{"input":54,"output":2,"cacheRead":0,"cacheWrite":0,"totalTokens":56,"cost":{"input":0,"output":0,"cacheRead":0,"cacheWrite":0,"total":0}},"stopReason":"stop","timestamp":0}]}
+{"seq":5,"ts":0,"sessionId":"","runId":"R","type":"message_start","message":{"role":"assistant","content":[],"api":"faux","provider":"faux","model":"faux-1","usage":{"input":54,"output":0,"cacheRead":0,"cacheWrite":54,"totalTokens":108,"cost":{"input":0,"output":0,"cacheRead":0,"cacheWrite":0,"total":0}},"stopReason":"pending","timestamp":0}}
+{"seq":6,"ts":0,"sessionId":"","runId":"R","type":"message_update","assistantMessageEvent":{"type":"text_start","contentIndex":0,"content":{"type":"text","text":""}},"usage":{"input":54,"output":2,"cacheRead":0,"cacheWrite":54,"totalTokens":110,"cost":{"input":0,"output":0,"cacheRead":0,"cacheWrite":0,"total":0}}}
+{"seq":7,"ts":0,"sessionId":"","runId":"R","type":"message_update","assistantMessageEvent":{"type":"text_delta","contentIndex":0,"delta":"hello"},"usage":{"input":54,"output":2,"cacheRead":0,"cacheWrite":54,"totalTokens":110,"cost":{"input":0,"output":0,"cacheRead":0,"cacheWrite":0,"total":0}}}
+{"seq":8,"ts":0,"sessionId":"","runId":"R","type":"message_update","assistantMessageEvent":{"type":"text_end","contentIndex":0,"content":"hello"},"usage":{"input":54,"output":2,"cacheRead":0,"cacheWrite":54,"totalTokens":110,"cost":{"input":0,"output":0,"cacheRead":0,"cacheWrite":0,"total":0}}}
+{"seq":9,"ts":0,"sessionId":"","runId":"R","type":"message_end","message":{"role":"assistant","content":[{"type":"text","text":"hello"}],"api":"faux","provider":"faux","model":"faux-1","thinkingLevel":"off","usage":{"input":54,"output":2,"cacheRead":0,"cacheWrite":54,"totalTokens":110,"cost":{"input":0,"output":0,"cacheRead":0,"cacheWrite":0,"total":0}},"stopReason":"stop","timestamp":0}}
+{"seq":10,"ts":0,"sessionId":"","runId":"R","type":"turn_end","message":{"role":"assistant","content":[{"type":"text","text":"hello"}],"api":"faux","provider":"faux","model":"faux-1","thinkingLevel":"off","usage":{"input":54,"output":2,"cacheRead":0,"cacheWrite":54,"totalTokens":110,"cost":{"input":0,"output":0,"cacheRead":0,"cacheWrite":0,"total":0}},"stopReason":"stop","timestamp":0},"toolResults":[]}
+{"seq":11,"ts":0,"sessionId":"","runId":"R","type":"agent_end","messages":[{"role":"user","content":[{"type":"text","text":"hello"}],"timestamp":0},{"role":"assistant","content":[{"type":"text","text":"hello"}],"api":"faux","provider":"faux","model":"faux-1","thinkingLevel":"off","usage":{"input":54,"output":2,"cacheRead":0,"cacheWrite":54,"totalTokens":110,"cost":{"input":0,"output":0,"cacheRead":0,"cacheWrite":0,"total":0}},"stopReason":"stop","timestamp":0}]}
 {"seq":12,"ts":0,"sessionId":"","runId":"R","type":"agent_settled"}
 `
 	assert.Equal(t, result{want, "", 0}, result{normalize(got.stdout), got.stderr, got.code})
@@ -280,7 +298,7 @@ func (g *gatedWriter) Write(p []byte) (int, error) {
 }
 
 func TestTokenPlanMissingKeyIsAnAssistantError(t *testing.T) {
-	ag, err := newHeadlessAgent(options{provider: tokenplan.ProviderID, model: tokenplan.ModelID}, func(k string) string {
+	ag, err := newHeadlessAgent(options{provider: anthropic.ProviderID, model: anthropic.ModelID}, func(k string) string {
 		if k == "ANTHROPIC_API_KEY" {
 			return "must-not-be-used"
 		}

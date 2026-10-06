@@ -8,8 +8,9 @@ import (
 	"path/filepath"
 	"time"
 
+	"AskCore/internal/providers"
+	"AskCore/internal/providers/anthropic"
 	"AskCore/internal/providers/cassette"
-	"AskCore/internal/providers/tokenplan"
 )
 
 // captureEnv names a directory. When it is set, ask records the provider
@@ -27,7 +28,7 @@ func startCapture(o *options, getenv func(string) string, stderr io.Writer, real
 	if dir == "" {
 		return "", nil
 	}
-	if o.provider != tokenplan.ProviderID {
+	if o.provider != anthropic.ProviderID && o.provider != providers.ProviderAnthropic && o.provider != providers.ProviderOpenAI && o.provider != providers.ProviderXAI {
 		report(stderr, "ask: "+captureEnv+" ignored: provider", o.provider, "makes no HTTP requests")
 		return "", nil
 	}
@@ -36,6 +37,9 @@ func startCapture(o *options, getenv func(string) string, stderr io.Writer, real
 	}
 	path := filepath.Join(dir, time.Now().Format("20060102-150405.000")+".yaml")
 	var opts []cassette.Option
+	if real == nil {
+		real = o.transport
+	}
 	if real != nil {
 		opts = append(opts, cassette.WithRealTransport(real))
 	}

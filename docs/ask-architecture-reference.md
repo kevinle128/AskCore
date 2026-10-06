@@ -54,7 +54,7 @@ Runtime core            agent (two-level loop, steer and follow-up queues)
                         ├─ sessions (entry tree), scheduler (lanes), bus (event fan-out), workspace
   │
   ▼
-Capabilities            providers, tools, mcp, skills, bootstrap, hooks, sandbox, tracing
+Capabilities            auth, providers, tools, mcp, skills, bootstrap, hooks, sandbox, tracing
 Files under ~/.ask      settings (auth.json, settings.json)
   │
   ▼
@@ -75,6 +75,7 @@ Go has no classes. A "class" is a struct with methods. The rule is **one package
 | `internal/app` | fx modules and lifecycle | `cmd/gateway*.go` |
 | `internal/config` | viper start-up config, env overlay (a `daemon`/`cloud` mode setting is added when the first feature needs it) | `internal/config` |
 | `internal/settings` | `~/.ask/auth.json` (credentials, mode 0600, file lock) and `settings.json` (user and trusted project) | |
+| `internal/auth` | Native login, refresh, local logout, verified identity, and account access checks; see [package boundaries](../internal/auth/README.md) | |
 | `internal/logs` | zap logger factory, runtime log ring | `cmd/gateway.go:106`, `internal/logs` |
 | `internal/gateway` | HTTP (echo), WS and gRPC servers, method router, rate limit, gRPC service implementations (`grpc_*.go`) | `internal/gateway` |
 | `internal/gateway/methods` | WS RPC method handlers | `internal/gateway/methods` |
@@ -271,7 +272,8 @@ Ask does **not** copy these Grok parts: zombie-leader eviction, the acquire-slot
 
 **Fallback.** When the TUI cannot connect to the leader, it may build its own agent in process, as headless mode does. Grok does this (`PG/app/mod.rs:1107-1113`). The TUI uses one `AgentClient` interface with two implementations: `remote` (ACP over the leader socket, or over WebSocket to a remote agent) and `direct` (the in-process Go API). The UI code is the same for both.
 
-**Concurrent writers.** Headless mode and the leader can run at the same time and use the same data. The per-session cross-process lock (roadmap H8) and the `auth.json` file lock (roadmap D2) keep this safe.
+**Concurrent credential writers.** The [credential transaction](../internal/settings/README.md#credential-transaction) owns cross-process auth writes on one authoritative local filesystem.
+Session locking for concurrent headless and leader use remains planned under H8.
 
 **Editors.** Because the agent speaks standard ACP, an ACP editor (for example Zed) can run Ask as an agent over stdio (`ask acp`), as Grok does with `grok agent stdio`.
 
@@ -286,6 +288,26 @@ Ask does **not** copy these Grok parts: zombie-leader eviction, the acquire-slot
 | `internal/app` | fx modules: `AgentModule` (agent, providers, tools, sessions, settings, hooks), `LeaderServerModule`, `GatewayModule` |
 | `cmd/tui` (`ask`) | `ask` = TUI + `AgentClient` (remote). `ask -p` = `AgentModule` + `AgentClient` (direct). `ask leader` = `AgentModule` + ACP adapter + `LeaderServerModule`. `ask acp` = `AgentModule` + ACP adapter on stdio. |
 | `cmd/server` | `GatewayModule` + leader client |
+
+---
+
+### 7.4 Native credentials
+
+The headless auth route is an Ask adaptation of Pi's interactive login and logout.
+[cmd/tui](../cmd/tui/headless.go) dispatches it before prompt parsing or inference capture.
+[NewNativeAuth](../internal/app/auth_native.go) composes the real local store and native protocols without database or leader setup.
+[BindAuth](../internal/app/module_auth.go) connects one resolver to idle model readiness and each final model request.
+The agent owns canonical messages and events; auth does not own a second agent loop.
+
+Keep rotating grants, identity validation, and account discovery in [auth](../internal/auth/README.md).
+Keep file transactions in [settings](../internal/settings/README.md) and final HTTP guards in [provider adapters](../internal/providers/README.md#request-authentication).
+Providers receive a request-local snapshot with access material and destination binding, without refresh tokens, ID tokens, or a store handle.
+Auth HTTP is private and separate from inference capture.
+
+The product keeps one saved credential/account per provider and uses local-only logout.
+Deleting a ChatGPT record also removes the saved issued client; no client registration is retained for later sign-in.
+This policy does not establish compliance with all OpenAI account or session guidance.
+See the [operating guide](../README.md#native-auth-and-headless-prompts) for method selection and callback forwarding, and the [storage guide](../internal/settings/README.md#credential-transaction) for refresh recovery and shutdown limits.
 
 ---
 
@@ -312,6 +334,8 @@ Allowed: `tools` imports `providers`.
 | One composition root | Only `internal/app` and `cmd/server` import `store/gormstore` |
 | Core does not import adapters | `agent`, `pipeline`, `tools`, `providers`, `store`, `sessions`, `hooks`, `bus` must not import `acp`, `leader` |
 | Config through constructors | Only `internal/app` and `cmd/*` import `internal/config`. Runtime settings and credentials are files that `internal/settings` owns |
+| Providers receive resolved credentials | Providers must not import `internal/auth` or `internal/settings` |
+| Settings uses standard library only | `internal/settings` must not import other internal packages or dependencies |
 
 ---
 
@@ -327,6 +351,7 @@ Allowed: `tools` imports `providers`.
 | A new session entry type | `internal/sessions/entry.go` | |
 | A new event type | `pkg/protocol` | the publisher is in `bus`, sync dispatch in `hooks` |
 | A new user setting or credential | `internal/settings/` | |
+| Native login, refresh, or account access | `internal/auth/` | Reuse the app composition and existing provider adapters |
 | A new ACP method or update mapping | `internal/acp/`, types in `pkg/protocol` | |
 | A new persisted entity | model and interface in `internal/store/<entity>_store.go`, implementation in `internal/store/gormstore/<entity>.go`, SQL in `migrations/` | add the interface to `store.Stores` |
 | A new REST endpoint | `internal/http/<resource>.go` | call `store` interfaces or core packages; DTO only under section 6 |
@@ -340,7 +365,13 @@ Allowed: `tools` imports `providers`.
 ## 10. Database and entry points
 
 - **Database:** SQLite for both daemon and cloud mode (user decision, 2026-09-30). One migration folder, `migrations/`. PostgreSQL and its own migration folder are added only when cloud mode needs them.
-- **Entry points:** two binaries (user decision, 2026-09-30). `cmd/server` is the daemon (`ask-server`); operational commands (for example `migrate`) are flags or subcommands of it. `cmd/tui` is the `ask` binary (user decision, 2026-10-01, Grok model). It has three modes: the interactive TUI, headless mode (`ask -p`) and the leader (`ask leader`). The TUI and the daemon are ACP clients of the leader. Headless mode calls the agent's Go API in process. See section 7.3.
+- **Entry points:** two binaries (user decision, 2026-09-30).
+  `cmd/server` is the daemon (`ask-server`); operational commands (for example `migrate`) are flags or subcommands of it.
+  `cmd/tui` is the `ask` binary (user decision, 2026-10-01, Grok model).
+  It has the interactive TUI, headless mode (`ask -p`), leader (`ask leader`), and native auth commands (`ask auth`).
+  The TUI and the daemon are ACP clients of the leader.
+  Headless mode calls the agent's Go API in process.
+  See section 7.3.
 
 ---
 

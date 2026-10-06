@@ -143,6 +143,11 @@ func TestAgentBusy(t *testing.T) {
 	require.ErrorIs(t, a.Prompt(context.Background(), user("again")), agent.ErrBusy)
 	require.ErrorIs(t, a.Continue(context.Background()), agent.ErrBusy)
 	require.ErrorIs(t, a.Reset(), agent.ErrBusy)
+	before := a.State()
+	require.ErrorIs(t, a.SetModel(context.Background(), providers.TokenPlanMessages()), agent.ErrBusy)
+	require.ErrorIs(t, a.SetThinkingLevel(protocol.ThinkingHigh), agent.ErrBusy)
+	assert.Equal(t, before.Model, a.State().Model)
+	assert.Equal(t, before.ThinkingLevel, a.State().ThinkingLevel)
 
 	a.Abort()
 	require.NoError(t, <-done)

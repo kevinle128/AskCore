@@ -7,6 +7,7 @@ import (
 	"time"
 
 	"AskCore/internal/pipeline"
+	"AskCore/internal/providers"
 	"AskCore/internal/sessions"
 	"AskCore/pkg/protocol"
 )
@@ -42,6 +43,9 @@ type loopFunc func(ctx context.Context, ac pipeline.AgentContext, cfg LoopConfig
 
 // New returns an idle Agent with an empty context.
 func New(cfg Config) (*Agent, error) {
+	if cfg.Stream == nil && cfg.Registry != nil {
+		cfg.Stream = cfg.Registry.Stream
+	}
 	if cfg.Stream == nil {
 		return nil, ErrNoStream
 	}
@@ -119,6 +123,57 @@ func (a *Agent) WaitForIdle(ctx context.Context) error {
 	}
 }
 
+// SetModel stores model for the next run. It is idle-only: a busy agent
+// returns ErrBusy and does not change the model or thinking level.
+func (a *Agent) SetModel(ctx context.Context, model providers.Model) error {
+	if err := providers.Validate(model); err != nil {
+		return err
+	}
+	a.mu.Lock()
+	if a.active != nil {
+		a.mu.Unlock()
+		return ErrBusy
+	}
+	bound := a.cfg.BoundKey
+	get := a.cfg.Hooks.GetAPIKey
+	fallback := a.cfg.Options.APIKey
+	ready := a.cfg.Ready
+	a.mu.Unlock()
+
+	key, err := providers.ResolveKey(ctx, model.Provider, bound, get, fallback)
+	if err != nil {
+		return err
+	}
+	if ready != nil {
+		if err := ready(ctx, model, key); err != nil {
+			return err
+		}
+	} else if key == "" {
+		return ErrNoAPIKey
+	}
+
+	a.mu.Lock()
+	defer a.mu.Unlock()
+	if a.active != nil {
+		return ErrBusy
+	}
+	a.cfg.Model = model
+	a.cfg.Options.Reasoning = providers.ClampThinkingLevel(model, thinkingLevel(a.cfg.Options.Reasoning))
+	return nil
+}
+
+// SetThinkingLevel stores ClampThinkingLevel of the current model. It does
+// not look up a key. ErrBusy leaves the stored level alone.
+func (a *Agent) SetThinkingLevel(level protocol.ThinkingLevel) error {
+	a.mu.Lock()
+	defer a.mu.Unlock()
+	if a.active != nil {
+		return ErrBusy
+	}
+	a.cfg.Options.Reasoning = providers.ClampThinkingLevel(a.cfg.Model, level)
+	return nil
+}
+
 // Reset starts a fresh context from Config.NewContext. It returns ErrBusy
 // while a run is active.
 func (a *Agent) Reset() error {
@@ -131,15 +186,25 @@ func (a *Agent) Reset() error {
 	return nil
 }
 
-// State returns the status and a copy of the context messages.
+// State returns the status, a copy of the context messages, and the
+// stored model and thinking level.
 func (a *Agent) State() State {
 	a.mu.Lock()
 	st, src := Idle, a.source
 	if a.active != nil {
 		st = Running
 	}
+	model := a.cfg.Model
+	level := thinkingLevel(a.cfg.Options.Reasoning)
 	a.mu.Unlock()
-	return State{Status: st, Messages: src.Messages()}
+	return State{Status: st, Messages: src.Messages(), Model: model, ThinkingLevel: level}
+}
+
+func thinkingLevel(level protocol.ThinkingLevel) protocol.ThinkingLevel {
+	if level == "" {
+		return protocol.ThinkingOff
+	}
+	return level
 }
 
 func (a *Agent) begin(ctx context.Context) (*run, error) {
@@ -212,7 +277,7 @@ func (a *Agent) fail(r *run, cause error, emit Emit) {
 	text := cause.Error()
 	msg := protocol.AssistantMessage{
 		Content:      []protocol.AssistantBlock{protocol.Text{Text: ""}},
-		API:          a.cfg.Model.API,
+		API:          string(a.cfg.Model.API),
 		Provider:     a.cfg.Model.Provider,
 		Model:        a.cfg.Model.ID,
 		StopReason:   stop,

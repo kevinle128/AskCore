@@ -18,6 +18,21 @@ linters:
     # A deny entry is a package path prefix.
     depguard:
       rules:
+        settings-stdlib-only:
+          list-mode: strict
+          files:
+            - "**/internal/settings/**"
+          allow:
+            - $gostd
+        providers-no-auth-store:
+          list-mode: lax
+          files:
+            - "**/internal/providers/**"
+          deny:
+            - pkg: AskCore/internal/settings
+              desc: providers receive resolved auth values, not persisted credentials
+            - pkg: AskCore/internal/auth
+              desc: providers receive resolved auth values, not auth services
         core-no-agent:
           list-mode: lax
           files:
@@ -71,12 +86,28 @@ linters:
           list-mode: lax
           files:
             - "**/internal/providers/**"
-            - "!**/internal/providers/tokenplan/**"
+            - "!**/internal/providers/anthropic/**"
+            - "!**/internal/providers/fantasykit/**"
+            - "!**/internal/providers/openai/**"
           deny:
             - pkg: charm.land/fantasy
-              desc: only internal/providers/tokenplan may import fantasy
+              desc: only internal/providers/anthropic, fantasykit, and openai may import fantasy
+        providers-no-anthropic-sdk:
+          list-mode: lax
+          files:
+            - "**/internal/providers/**"
+            - "!**/internal/providers/anthropic/**"
+          deny:
             - pkg: github.com/anthropics/anthropic-sdk-go
-              desc: only internal/providers/tokenplan may import the Anthropic SDK
+              desc: only internal/providers/anthropic may import the Anthropic SDK
+        providers-no-openai-sdk:
+          list-mode: lax
+          files:
+            - "**/internal/providers/**"
+            - "!**/internal/providers/openai/**"
+          deny:
+            - pkg: github.com/charmbracelet/openai-go
+              desc: only internal/providers/openai may import openai-go
         store-no-implementation:
           list-mode: lax
           files:

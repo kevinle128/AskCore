@@ -276,7 +276,7 @@ func rekeyResult(m protocol.ToolResultMessage, idMap map[string]string) (protoco
 }
 
 func sameModel(m protocol.AssistantMessage, model Model) bool {
-	return m.API == model.API && m.Provider == model.Provider && m.Model == model.ID
+	return m.API == string(model.API) && m.Provider == model.Provider && m.Model == model.ID
 }
 
 type pendingCall struct {
@@ -322,13 +322,17 @@ func pairMessages(msgs []protocol.Message, now func() int64) []protocol.Message 
 			continue
 		}
 		if res, ok := toolResultValue(m); ok {
+			matched := false
 			for i := range pending {
-				if pending[i].id == res.ToolCallID {
+				if pending[i].id == res.ToolCallID && !pending[i].done {
 					pending[i].done = true
+					matched = true
 					break
 				}
 			}
-			out = append(out, m)
+			if matched {
+				out = append(out, m)
+			}
 			continue
 		}
 		if isSystem(m) {

@@ -10,7 +10,7 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
-	"AskCore/internal/providers/tokenplan"
+	"AskCore/internal/providers/anthropic"
 	"AskCore/internal/tools"
 )
 
@@ -39,7 +39,7 @@ type jsonEvent struct {
 // returns the events.
 func runCassetteJSON(t *testing.T, prompt string, extra ...tools.Tool) []jsonEvent {
 	t.Helper()
-	o, getenv := useCassette(t, tokenplan.ModelID)
+	o, getenv := useCassette(t, anthropic.ModelID)
 	ag, err := newHeadlessAgent(o, getenv, extra...)
 	require.NoError(t, err)
 	var out, errb bytes.Buffer
@@ -95,7 +95,7 @@ func toolCalls(t *testing.T, events []jsonEvent) map[string]map[string]float64 {
 }
 
 func TestCassetteTextReply(t *testing.T) {
-	o, getenv := useCassette(t, tokenplan.ModelID)
+	o, getenv := useCassette(t, anthropic.ModelID)
 	ag, err := newHeadlessAgent(o, getenv)
 	require.NoError(t, err)
 	var out, errb bytes.Buffer
@@ -174,7 +174,7 @@ func TestCassetteThinkingReply(t *testing.T) {
 //
 // A captured session needs no re-record command; capture it again instead.
 func TestCapturedSessionReplays(t *testing.T) {
-	o, getenv := useCassette(t, tokenplan.ModelID)
+	o, getenv := useCassette(t, anthropic.ModelID)
 	ag, err := newHeadlessAgent(o, getenv)
 	require.NoError(t, err)
 	var out, errb bytes.Buffer

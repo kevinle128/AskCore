@@ -92,19 +92,8 @@ func (l *loop) convertToLLM(msgs []protocol.Message) ([]protocol.Message, error)
 	return hook(msgs)
 }
 
-// apiKey returns the key for the next request. An empty key from the hook
-// falls back to the configured one.
+// apiKey returns the key for the next request. BoundKey pins --api-key
+// to one provider; an empty BoundKey keeps the Options.APIKey fallback.
 func (l *loop) apiKey() (string, error) {
-	hook := l.cfg.Hooks.GetAPIKey
-	if hook == nil {
-		return l.cfg.Options.APIKey, nil
-	}
-	key, err := hook(l.ctx, l.cfg.Model.Provider)
-	if err != nil {
-		return "", err
-	}
-	if key == "" {
-		return l.cfg.Options.APIKey, nil
-	}
-	return key, nil
+	return providers.ResolveKey(l.ctx, l.cfg.Model.Provider, l.cfg.BoundKey, l.cfg.Hooks.GetAPIKey, l.cfg.Options.APIKey)
 }

@@ -21,6 +21,7 @@ This file provides context about the project for AI assistants.
 - Migrations: golang-migrate
 - Protobuf Tooling: buf
 - Dependency Injection: fx
+- Native auth identity: `github.com/coreos/go-oidc/v3`; installed version authority is `go.mod`
 
 ## Architecture
 
@@ -45,7 +46,7 @@ AskCore/
 │   ├── gateway/           # HTTP (echo) and gRPC servers, gRPC services; methods/ for WS RPC
 │   ├── http/              # REST handlers (import alias httpapi)
 │   ├── agent/ pipeline/ scheduler/ bus/ sessions/ workspace/ cron/   # Runtime core (scaffold)
-│   ├── providers/ tools/ mcp/ skills/ memory/ bootstrap/ hooks/      # Capabilities (scaffold)
+│   ├── auth/ providers/ tools/ mcp/ skills/ memory/ bootstrap/ hooks/ # Capabilities
 │   ├── permissions/ sandbox/ crypto/ channels/ tracing/              # (scaffold)
 │   ├── store/             # Models + store interfaces; gormstore/ = GORM implementation
 │   ├── migrations/        # Migration runner
@@ -62,9 +63,17 @@ AskCore/
 - `go run ./cmd/server` - Start the server (applies pending migrations first)
 - `go run ./cmd/server -migrate` - Apply migrations and exit
 - `go test ./...` - Run tests
+- `FSFAULT_ENGINE=docker internal/testsupport/fsfault/run-tests.sh` - Run optional Linux filesystem fault tests; follow the [fixture setup](internal/testsupport/README.md#filesystem-fault-tests).
 - `go run github.com/golangci/golangci-lint/v2/cmd/golangci-lint run ./...` - Lint, including the depguard import rules
 - `go fmt ./...` - Format code
-- `go run ./cmd/tui -p "hello"` - Headless print mode: runs one prompt in process and prints the reply. `--mode json` writes every agent event as one JSON line instead. Until H3 the only provider is `faux`, a scripted demo: `echo <text>` calls the echo tool, `fail <text>` ends in an assistant error, anything else is said back. `ASK_FAUX_TPS` paces it in tokens per second. Exit codes: 0 done, 1 error (print mode also on an assistant error), 130 SIGINT, 143 SIGTERM, 129 SIGHUP
+- `go run ./cmd/tui -p "hello"` - Run a headless prompt in process.
+  `--mode json` writes each agent event as one JSON line.
+  `faux` remains the default provider.
+  Use [native auth and headless guidance](README.md#native-auth-and-headless-prompts) for provider login, host selection, and local logout.
+  Auth and headless composition must not start a database or leader.
+  Reuse `internal/app.NewNativeAuth` and `BindAuth`; do not add a command-specific auth service.
+  Keep the private auth HTTP client outside inference capture.
+  Exit codes are 0 for completion, 1 for error, 130 for SIGINT, 143 for SIGTERM, and 129 for SIGHUP.
 
 ## Better Fullstack project context
 

@@ -169,7 +169,7 @@ func New(opts ...Option) (*Provider, error) {
 
 func (p *Provider) buildModel(d ModelDef) providers.Model {
 	m := providers.Model{
-		ID: d.ID, Name: d.Name, API: p.api, Provider: p.provider,
+		ID: d.ID, Name: d.Name, API: providers.API(p.api), Provider: p.provider,
 		Reasoning: d.Reasoning, Input: slices.Clone(d.Input),
 		ContextWindow: d.ContextWindow, MaxTokens: d.MaxTokens,
 	}

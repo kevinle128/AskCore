@@ -1,6 +1,8 @@
 # Testing with LLM cassettes
 
-`go test ./...` does not call a live model. It needs no API key and no network. The real provider code runs on HTTP responses that were recorded earlier.
+Default tests do not call live model services or require API keys.
+Provider cassette tests run on recorded HTTP responses; native auth checks use isolated homes, local callbacks, and injected external HTTP boundaries.
+They do not prove live subscription eligibility or provider approval.
 
 ## The four test layers
 
@@ -15,7 +17,8 @@ Layers 1 and 3 go through `newHeadlessAgent` and `runHeadless`. This is the same
 
 ## How a cassette works
 
-The package is `internal/providers/cassette`. It is built on `go-vcr` v4 and records at the `http.RoundTripper` layer.
+The package is [internal/providers/cassette](../internal/providers/cassette/cassette.go).
+It is built on `go-vcr` v4 and records at the `http.RoundTripper` layer.
 
 - **Replay is the default.** Request N is compared with recorded request N, and the server is never called.
 - **Matching:**
@@ -57,6 +60,22 @@ ASK_CAPTURE=/tmp/ask-capture ask -p "..." --provider alibaba-token-plan
 4. Commit it. `TestCassettesHoldNoSecrets` fails on auth headers, key-like strings or the key from the environment.
 
 Tools run again on replay. If a tool result changes, the next request body changes and the test fails. Capture only sessions whose tools give the same result every time.
+
+## Native authentication and capture
+
+[Capture setup](../cmd/tui/capture.go) covers inference for native Anthropic, OpenAI, and xAI, as well as Token Plan.
+It does not record login, token refresh, JWKS retrieval, or authenticated account discovery.
+[Native composition](../internal/app/auth_native.go) uses a separate private auth client, and auth command dispatch runs before capture setup.
+Do not attach the cassette transport to that private client.
+
+Use an isolated `ASK_HOME` and the [native operating commands](../README.md#native-auth-and-headless-prompts) for authorized live checks.
+Each subscription route needs real login, prompt/tool, and local logout acceptance in addition to offline checks.
+Offline command tests use the real parser, auth service, store, agent, and adapters, with only external HTTP and time boundaries injected.
+The owning scenarios are [auth command tests](../cmd/tui/auth_command_test.go), [native OAuth command tests](../cmd/tui/auth_oauth_command_test.go), and [signal tests](../cmd/tui/auth_signal_test.go).
+
+A captured inference cassette can contain prompts, tool results, file paths, and private user data even when auth headers are removed.
+Review and sanitize it before sharing or committing it.
+Never put credentials, authorization codes, ID tokens, or account hints in an evidence report.
 
 ## Environment flags
 

@@ -2,9 +2,11 @@ package main
 
 import (
 	"context"
+	"crypto/rand"
 	"fmt"
 	"io"
 	"maps"
+	"net/http"
 	"os"
 	"os/signal"
 	"slices"
@@ -14,8 +16,11 @@ import (
 	"golang.org/x/term"
 
 	"AskCore/internal/agent"
+	"AskCore/internal/app"
+	"AskCore/internal/auth"
 	"AskCore/internal/providers"
-	"AskCore/internal/providers/tokenplan"
+	"AskCore/internal/providers/anthropic"
+	"AskCore/internal/providers/openai"
 	"AskCore/internal/tools"
 	"AskCore/pkg/protocol"
 )
@@ -41,7 +46,65 @@ var signalExitCodes = map[os.Signal]int{
 const abortGrace = 2 * time.Second
 
 // run is the whole program behind main. It returns the exit code.
+type runDependencies struct {
+	getenv        func(string) string
+	authHTTP      *http.Client
+	inferenceHTTP *http.Client
+	now           func() time.Time
+	wait          func(context.Context, time.Duration) error
+}
+
 func run(argv []string, stdin io.Reader, stdout, stderr io.Writer) int {
+	return runWithDependencies(argv, stdin, stdout, stderr, runDependencies{getenv: os.Getenv})
+}
+
+func runWithDependencies(argv []string, stdin io.Reader, stdout, stderr io.Writer, deps runDependencies) int {
+	if deps.getenv == nil {
+		deps.getenv = os.Getenv
+	}
+	sigs := make(chan os.Signal, 2)
+	signal.Notify(sigs, slices.Collect(maps.Keys(signalExitCodes))...)
+	defer signal.Stop(sigs)
+	env := func(k string) (string, bool) { v := deps.getenv(k); return v, v != "" }
+	var service *auth.Service
+	if len(argv) > 0 && argv[0] == "auth" {
+		o, err := parseAuthArgs(argv[1:])
+		if err != nil {
+			report(stderr, "Error:", err)
+			return 1
+		}
+		if o.help {
+			_, err := io.WriteString(stdout, authUsage)
+			if err != nil {
+				return 1
+			}
+			return 0
+		}
+		service, err = app.NewNativeAuth(deps.getenv("ASK_HOME"), env, auth.NativeOptions{HTTPClient: deps.authHTTP, Now: deps.now, Wait: deps.wait})
+		if err != nil {
+			report(stderr, "Error:", err)
+			return 1
+		}
+		ctx, cancel := context.WithCancel(context.Background())
+		defer cancel()
+		done := make(chan int, 1)
+		go func() { done <- runAuth(ctx, argv[1:], stdin, stdout, stderr, service) }()
+		select {
+		case code := <-done:
+			return code
+		case sig := <-sigs:
+			service.StopRefresh()
+			cancel()
+			if err := app.AuthWait(service)(context.Background()); err != nil {
+				report(stderr, "Auth shutdown:", err)
+			}
+			select {
+			case <-done:
+			case <-time.After(abortGrace):
+			}
+			return signalExitCodes[sig]
+		}
+	}
 	o, diags := parseArgs(argv)
 	failed := false
 	for _, d := range diags {
@@ -66,11 +129,22 @@ func run(argv []string, stdin io.Reader, stdout, stderr io.Writer) int {
 	}
 	defer guardStdout(stderr)()
 
-	if _, err := startCapture(&o, os.Getenv, stderr, nil); err != nil {
+	if deps.inferenceHTTP != nil {
+		o.transport = deps.inferenceHTTP.Transport
+	}
+	if _, err := startCapture(&o, deps.getenv, stderr, nil); err != nil {
 		report(stderr, "Error:", err)
 		return 1
 	}
-	ag, err := newHeadlessAgent(o, os.Getenv)
+	if o.provider != defaultProvider {
+		var err error
+		service, err = app.NewNativeAuth(deps.getenv("ASK_HOME"), env, auth.NativeOptions{HTTPClient: deps.authHTTP, Now: deps.now, Wait: deps.wait})
+		if err != nil {
+			report(stderr, "Error:", err)
+			return 1
+		}
+	}
+	ag, err := newHeadlessAgentWithAuth(o, deps.getenv, service)
 	if err != nil {
 		report(stderr, "Error:", err)
 		return 1
@@ -81,10 +155,7 @@ func run(argv []string, stdin io.Reader, stdout, stderr io.Writer) int {
 		return 1
 	}
 
-	sigs := make(chan os.Signal, 1)
-	signal.Notify(sigs, slices.Collect(maps.Keys(signalExitCodes))...)
-	defer signal.Stop(sigs)
-	return runHeadless(ag, prompts, mode, stdout, stderr, sigs)
+	return runHeadless(ag, prompts, mode, stdout, stderr, sigs, service)
 }
 
 // selectMode follows Pi's resolveAppMode. --mode text does not force print
@@ -132,12 +203,16 @@ func builtinTools() []tools.Tool { return []tools.Tool{tools.Echo{}} }
 // scenario needs and still runs the same agent setup as ask.
 // faux is the default. alibaba-token-plan is the H3 Token Plan adapter.
 func newHeadlessAgent(o options, getenv func(string) string, extra ...tools.Tool) (*agent.Agent, error) {
+	return newHeadlessAgentWithAuth(o, getenv, nil, extra...)
+}
+
+func newHeadlessAgentWithAuth(o options, getenv func(string) string, service *auth.Service, extra ...tools.Tool) (*agent.Agent, error) {
 	stream, model, err := openProvider(o, getenv)
 	if err != nil {
 		return nil, err
 	}
 	reasoning := o.thinking
-	if o.provider == tokenplan.ProviderID && reasoning == "" {
+	if o.provider == anthropic.ProviderID && reasoning == "" {
 		reasoning = protocol.ThinkingMedium
 	}
 	reg := &tools.Registry{}
@@ -156,15 +231,57 @@ func newHeadlessAgent(o options, getenv func(string) string, extra ...tools.Tool
 	if err != nil {
 		return nil, err
 	}
-	return agent.New(agent.Config{
+	wires := providers.NewRegistry()
+	wires.Register(model.API, stream)
+	if o.provider != defaultProvider {
+		env := func(k string) (string, bool) { v := getenv(k); return v, v != "" }
+		wires.Register(providers.APIAnthropicMessages, anthropic.New(anthropic.WithEnv(env), anthropic.WithHTTPClient(&http.Client{Transport: o.transport})).Stream)
+		registerOpenAIWires(wires, o, getenv)
+	}
+	sessionID := newSessionID()
+	bound := providers.BoundKey{}
+	if o.apiKey != "" {
+		bound = providers.BoundKey{Provider: o.provider, Secret: o.apiKey}
+	}
+	cfg := agent.Config{
 		LoopConfig: agent.LoopConfig{
-			Model:   model,
-			Stream:  stream,
-			Options: providers.StreamOptions{Reasoning: reasoning, APIKey: o.apiKey},
-			Cwd:     cwd,
+			Model:    model,
+			Stream:   wires.Stream,
+			BoundKey: bound,
+			Options:  providers.StreamOptions{Reasoning: reasoning, APIKey: o.apiKey},
+			Cwd:      cwd,
 		},
-		Tools: reg,
-	})
+		Registry:  wires,
+		Tools:     reg,
+		SessionID: sessionID,
+	}
+	if service != nil {
+		cfg = app.BindAuth(cfg, service, wires)
+	}
+	return agent.New(cfg)
+}
+
+func registerOpenAIWires(reg *providers.Registry, o options, getenv func(string) string) {
+	opts := []openai.Option{openai.WithEnv(func(k string) (string, bool) {
+		v := getenv(k)
+		if v == "" {
+			return "", false
+		}
+		return v, true
+	})}
+	if o.transport != nil {
+		opts = append(opts, openai.WithHTTPClient(&http.Client{Transport: o.transport}))
+	}
+	reg.Register(providers.APIOpenAICompletions, openai.NewCompletions(opts...).Stream)
+	reg.Register(providers.APIOpenAIResponses, openai.NewResponses(opts...).Stream)
+}
+
+func newSessionID() string {
+	var b [16]byte
+	_, _ = rand.Read(b[:])
+	b[6] = (b[6] & 0x0f) | 0x40
+	b[8] = (b[8] & 0x3f) | 0x80
+	return fmt.Sprintf("%x-%x-%x-%x-%x", b[0:4], b[4:6], b[6:8], b[8:10], b[10:])
 }
 
 // runHeadless runs the prompts in order. Print mode prints the reply at the
@@ -172,9 +289,10 @@ func newHeadlessAgent(o options, getenv func(string) string, extra ...tools.Tool
 // ends in error, as Pi does. A returned error or a failed stdout write stops
 // the remaining prompts and gives exit 1; an assistant error does not stop
 // them. The first signal aborts the run, waits up to abortGrace for it to
-// settle (a second signal stops the wait) and gives the signal's exit code
-// without printing the reply.
-func runHeadless(ag *agent.Agent, prompts []string, mode runMode, stdout, stderr io.Writer, sigs <-chan os.Signal) int {
+// settle and gives the signal's exit code without printing the reply.
+// Registered auth work drains first with its separate bound; another signal
+// cannot shorten that drain.
+func runHeadless(ag *agent.Agent, prompts []string, mode runMode, stdout, stderr io.Writer, sigs <-chan os.Signal, services ...*auth.Service) int {
 	out := newProtocolOut(stdout)
 	if mode == modeJSON {
 		defer streamJSON(ag, out)()
@@ -201,10 +319,22 @@ func runHeadless(ag *agent.Agent, prompts []string, mode runMode, stdout, stderr
 		}
 		return code
 	case sig := <-sigs:
+		var service *auth.Service
+		if len(services) > 0 {
+			service = services[0]
+		}
+		if service != nil {
+			service.StopRefresh()
+		}
 		ag.Abort()
 		// Abort ends only the active run; cancel also stops the prompts
 		// that have not started.
 		cancel()
+		if service != nil {
+			if err := app.AuthWait(service)(context.Background()); err != nil {
+				report(stderr, "Auth shutdown:", err)
+			}
+		}
 		grace := time.NewTimer(abortGrace)
 		defer grace.Stop()
 		select {

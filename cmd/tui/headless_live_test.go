@@ -14,7 +14,7 @@ import (
 
 	"github.com/stretchr/testify/require"
 
-	"AskCore/internal/providers/tokenplan"
+	"AskCore/internal/providers/anthropic"
 	"AskCore/internal/tools"
 	"AskCore/pkg/protocol"
 )
@@ -77,7 +77,7 @@ func TestLiveHeadlessMathQwen(t *testing.T) {
 	// goroutine leak check of TestMain does not see them.
 	t.Cleanup(http.DefaultClient.CloseIdleConnections)
 
-	ag, err := newHeadlessAgent(options{provider: tokenplan.ProviderID, model: model}, os.Getenv, addTool, mulTool)
+	ag, err := newHeadlessAgent(options{provider: anthropic.ProviderID, model: model}, os.Getenv, addTool, mulTool)
 	require.NoError(t, err)
 	var out, errb bytes.Buffer
 	code := runHeadless(ag, []string{"1+1*2"}, modeJSON, &out, &errb, nil)
