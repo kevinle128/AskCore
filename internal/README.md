@@ -12,6 +12,7 @@ Full design: [docs/ask-architecture-reference.md](../docs/ask-architecture-refer
 | Files under `~/.ask` | `settings` (`auth.json`, `settings.json`) |
 | Transport | `gateway` (+ `methods`), `http`, `channels` |
 | Runtime core | `agent` (two-level loop, queues), `pipeline` (typed control points), `sessions` (typed in-memory log; persistent tree planned), `scheduler` (planned lanes), `bus` (replay ring and followers), `workspace` (cwd, project root, trust), `cron` |
+| Terminal UI | [tui](tui/README.md) (state and components), [tuiext](tuiext/README.md) (client-local UI extension host); scaffolds, see [TUI architecture](../docs/tui-architecture.md) |
 | Process model | `leader` (local router and client), `acp` (ACP adapter over the agent) |
 | Capabilities | [auth](auth/README.md) (native credentials), `providers` (+ `acp`: subprocess agents), `tools`, `mcp`, `skills`, `bootstrap`, `hooks` (+ `handlers`), `permissions` (gateway RBAC), `sandbox`, `tracing` (+ `otelexport`). Parked: `memory`, `crypto` |
 | Storage | `store` (models + interfaces), `store/gormstore` (GORM implementation), `migrations` (runner) |

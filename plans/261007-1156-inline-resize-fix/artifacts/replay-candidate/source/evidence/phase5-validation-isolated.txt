@@ -1,0 +1,58 @@
+=== RUN   TestEvidenceCommand
+--- PASS: TestEvidenceCommand (0.61s)
+=== RUN   TestEvidenceRequiredRecords
+=== RUN   TestEvidenceRequiredRecords/G1-command
+=== RUN   TestEvidenceRequiredRecords/G1-artifact
+=== RUN   TestEvidenceRequiredRecords/G2-command
+=== RUN   TestEvidenceRequiredRecords/G2-artifact
+=== RUN   TestEvidenceRequiredRecords/G3-command
+=== RUN   TestEvidenceRequiredRecords/G3-artifact
+=== RUN   TestEvidenceRequiredRecords/G6-command
+=== RUN   TestEvidenceRequiredRecords/G6-artifact
+--- PASS: TestEvidenceRequiredRecords (0.00s)
+    --- PASS: TestEvidenceRequiredRecords/G1-command (0.00s)
+    --- PASS: TestEvidenceRequiredRecords/G1-artifact (0.00s)
+    --- PASS: TestEvidenceRequiredRecords/G2-command (0.00s)
+    --- PASS: TestEvidenceRequiredRecords/G2-artifact (0.00s)
+    --- PASS: TestEvidenceRequiredRecords/G3-command (0.00s)
+    --- PASS: TestEvidenceRequiredRecords/G3-artifact (0.00s)
+    --- PASS: TestEvidenceRequiredRecords/G6-command (0.00s)
+    --- PASS: TestEvidenceRequiredRecords/G6-artifact (0.00s)
+=== RUN   TestEvidenceValidationControls
+=== RUN   TestEvidenceValidationControls/command
+=== RUN   TestEvidenceValidationControls/artifact
+=== RUN   TestEvidenceValidationControls/hash
+=== RUN   TestEvidenceValidationControls/readiness
+=== RUN   TestEvidenceValidationControls/duplicate
+=== RUN   TestEvidenceValidationControls/optional
+--- PASS: TestEvidenceValidationControls (0.00s)
+    --- PASS: TestEvidenceValidationControls/command (0.00s)
+    --- PASS: TestEvidenceValidationControls/artifact (0.00s)
+    --- PASS: TestEvidenceValidationControls/hash (0.00s)
+    --- PASS: TestEvidenceValidationControls/readiness (0.00s)
+    --- PASS: TestEvidenceValidationControls/duplicate (0.00s)
+    --- PASS: TestEvidenceValidationControls/optional (0.00s)
+=== RUN   TestScratchBoundary
+--- PASS: TestScratchBoundary (0.01s)
+=== RUN   TestOptionalCapabilities
+=== RUN   TestOptionalCapabilities/G4
+    evidence_test.go:164: No Kitty graphics responder or selected-terminal image capability observation; no image-history PASS claimed.
+=== RUN   TestOptionalCapabilities/G5
+    evidence_test.go:164: M2 alternate-buffer transcript reconstruction is not exercised by this inline fixture; real terminal access unavailable.
+=== RUN   TestOptionalCapabilities/pixel
+    evidence_test.go:164: Optional nonblocking probe not executed; selected real terminal inaccessible.
+=== RUN   TestOptionalCapabilities/palette
+    evidence_test.go:164: Optional nonblocking probe not executed; selected real terminal inaccessible.
+=== RUN   TestOptionalCapabilities/keepalive
+    evidence_test.go:164: Optional nonblocking probe not executed; selected real terminal inaccessible.
+=== RUN   TestOptionalCapabilities/modifyOtherKeys
+    evidence_test.go:164: Optional nonblocking probe not executed; selected real terminal inaccessible.
+--- PASS: TestOptionalCapabilities (0.00s)
+    --- SKIP: TestOptionalCapabilities/G4 (0.00s)
+    --- SKIP: TestOptionalCapabilities/G5 (0.00s)
+    --- SKIP: TestOptionalCapabilities/pixel (0.00s)
+    --- SKIP: TestOptionalCapabilities/palette (0.00s)
+    --- SKIP: TestOptionalCapabilities/keepalive (0.00s)
+    --- SKIP: TestOptionalCapabilities/modifyOtherKeys (0.00s)
+PASS
+ok  	askcore-t0-inline	1.067s

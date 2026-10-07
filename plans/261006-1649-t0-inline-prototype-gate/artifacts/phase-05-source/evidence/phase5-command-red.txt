@@ -1,0 +1,13 @@
+=== RUN   TestEvidenceCommand
+    evidence_test.go:12: evidence command failed: exit status 2 flag provided but not defined: -evidence
+        Usage of /var/folders/84/5njq4pvs747b3zzntvtgtpl80000gn/T/TestEvidenceCommand1930013413/001/evidence:
+          -keyboard string
+            	auto or off (default "auto")
+          -lines int
+            	manual transcript lines (1..9999) (default 2000)
+          -scenario string
+            	scenario (default "smoke")
+--- FAIL: TestEvidenceCommand (0.34s)
+FAIL
+FAIL	askcore-t0-inline	0.788s
+FAIL

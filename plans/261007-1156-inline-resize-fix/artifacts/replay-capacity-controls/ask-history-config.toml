@@ -1,0 +1,2 @@
+[profiles.ci]
+scrollback = 100000

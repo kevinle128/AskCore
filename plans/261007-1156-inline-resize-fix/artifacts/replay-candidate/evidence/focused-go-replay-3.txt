@@ -1,0 +1,2 @@
+PASS
+ok  	askcore-t0-inline	4.186s

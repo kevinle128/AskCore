@@ -1,0 +1,2 @@
+PASS
+ok  	charm.land/bubbletea/v2	0.542s

@@ -8,6 +8,7 @@ JSON compatibility is deliberate: the public headless event projection remains P
 
 | Contract | Owner |
 |---|---|
+| Planned UI extension wire contracts | [TUI architecture](../../docs/tui-architecture.md); public author API belongs in [askui](../askui/README.md) |
 | Planned ACP frames and methods | [H13 roadmap](../../plans/260930-2254-pi-feature-inventory-go-roadmap/roadmap.md) |
 | Messages, content, usage, and tool declarations | [message.go](message.go), [content.go](content.go), [usage.go](usage.go), [tool.go](tool.go) |
 | Agent event types and sequencing envelope | [events.go](events.go) |

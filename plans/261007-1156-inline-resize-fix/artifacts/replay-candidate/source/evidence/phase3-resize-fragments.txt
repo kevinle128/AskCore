@@ -1,0 +1,16 @@
+=== RUN   TestG1PendingResize
+    g1_test.go:215: owned child pid=88668 /var/folders/84/5njq4pvs747b3zzntvtgtpl80000gn/T/TestG1PendingResize2618301294/001/g1 --scenario g6 support=true
+    g1_test.go:256: restore termios exact, final cursor=(0,14) mode map=map[25:true 2004:false 2026:false]
+--- PASS: TestG1PendingResize (0.65s)
+=== RUN   TestG1OutputFragments
+=== RUN   TestG1OutputFragments/byte
+    g1_test.go:265: owned child pid=88681 /var/folders/84/5njq4pvs747b3zzntvtgtpl80000gn/T/TestG1OutputFragments1219254602/001/g1 --scenario g6 support=true
+    g1_test.go:283: restore termios exact, final cursor=(0,11) mode map=map[25:true 2004:false 2026:false]
+=== RUN   TestG1OutputFragments/random
+    g1_test.go:265: owned child pid=88682 /var/folders/84/5njq4pvs747b3zzntvtgtpl80000gn/T/TestG1OutputFragments1219254602/001/g1 --scenario g6 support=true
+    g1_test.go:283: restore termios exact, final cursor=(0,11) mode map=map[25:true 2004:false 2026:false]
+--- PASS: TestG1OutputFragments (0.48s)
+    --- PASS: TestG1OutputFragments/byte (0.24s)
+    --- PASS: TestG1OutputFragments/random (0.06s)
+PASS
+ok  	askcore-t0-inline	1.595s

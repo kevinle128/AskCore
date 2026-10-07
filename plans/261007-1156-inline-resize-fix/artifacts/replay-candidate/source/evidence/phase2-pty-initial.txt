@@ -1,0 +1,106 @@
+=== RUN   TestG6Input
+=== RUN   TestG6Input/false
+    g6_test.go:278: owned child pid=92943 /var/folders/84/5njq4pvs747b3zzntvtgtpl80000gn/T/TestG6Input344929747/001/g6 --scenario g6 support=false
+    g6_test.go:302: restore termios exact, final cursor=(0,4) mode map=map[25:true 2004:false]
+    terminal_test.go:377: open evidence/TestG6Input/false-stderr.txt: no such file or directory
+=== RUN   TestG6Input/true
+    g6_test.go:278: owned child pid=92944 /var/folders/84/5njq4pvs747b3zzntvtgtpl80000gn/T/TestG6Input344929747/001/g6 --scenario g6 support=true
+    g6_test.go:302: restore termios exact, final cursor=(0,4) mode map=map[25:true 2004:false]
+    terminal_test.go:377: open evidence/TestG6Input/true-stderr.txt: no such file or directory
+--- FAIL: TestG6Input (0.78s)
+    --- FAIL: TestG6Input/false (0.48s)
+    --- FAIL: TestG6Input/true (0.09s)
+=== RUN   TestRestoreRoutes
+=== RUN   TestRestoreRoutes/normal
+    g6_test.go:319: owned child pid=92988 /var/folders/84/5njq4pvs747b3zzntvtgtpl80000gn/T/TestRestoreRoutes1446190110/001/g6 --scenario g6 support=true
+    g6_test.go:322: restore termios exact, final cursor=(0,2) mode map=map[25:true 2004:false]
+    terminal_test.go:377: open evidence/TestRestoreRoutes/normal-stderr.txt: no such file or directory
+=== RUN   TestRestoreRoutes/context
+    g6_test.go:319: owned child pid=92995 /var/folders/84/5njq4pvs747b3zzntvtgtpl80000gn/T/TestRestoreRoutes1446190110/001/g6 --scenario g6 support=true
+    g6_test.go:322: restore termios exact, final cursor=(0,2) mode map=map[25:true 2004:false]
+    terminal_test.go:377: open evidence/TestRestoreRoutes/context-stderr.txt: no such file or directory
+    terminal_test.go:380: separate child stderr: program was killed: context canceled
+=== RUN   TestRestoreRoutes/SIGINT
+    g6_test.go:319: owned child pid=92996 /var/folders/84/5njq4pvs747b3zzntvtgtpl80000gn/T/TestRestoreRoutes1446190110/001/g6 --scenario g6 support=true
+    g6_test.go:322: restore termios exact, final cursor=(0,2) mode map=map[25:true 2004:false]
+    terminal_test.go:377: open evidence/TestRestoreRoutes/SIGINT-stderr.txt: no such file or directory
+    terminal_test.go:380: separate child stderr: program was killed: context canceled
+=== RUN   TestRestoreRoutes/SIGTERM
+    g6_test.go:319: owned child pid=92997 /var/folders/84/5njq4pvs747b3zzntvtgtpl80000gn/T/TestRestoreRoutes1446190110/001/g6 --scenario g6 support=true
+    g6_test.go:322: restore termios exact, final cursor=(0,2) mode map=map[25:true 2004:false]
+    terminal_test.go:377: open evidence/TestRestoreRoutes/SIGTERM-stderr.txt: no such file or directory
+    terminal_test.go:380: separate child stderr: program was killed: context canceled
+=== RUN   TestRestoreRoutes/SIGHUP
+    g6_test.go:319: owned child pid=92998 /var/folders/84/5njq4pvs747b3zzntvtgtpl80000gn/T/TestRestoreRoutes1446190110/001/g6 --scenario g6 support=true
+    g6_test.go:322: restore termios exact, final cursor=(0,2) mode map=map[25:true 2004:false]
+    terminal_test.go:377: open evidence/TestRestoreRoutes/SIGHUP-stderr.txt: no such file or directory
+    terminal_test.go:380: separate child stderr: program was killed: context canceled
+=== RUN   TestRestoreRoutes/model-panic
+    g6_test.go:319: owned child pid=92999 /var/folders/84/5njq4pvs747b3zzntvtgtpl80000gn/T/TestRestoreRoutes1446190110/001/g6 --scenario g6 support=true
+    g6_test.go:322: restore termios exact, final cursor=(0,2) mode map=map[25:true 2004:false]
+    terminal_test.go:377: open evidence/TestRestoreRoutes/model-panic-stderr.txt: no such file or directory
+    terminal_test.go:380: separate child stderr: Caught panic:
+        
+        fixture model panic
+        
+        Restoring terminal...
+        
+        goroutine 1 [running]:
+        runtime/debug.Stack()
+        	/opt/homebrew/Cellar/go/1.26.0/libexec/src/runtime/debug/stack.go:26 +0x64
+        charm.land/bubbletea/v2.(*Program).recoverFromPanic(0x38deb6e021e0, {0x1051f2600, 0x105233ea0})
+        	/private/tmp/askcore-t0-mod-cache/charm.land/bubbletea/v2@v2.0.10/tea.go:1304 +0xec
+        charm.land/bubbletea/v2.(*Program).Run.func2()
+        	/private/tmp/askcore-t0-mod-cache/charm.land/bubbletea/v2@v2.0.10/tea.go:1038 +0xec
+        panic({0x1051f2600?, 0x105233ea0?})
+        	/opt/homebrew/Cellar/go/1.26.0/libexec/src/runtime/panic.go:860 +0x12c
+        main.model.Update({0x38deb6c82090, 0x28, 0xc, {0x0, 0x0}, 0x0, 0x0, 0x0, 0x1, 0x0, ...}, ...)
+        	/private/tmp/askcore-t0-09kf6w9r/model.go:53 +0x7d4
+        charm.land/bubbletea/v2.(*Program).eventLoop(0x38deb6e021e0, {0x105235ac0?, 0x38deb6e0c050?}, 0x38deb6e0e230)
+        	/private/tmp/askcore-t0-mod-cache/charm.land/bubbletea/v2@v2.0.10/tea.go:880 +0xb78
+        charm.land/bubbletea/v2.(*Program).Run(0x38deb6e021e0)
+        	/private/tmp/askcore-t0-mod-cache/charm.land/bubbletea/v2@v2.0.10/tea.go:1153 +0x7a8
+        main.run()
+        	/private/tmp/askcore-t0-09kf6w9r/main.go:63 +0x47c
+        main.main()
+        	/private/tmp/askcore-t0-09kf6w9r/main.go:15 +0x1c
+        
+        program was killed: program experienced a panic
+=== RUN   TestRestoreRoutes/command-panic
+    g6_test.go:319: owned child pid=93000 /var/folders/84/5njq4pvs747b3zzntvtgtpl80000gn/T/TestRestoreRoutes1446190110/001/g6 --scenario g6 support=true
+    g6_test.go:322: restore termios exact, final cursor=(0,2) mode map=map[25:true 2004:false]
+    terminal_test.go:377: open evidence/TestRestoreRoutes/command-panic-stderr.txt: no such file or directory
+    terminal_test.go:380: separate child stderr: Caught panic:
+        
+        fixture command panic
+        
+        Restoring terminal...
+        
+        goroutine 65 [running]:
+        runtime/debug.Stack()
+        	/opt/homebrew/Cellar/go/1.26.0/libexec/src/runtime/debug/stack.go:26 +0x64
+        charm.land/bubbletea/v2.(*Program).recoverFromPanic(0xdc715f04780, {0x10518a600, 0x1051cbeb0})
+        	/private/tmp/askcore-t0-mod-cache/charm.land/bubbletea/v2@v2.0.10/tea.go:1304 +0xec
+        charm.land/bubbletea/v2.(*Program).handleCommands.func1.1.1()
+        	/private/tmp/askcore-t0-mod-cache/charm.land/bubbletea/v2@v2.0.10/tea.go:734 +0x38
+        panic({0x10518a600?, 0x1051cbeb0?})
+        	/opt/homebrew/Cellar/go/1.26.0/libexec/src/runtime/panic.go:860 +0x12c
+        main.model.Update.func1()
+        	/private/tmp/askcore-t0-09kf6w9r/model.go:55 +0x2c
+        charm.land/bubbletea/v2.(*Program).handleCommands.func1.1()
+        	/private/tmp/askcore-t0-mod-cache/charm.land/bubbletea/v2@v2.0.10/tea.go:739 +0x5c
+        created by charm.land/bubbletea/v2.(*Program).handleCommands.func1 in goroutine 27
+        	/private/tmp/askcore-t0-mod-cache/charm.land/bubbletea/v2@v2.0.10/tea.go:729 +0xf8
+        
+        program was killed: program experienced a panic
+--- FAIL: TestRestoreRoutes (1.03s)
+    --- FAIL: TestRestoreRoutes/normal (0.71s)
+    --- FAIL: TestRestoreRoutes/context (0.03s)
+    --- FAIL: TestRestoreRoutes/SIGINT (0.02s)
+    --- FAIL: TestRestoreRoutes/SIGTERM (0.02s)
+    --- FAIL: TestRestoreRoutes/SIGHUP (0.02s)
+    --- FAIL: TestRestoreRoutes/model-panic (0.02s)
+    --- FAIL: TestRestoreRoutes/command-panic (0.02s)
+FAIL
+FAIL	askcore-t0-inline	2.257s
+FAIL

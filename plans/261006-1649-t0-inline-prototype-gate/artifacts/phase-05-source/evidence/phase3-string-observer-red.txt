@@ -1,0 +1,6 @@
+=== RUN   TestCommitStringObservation
+    commit_test.go:3: stock io.WriteString bypassed output observer
+--- FAIL: TestCommitStringObservation (0.00s)
+FAIL
+FAIL	askcore-t0-inline	0.430s
+FAIL

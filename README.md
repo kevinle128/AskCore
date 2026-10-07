@@ -165,6 +165,7 @@ AskCore/
 ├── migrations/            # SQL files (SQLite)
 ├── pkg/protocol/          # WS wire contract
 ├── proto/                 # gRPC definitions
+├── e2e/tui/               # Independent terminal E2E tests
 └── .env.example           # Environment variables template
 ```
 
@@ -175,6 +176,7 @@ AskCore/
 - `go run ./cmd/server -migrate`: Apply migrations and exit
 - `go run github.com/golangci/golangci-lint/v2/cmd/golangci-lint run ./...`: Lint, including the import rules
 - `go test ./...`: Run all tests
+- `python3 e2e/tui/run.py`: Run isolated T0 terminal E2E tests; see [setup and results](e2e/tui/README.md).
 - `go fmt ./...`: Format code
 - `go vet ./...`: Run static analysis
 - `go run ./cmd/tui`: Run the TUI application

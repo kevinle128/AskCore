@@ -1,0 +1,9 @@
+=== RUN   TestInputPaste
+    input_test.go:6: draft="" want normalized intact paste
+--- FAIL: TestInputPaste (0.00s)
+=== RUN   TestInputAltEnter
+    input_test.go:7: Alt+Enter draft="first" want first newline
+--- FAIL: TestInputAltEnter (0.00s)
+FAIL
+FAIL	askcore-t0-inline	0.421s
+FAIL

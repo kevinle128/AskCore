@@ -1,0 +1,6 @@
+# charm.land/bubbletea/v2
+bubbletea/cursed_renderer.go:766:13: not enough arguments in call to s.flush
+	have ()
+	want (bool)
+FAIL	askcore-t0-inline [build failed]
+FAIL

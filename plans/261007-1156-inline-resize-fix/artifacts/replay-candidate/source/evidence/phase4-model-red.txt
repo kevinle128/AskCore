@@ -1,0 +1,9 @@
+=== RUN   TestSelectorRouting
+    selector_test.go:11: selector did not open: "editor> draft\nAlt+Enter: newline; Enter: submit"
+--- FAIL: TestSelectorRouting (0.00s)
+=== RUN   TestLayoutBoundedLiveRegion
+    selector_test.go:21: live region exceeds [10 2]: "b\nc\ntail 0000 \n"
+--- FAIL: TestLayoutBoundedLiveRegion (0.00s)
+FAIL
+FAIL	askcore-t0-inline	0.436s
+FAIL

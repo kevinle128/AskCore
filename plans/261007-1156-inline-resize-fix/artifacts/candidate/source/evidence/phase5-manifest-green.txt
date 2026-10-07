@@ -1,0 +1,22 @@
+=== RUN   TestEvidenceCommand
+--- PASS: TestEvidenceCommand (0.59s)
+=== RUN   TestEvidenceRequiredRecords
+=== RUN   TestEvidenceRequiredRecords/G1-command
+=== RUN   TestEvidenceRequiredRecords/G1-artifact
+=== RUN   TestEvidenceRequiredRecords/G2-command
+=== RUN   TestEvidenceRequiredRecords/G2-artifact
+=== RUN   TestEvidenceRequiredRecords/G3-command
+=== RUN   TestEvidenceRequiredRecords/G3-artifact
+=== RUN   TestEvidenceRequiredRecords/G6-command
+=== RUN   TestEvidenceRequiredRecords/G6-artifact
+--- PASS: TestEvidenceRequiredRecords (0.00s)
+    --- PASS: TestEvidenceRequiredRecords/G1-command (0.00s)
+    --- PASS: TestEvidenceRequiredRecords/G1-artifact (0.00s)
+    --- PASS: TestEvidenceRequiredRecords/G2-command (0.00s)
+    --- PASS: TestEvidenceRequiredRecords/G2-artifact (0.00s)
+    --- PASS: TestEvidenceRequiredRecords/G3-command (0.00s)
+    --- PASS: TestEvidenceRequiredRecords/G3-artifact (0.00s)
+    --- PASS: TestEvidenceRequiredRecords/G6-command (0.00s)
+    --- PASS: TestEvidenceRequiredRecords/G6-artifact (0.00s)
+PASS
+ok  	askcore-t0-inline	1.030s

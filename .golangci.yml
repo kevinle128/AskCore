@@ -18,6 +18,56 @@ linters:
     # A deny entry is a package path prefix.
     depguard:
       rules:
+        askui-public-boundary:
+          list-mode: strict
+          files:
+            - "**/pkg/askui/**"
+          allow:
+            - $gostd
+            - AskCore/pkg/protocol
+        tui-client-boundary:
+          list-mode: lax
+          files:
+            - "**/internal/tui/**"
+          deny:
+            - pkg: AskCore/internal/agent
+              desc: terminal components receive client dependencies through constructors
+            - pkg: AskCore/internal/acp
+              desc: terminal components receive client dependencies through constructors
+            - pkg: AskCore/internal/leader
+              desc: terminal components receive client dependencies through constructors
+            - pkg: AskCore/internal/providers
+              desc: terminal components receive client dependencies through constructors
+            - pkg: AskCore/internal/tools
+              desc: terminal components receive client dependencies through constructors
+            - pkg: AskCore/internal/store
+              desc: terminal components receive client dependencies through constructors
+            - pkg: AskCore/internal/config
+              desc: terminal components receive client dependencies through constructors
+        tuiext-host-boundary:
+          list-mode: strict
+          files:
+            - "**/internal/tuiext/**"
+          allow:
+            - $gostd
+            - AskCore/pkg/protocol
+            - AskCore/pkg/askui
+            - AskCore/internal/settings
+            - AskCore/internal/workspace
+        core-no-terminal-ui:
+          list-mode: lax
+          files:
+            - "**/internal/agent/**"
+            - "**/internal/pipeline/**"
+            - "**/internal/tools/**"
+            - "**/internal/providers/**"
+            - "**/internal/store/**"
+            - "**/internal/sessions/**"
+            - "**/internal/hooks/**"
+            - "**/internal/bus/**"
+          deny:
+            - pkg: AskCore/internal/tui
+              desc: core packages must not depend on terminal components or UI extension hosts
         settings-stdlib-only:
           list-mode: strict
           files:

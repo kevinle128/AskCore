@@ -1,0 +1,151 @@
+{
+  "cli_version": "tui-test 0.1.0-beta.2",
+  "headless_only": true,
+  "d14_ready": false,
+  "cases": [
+    {
+      "backend": "alacritty",
+      "scenario": "g1",
+      "session": "askcore-e2e-4cdfed56d4-alacritty-g1",
+      "result": "pass",
+      "detail": null
+    },
+    {
+      "backend": "alacritty",
+      "scenario": "g2",
+      "session": "askcore-e2e-4cdfed56d4-alacritty-g2",
+      "result": "pass",
+      "detail": null
+    },
+    {
+      "backend": "alacritty",
+      "scenario": "g3",
+      "session": "askcore-e2e-4cdfed56d4-alacritty-g3",
+      "result": "pass",
+      "detail": null
+    },
+    {
+      "backend": "alacritty",
+      "scenario": "g6",
+      "session": "askcore-e2e-4cdfed56d4-alacritty-g6",
+      "result": "pass",
+      "detail": {
+        "negotiated_modified_keys": "pass",
+        "reason": null
+      }
+    },
+    {
+      "backend": "alacritty",
+      "scenario": "g3-draft-middle",
+      "session": "askcore-e2e-4cdfed56d4-alacritty-g3-draft-middle",
+      "result": "pass",
+      "detail": null
+    },
+    {
+      "backend": "alacritty",
+      "scenario": "g3-draft-hard-lines",
+      "session": "askcore-e2e-4cdfed56d4-alacritty-g3-draft-hard-lines",
+      "result": "pass",
+      "detail": null
+    },
+    {
+      "backend": "alacritty",
+      "scenario": "g3-draft-long",
+      "session": "askcore-e2e-4cdfed56d4-alacritty-g3-draft-long",
+      "result": "pass",
+      "detail": null
+    },
+    {
+      "backend": "alacritty",
+      "scenario": "g3-draft-trailing-space",
+      "session": "askcore-e2e-4cdfed56d4-alacritty-g3-draft-trailing-space",
+      "result": "pass",
+      "detail": null
+    },
+    {
+      "backend": "alacritty",
+      "scenario": "g3-pending",
+      "result": "pass",
+      "detail": {
+        "ordinary_commits": 2000,
+        "replay_snapshot_commits": [
+          1,
+          2000
+        ],
+        "real_pending_write_resize": "pass"
+      }
+    },
+    {
+      "backend": "ghostty",
+      "scenario": "g1",
+      "session": "askcore-e2e-4cdfed56d4-ghostty-g1",
+      "result": "pass",
+      "detail": null
+    },
+    {
+      "backend": "ghostty",
+      "scenario": "g2",
+      "session": "askcore-e2e-4cdfed56d4-ghostty-g2",
+      "result": "pass",
+      "detail": null
+    },
+    {
+      "backend": "ghostty",
+      "scenario": "g3",
+      "session": "askcore-e2e-4cdfed56d4-ghostty-g3",
+      "result": "pass",
+      "detail": null
+    },
+    {
+      "backend": "ghostty",
+      "scenario": "g6",
+      "session": "askcore-e2e-4cdfed56d4-ghostty-g6",
+      "result": "pass",
+      "detail": {
+        "negotiated_modified_keys": "pass",
+        "reason": null
+      }
+    },
+    {
+      "backend": "ghostty",
+      "scenario": "g3-draft-middle",
+      "session": "askcore-e2e-4cdfed56d4-ghostty-g3-draft-middle",
+      "result": "pass",
+      "detail": null
+    },
+    {
+      "backend": "ghostty",
+      "scenario": "g3-draft-hard-lines",
+      "session": "askcore-e2e-4cdfed56d4-ghostty-g3-draft-hard-lines",
+      "result": "pass",
+      "detail": null
+    },
+    {
+      "backend": "ghostty",
+      "scenario": "g3-draft-long",
+      "session": "askcore-e2e-4cdfed56d4-ghostty-g3-draft-long",
+      "result": "pass",
+      "detail": null
+    },
+    {
+      "backend": "ghostty",
+      "scenario": "g3-draft-trailing-space",
+      "session": "askcore-e2e-4cdfed56d4-ghostty-g3-draft-trailing-space",
+      "result": "pass",
+      "detail": null
+    },
+    {
+      "backend": "ghostty",
+      "scenario": "g3-pending",
+      "result": "pass",
+      "detail": {
+        "ordinary_commits": 2000,
+        "replay_snapshot_commits": [
+          1,
+          2000
+        ],
+        "real_pending_write_resize": "pass"
+      }
+    }
+  ]
+}

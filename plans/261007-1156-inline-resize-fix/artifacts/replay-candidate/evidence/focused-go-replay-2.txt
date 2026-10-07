@@ -1,0 +1,9 @@
+--- FAIL: TestG2Selector (6.12s)
+    g2_g3_test.go:18: owned child pid=98484 /var/folders/84/5njq4pvs747b3zzntvtgtpl80000gn/T/TestG2Selector2110210509/001/selector --scenario g6 support=true
+    g2_g3_test.go:94: visible cursor/frame predicate failed: main.snapshot{Rows:[]string{"G1[0007]", "G1[0008]", "G1[0009]", ""}, History:[]string{"T0 startup", "G1[0000]", "G1[0001]", "G1[0002]", "G1[0003]", "G1[0004]", "G1[0005]", "G1[0006]"}, X:0, Y:3, Alt:false}
+--- FAIL: TestG3UnicodeResize (5.77s)
+    g2_g3_test.go:128: owned child pid=98584 /var/folders/84/5njq4pvs747b3zzntvtgtpl80000gn/T/TestG3UnicodeResize1455981156/001/resize --scenario g6 support=true
+    g2_g3_test.go:148: visible cursor/frame predicate failed: main.snapshot{Rows:[]string{""}, History:[]string{"T0", " s", "ta", "rt", "up"}, X:0, Y:0, Alt:false}
+FAIL
+exit status 1
+FAIL	askcore-t0-inline	13.382s

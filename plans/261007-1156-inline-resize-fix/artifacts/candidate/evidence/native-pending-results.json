@@ -1,0 +1,12 @@
+[
+  {
+    "backend": "alacritty",
+    "result": "fail",
+    "error": "bounded terminal predicate failed: {'bell_count': 0, 'cols': 40, 'cursor': {'x': 0, 'y': 1}, 'cwd': None, 'exited': 1, 'last_command': None, 'last_exit': None, 'ready': False, 'rows': 12, 'session_shell': None, 'text': 'bad file descriptor', 'timeouts': {'command': 30000, 'exit': 30000, 'idle': 5000, 'ready': 30000, 'text': 5000}, 'title': None}"
+  },
+  {
+    "backend": "ghostty",
+    "result": "fail",
+    "error": "bounded terminal predicate failed: {'bell_count': 0, 'cols': 40, 'cursor': {'x': 0, 'y': 1}, 'cwd': None, 'exited': 1, 'last_command': None, 'last_exit': None, 'ready': False, 'rows': 12, 'session_shell': None, 'text': 'bad file descriptor', 'timeouts': {'command': 30000, 'exit': 30000, 'idle': 5000, 'ready': 30000, 'text': 5000}, 'title': None}"
+  }
+]

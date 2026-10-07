@@ -54,8 +54,15 @@ AskCore/
 ├── migrations/            # SQL files (SQLite), embedded into the binary
 ├── pkg/protocol/          # WS wire contract
 ├── proto/                 # gRPC definitions and bindings
+├── e2e/tui/               # Independent terminal E2E runner
 └── docs/  plans/
 ```
+
+## TUI extension boundary
+
+Before adding TUI components or UI extensions, read [docs/tui-architecture.md](docs/tui-architecture.md) and the owning package README.
+Keep terminal rendering in `internal/tui`, client-local UI child lifecycle in `internal/tuiext`, public UI author APIs in `pkg/askui`, and shared wire data in `pkg/protocol`.
+Do not expose internal or Bubble Tea types in the public UI SDK.
 
 ## Common Commands
 
@@ -63,6 +70,9 @@ AskCore/
 - `go run ./cmd/server` - Start the server (applies pending migrations first)
 - `go run ./cmd/server -migrate` - Apply migrations and exit
 - `go test ./...` - Run tests
+- `python3 e2e/tui/run.py` - Run terminal E2E tests; follow [setup and results](e2e/tui/README.md).
+  Keep this runner outside the production Go module.
+  Headless terminal results do not certify Terminal.app or iTerm2.
 - `FSFAULT_ENGINE=docker internal/testsupport/fsfault/run-tests.sh` - Run optional Linux filesystem fault tests; follow the [fixture setup](internal/testsupport/README.md#filesystem-fault-tests).
 - `go run github.com/golangci/golangci-lint/v2/cmd/golangci-lint run ./...` - Lint, including the depguard import rules
 - `go fmt ./...` - Format code

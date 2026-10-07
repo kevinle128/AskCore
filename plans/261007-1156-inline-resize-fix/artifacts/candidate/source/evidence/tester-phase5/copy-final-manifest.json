@@ -1,0 +1,216 @@
+{
+  "Version": 1,
+  "CleanRerun": {
+    "Result": "pass",
+    "Reason": "",
+    "Command": "GOWORK=off GOCACHE=/private/tmp/askcore-t0-09kf6w9r-go-cache GOMODCACHE=/private/tmp/askcore-t0-mod-cache go test -race -v -count=1 -timeout 60s ./...",
+    "Artifacts": [
+      {
+        "Path": "phase5-clean-race.txt",
+        "SHA256": "49248054ce0fcf427349e31b51790f2bea08f0035c9a8748831d18a0c7627203"
+      }
+    ]
+  },
+  "Environment": {
+    "bubbletea": "charm.land/bubbletea/v2 v2.0.10",
+    "emulator": "github.com/charmbracelet/x/vt v0.0.0-20261004011457-ad85c59fdf4e",
+    "go": "go1.27.0",
+    "locale": "C.UTF-8",
+    "os": "Darwin 25.6.0 arm64",
+    "pty": "github.com/creack/pty v1.1.24",
+    "real_terminal": "iTerm2 3.7.3; access denied; observations pending",
+    "source_commit": "d9279ab5adc341312550430d7579f18a05e6b17d (product baseline; scratch source checksums separate)",
+    "terminal": "PTY xterm-256color with explicit query responder",
+    "workspace": "GOWORK=off; isolated askcore-t0-inline module"
+  },
+  "Dimensions": [
+    [
+      40,
+      12
+    ],
+    [
+      52,
+      15
+    ],
+    [
+      13,
+      6
+    ],
+    [
+      12,
+      6
+    ],
+    [
+      2,
+      1
+    ],
+    [
+      1,
+      1
+    ],
+    [
+      10,
+      12
+    ],
+    [
+      10,
+      4
+    ],
+    [
+      40,
+      4
+    ]
+  ],
+  "DependencyGraph": {
+    "Path": "module-graph.txt",
+    "SHA256": "ddd405d445eab282b1f64022a744d0b80d47f3d9285a1694c853c47d5b861242"
+  },
+  "Gates": [
+    {
+      "Name": "G1",
+      "Criteria": "2000 ordered unique lines; oversized/shrink/live cursor; stable ready prefix; real pending resize; partial-write stop/no replay",
+      "Automated": {
+        "Result": "pass",
+        "Reason": "",
+        "Command": "GOWORK=off GOCACHE=/private/tmp/askcore-t0-09kf6w9r-go-cache GOMODCACHE=/private/tmp/askcore-t0-mod-cache go test -race -v -count=1 -timeout 60s ./...",
+        "Artifacts": [
+          {
+            "Path": "phase4-final-race.txt",
+            "SHA256": "a8584de5490f3da124a79928bfad4cac98f35ca7e44faed9f4e8d826a9fc5522"
+          },
+          {
+            "Path": "TestG1Stock-ordered2000.ansi",
+            "SHA256": "ce23480ed31057c4a4769b6c792de8cbc7e7236f097a3e902ef91ed39a9e2e07"
+          }
+        ]
+      },
+      "RealTerminal": {
+        "Result": "pending",
+        "Reason": "iTerm2 app access denied; no direct observation. See README manual checklist.",
+        "Command": "",
+        "Artifacts": null
+      }
+    },
+    {
+      "Name": "G2",
+      "Criteria": "12 selector items in three rows; exact window/cursor; draft restore and stable-height history; real resize",
+      "Automated": {
+        "Result": "pass",
+        "Reason": "",
+        "Command": "GOWORK=off GOCACHE=/private/tmp/askcore-t0-09kf6w9r-go-cache GOMODCACHE=/private/tmp/askcore-t0-mod-cache go test -race -v -count=1 -timeout 60s ./...",
+        "Artifacts": [
+          {
+            "Path": "phase4-final-race.txt",
+            "SHA256": "a8584de5490f3da124a79928bfad4cac98f35ca7e44faed9f4e8d826a9fc5522"
+          },
+          {
+            "Path": "TestG2Selector.ansi",
+            "SHA256": "509423cdd40a8c4a88c80e95f8b729951cddfaa48beaffac17acbe54c93d9685"
+          }
+        ]
+      },
+      "RealTerminal": {
+        "Result": "pending",
+        "Reason": "iTerm2 app access denied; no direct observation. See README manual checklist.",
+        "Command": "",
+        "Artifacts": null
+      }
+    },
+    {
+      "Name": "G3",
+      "Criteria": "hand-written CJK/emoji cells; widths1/2 height1; repeated real resize; exact-once committed output; native height reflow pending",
+      "Automated": {
+        "Result": "pass",
+        "Reason": "",
+        "Command": "GOWORK=off GOCACHE=/private/tmp/askcore-t0-09kf6w9r-go-cache GOMODCACHE=/private/tmp/askcore-t0-mod-cache go test -race -v -count=1 -timeout 60s ./...",
+        "Artifacts": [
+          {
+            "Path": "phase4-final-race.txt",
+            "SHA256": "a8584de5490f3da124a79928bfad4cac98f35ca7e44faed9f4e8d826a9fc5522"
+          },
+          {
+            "Path": "TestG3ResizeDuringStream.ansi",
+            "SHA256": "2031f73c6d5c889775f55b4d27faa8265bb9fac4078ec6fabc335834e74046b4"
+          }
+        ]
+      },
+      "RealTerminal": {
+        "Result": "pending",
+        "Reason": "iTerm2 app access denied; no direct observation. See README manual checklist.",
+        "Command": "",
+        "Artifacts": null
+      }
+    },
+    {
+      "Name": "G6",
+      "Criteria": "actual key negotiation/fallback; one 2000-line PasteMsg; full normalized hash; all exit routes; partial sync cleanup",
+      "Automated": {
+        "Result": "pass",
+        "Reason": "",
+        "Command": "GOWORK=off GOCACHE=/private/tmp/askcore-t0-09kf6w9r-go-cache GOMODCACHE=/private/tmp/askcore-t0-mod-cache go test -race -v -count=1 -timeout 60s ./...",
+        "Artifacts": [
+          {
+            "Path": "phase4-final-race.txt",
+            "SHA256": "a8584de5490f3da124a79928bfad4cac98f35ca7e44faed9f4e8d826a9fc5522"
+          },
+          {
+            "Path": "TestG6Input-true.ansi",
+            "SHA256": "19b0b7a238142a0e6fb07ec15ce58f3444ab9b6eb0b949a07110f859da9e747c"
+          }
+        ]
+      },
+      "RealTerminal": {
+        "Result": "pending",
+        "Reason": "iTerm2 app access denied; no direct observation. See README manual checklist.",
+        "Command": "",
+        "Artifacts": null
+      }
+    }
+  ],
+  "Optional": {
+    "G4": {
+      "Result": "not-run",
+      "Reason": "No Kitty graphics responder or selected-terminal image capability observation; no image-history PASS claimed.",
+      "Command": "",
+      "Artifacts": null
+    },
+    "G5": {
+      "Result": "not-run",
+      "Reason": "M2 alternate-buffer transcript reconstruction is not exercised by this inline fixture; real terminal access unavailable.",
+      "Command": "",
+      "Artifacts": null
+    },
+    "keepalive": {
+      "Result": "not-run",
+      "Reason": "Optional nonblocking probe not executed; selected real terminal inaccessible.",
+      "Command": "",
+      "Artifacts": null
+    },
+    "modifyOtherKeys": {
+      "Result": "not-run",
+      "Reason": "Optional nonblocking probe not executed; selected real terminal inaccessible.",
+      "Command": "",
+      "Artifacts": null
+    },
+    "palette": {
+      "Result": "not-run",
+      "Reason": "Optional nonblocking probe not executed; selected real terminal inaccessible.",
+      "Command": "",
+      "Artifacts": null
+    },
+    "pixel": {
+      "Result": "not-run",
+      "Reason": "Optional nonblocking probe not executed; selected real terminal inaccessible.",
+      "Command": "",
+      "Artifacts": null
+    }
+  },
+  "RendererFixClasses": 0,
+  "OutputOwnerAdaptations": [
+    "explicit insertion WriteString observation preserving term.File",
+    "complete-write confirmed frontier and synchronous error/short-write latch",
+    "post-renderer owned mode2026 reset and filtered restoration after failure"
+  ],
+  "D14Ready": false,
+  "Recommendation": "Stock Println is the measured candidate with an ordered output observer, failure latch, and owned cleanup; D14 pending real-terminal evidence."
+}

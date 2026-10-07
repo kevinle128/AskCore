@@ -1,0 +1,11 @@
+[
+  {
+    "backend": "alacritty",
+    "result": "pass"
+  },
+  {
+    "backend": "ghostty",
+    "result": "fail",
+    "error": "ordered transcript differs: retained=1098, expected=2000"
+  }
+]

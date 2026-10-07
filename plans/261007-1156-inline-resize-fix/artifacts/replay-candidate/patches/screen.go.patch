@@ -1,0 +1,14 @@
+--- /private/tmp/askcore-resize-mod-cache/charm.land/bubbletea/v2@v2.0.10/screen.go	2026-10-07 11:57:45
++++ bubbletea/screen.go	2026-10-07 12:55:03
+@@ -5,8 +5,9 @@
+ // WindowSizeMsg is used to report the terminal size. It's sent to Update once
+ // initially and then on every terminal resize.
+ type WindowSizeMsg struct {
+-	Width  int
+-	Height int
++	Width      int
++	Height     int
++	Generation uint64
+ }
+ 
+ // ClearScreen is a special command that tells the program to clear the screen

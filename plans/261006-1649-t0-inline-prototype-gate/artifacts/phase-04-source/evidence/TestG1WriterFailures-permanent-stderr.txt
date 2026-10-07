@@ -1,0 +1,2 @@
+terminal byte restoration unavailable: output stopped after failure
+fixture permanent insertion write failure

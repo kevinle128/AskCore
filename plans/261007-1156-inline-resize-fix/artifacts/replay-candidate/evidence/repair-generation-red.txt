@@ -1,0 +1,5 @@
+--- FAIL: TestResizeSupersedesInFlightRepair (0.00s)
+    replay_test.go:12: stale repair prevented current generation from scheduling
+FAIL
+exit status 1
+FAIL	askcore-t0-inline	0.528s

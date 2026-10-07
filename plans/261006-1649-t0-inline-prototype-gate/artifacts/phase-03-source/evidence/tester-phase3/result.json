@@ -1,0 +1,37 @@
+{
+  "commands": {
+    "narrow": {
+      "command": "go test -v -run 'TestTranscript|TestCommit|TestG1' -count=1 -timeout 90s ./...",
+      "exit": 0
+    },
+    "race": {
+      "command": "go test -race -v -count=1 -timeout 90s ./...",
+      "exit": 0
+    },
+    "vet": {
+      "command": "go vet ./...",
+      "exit": 0
+    },
+    "build": {
+      "command": "go build -o evidence/tester-phase3/g1 .",
+      "exit": 0
+    },
+    "format": {
+      "command": "gofmt -l *.go",
+      "exit": 0
+    }
+  },
+  "narrow_top_level_passes": 14,
+  "narrow_subtests": 13,
+  "race_top_level_passes": 27,
+  "race_subtests": 30,
+  "archive_hashes_verified": {
+    "phase1": 34,
+    "phase2": 79,
+    "phase3": 123
+  },
+  "frozen_files_verified": 16,
+  "product_hashes_verified": 27,
+  "real_iTerm2": "pending",
+  "complete_G1": "not_claimed"
+}

@@ -1,0 +1,4 @@
+=== RUN   TestOracleFinalNegativeControls
+--- PASS: TestOracleFinalNegativeControls (0.00s)
+PASS
+ok  	askcore-t0-inline	0.374s

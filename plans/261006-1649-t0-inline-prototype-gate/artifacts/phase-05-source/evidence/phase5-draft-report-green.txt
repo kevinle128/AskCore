@@ -1,0 +1,6 @@
+=== RUN   TestManualPasteReport
+    draft_report_test.go:19: owned child pid=72797 /var/folders/84/5njq4pvs747b3zzntvtgtpl80000gn/T/TestManualPasteReport2742571602/001/paste --scenario g6 support=true
+    draft_report_test.go:31: restore termios exact, final cursor=(0,4) mode map=map[25:true 2004:false 2026:false]
+--- PASS: TestManualPasteReport (0.65s)
+PASS
+ok  	askcore-t0-inline	1.053s

@@ -122,9 +122,19 @@ The H4 report is a cross-phase decision record, not an H4 implementation checkli
 ## Next execution priority (2026-10-06)
 
 Use [roadmap revision 16](./roadmap.md#3-dependency-order): T0 → H13a → H13b → T1a.
+The [T0 deep TDD plan](../261006-1649-t0-inline-prototype-gate/plan.md) defines the isolated gate and iTerm2 evidence; it does not mark T0 complete.
 The local acceptance path is TUI → Leader → ACP → agent.
 [H7a](../261006-0157-h7a-subscription-auth/plan.md#current-execution-record) and [lifecycle](../261006-0933-lifecycle-event-pipeline-redesign/plan.md) record completed implementation.
 H4 verification is recorded in `master-2/plans/261006-0130-h4-verification/plan.md` and its linked audit report in the sibling worktree.
 Use those completed implementations for T1a; do not infer missing implementation from the older master scaffold.
 Integrate the remaining harness phases through T1b at each phase exit.
 All M1 features and M2 boundaries stay in scope as recorded in the roadmap.
+
+## T0 and D14 decision checkpoint
+
+T0 is accepted and D14 is closed on 2026-10-07.
+The user reported Terminal.app/iTerm2 acceptance; exact terminal versions and independent physical captures were not supplied.
+The tested selection is Bubble Tea v2.0.10 with the minimal local renderer patch and exact unmodified upstream Ultraviolet, retaining Go 1.27.0.
+See the [D14 decision](../reports/pm-261007-1312-d14-tui-decision.md) for evidence and known limits.
+Root dependency migration and product patch packaging belong to T1.
+The earlier next-priority checkpoint is historical; H13a → H13b → T1a follows the accepted T0 gate.

@@ -1,0 +1,4 @@
+# askcore-t0-inline [askcore-t0-inline.test]
+./transcript_test.go:38:22: unknown field manualTranscript in struct literal of type model
+./transcript_test.go:38:45: unknown field transcriptLines in struct literal of type model
+FAIL	askcore-t0-inline [build failed]

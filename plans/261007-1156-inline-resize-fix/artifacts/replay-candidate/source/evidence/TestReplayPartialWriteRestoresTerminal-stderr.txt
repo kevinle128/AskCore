@@ -1,0 +1,1 @@
+fixture partial replay output write failure after 8 bytes

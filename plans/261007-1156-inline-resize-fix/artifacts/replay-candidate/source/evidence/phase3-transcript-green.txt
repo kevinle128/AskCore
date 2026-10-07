@@ -1,0 +1,4 @@
+=== RUN   TestTranscriptStart
+--- PASS: TestTranscriptStart (0.00s)
+PASS
+ok  	askcore-t0-inline	0.482s

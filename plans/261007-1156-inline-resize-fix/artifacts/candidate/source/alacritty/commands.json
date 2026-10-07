@@ -1,0 +1,354 @@
+[
+  {
+    "command": [
+      "tui-test",
+      "--session",
+      "askcore-origin-fe7e2fd4",
+      "--json",
+      "daemon",
+      "status"
+    ],
+    "code": 3,
+    "stdout": "{\"pid\":null,\"running\":false,\"session\":\"askcore-origin-fe7e2fd4\"}\n",
+    "stderr": ""
+  },
+  {
+    "command": [
+      "tui-test",
+      "--session",
+      "askcore-origin-fe7e2fd4",
+      "--json",
+      "--verbose",
+      "run",
+      "--backend",
+      "alacritty",
+      "--cols",
+      "40",
+      "--rows",
+      "12",
+      "--cwd",
+      "/private/tmp/askcore-inline-resize-fix-5rjbma6z",
+      "--env",
+      "TERM=xterm-256color",
+      "/private/tmp/askcore-inline-resize-fix-5rjbma6z/origin-probe.py",
+      "--scenario",
+      "g3",
+      "--draft-report",
+      "/private/tmp/askcore-inline-resize-fix-5rjbma6z/alacritty/draft.json"
+    ],
+    "code": 0,
+    "stdout": "{\"ok\":true,\"data\":{\"pid\":20721,\"ready\":false,\"recording\":\"/Users/dale/Library/Caches/tui-test/askcore-origin-fe7e2fd4.cast\",\"session\":\"askcore-origin-fe7e2fd4\",\"shell_pid\":20722}}\n",
+    "stderr": "daemon logging to /Users/dale/.tui-test/askcore-origin-fe7e2fd4.log\n"
+  },
+  {
+    "command": [
+      "tui-test",
+      "--session",
+      "askcore-origin-fe7e2fd4",
+      "--json",
+      "state"
+    ],
+    "code": 0,
+    "stdout": "{\"ok\":true,\"data\":{\"bell_count\":0,\"cols\":40,\"cursor\":{\"x\":0,\"y\":0},\"cwd\":null,\"exited\":null,\"last_command\":null,\"last_exit\":null,\"ready\":false,\"rows\":12,\"session_shell\":null,\"text\":\"\",\"timeouts\":{\"command\":30000,\"exit\":30000,\"idle\":5000,\"ready\":30000,\"text\":5000},\"title\":null}}\n",
+    "stderr": ""
+  },
+  {
+    "command": [
+      "tui-test",
+      "--session",
+      "askcore-origin-fe7e2fd4",
+      "--json",
+      "state"
+    ],
+    "code": 0,
+    "stdout": "{\"ok\":true,\"data\":{\"bell_count\":0,\"cols\":40,\"cursor\":{\"x\":0,\"y\":0},\"cwd\":null,\"exited\":null,\"last_command\":null,\"last_exit\":null,\"ready\":false,\"rows\":12,\"session_shell\":null,\"text\":\"\",\"timeouts\":{\"command\":30000,\"exit\":30000,\"idle\":5000,\"ready\":30000,\"text\":5000},\"title\":null}}\n",
+    "stderr": ""
+  },
+  {
+    "command": [
+      "tui-test",
+      "--session",
+      "askcore-origin-fe7e2fd4",
+      "--json",
+      "state"
+    ],
+    "code": 0,
+    "stdout": "{\"ok\":true,\"data\":{\"bell_count\":0,\"cols\":40,\"cursor\":{\"x\":0,\"y\":0},\"cwd\":null,\"exited\":null,\"last_command\":null,\"last_exit\":null,\"ready\":false,\"rows\":12,\"session_shell\":null,\"text\":\"\",\"timeouts\":{\"command\":30000,\"exit\":30000,\"idle\":5000,\"ready\":30000,\"text\":5000},\"title\":null}}\n",
+    "stderr": ""
+  },
+  {
+    "command": [
+      "tui-test",
+      "--session",
+      "askcore-origin-fe7e2fd4",
+      "--json",
+      "state"
+    ],
+    "code": 0,
+    "stdout": "{\"ok\":true,\"data\":{\"bell_count\":0,\"cols\":40,\"cursor\":{\"x\":0,\"y\":0},\"cwd\":null,\"exited\":null,\"last_command\":null,\"last_exit\":null,\"ready\":false,\"rows\":12,\"session_shell\":null,\"text\":\"\",\"timeouts\":{\"command\":30000,\"exit\":30000,\"idle\":5000,\"ready\":30000,\"text\":5000},\"title\":null}}\n",
+    "stderr": ""
+  },
+  {
+    "command": [
+      "tui-test",
+      "--session",
+      "askcore-origin-fe7e2fd4",
+      "--json",
+      "state"
+    ],
+    "code": 0,
+    "stdout": "{\"ok\":true,\"data\":{\"bell_count\":0,\"cols\":40,\"cursor\":{\"x\":0,\"y\":0},\"cwd\":null,\"exited\":null,\"last_command\":null,\"last_exit\":null,\"ready\":false,\"rows\":12,\"session_shell\":null,\"text\":\"\",\"timeouts\":{\"command\":30000,\"exit\":30000,\"idle\":5000,\"ready\":30000,\"text\":5000},\"title\":null}}\n",
+    "stderr": ""
+  },
+  {
+    "command": [
+      "tui-test",
+      "--session",
+      "askcore-origin-fe7e2fd4",
+      "--json",
+      "state"
+    ],
+    "code": 0,
+    "stdout": "{\"ok\":true,\"data\":{\"bell_count\":0,\"cols\":40,\"cursor\":{\"x\":0,\"y\":0},\"cwd\":null,\"exited\":null,\"last_command\":null,\"last_exit\":null,\"ready\":false,\"rows\":12,\"session_shell\":null,\"text\":\"\",\"timeouts\":{\"command\":30000,\"exit\":30000,\"idle\":5000,\"ready\":30000,\"text\":5000},\"title\":null}}\n",
+    "stderr": ""
+  },
+  {
+    "command": [
+      "tui-test",
+      "--session",
+      "askcore-origin-fe7e2fd4",
+      "--json",
+      "state"
+    ],
+    "code": 0,
+    "stdout": "{\"ok\":true,\"data\":{\"bell_count\":0,\"cols\":40,\"cursor\":{\"x\":0,\"y\":0},\"cwd\":null,\"exited\":null,\"last_command\":null,\"last_exit\":null,\"ready\":false,\"rows\":12,\"session_shell\":null,\"text\":\"\",\"timeouts\":{\"command\":30000,\"exit\":30000,\"idle\":5000,\"ready\":30000,\"text\":5000},\"title\":null}}\n",
+    "stderr": ""
+  },
+  {
+    "command": [
+      "tui-test",
+      "--session",
+      "askcore-origin-fe7e2fd4",
+      "--json",
+      "state"
+    ],
+    "code": 0,
+    "stdout": "{\"ok\":true,\"data\":{\"bell_count\":0,\"cols\":40,\"cursor\":{\"x\":0,\"y\":0},\"cwd\":null,\"exited\":null,\"last_command\":null,\"last_exit\":null,\"ready\":false,\"rows\":12,\"session_shell\":null,\"text\":\"\",\"timeouts\":{\"command\":30000,\"exit\":30000,\"idle\":5000,\"ready\":30000,\"text\":5000},\"title\":null}}\n",
+    "stderr": ""
+  },
+  {
+    "command": [
+      "tui-test",
+      "--session",
+      "askcore-origin-fe7e2fd4",
+      "--json",
+      "state"
+    ],
+    "code": 0,
+    "stdout": "{\"ok\":true,\"data\":{\"bell_count\":0,\"cols\":40,\"cursor\":{\"x\":0,\"y\":0},\"cwd\":null,\"exited\":null,\"last_command\":null,\"last_exit\":null,\"ready\":false,\"rows\":12,\"session_shell\":null,\"text\":\"\",\"timeouts\":{\"command\":30000,\"exit\":30000,\"idle\":5000,\"ready\":30000,\"text\":5000},\"title\":null}}\n",
+    "stderr": ""
+  },
+  {
+    "command": [
+      "tui-test",
+      "--session",
+      "askcore-origin-fe7e2fd4",
+      "--json",
+      "state"
+    ],
+    "code": 0,
+    "stdout": "{\"ok\":true,\"data\":{\"bell_count\":0,\"cols\":40,\"cursor\":{\"x\":0,\"y\":0},\"cwd\":null,\"exited\":null,\"last_command\":null,\"last_exit\":null,\"ready\":false,\"rows\":12,\"session_shell\":null,\"text\":\"\",\"timeouts\":{\"command\":30000,\"exit\":30000,\"idle\":5000,\"ready\":30000,\"text\":5000},\"title\":null}}\n",
+    "stderr": ""
+  },
+  {
+    "command": [
+      "tui-test",
+      "--session",
+      "askcore-origin-fe7e2fd4",
+      "--json",
+      "state"
+    ],
+    "code": 0,
+    "stdout": "{\"ok\":true,\"data\":{\"bell_count\":0,\"cols\":40,\"cursor\":{\"x\":0,\"y\":0},\"cwd\":null,\"exited\":null,\"last_command\":null,\"last_exit\":null,\"ready\":false,\"rows\":12,\"session_shell\":null,\"text\":\"\",\"timeouts\":{\"command\":30000,\"exit\":30000,\"idle\":5000,\"ready\":30000,\"text\":5000},\"title\":null}}\n",
+    "stderr": ""
+  },
+  {
+    "command": [
+      "tui-test",
+      "--session",
+      "askcore-origin-fe7e2fd4",
+      "--json",
+      "state"
+    ],
+    "code": 0,
+    "stdout": "{\"ok\":true,\"data\":{\"bell_count\":0,\"cols\":40,\"cursor\":{\"x\":0,\"y\":0},\"cwd\":null,\"exited\":null,\"last_command\":null,\"last_exit\":null,\"ready\":false,\"rows\":12,\"session_shell\":null,\"text\":\"\",\"timeouts\":{\"command\":30000,\"exit\":30000,\"idle\":5000,\"ready\":30000,\"text\":5000},\"title\":null}}\n",
+    "stderr": ""
+  },
+  {
+    "command": [
+      "tui-test",
+      "--session",
+      "askcore-origin-fe7e2fd4",
+      "--json",
+      "state"
+    ],
+    "code": 0,
+    "stdout": "{\"ok\":true,\"data\":{\"bell_count\":0,\"cols\":40,\"cursor\":{\"x\":11,\"y\":1},\"cwd\":null,\"exited\":null,\"last_command\":null,\"last_exit\":null,\"ready\":false,\"rows\":12,\"session_shell\":null,\"text\":\"T0 startup\\neditor> abc界😀Z\",\"timeouts\":{\"command\":30000,\"exit\":30000,\"idle\":5000,\"ready\":30000,\"text\":5000},\"title\":null}}\n",
+    "stderr": ""
+  },
+  {
+    "command": [
+      "tui-test",
+      "--session",
+      "askcore-origin-fe7e2fd4",
+      "--json",
+      "state"
+    ],
+    "code": 0,
+    "stdout": "{\"ok\":true,\"data\":{\"bell_count\":0,\"cols\":40,\"cursor\":{\"x\":11,\"y\":1},\"cwd\":null,\"exited\":null,\"last_command\":null,\"last_exit\":null,\"ready\":false,\"rows\":12,\"session_shell\":null,\"text\":\"T0 startup\\neditor> abc界😀Z\",\"timeouts\":{\"command\":30000,\"exit\":30000,\"idle\":5000,\"ready\":30000,\"text\":5000},\"title\":null}}\n",
+    "stderr": ""
+  },
+  {
+    "command": [
+      "tui-test",
+      "--session",
+      "askcore-origin-fe7e2fd4",
+      "--json",
+      "resize",
+      "13",
+      "6"
+    ],
+    "code": 0,
+    "stdout": "{\"ok\":true}\n",
+    "stderr": ""
+  },
+  {
+    "command": [
+      "tui-test",
+      "--session",
+      "askcore-origin-fe7e2fd4",
+      "--json",
+      "state"
+    ],
+    "code": 0,
+    "stdout": "{\"ok\":true,\"data\":{\"bell_count\":0,\"cols\":13,\"cursor\":{\"x\":3,\"y\":2},\"cwd\":null,\"exited\":null,\"last_command\":null,\"last_exit\":null,\"ready\":false,\"rows\":6,\"session_shell\":null,\"text\":\"editor> abc界\\neditor> abc界\\n😀Z\",\"timeouts\":{\"command\":30000,\"exit\":30000,\"idle\":5000,\"ready\":30000,\"text\":5000},\"title\":null}}\n",
+    "stderr": ""
+  },
+  {
+    "command": [
+      "tui-test",
+      "--session",
+      "askcore-origin-fe7e2fd4",
+      "--json",
+      "state"
+    ],
+    "code": 0,
+    "stdout": "{\"ok\":true,\"data\":{\"bell_count\":0,\"cols\":13,\"cursor\":{\"x\":3,\"y\":2},\"cwd\":null,\"exited\":null,\"last_command\":null,\"last_exit\":null,\"ready\":false,\"rows\":6,\"session_shell\":null,\"text\":\"editor> abc界\\neditor> abc界\\n😀Z\",\"timeouts\":{\"command\":30000,\"exit\":30000,\"idle\":5000,\"ready\":30000,\"text\":5000},\"title\":null}}\n",
+    "stderr": ""
+  },
+  {
+    "command": [
+      "tui-test",
+      "--session",
+      "askcore-origin-fe7e2fd4",
+      "--json",
+      "state"
+    ],
+    "code": 0,
+    "stdout": "{\"ok\":true,\"data\":{\"bell_count\":0,\"cols\":13,\"cursor\":{\"x\":3,\"y\":2},\"cwd\":null,\"exited\":null,\"last_command\":null,\"last_exit\":null,\"ready\":false,\"rows\":6,\"session_shell\":null,\"text\":\"editor> abc界\\neditor> abc界\\n😀Z\",\"timeouts\":{\"command\":30000,\"exit\":30000,\"idle\":5000,\"ready\":30000,\"text\":5000},\"title\":null}}\n",
+    "stderr": ""
+  },
+  {
+    "command": [
+      "tui-test",
+      "--session",
+      "askcore-origin-fe7e2fd4",
+      "--json",
+      "text",
+      "--full"
+    ],
+    "code": 0,
+    "stdout": "{\"ok\":true,\"data\":{\"text\":\"T0 startup\\neditor> abc界\\neditor> abc界\\n😀Z\"}}\n",
+    "stderr": ""
+  },
+  {
+    "command": [
+      "tui-test",
+      "--session",
+      "askcore-origin-fe7e2fd4",
+      "--json",
+      "cells",
+      "0",
+      "0",
+      "40",
+      "12"
+    ],
+    "code": 0,
+    "stdout": "{\"ok\":true,\"data\":{\"cells\":[{\"bg\":\"default\",\"blink\":false,\"bold\":false,\"char\":\"e\",\"dim\":false,\"fg\":\"default\",\"inverse\":false,\"invisible\":false,\"italic\":false,\"strike\":false,\"underline\":false,\"underline_color\":\"default\",\"underline_style\":\"none\",\"x\":0,\"y\":0},{\"bg\":\"default\",\"blink\":false,\"bold\":false,\"char\":\"d\",\"dim\":false,\"fg\":\"default\",\"inverse\":false,\"invisible\":false,\"italic\":false,\"strike\":false,\"underline\":false,\"underline_color\":\"default\",\"underline_style\":\"none\",\"x\":1,\"y\":0},{\"bg\":\"default\",\"blink\":false,\"bold\":false,\"char\":\"i\",\"dim\":false,\"fg\":\"default\",\"inverse\":false,\"invisible\":false,\"italic\":false,\"strike\":false,\"underline\":false,\"underline_color\":\"default\",\"underline_style\":\"none\",\"x\":2,\"y\":0},{\"bg\":\"default\",\"blink\":false,\"bold\":false,\"char\":\"t\",\"dim\":false,\"fg\":\"default\",\"inverse\":false,\"invisible\":false,\"italic\":false,\"strike\":false,\"underline\":false,\"underline_color\":\"default\",\"underline_style\":\"none\",\"x\":3,\"y\":0},{\"bg\":\"default\",\"blink\":false,\"bold\":false,\"char\":\"o\",\"dim\":false,\"fg\":\"default\",\"inverse\":false,\"invisible\":false,\"italic\":false,\"strike\":false,\"underline\":false,\"underline_color\":\"default\",\"underline_style\":\"none\",\"x\":4,\"y\":0},{\"bg\":\"default\",\"blink\":false,\"bold\":false,\"char\":\"r\",\"dim\":false,\"fg\":\"default\",\"inverse\":false,\"invisible\":false,\"italic\":false,\"strike\":false,\"underline\":false,\"underline_color\":\"default\",\"underline_style\":\"none\",\"x\":5,\"y\":0},{\"bg\":\"default\",\"blink\":false,\"bold\":false,\"char\":\">\",\"dim\":false,\"fg\":\"default\",\"inverse\":false,\"invisible\":false,\"italic\":false,\"strike\":false,\"underline\":false,\"underline_color\":\"default\",\"underline_style\":\"none\",\"x\":6,\"y\":0},{\"bg\":\"default\",\"blink\":false,\"bold\":false,\"char\":\" \",\"dim\":false,\"fg\":\"default\",\"inverse\":false,\"invisible\":false,\"italic\":false,\"strike\":false,\"underline\":false,\"underline_color\":\"default\",\"underline_style\":\"none\",\"x\":7,\"y\":0},{\"bg\":\"default\",\"blink\":false,\"bold\":false,\"char\":\"a\",\"dim\":false,\"fg\":\"default\",\"inverse\":false,\"invisible\":false,\"italic\":false,\"strike\":false,\"underline\":false,\"underline_color\":\"default\",\"underline_style\":\"none\",\"x\":8,\"y\":0},{\"bg\":\"default\",\"blink\":false,\"bold\":false,\"char\":\"b\",\"dim\":false,\"fg\":\"default\",\"inverse\":false,\"invisible\":false,\"italic\":false,\"strike\":false,\"underline\":false,\"underline_color\":\"default\",\"underline_style\":\"none\",\"x\":9,\"y\":0},{\"bg\":\"default\",\"blink\":false,\"bold\":false,\"char\":\"c\",\"dim\":false,\"fg\":\"default\",\"inverse\":false,\"invisible\":false,\"italic\":false,\"strike\":false,\"underline\":false,\"underline_color\":\"default\",\"underline_style\":\"none\",\"x\":10,\"y\":0},{\"bg\":\"default\",\"blink\":false,\"bold\":false,\"char\":\"界\",\"dim\":false,\"fg\":\"default\",\"inverse\":false,\"invisible\":false,\"italic\":false,\"strike\":false,\"underline\":false,\"underline_color\":\"default\",\"underline_style\":\"none\",\"x\":11,\"y\":0},{\"bg\":\"default\",\"blink\":false,\"bold\":false,\"char\":\"\",\"dim\":false,\"fg\":\"default\",\"inverse\":false,\"invisible\":false,\"italic\":false,\"strike\":false,\"underline\":false,\"underline_color\":\"default\",\"underline_style\":\"none\",\"x\":12,\"y\":0},{\"bg\":\"default\",\"blink\":false,\"bold\":false,\"char\":\"e\",\"dim\":false,\"fg\":\"default\",\"inverse\":false,\"invisible\":false,\"italic\":false,\"strike\":false,\"underline\":false,\"underline_color\":\"default\",\"underline_style\":\"none\",\"x\":0,\"y\":1},{\"bg\":\"default\",\"blink\":false,\"bold\":false,\"char\":\"d\",\"dim\":false,\"fg\":\"default\",\"inverse\":false,\"invisible\":false,\"italic\":false,\"strike\":false,\"underline\":false,\"underline_color\":\"default\",\"underline_style\":\"none\",\"x\":1,\"y\":1},{\"bg\":\"default\",\"blink\":false,\"bold\":false,\"char\":\"i\",\"dim\":false,\"fg\":\"default\",\"inverse\":false,\"invisible\":false,\"italic\":false,\"strike\":false,\"underline\":false,\"underline_color\":\"default\",\"underline_style\":\"none\",\"x\":2,\"y\":1},{\"bg\":\"default\",\"blink\":false,\"bold\":false,\"char\":\"t\",\"dim\":false,\"fg\":\"default\",\"inverse\":false,\"invisible\":false,\"italic\":false,\"strike\":false,\"underline\":false,\"underline_color\":\"default\",\"underline_style\":\"none\",\"x\":3,\"y\":1},{\"bg\":\"default\",\"blink\":false,\"bold\":false,\"char\":\"o\",\"dim\":false,\"fg\":\"default\",\"inverse\":false,\"invisible\":false,\"italic\":false,\"strike\":false,\"underline\":false,\"underline_color\":\"default\",\"underline_style\":\"none\",\"x\":4,\"y\":1},{\"bg\":\"default\",\"blink\":false,\"bold\":false,\"char\":\"r\",\"dim\":false,\"fg\":\"default\",\"inverse\":false,\"invisible\":false,\"italic\":false,\"strike\":false,\"underline\":false,\"underline_color\":\"default\",\"underline_style\":\"none\",\"x\":5,\"y\":1},{\"bg\":\"default\",\"blink\":false,\"bold\":false,\"char\":\">\",\"dim\":false,\"fg\":\"default\",\"inverse\":false,\"invisible\":false,\"italic\":false,\"strike\":false,\"underline\":false,\"underline_color\":\"default\",\"underline_style\":\"none\",\"x\":6,\"y\":1},{\"bg\":\"default\",\"blink\":false,\"bold\":false,\"char\":\" \",\"dim\":false,\"fg\":\"default\",\"inverse\":false,\"invisible\":false,\"italic\":false,\"strike\":false,\"underline\":false,\"underline_color\":\"default\",\"underline_style\":\"none\",\"x\":7,\"y\":1},{\"bg\":\"default\",\"blink\":false,\"bold\":false,\"char\":\"a\",\"dim\":false,\"fg\":\"default\",\"inverse\":false,\"invisible\":false,\"italic\":false,\"strike\":false,\"underline\":false,\"underline_color\":\"default\",\"underline_style\":\"none\",\"x\":8,\"y\":1},{\"bg\":\"default\",\"blink\":false,\"bold\":false,\"char\":\"b\",\"dim\":false,\"fg\":\"default\",\"inverse\":false,\"invisible\":false,\"italic\":false,\"strike\":false,\"underline\":false,\"underline_color\":\"default\",\"underline_style\":\"none\",\"x\":9,\"y\":1},{\"bg\":\"default\",\"blink\":false,\"bold\":false,\"char\":\"c\",\"dim\":false,\"fg\":\"default\",\"inverse\":false,\"invisible\":false,\"italic\":false,\"strike\":false,\"underline\":false,\"underline_color\":\"default\",\"underline_style\":\"none\",\"x\":10,\"y\":1},{\"bg\":\"default\",\"blink\":false,\"bold\":false,\"char\":\"界\",\"dim\":false,\"fg\":\"default\",\"inverse\":false,\"invisible\":false,\"italic\":false,\"strike\":false,\"underline\":false,\"underline_color\":\"default\",\"underline_style\":\"none\",\"x\":11,\"y\":1},{\"bg\":\"default\",\"blink\":false,\"bold\":false,\"char\":\"\",\"dim\":false,\"fg\":\"default\",\"inverse\":false,\"invisible\":false,\"italic\":false,\"strike\":false,\"underline\":false,\"underline_color\":\"default\",\"underline_style\":\"none\",\"x\":12,\"y\":1},{\"bg\":\"default\",\"blink\":false,\"bold\":false,\"char\":\"😀\",\"dim\":false,\"fg\":\"default\",\"inverse\":false,\"invisible\":false,\"italic\":false,\"strike\":false,\"underline\":false,\"underline_color\":\"default\",\"underline_style\":\"none\",\"x\":0,\"y\":2},{\"bg\":\"default\",\"blink\":false,\"bold\":false,\"char\":\"\",\"dim\":false,\"fg\":\"default\",\"inverse\":false,\"invisible\":false,\"italic\":false,\"strike\":false,\"underline\":false,\"underline_color\":\"default\",\"underline_style\":\"none\",\"x\":1,\"y\":2},{\"bg\":\"default\",\"blink\":false,\"bold\":false,\"char\":\"Z\",\"dim\":false,\"fg\":\"default\",\"inverse\":false,\"invisible\":false,\"italic\":false,\"strike\":false,\"underline\":false,\"underline_color\":\"default\",\"underline_style\":\"none\",\"x\":2,\"y\":2},{\"bg\":\"default\",\"blink\":false,\"bold\":false,\"char\":\" \",\"dim\":false,\"fg\":\"default\",\"inverse\":false,\"invisible\":false,\"italic\":false,\"strike\":false,\"underline\":false,\"underline_color\":\"default\",\"underline_style\":\"none\",\"x\":3,\"y\":2},{\"bg\":\"default\",\"blink\":false,\"bold\":false,\"char\":\" \",\"dim\":false,\"fg\":\"default\",\"inverse\":false,\"invisible\":false,\"italic\":false,\"strike\":false,\"underline\":false,\"underline_color\":\"default\",\"underline_style\":\"none\",\"x\":4,\"y\":2},{\"bg\":\"default\",\"blink\":false,\"bold\":false,\"char\":\" \",\"dim\":false,\"fg\":\"default\",\"inverse\":false,\"invisible\":false,\"italic\":false,\"strike\":false,\"underline\":false,\"underline_color\":\"default\",\"underline_style\":\"none\",\"x\":5,\"y\":2},{\"bg\":\"default\",\"blink\":false,\"bold\":false,\"char\":\" \",\"dim\":false,\"fg\":\"default\",\"inverse\":false,\"invisible\":false,\"italic\":false,\"strike\":false,\"underline\":false,\"underline_color\":\"default\",\"underline_style\":\"none\",\"x\":6,\"y\":2},{\"bg\":\"default\",\"blink\":false,\"bold\":false,\"char\":\" \",\"dim\":false,\"fg\":\"default\",\"inverse\":false,\"invisible\":false,\"italic\":false,\"strike\":false,\"underline\":false,\"underline_color\":\"default\",\"underline_style\":\"none\",\"x\":7,\"y\":2},{\"bg\":\"default\",\"blink\":false,\"bold\":false,\"char\":\" \",\"dim\":false,\"fg\":\"default\",\"inverse\":false,\"invisible\":false,\"italic\":false,\"strike\":false,\"underline\":false,\"underline_color\":\"default\",\"underline_style\":\"none\",\"x\":8,\"y\":2},{\"bg\":\"default\",\"blink\":false,\"bold\":false,\"char\":\" \",\"dim\":false,\"fg\":\"default\",\"inverse\":false,\"invisible\":false,\"italic\":false,\"strike\":false,\"underline\":false,\"underline_color\":\"default\",\"underline_style\":\"none\",\"x\":9,\"y\":2},{\"bg\":\"default\",\"blink\":false,\"bold\":false,\"char\":\" \",\"dim\":false,\"fg\":\"default\",\"inverse\":false,\"invisible\":false,\"italic\":false,\"strike\":false,\"underline\":false,\"underline_color\":\"default\",\"underline_style\":\"none\",\"x\":10,\"y\":2},{\"bg\":\"default\",\"blink\":false,\"bold\":false,\"char\":\" \",\"dim\":false,\"fg\":\"default\",\"inverse\":false,\"invisible\":false,\"italic\":false,\"strike\":false,\"underline\":false,\"underline_color\":\"default\",\"underline_style\":\"none\",\"x\":11,\"y\":2},{\"bg\":\"default\",\"blink\":false,\"bold\":false,\"char\":\" \",\"dim\":false,\"fg\":\"default\",\"inverse\":false,\"invisible\":false,\"italic\":false,\"strike\":false,\"underline\":false,\"underline_color\":\"default\",\"underline_style\":\"none\",\"x\":12,\"y\":2},{\"bg\":\"default\",\"blink\":false,\"bold\":false,\"char\":\" \",\"dim\":false,\"fg\":\"default\",\"inverse\":false,\"invisible\":false,\"italic\":false,\"strike\":false,\"underline\":false,\"underline_color\":\"default\",\"underline_style\":\"none\",\"x\":0,\"y\":3},{\"bg\":\"default\",\"blink\":false,\"bold\":false,\"char\":\" \",\"dim\":false,\"fg\":\"default\",\"inverse\":false,\"invisible\":false,\"italic\":false,\"strike\":false,\"underline\":false,\"underline_color\":\"default\",\"underline_style\":\"none\",\"x\":1,\"y\":3},{\"bg\":\"default\",\"blink\":false,\"bold\":false,\"char\":\" \",\"dim\":false,\"fg\":\"default\",\"inverse\":false,\"invisible\":false,\"italic\":false,\"strike\":false,\"underline\":false,\"underline_color\":\"default\",\"underline_style\":\"none\",\"x\":2,\"y\":3},{\"bg\":\"default\",\"blink\":false,\"bold\":false,\"char\":\" \",\"dim\":false,\"fg\":\"default\",\"inverse\":false,\"invisible\":false,\"italic\":false,\"strike\":false,\"underline\":false,\"underline_color\":\"default\",\"underline_style\":\"none\",\"x\":3,\"y\":3},{\"bg\":\"default\",\"blink\":false,\"bold\":false,\"char\":\" \",\"dim\":false,\"fg\":\"default\",\"inverse\":false,\"invisible\":false,\"italic\":false,\"strike\":false,\"underline\":false,\"underline_color\":\"default\",\"underline_style\":\"none\",\"x\":4,\"y\":3},{\"bg\":\"default\",\"blink\":false,\"bold\":false,\"char\":\" \",\"dim\":false,\"fg\":\"default\",\"inverse\":false,\"invisible\":false,\"italic\":false,\"strike\":false,\"underline\":false,\"underline_color\":\"default\",\"underline_style\":\"none\",\"x\":5,\"y\":3},{\"bg\":\"default\",\"blink\":false,\"bold\":false,\"char\":\" \",\"dim\":false,\"fg\":\"default\",\"inverse\":false,\"invisible\":false,\"italic\":false,\"strike\":false,\"underline\":false,\"underline_color\":\"default\",\"underline_style\":\"none\",\"x\":6,\"y\":3},{\"bg\":\"default\",\"blink\":false,\"bold\":false,\"char\":\" \",\"dim\":false,\"fg\":\"default\",\"inverse\":false,\"invisible\":false,\"italic\":false,\"strike\":false,\"underline\":false,\"underline_color\":\"default\",\"underline_style\":\"none\",\"x\":7,\"y\":3},{\"bg\":\"default\",\"blink\":false,\"bold\":false,\"char\":\" \",\"dim\":false,\"fg\":\"default\",\"inverse\":false,\"invisible\":false,\"italic\":false,\"strike\":false,\"underline\":false,\"underline_color\":\"default\",\"underline_style\":\"none\",\"x\":8,\"y\":3},{\"bg\":\"default\",\"blink\":false,\"bold\":false,\"char\":\" \",\"dim\":false,\"fg\":\"default\",\"inverse\":false,\"invisible\":false,\"italic\":false,\"strike\":false,\"underline\":false,\"underline_color\":\"default\",\"underline_style\":\"none\",\"x\":9,\"y\":3},{\"bg\":\"default\",\"blink\":false,\"bold\":false,\"char\":\" \",\"dim\":false,\"fg\":\"default\",\"inverse\":false,\"invisible\":false,\"italic\":false,\"strike\":false,\"underline\":false,\"underline_color\":\"default\",\"underline_style\":\"none\",\"x\":10,\"y\":3},{\"bg\":\"default\",\"blink\":false,\"bold\":false,\"char\":\" \",\"dim\":false,\"fg\":\"default\",\"inverse\":false,\"invisible\":false,\"italic\":false,\"strike\":false,\"underline\":false,\"underline_color\":\"default\",\"underline_style\":\"none\",\"x\":11,\"y\":3},{\"bg\":\"default\",\"blink\":false,\"bold\":false,\"char\":\" \",\"dim\":false,\"fg\":\"default\",\"inverse\":false,\"invisible\":false,\"italic\":false,\"strike\":false,\"underline\":false,\"underline_color\":\"default\",\"underline_style\":\"none\",\"x\":12,\"y\":3},{\"bg\":\"default\",\"blink\":false,\"bold\":false,\"char\":\" \",\"dim\":false,\"fg\":\"default\",\"inverse\":false,\"invisible\":false,\"italic\":false,\"strike\":false,\"underline\":false,\"underline_color\":\"default\",\"underline_style\":\"none\",\"x\":0,\"y\":4},{\"bg\":\"default\",\"blink\":false,\"bold\":false,\"char\":\" \",\"dim\":false,\"fg\":\"default\",\"inverse\":false,\"invisible\":false,\"italic\":false,\"strike\":false,\"underline\":false,\"underline_color\":\"default\",\"underline_style\":\"none\",\"x\":1,\"y\":4},{\"bg\":\"default\",\"blink\":false,\"bold\":false,\"char\":\" \",\"dim\":false,\"fg\":\"default\",\"inverse\":false,\"invisible\":false,\"italic\":false,\"strike\":false,\"underline\":false,\"underline_color\":\"default\",\"underline_style\":\"none\",\"x\":2,\"y\":4},{\"bg\":\"default\",\"blink\":false,\"bold\":false,\"char\":\" \",\"dim\":false,\"fg\":\"default\",\"inverse\":false,\"invisible\":false,\"italic\":false,\"strike\":false,\"underline\":false,\"underline_color\":\"default\",\"underline_style\":\"none\",\"x\":3,\"y\":4},{\"bg\":\"default\",\"blink\":false,\"bold\":false,\"char\":\" \",\"dim\":false,\"fg\":\"default\",\"inverse\":false,\"invisible\":false,\"italic\":false,\"strike\":false,\"underline\":false,\"underline_color\":\"default\",\"underline_style\":\"none\",\"x\":4,\"y\":4},{\"bg\":\"default\",\"blink\":false,\"bold\":false,\"char\":\" \",\"dim\":false,\"fg\":\"default\",\"inverse\":false,\"invisible\":false,\"italic\":false,\"strike\":false,\"underline\":false,\"underline_color\":\"default\",\"underline_style\":\"none\",\"x\":5,\"y\":4},{\"bg\":\"default\",\"blink\":false,\"bold\":false,\"char\":\" \",\"dim\":false,\"fg\":\"default\",\"inverse\":false,\"invisible\":false,\"italic\":false,\"strike\":false,\"underline\":false,\"underline_color\":\"default\",\"underline_style\":\"none\",\"x\":6,\"y\":4},{\"bg\":\"default\",\"blink\":false,\"bold\":false,\"char\":\" \",\"dim\":false,\"fg\":\"default\",\"inverse\":false,\"invisible\":false,\"italic\":false,\"strike\":false,\"underline\":false,\"underline_color\":\"default\",\"underline_style\":\"none\",\"x\":7,\"y\":4},{\"bg\":\"default\",\"blink\":false,\"bold\":false,\"char\":\" \",\"dim\":false,\"fg\":\"default\",\"inverse\":false,\"invisible\":false,\"italic\":false,\"strike\":false,\"underline\":false,\"underline_color\":\"default\",\"underline_style\":\"none\",\"x\":8,\"y\":4},{\"bg\":\"default\",\"blink\":false,\"bold\":false,\"char\":\" \",\"dim\":false,\"fg\":\"default\",\"inverse\":false,\"invisible\":false,\"italic\":false,\"strike\":false,\"underline\":false,\"underline_color\":\"default\",\"underline_style\":\"none\",\"x\":9,\"y\":4},{\"bg\":\"default\",\"blink\":false,\"bold\":false,\"char\":\" \",\"dim\":false,\"fg\":\"default\",\"inverse\":false,\"invisible\":false,\"italic\":false,\"strike\":false,\"underline\":false,\"underline_color\":\"default\",\"underline_style\":\"none\",\"x\":10,\"y\":4},{\"bg\":\"default\",\"blink\":false,\"bold\":false,\"char\":\" \",\"dim\":false,\"fg\":\"default\",\"inverse\":false,\"invisible\":false,\"italic\":false,\"strike\":false,\"underline\":false,\"underline_color\":\"default\",\"underline_style\":\"none\",\"x\":11,\"y\":4},{\"bg\":\"default\",\"blink\":false,\"bold\":false,\"char\":\" \",\"dim\":false,\"fg\":\"default\",\"inverse\":false,\"invisible\":false,\"italic\":false,\"strike\":false,\"underline\":false,\"underline_color\":\"default\",\"underline_style\":\"none\",\"x\":12,\"y\":4},{\"bg\":\"default\",\"blink\":false,\"bold\":false,\"char\":\" \",\"dim\":false,\"fg\":\"default\",\"inverse\":false,\"invisible\":false,\"italic\":false,\"strike\":false,\"underline\":false,\"underline_color\":\"default\",\"underline_style\":\"none\",\"x\":0,\"y\":5},{\"bg\":\"default\",\"blink\":false,\"bold\":false,\"char\":\" \",\"dim\":false,\"fg\":\"default\",\"inverse\":false,\"invisible\":false,\"italic\":false,\"strike\":false,\"underline\":false,\"underline_color\":\"default\",\"underline_style\":\"none\",\"x\":1,\"y\":5},{\"bg\":\"default\",\"blink\":false,\"bold\":false,\"char\":\" \",\"dim\":false,\"fg\":\"default\",\"inverse\":false,\"invisible\":false,\"italic\":false,\"strike\":false,\"underline\":false,\"underline_color\":\"default\",\"underline_style\":\"none\",\"x\":2,\"y\":5},{\"bg\":\"default\",\"blink\":false,\"bold\":false,\"char\":\" \",\"dim\":false,\"fg\":\"default\",\"inverse\":false,\"invisible\":false,\"italic\":false,\"strike\":false,\"underline\":false,\"underline_color\":\"default\",\"underline_style\":\"none\",\"x\":3,\"y\":5},{\"bg\":\"default\",\"blink\":false,\"bold\":false,\"char\":\" \",\"dim\":false,\"fg\":\"default\",\"inverse\":false,\"invisible\":false,\"italic\":false,\"strike\":false,\"underline\":false,\"underline_color\":\"default\",\"underline_style\":\"none\",\"x\":4,\"y\":5},{\"bg\":\"default\",\"blink\":false,\"bold\":false,\"char\":\" \",\"dim\":false,\"fg\":\"default\",\"inverse\":false,\"invisible\":false,\"italic\":false,\"strike\":false,\"underline\":false,\"underline_color\":\"default\",\"underline_style\":\"none\",\"x\":5,\"y\":5},{\"bg\":\"default\",\"blink\":false,\"bold\":false,\"char\":\" \",\"dim\":false,\"fg\":\"default\",\"inverse\":false,\"invisible\":false,\"italic\":false,\"strike\":false,\"underline\":false,\"underline_color\":\"default\",\"underline_style\":\"none\",\"x\":6,\"y\":5},{\"bg\":\"default\",\"blink\":false,\"bold\":false,\"char\":\" \",\"dim\":false,\"fg\":\"default\",\"inverse\":false,\"invisible\":false,\"italic\":false,\"strike\":false,\"underline\":false,\"underline_color\":\"default\",\"underline_style\":\"none\",\"x\":7,\"y\":5},{\"bg\":\"default\",\"blink\":false,\"bold\":false,\"char\":\" \",\"dim\":false,\"fg\":\"default\",\"inverse\":false,\"invisible\":false,\"italic\":false,\"strike\":false,\"underline\":false,\"underline_color\":\"default\",\"underline_style\":\"none\",\"x\":8,\"y\":5},{\"bg\":\"default\",\"blink\":false,\"bold\":false,\"char\":\" \",\"dim\":false,\"fg\":\"default\",\"inverse\":false,\"invisible\":false,\"italic\":false,\"strike\":false,\"underline\":false,\"underline_color\":\"default\",\"underline_style\":\"none\",\"x\":9,\"y\":5},{\"bg\":\"default\",\"blink\":false,\"bold\":false,\"char\":\" \",\"dim\":false,\"fg\":\"default\",\"inverse\":false,\"invisible\":false,\"italic\":false,\"strike\":false,\"underline\":false,\"underline_color\":\"default\",\"underline_style\":\"none\",\"x\":10,\"y\":5},{\"bg\":\"default\",\"blink\":false,\"bold\":false,\"char\":\" \",\"dim\":false,\"fg\":\"default\",\"inverse\":false,\"invisible\":false,\"italic\":false,\"strike\":false,\"underline\":false,\"underline_color\":\"default\",\"underline_style\":\"none\",\"x\":11,\"y\":5},{\"bg\":\"default\",\"blink\":false,\"bold\":false,\"char\":\" \",\"dim\":false,\"fg\":\"default\",\"inverse\":false,\"invisible\":false,\"italic\":false,\"strike\":false,\"underline\":false,\"underline_color\":\"default\",\"underline_style\":\"none\",\"x\":12,\"y\":5}]}}\n",
+    "stderr": ""
+  },
+  {
+    "command": [
+      "tui-test",
+      "--session",
+      "askcore-origin-fe7e2fd4",
+      "--json",
+      "screenshot",
+      "/private/tmp/askcore-inline-resize-fix-5rjbma6z/alacritty/resize.svg"
+    ],
+    "code": 0,
+    "stdout": "{\"ok\":true,\"data\":{\"path\":\"/private/tmp/askcore-inline-resize-fix-5rjbma6z/alacritty/resize.svg\"}}\n",
+    "stderr": ""
+  },
+  {
+    "command": [
+      "tui-test",
+      "--session",
+      "askcore-origin-fe7e2fd4",
+      "--json",
+      "get-recording",
+      "askcore-origin-fe7e2fd4"
+    ],
+    "code": 0,
+    "stdout": "{\"env\":{\"TERM\":\"xterm-256color\"},\"height\":12,\"timestamp\":1791349385,\"version\":2,\"width\":40}\n[0.478916791,\"o\",\"T0 startup\\r\\r\\n\\u001b7editor> abc界😀Z\\r\\u001b[11C\"]\n[0.487560541,\"r\",\"13x6\"]\n[0.487647041,\"o\",\"\\u001b8\\r\\u001b[Jeditor> abc界😀Z\\r\\u001b[3C\"]\n",
+    "stderr": ""
+  },
+  {
+    "command": [
+      "tui-test",
+      "--session",
+      "askcore-origin-fe7e2fd4",
+      "--json",
+      "close"
+    ],
+    "code": 0,
+    "stdout": "{\"ok\":true}\n",
+    "stderr": ""
+  },
+  {
+    "command": [
+      "tui-test",
+      "--session",
+      "askcore-origin-fe7e2fd4",
+      "--json",
+      "daemon",
+      "stop"
+    ],
+    "code": 3,
+    "stdout": "",
+    "stderr": "no daemon running for session 'askcore-origin-fe7e2fd4'\n"
+  },
+  {
+    "command": [
+      "tui-test",
+      "--session",
+      "askcore-origin-fe7e2fd4",
+      "--json",
+      "daemon",
+      "status"
+    ],
+    "code": 3,
+    "stdout": "{\"pid\":null,\"running\":false,\"session\":\"askcore-origin-fe7e2fd4\"}\n",
+    "stderr": ""
+  }
+]

@@ -1,0 +1,34 @@
+--- /private/tmp/askcore-resize-mod-cache/charm.land/bubbletea/v2@v2.0.10/tea.go	2026-10-07 11:57:45
++++ bubbletea/tea.go	2026-10-07 12:55:03
+@@ -432,6 +432,7 @@
+ 
+ // Program is a terminal user interface.
+ type Program struct {
++	resizeGeneration uint64
+ 	// disableInput disables all input. This is useful for programs that
+ 	// don't need input, like a progress bar or a spinner.
+ 	disableInput bool
+@@ -768,6 +769,23 @@
+ 				continue
+ 			}
+ 
++			if size, ok := msg.(WindowSizeMsg); ok {
++				p.resizeGeneration++
++				size.Generation = p.resizeGeneration
++				p.width, p.height = size.Width, size.Height
++				msg = size
++			}
++			if request, ok := msg.(inlineReplayMsg); ok {
++				result := InlineReplayResult{Generation: request.Generation, Entries: len(request.Entries)}
++				if request.Generation != p.resizeGeneration || request.Width != p.width || request.Height != p.height {
++					result.Stale = true
++				} else if r, ok := p.renderer.(*cursedRenderer); ok {
++					result.Err = r.replayInline(request.Entries)
++				} else {
++					result.Err = fmt.Errorf("inline replay requires the terminal renderer")
++				}
++				msg = result
++			}
+ 			// Handle special internal messages.
+ 			switch msg := msg.(type) {
+ 			case QuitMsg:

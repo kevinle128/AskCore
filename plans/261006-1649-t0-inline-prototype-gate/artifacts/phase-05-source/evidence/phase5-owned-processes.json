@@ -1,0 +1,181 @@
+{
+  "run": "phase5-clean-race.txt",
+  "module": "/private/tmp/askcore-t0-clean-lmppemhc",
+  "processes": [
+    {
+      "test": "TestManualPasteReport",
+      "pid": 83765,
+      "logged_command": "/var/folders/84/5njq4pvs747b3zzntvtgtpl80000gn/T/TestManualPasteReport852406550/001/paste --scenario g6 support=true",
+      "cleanup": "harness Wait/close completed; full run PASS"
+    },
+    {
+      "test": "TestG1Stock/oversized",
+      "pid": 83817,
+      "logged_command": "/var/folders/84/5njq4pvs747b3zzntvtgtpl80000gn/T/TestG1Stock3841190961/001/g1 --scenario g6 support=true",
+      "cleanup": "harness Wait/close completed; full run PASS"
+    },
+    {
+      "test": "TestG1Stock/ordered2000",
+      "pid": 83826,
+      "logged_command": "/var/folders/84/5njq4pvs747b3zzntvtgtpl80000gn/T/TestG1Stock3841190961/001/g1 --scenario g6 support=true",
+      "cleanup": "harness Wait/close completed; full run PASS"
+    },
+    {
+      "test": "TestG1Stock/shrink",
+      "pid": 83827,
+      "logged_command": "/var/folders/84/5njq4pvs747b3zzntvtgtpl80000gn/T/TestG1Stock3841190961/001/g1 --scenario g6 support=true",
+      "cleanup": "harness Wait/close completed; full run PASS"
+    },
+    {
+      "test": "TestG1ReadyOrder",
+      "pid": 83842,
+      "logged_command": "/var/folders/84/5njq4pvs747b3zzntvtgtpl80000gn/T/TestG1ReadyOrder3381358634/001/g1 --scenario g6 support=true",
+      "cleanup": "harness Wait/close completed; full run PASS"
+    },
+    {
+      "test": "TestG1StreamingEditor",
+      "pid": 83858,
+      "logged_command": "/var/folders/84/5njq4pvs747b3zzntvtgtpl80000gn/T/TestG1StreamingEditor3033622701/001/g1 --scenario g6 support=true",
+      "cleanup": "harness Wait/close completed; full run PASS"
+    },
+    {
+      "test": "TestG1WriterFailures/zero",
+      "pid": 83866,
+      "logged_command": "/var/folders/84/5njq4pvs747b3zzntvtgtpl80000gn/T/TestG1WriterFailures2332925006/001/g1 --scenario g6 support=true",
+      "cleanup": "harness Wait/close completed; full run PASS"
+    },
+    {
+      "test": "TestG1WriterFailures/partial",
+      "pid": 83886,
+      "logged_command": "/var/folders/84/5njq4pvs747b3zzntvtgtpl80000gn/T/TestG1WriterFailures2332925006/001/g1 --scenario g6 support=true",
+      "cleanup": "harness Wait/close completed; full run PASS"
+    },
+    {
+      "test": "TestG1WriterFailures/short",
+      "pid": 83887,
+      "logged_command": "/var/folders/84/5njq4pvs747b3zzntvtgtpl80000gn/T/TestG1WriterFailures2332925006/001/g1 --scenario g6 support=true",
+      "cleanup": "harness Wait/close completed; full run PASS"
+    },
+    {
+      "test": "TestG1WriterFailures/permanent",
+      "pid": 83888,
+      "logged_command": "/var/folders/84/5njq4pvs747b3zzntvtgtpl80000gn/T/TestG1WriterFailures2332925006/001/g1 --scenario g6 support=true",
+      "cleanup": "harness Wait/close completed; full run PASS"
+    },
+    {
+      "test": "TestG1PendingResize",
+      "pid": 83912,
+      "logged_command": "/var/folders/84/5njq4pvs747b3zzntvtgtpl80000gn/T/TestG1PendingResize2980646499/001/g1 --scenario g6 support=true",
+      "cleanup": "harness Wait/close completed; full run PASS"
+    },
+    {
+      "test": "TestG1OutputFragments/byte",
+      "pid": 83919,
+      "logged_command": "/var/folders/84/5njq4pvs747b3zzntvtgtpl80000gn/T/TestG1OutputFragments3259955834/001/g1 --scenario g6 support=true",
+      "cleanup": "harness Wait/close completed; full run PASS"
+    },
+    {
+      "test": "TestG1OutputFragments/random",
+      "pid": 83930,
+      "logged_command": "/var/folders/84/5njq4pvs747b3zzntvtgtpl80000gn/T/TestG1OutputFragments3259955834/001/g1 --scenario g6 support=true",
+      "cleanup": "harness Wait/close completed; full run PASS"
+    },
+    {
+      "test": "TestG1SyncFailure",
+      "pid": 83940,
+      "logged_command": "/var/folders/84/5njq4pvs747b3zzntvtgtpl80000gn/T/TestG1SyncFailure203301819/001/g1 --scenario g6 support=true",
+      "cleanup": "harness Wait/close completed; full run PASS"
+    },
+    {
+      "test": "TestG2Selector",
+      "pid": 83948,
+      "logged_command": "/var/folders/84/5njq4pvs747b3zzntvtgtpl80000gn/T/TestG2Selector4065662804/001/selector --scenario g6 support=true",
+      "cleanup": "harness Wait/close completed; full run PASS"
+    },
+    {
+      "test": "TestG3UnicodeResize",
+      "pid": 83991,
+      "logged_command": "/var/folders/84/5njq4pvs747b3zzntvtgtpl80000gn/T/TestG3UnicodeResize3073376571/001/resize --scenario g6 support=true",
+      "cleanup": "harness Wait/close completed; full run PASS"
+    },
+    {
+      "test": "TestG3ResizeDuringStream",
+      "pid": 84007,
+      "logged_command": "/var/folders/84/5njq4pvs747b3zzntvtgtpl80000gn/T/TestG3ResizeDuringStream401307664/001/stream --scenario g6 support=true",
+      "cleanup": "harness Wait/close completed; full run PASS"
+    },
+    {
+      "test": "TestG6Input/false",
+      "pid": 84065,
+      "logged_command": "/var/folders/84/5njq4pvs747b3zzntvtgtpl80000gn/T/TestG6Input1119116410/001/g6 --scenario g6 support=false",
+      "cleanup": "harness Wait/close completed; full run PASS"
+    },
+    {
+      "test": "TestG6Input/true",
+      "pid": 84066,
+      "logged_command": "/var/folders/84/5njq4pvs747b3zzntvtgtpl80000gn/T/TestG6Input1119116410/001/g6 --scenario g6 support=true",
+      "cleanup": "harness Wait/close completed; full run PASS"
+    },
+    {
+      "test": "TestRestoreRoutes/normal",
+      "pid": 84084,
+      "logged_command": "/var/folders/84/5njq4pvs747b3zzntvtgtpl80000gn/T/TestRestoreRoutes2466355752/001/g6 --scenario g6 support=true",
+      "cleanup": "harness Wait/close completed; full run PASS"
+    },
+    {
+      "test": "TestRestoreRoutes/context",
+      "pid": 84138,
+      "logged_command": "/var/folders/84/5njq4pvs747b3zzntvtgtpl80000gn/T/TestRestoreRoutes2466355752/001/g6 --scenario g6 support=true",
+      "cleanup": "harness Wait/close completed; full run PASS"
+    },
+    {
+      "test": "TestRestoreRoutes/output-error",
+      "pid": 84139,
+      "logged_command": "/var/folders/84/5njq4pvs747b3zzntvtgtpl80000gn/T/TestRestoreRoutes2466355752/001/g6 --scenario g6 support=true",
+      "cleanup": "harness Wait/close completed; full run PASS"
+    },
+    {
+      "test": "TestRestoreRoutes/output-permanent",
+      "pid": 84140,
+      "logged_command": "/var/folders/84/5njq4pvs747b3zzntvtgtpl80000gn/T/TestRestoreRoutes2466355752/001/g6 --scenario g6 support=true",
+      "cleanup": "harness Wait/close completed; full run PASS"
+    },
+    {
+      "test": "TestRestoreRoutes/SIGINT",
+      "pid": 84141,
+      "logged_command": "/var/folders/84/5njq4pvs747b3zzntvtgtpl80000gn/T/TestRestoreRoutes2466355752/001/g6 --scenario g6 support=true",
+      "cleanup": "harness Wait/close completed; full run PASS"
+    },
+    {
+      "test": "TestRestoreRoutes/SIGTERM",
+      "pid": 84153,
+      "logged_command": "/var/folders/84/5njq4pvs747b3zzntvtgtpl80000gn/T/TestRestoreRoutes2466355752/001/g6 --scenario g6 support=true",
+      "cleanup": "harness Wait/close completed; full run PASS"
+    },
+    {
+      "test": "TestRestoreRoutes/SIGHUP",
+      "pid": 84154,
+      "logged_command": "/var/folders/84/5njq4pvs747b3zzntvtgtpl80000gn/T/TestRestoreRoutes2466355752/001/g6 --scenario g6 support=true",
+      "cleanup": "harness Wait/close completed; full run PASS"
+    },
+    {
+      "test": "TestRestoreRoutes/model-panic",
+      "pid": 84155,
+      "logged_command": "/var/folders/84/5njq4pvs747b3zzntvtgtpl80000gn/T/TestRestoreRoutes2466355752/001/g6 --scenario g6 support=true",
+      "cleanup": "harness Wait/close completed; full run PASS"
+    },
+    {
+      "test": "TestRestoreRoutes/command-panic",
+      "pid": 84156,
+      "logged_command": "/var/folders/84/5njq4pvs747b3zzntvtgtpl80000gn/T/TestRestoreRoutes2466355752/001/g6 --scenario g6 support=true",
+      "cleanup": "harness Wait/close completed; full run PASS"
+    },
+    {
+      "test": "TestChildCancellation",
+      "pid": 84168,
+      "logged_command": "command=/var/folders/84/5njq4pvs747b3zzntvtgtpl80000gn/T/TestChildCancellation1783475100/001/smoke",
+      "cleanup": "harness Wait/close completed; full run PASS"
+    }
+  ],
+  "note": "The shared fixture log labels scenarios g6; actual arguments are defined by each spawnG6 call. All children are waited by the harness. System-wide ps was sandbox-denied; no process was detached."
+}

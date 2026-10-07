@@ -1,0 +1,14 @@
+=== RUN   TestG2Selector
+    g2_g3_test.go:17: owned child pid=30908 /var/folders/84/5njq4pvs747b3zzntvtgtpl80000gn/T/TestG2Selector1037182354/001/selector --scenario g6 support=true
+    g2_g3_test.go:111: restore termios exact, final cursor=(0,2) mode map=map[25:true 2004:false 2026:false]
+--- PASS: TestG2Selector (0.54s)
+=== RUN   TestG3UnicodeResize
+    g2_g3_test.go:132: owned child pid=30921 /var/folders/84/5njq4pvs747b3zzntvtgtpl80000gn/T/TestG3UnicodeResize1389774948/001/resize --scenario g6 support=true
+    g2_g3_test.go:173: restore termios exact, final cursor=(0,0) mode map=map[25:true 2004:false 2026:false]
+--- PASS: TestG3UnicodeResize (0.48s)
+=== RUN   TestG3ResizeDuringStream
+    g2_g3_test.go:181: owned child pid=30951 /var/folders/84/5njq4pvs747b3zzntvtgtpl80000gn/T/TestG3ResizeDuringStream786699617/001/stream --scenario g6 support=true
+    g2_g3_test.go:219: restore termios exact, final cursor=(0,11) mode map=map[25:true 2004:false 2026:false]
+--- PASS: TestG3ResizeDuringStream (0.49s)
+PASS
+ok  	askcore-t0-inline	1.908s

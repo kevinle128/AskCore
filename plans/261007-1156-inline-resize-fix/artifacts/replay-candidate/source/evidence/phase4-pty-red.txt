@@ -1,0 +1,7 @@
+=== RUN   TestG2Selector
+    g2_g3_test.go:10: owned child pid=15923 /var/folders/84/5njq4pvs747b3zzntvtgtpl80000gn/T/TestG2Selector77684822/001/selector --scenario g6 support=true
+    g2_g3_test.go:16: visible cursor/frame predicate failed: main.snapshot{Rows:[]string{"T0 startup", "editor> draft", "", "", "", "", "", "", "", "", "", ""}, History:[]string{""}, X:13, Y:1, Alt:false}
+--- FAIL: TestG2Selector (5.36s)
+FAIL
+FAIL	askcore-t0-inline	5.742s
+FAIL

@@ -1,0 +1,18 @@
+=== RUN   TestCommitStringObservation
+--- PASS: TestCommitStringObservation (0.00s)
+=== RUN   TestG1Stock
+=== RUN   TestG1Stock/oversized
+    g1_test.go:20: owned child pid=60079 /var/folders/84/5njq4pvs747b3zzntvtgtpl80000gn/T/TestG1Stock631464574/001/g1 --scenario g6 support=true
+    g1_test.go:49: restore termios exact, final cursor=(0,11) mode map=map[25:true 2004:false 2026:false]
+=== RUN   TestG1Stock/ordered2000
+    g1_test.go:20: owned child pid=60090 /var/folders/84/5njq4pvs747b3zzntvtgtpl80000gn/T/TestG1Stock631464574/001/g1 --scenario g6 support=true
+    g1_test.go:49: restore termios exact, final cursor=(0,11) mode map=map[25:true 2004:false 2026:false]
+=== RUN   TestG1Stock/shrink
+    g1_test.go:20: owned child pid=60091 /var/folders/84/5njq4pvs747b3zzntvtgtpl80000gn/T/TestG1Stock631464574/001/g1 --scenario g6 support=true
+    g1_test.go:49: restore termios exact, final cursor=(0,11) mode map=map[25:true 2004:false 2026:false]
+--- PASS: TestG1Stock (0.74s)
+    --- PASS: TestG1Stock/oversized (0.42s)
+    --- PASS: TestG1Stock/ordered2000 (0.06s)
+    --- PASS: TestG1Stock/shrink (0.04s)
+PASS
+ok  	askcore-t0-inline	1.132s

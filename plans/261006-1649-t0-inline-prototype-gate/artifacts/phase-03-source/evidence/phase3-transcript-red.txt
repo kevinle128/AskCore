@@ -1,0 +1,6 @@
+=== RUN   TestTranscriptStart
+    transcript_test.go:5: G1 start did not schedule a stock transcript insertion
+--- FAIL: TestTranscriptStart (0.00s)
+FAIL
+FAIL	askcore-t0-inline	0.444s
+FAIL

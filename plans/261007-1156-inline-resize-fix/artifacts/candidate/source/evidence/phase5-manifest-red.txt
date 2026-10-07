@@ -1,0 +1,29 @@
+=== RUN   TestEvidenceRequiredRecords
+=== RUN   TestEvidenceRequiredRecords/G1-command
+    evidence_test.go:51: G1 has no automated command
+=== RUN   TestEvidenceRequiredRecords/G1-artifact
+    evidence_test.go:56: G1 has no automated artifact
+=== RUN   TestEvidenceRequiredRecords/G2-command
+    evidence_test.go:51: G2 has no automated command
+=== RUN   TestEvidenceRequiredRecords/G2-artifact
+    evidence_test.go:56: G2 has no automated artifact
+=== RUN   TestEvidenceRequiredRecords/G3-command
+    evidence_test.go:51: G3 has no automated command
+=== RUN   TestEvidenceRequiredRecords/G3-artifact
+    evidence_test.go:56: G3 has no automated artifact
+=== RUN   TestEvidenceRequiredRecords/G6-command
+    evidence_test.go:51: G6 has no automated command
+=== RUN   TestEvidenceRequiredRecords/G6-artifact
+    evidence_test.go:56: G6 has no automated artifact
+--- FAIL: TestEvidenceRequiredRecords (0.00s)
+    --- FAIL: TestEvidenceRequiredRecords/G1-command (0.00s)
+    --- FAIL: TestEvidenceRequiredRecords/G1-artifact (0.00s)
+    --- FAIL: TestEvidenceRequiredRecords/G2-command (0.00s)
+    --- FAIL: TestEvidenceRequiredRecords/G2-artifact (0.00s)
+    --- FAIL: TestEvidenceRequiredRecords/G3-command (0.00s)
+    --- FAIL: TestEvidenceRequiredRecords/G3-artifact (0.00s)
+    --- FAIL: TestEvidenceRequiredRecords/G6-command (0.00s)
+    --- FAIL: TestEvidenceRequiredRecords/G6-artifact (0.00s)
+FAIL
+FAIL	askcore-t0-inline	0.383s
+FAIL

@@ -1,0 +1,333 @@
+{
+  "pids": [
+    17770,
+    17771,
+    17803,
+    17804,
+    17855,
+    17856,
+    17948,
+    17952,
+    17986,
+    17994,
+    18151,
+    18152,
+    18356,
+    18357,
+    18496,
+    18497,
+    18610,
+    18611,
+    18679,
+    18680,
+    18704,
+    18705,
+    18761,
+    18762,
+    18847,
+    18848,
+    18873,
+    18874,
+    18988,
+    18989,
+    19114,
+    19115,
+    19229,
+    19230,
+    19393,
+    19394
+  ],
+  "ps_exit": 1,
+  "ps_stdout": "",
+  "ps_stderr": "",
+  "cleanup": [
+    {
+      "path": "/private/tmp/askcore-replay-independent-srhgy0lc/native/alacritty/g1/commands.json",
+      "last": {
+        "command": [
+          "/Users/dale/.local/bin/tui-test",
+          "--session",
+          "askcore-e2e-c487e238a1-alacritty-g1",
+          "--json",
+          "daemon",
+          "status"
+        ],
+        "code": 3,
+        "stdout": "{\"pid\":null,\"running\":false,\"session\":\"askcore-e2e-c487e238a1-alacritty-g1\"}\n",
+        "stderr": ""
+      }
+    },
+    {
+      "path": "/private/tmp/askcore-replay-independent-srhgy0lc/native/alacritty/g2/commands.json",
+      "last": {
+        "command": [
+          "/Users/dale/.local/bin/tui-test",
+          "--session",
+          "askcore-e2e-c487e238a1-alacritty-g2",
+          "--json",
+          "daemon",
+          "status"
+        ],
+        "code": 3,
+        "stdout": "{\"pid\":null,\"running\":false,\"session\":\"askcore-e2e-c487e238a1-alacritty-g2\"}\n",
+        "stderr": ""
+      }
+    },
+    {
+      "path": "/private/tmp/askcore-replay-independent-srhgy0lc/native/alacritty/g3/commands.json",
+      "last": {
+        "command": [
+          "/Users/dale/.local/bin/tui-test",
+          "--session",
+          "askcore-e2e-c487e238a1-alacritty-g3",
+          "--json",
+          "daemon",
+          "status"
+        ],
+        "code": 3,
+        "stdout": "{\"pid\":null,\"running\":false,\"session\":\"askcore-e2e-c487e238a1-alacritty-g3\"}\n",
+        "stderr": ""
+      }
+    },
+    {
+      "path": "/private/tmp/askcore-replay-independent-srhgy0lc/native/alacritty/g6/commands.json",
+      "last": {
+        "command": [
+          "/Users/dale/.local/bin/tui-test",
+          "--session",
+          "askcore-e2e-c487e238a1-alacritty-g6",
+          "--json",
+          "daemon",
+          "status"
+        ],
+        "code": 3,
+        "stdout": "{\"pid\":null,\"running\":false,\"session\":\"askcore-e2e-c487e238a1-alacritty-g6\"}\n",
+        "stderr": ""
+      }
+    },
+    {
+      "path": "/private/tmp/askcore-replay-independent-srhgy0lc/native/alacritty/g3-draft-middle/commands.json",
+      "last": {
+        "command": [
+          "/Users/dale/.local/bin/tui-test",
+          "--session",
+          "askcore-e2e-c487e238a1-alacritty-g3-draft-middle",
+          "--json",
+          "daemon",
+          "status"
+        ],
+        "code": 3,
+        "stdout": "{\"pid\":null,\"running\":false,\"session\":\"askcore-e2e-c487e238a1-alacritty-g3-draft-middle\"}\n",
+        "stderr": ""
+      }
+    },
+    {
+      "path": "/private/tmp/askcore-replay-independent-srhgy0lc/native/alacritty/g3-draft-hard-lines/commands.json",
+      "last": {
+        "command": [
+          "/Users/dale/.local/bin/tui-test",
+          "--session",
+          "askcore-e2e-c487e238a1-alacritty-g3-draft-hard-lines",
+          "--json",
+          "daemon",
+          "status"
+        ],
+        "code": 3,
+        "stdout": "{\"pid\":null,\"running\":false,\"session\":\"askcore-e2e-c487e238a1-alacritty-g3-draft-hard-lines\"}\n",
+        "stderr": ""
+      }
+    },
+    {
+      "path": "/private/tmp/askcore-replay-independent-srhgy0lc/native/alacritty/g3-draft-long/commands.json",
+      "last": {
+        "command": [
+          "/Users/dale/.local/bin/tui-test",
+          "--session",
+          "askcore-e2e-c487e238a1-alacritty-g3-draft-long",
+          "--json",
+          "daemon",
+          "status"
+        ],
+        "code": 3,
+        "stdout": "{\"pid\":null,\"running\":false,\"session\":\"askcore-e2e-c487e238a1-alacritty-g3-draft-long\"}\n",
+        "stderr": ""
+      }
+    },
+    {
+      "path": "/private/tmp/askcore-replay-independent-srhgy0lc/native/alacritty/g3-draft-trailing-space/commands.json",
+      "last": {
+        "command": [
+          "/Users/dale/.local/bin/tui-test",
+          "--session",
+          "askcore-e2e-c487e238a1-alacritty-g3-draft-trailing-space",
+          "--json",
+          "daemon",
+          "status"
+        ],
+        "code": 3,
+        "stdout": "{\"pid\":null,\"running\":false,\"session\":\"askcore-e2e-c487e238a1-alacritty-g3-draft-trailing-space\"}\n",
+        "stderr": ""
+      }
+    },
+    {
+      "path": "/private/tmp/askcore-replay-independent-srhgy0lc/native/alacritty/g3-pending/session/commands.json",
+      "last": {
+        "command": [
+          "/Users/dale/.local/bin/tui-test",
+          "--session",
+          "askcore-pending-425d756f5f02",
+          "--json",
+          "daemon",
+          "status"
+        ],
+        "code": 3,
+        "stdout": "{\"pid\":null,\"running\":false,\"session\":\"askcore-pending-425d756f5f02\"}\n",
+        "stderr": ""
+      }
+    },
+    {
+      "path": "/private/tmp/askcore-replay-independent-srhgy0lc/native/ghostty/g1/commands.json",
+      "last": {
+        "command": [
+          "/Users/dale/.local/bin/tui-test",
+          "--session",
+          "askcore-e2e-c487e238a1-ghostty-g1",
+          "--json",
+          "daemon",
+          "status"
+        ],
+        "code": 3,
+        "stdout": "{\"pid\":null,\"running\":false,\"session\":\"askcore-e2e-c487e238a1-ghostty-g1\"}\n",
+        "stderr": ""
+      }
+    },
+    {
+      "path": "/private/tmp/askcore-replay-independent-srhgy0lc/native/ghostty/g2/commands.json",
+      "last": {
+        "command": [
+          "/Users/dale/.local/bin/tui-test",
+          "--session",
+          "askcore-e2e-c487e238a1-ghostty-g2",
+          "--json",
+          "daemon",
+          "status"
+        ],
+        "code": 3,
+        "stdout": "{\"pid\":null,\"running\":false,\"session\":\"askcore-e2e-c487e238a1-ghostty-g2\"}\n",
+        "stderr": ""
+      }
+    },
+    {
+      "path": "/private/tmp/askcore-replay-independent-srhgy0lc/native/ghostty/g3/commands.json",
+      "last": {
+        "command": [
+          "/Users/dale/.local/bin/tui-test",
+          "--session",
+          "askcore-e2e-c487e238a1-ghostty-g3",
+          "--json",
+          "daemon",
+          "status"
+        ],
+        "code": 3,
+        "stdout": "{\"pid\":null,\"running\":false,\"session\":\"askcore-e2e-c487e238a1-ghostty-g3\"}\n",
+        "stderr": ""
+      }
+    },
+    {
+      "path": "/private/tmp/askcore-replay-independent-srhgy0lc/native/ghostty/g6/commands.json",
+      "last": {
+        "command": [
+          "/Users/dale/.local/bin/tui-test",
+          "--session",
+          "askcore-e2e-c487e238a1-ghostty-g6",
+          "--json",
+          "daemon",
+          "status"
+        ],
+        "code": 3,
+        "stdout": "{\"pid\":null,\"running\":false,\"session\":\"askcore-e2e-c487e238a1-ghostty-g6\"}\n",
+        "stderr": ""
+      }
+    },
+    {
+      "path": "/private/tmp/askcore-replay-independent-srhgy0lc/native/ghostty/g3-draft-middle/commands.json",
+      "last": {
+        "command": [
+          "/Users/dale/.local/bin/tui-test",
+          "--session",
+          "askcore-e2e-c487e238a1-ghostty-g3-draft-middle",
+          "--json",
+          "daemon",
+          "status"
+        ],
+        "code": 3,
+        "stdout": "{\"pid\":null,\"running\":false,\"session\":\"askcore-e2e-c487e238a1-ghostty-g3-draft-middle\"}\n",
+        "stderr": ""
+      }
+    },
+    {
+      "path": "/private/tmp/askcore-replay-independent-srhgy0lc/native/ghostty/g3-draft-hard-lines/commands.json",
+      "last": {
+        "command": [
+          "/Users/dale/.local/bin/tui-test",
+          "--session",
+          "askcore-e2e-c487e238a1-ghostty-g3-draft-hard-lines",
+          "--json",
+          "daemon",
+          "status"
+        ],
+        "code": 3,
+        "stdout": "{\"pid\":null,\"running\":false,\"session\":\"askcore-e2e-c487e238a1-ghostty-g3-draft-hard-lines\"}\n",
+        "stderr": ""
+      }
+    },
+    {
+      "path": "/private/tmp/askcore-replay-independent-srhgy0lc/native/ghostty/g3-draft-long/commands.json",
+      "last": {
+        "command": [
+          "/Users/dale/.local/bin/tui-test",
+          "--session",
+          "askcore-e2e-c487e238a1-ghostty-g3-draft-long",
+          "--json",
+          "daemon",
+          "status"
+        ],
+        "code": 3,
+        "stdout": "{\"pid\":null,\"running\":false,\"session\":\"askcore-e2e-c487e238a1-ghostty-g3-draft-long\"}\n",
+        "stderr": ""
+      }
+    },
+    {
+      "path": "/private/tmp/askcore-replay-independent-srhgy0lc/native/ghostty/g3-draft-trailing-space/commands.json",
+      "last": {
+        "command": [
+          "/Users/dale/.local/bin/tui-test",
+          "--session",
+          "askcore-e2e-c487e238a1-ghostty-g3-draft-trailing-space",
+          "--json",
+          "daemon",
+          "status"
+        ],
+        "code": 3,
+        "stdout": "{\"pid\":null,\"running\":false,\"session\":\"askcore-e2e-c487e238a1-ghostty-g3-draft-trailing-space\"}\n",
+        "stderr": ""
+      }
+    },
+    {
+      "path": "/private/tmp/askcore-replay-independent-srhgy0lc/native/ghostty/g3-pending/session/commands.json",
+      "last": {
+        "command": [
+          "/Users/dale/.local/bin/tui-test",
+          "--session",
+          "askcore-pending-be0324f7a3a5",
+          "--json",
+          "daemon",
+          "status"
+        ],
+        "code": 3,
+        "stdout": "{\"pid\":null,\"running\":false,\"session\":\"askcore-pending-be0324f7a3a5\"}\n",
+        "stderr": ""
+      }
+    }
+  ]
+}

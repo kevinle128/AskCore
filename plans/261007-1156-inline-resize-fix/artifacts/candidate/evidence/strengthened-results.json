@@ -1,0 +1,47 @@
+[
+  {
+    "backend": "alacritty",
+    "case": "middle",
+    "result": "fail",
+    "error": "stale editor rows: {'bell_count': 0, 'cols': 40, 'cursor': {'x': 11, 'y': 4}, 'cwd': None, 'exited': None, 'last_command': None, 'last_exit': None, 'ready': False, 'rows': 12, 'session_shell': None, 'text': '\\nT0 startup\\neditor>\\neditor> abc界\\neditor> abc界😀Z\\nShift/Ctrl/Alt+Enter: newline', 'timeouts': {'command': 30000, 'exit': 30000, 'idle': 5000, 'ready': 30000, 'text': 5000}, 'title': None}"
+  },
+  {
+    "backend": "alacritty",
+    "case": "hard-lines",
+    "result": "fail",
+    "error": "bounded terminal predicate failed: {'bell_count': 0, 'cols': 40, 'cursor': {'x': 8, 'y': 5}, 'cwd': None, 'exited': None, 'last_command': None, 'last_exit': None, 'ready': False, 'rows': 12, 'session_shell': None, 'text': '\\nT0 startup\\neditor>\\neditor> abc界\\neditor> abc界😀Z\\nsecond界😀Z\\nShift/Ctrl/Alt+Enter: newline', 'timeouts': {'command': 30000, 'exit': 30000, 'idle': 5000, 'ready': 30000, 'text': 5000}, 'title': None}"
+  },
+  {
+    "backend": "alacritty",
+    "case": "long",
+    "result": "fail",
+    "error": "{'bell_count': 0, 'cols': 40, 'cursor': {'x': 5, 'y': 5}, 'cwd': None, 'exited': None, 'last_command': None, 'last_exit': None, 'ready': False, 'rows': 12, 'session_shell': None, 'text': '\\nT0 startup\\neditor>\\nfghijklmnopqr\\neditor> abcdefghijklmnopqrstuvwxyz012345\\n界😀Z\\nShift/Ctrl/Alt+Enter: newline', 'timeouts': {'command': 30000, 'exit': 30000, 'idle': 5000, 'ready': 30000, 'text': 5000}, 'title': None}"
+  },
+  {
+    "backend": "alacritty",
+    "case": "trailing-space",
+    "result": "fail",
+    "error": "{'bell_count': 0, 'cols': 40, 'cursor': {'x': 5, 'y': 5}, 'cwd': None, 'exited': None, 'last_command': None, 'last_exit': None, 'ready': False, 'rows': 12, 'session_shell': None, 'text': '\\nT0 startup\\neditor>\\nfghijklmnopqr\\neditor> abcdefghijklmnopqrstuvwxyz01234\\n界😀Z\\nShift/Ctrl/Alt+Enter: newline', 'timeouts': {'command': 30000, 'exit': 30000, 'idle': 5000, 'ready': 30000, 'text': 5000}, 'title': None}"
+  },
+  {
+    "backend": "ghostty",
+    "case": "middle",
+    "result": "pass"
+  },
+  {
+    "backend": "ghostty",
+    "case": "hard-lines",
+    "result": "fail",
+    "error": "bounded terminal predicate failed: {'bell_count': 0, 'cols': 40, 'cursor': {'x': 8, 'y': 1}, 'cwd': None, 'exited': None, 'last_command': None, 'last_exit': None, 'ready': False, 'rows': 12, 'session_shell': None, 'text': 'editor> abc界😀Z\\nsecond界😀Z\\nShift/Ctrl/Alt+Enter: newline', 'timeouts': {'command': 30000, 'exit': 30000, 'idle': 5000, 'ready': 30000, 'text': 5000}, 'title': None}"
+  },
+  {
+    "backend": "ghostty",
+    "case": "long",
+    "result": "pass"
+  },
+  {
+    "backend": "ghostty",
+    "case": "trailing-space",
+    "result": "pass"
+  }
+]

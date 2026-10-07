@@ -1,0 +1,4 @@
+=== RUN   TestInlineRepairPurgesAndReconstructs
+--- PASS: TestInlineRepairPurgesAndReconstructs (0.00s)
+PASS
+ok  	charm.land/bubbletea/v2	0.379s

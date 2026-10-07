@@ -1,0 +1,27 @@
+Caught panic:
+
+fixture model panic
+
+Restoring terminal...
+
+goroutine 1 [running]:
+runtime/debug.Stack()
+	/Users/dale/Desktop/workspace/go/mobules/pkg/mod/golang.org/toolchain@v0.0.1-go1.27.0.darwin-arm64/src/runtime/debug/stack.go:26 +0x64
+charm.land/bubbletea/v2.(*Program).recoverFromPanic(0x75931220a1e0, {0x100c4be38, 0x100c0c220})
+	/private/tmp/askcore-inline-resize-fix-5rjbma6z/vendor/charm.land/bubbletea/v2/tea.go:1307 +0xec
+charm.land/bubbletea/v2.(*Program).Run.func2()
+	/private/tmp/askcore-inline-resize-fix-5rjbma6z/vendor/charm.land/bubbletea/v2/tea.go:1039 +0xf4
+panic({0x100c4be38?, 0x100c0c220?})
+	/Users/dale/Desktop/workspace/go/mobules/pkg/mod/golang.org/toolchain@v0.0.1-go1.27.0.darwin-arm64/src/runtime/panic.go:859 +0x120
+main.model.Update({0x759312102090, 0x28, 0xc, {0x759312290478, 0x2}, 0x2, 0x0, 0x0, 0x1, 0x0, ...}, ...)
+	/private/tmp/askcore-inline-resize-fix-5rjbma6z/model.go:117 +0x185c
+charm.land/bubbletea/v2.(*Program).eventLoop(0x75931220a1e0, {0x100c79a78?, 0x75931221a000?}, 0x75931220e460)
+	/private/tmp/askcore-inline-resize-fix-5rjbma6z/vendor/charm.land/bubbletea/v2/tea.go:881 +0xb98
+charm.land/bubbletea/v2.(*Program).Run(0x75931220a1e0)
+	/private/tmp/askcore-inline-resize-fix-5rjbma6z/vendor/charm.land/bubbletea/v2/tea.go:1156 +0x7e0
+main.run()
+	/private/tmp/askcore-inline-resize-fix-5rjbma6z/main.go:144 +0xbbc
+main.main()
+	/private/tmp/askcore-inline-resize-fix-5rjbma6z/main.go:17 +0x1c
+
+program was killed: program experienced a panic

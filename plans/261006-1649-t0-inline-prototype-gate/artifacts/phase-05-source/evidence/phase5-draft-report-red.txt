@@ -1,0 +1,17 @@
+=== RUN   TestManualPasteReport
+    draft_report_test.go:19: owned child pid=71426 /var/folders/84/5njq4pvs747b3zzntvtgtpl80000gn/T/TestManualPasteReport23941804/001/paste --scenario g6 support=true
+    draft_report_test.go:19: status pipe closed
+    terminal_test.go:380: separate child stderr: flag provided but not defined: -draft-report
+        Usage of /var/folders/84/5njq4pvs747b3zzntvtgtpl80000gn/T/TestManualPasteReport23941804/001/paste:
+          -evidence string
+            	evidence directory (default "evidence")
+          -keyboard string
+            	auto or off (default "auto")
+          -lines int
+            	manual transcript lines (1..9999) (default 2000)
+          -scenario string
+            	scenario (default "smoke")
+--- FAIL: TestManualPasteReport (0.37s)
+FAIL
+FAIL	askcore-t0-inline	0.757s
+FAIL

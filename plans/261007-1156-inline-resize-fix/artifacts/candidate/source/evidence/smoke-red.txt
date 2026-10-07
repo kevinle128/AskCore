@@ -1,0 +1,105 @@
+=== RUN   TestStartupNormalExit
+    terminal_test.go:64: child pid=40144 command=/var/folders/84/5njq4pvs747b3zzntvtgtpl80000gn/T/TestStartupNormalExit178028400/001/smoke --scenario smoke
+ panic: test timed out after 10m0s
+	running tests:
+		TestStartupNormalExit (10m0s)
+
+goroutine 20 [running]:
+testing.(*M).startAlarm.func1()
+	/opt/homebrew/Cellar/go/1.26.0/libexec/src/testing/testing.go:2802 +0x2c4
+created by time.goFunc
+	/opt/homebrew/Cellar/go/1.26.0/libexec/src/time/sleep.go:215 +0x38
+
+goroutine 1 [chan receive, 9 minutes]:
+testing.(*T).Run(0x336db2f0a008, {0x1023901f2?, 0x336db2ef1b18?}, 0x102537ee0)
+	/opt/homebrew/Cellar/go/1.26.0/libexec/src/testing/testing.go:2109 +0x3bc
+testing.runTests.func1(0x336db2f0a008)
+	/opt/homebrew/Cellar/go/1.26.0/libexec/src/testing/testing.go:2585 +0x38
+testing.tRunner(0x336db2f0a008, 0x336db2ef1c48)
+	/opt/homebrew/Cellar/go/1.26.0/libexec/src/testing/testing.go:2036 +0xc4
+testing.runTests({0x10238ec41, 0x11}, {0x10238ec41, 0x11}, 0x336db2eae078, {0x102575500, 0x2, 0x2}, {0x80808080452a4375?, 0x10238e348?, ...})
+	/opt/homebrew/Cellar/go/1.26.0/libexec/src/testing/testing.go:2583 +0x3f0
+testing.(*M).Run(0x336db2e9c3c0)
+	/opt/homebrew/Cellar/go/1.26.0/libexec/src/testing/testing.go:2443 +0x578
+main.main()
+	_testmain.go:48 +0x80
+
+goroutine 36 [sync.Mutex.Lock, 9 minutes]:
+internal/sync.runtime_SemacquireMutex(0x336db2e80718?, 0x8?, 0x1025384b0?)
+	/opt/homebrew/Cellar/go/1.26.0/libexec/src/runtime/sema.go:95 +0x28
+internal/sync.(*Mutex).lockSlow(0x336db2e981c8)
+	/opt/homebrew/Cellar/go/1.26.0/libexec/src/internal/sync/mutex.go:149 +0x170
+internal/sync.(*Mutex).Lock(...)
+	/opt/homebrew/Cellar/go/1.26.0/libexec/src/internal/sync/mutex.go:70
+sync.(*Mutex).Lock(...)
+	/opt/homebrew/Cellar/go/1.26.0/libexec/src/sync/mutex.go:46
+askcore-t0-inline.TestStartupNormalExit.func5({0x10238d145, 0xb}, 0x336db2ef3db8)
+	/private/tmp/askcore-t0-09kf6w9r/terminal_test.go:27 +0x124
+askcore-t0-inline.TestStartupNormalExit(0x336db2f0a248)
+	/private/tmp/askcore-t0-09kf6w9r/terminal_test.go:28 +0x87c
+testing.tRunner(0x336db2f0a248, 0x102537ee0)
+	/opt/homebrew/Cellar/go/1.26.0/libexec/src/testing/testing.go:2036 +0xc4
+created by testing.(*T).Run in goroutine 1
+	/opt/homebrew/Cellar/go/1.26.0/libexec/src/testing/testing.go:2101 +0x3a8
+
+goroutine 38 [chan send, 9 minutes]:
+os/exec.(*Cmd).watchCtx(0x336db2eb6680, 0x336db2e8c380)
+	/opt/homebrew/Cellar/go/1.26.0/libexec/src/os/exec/exec.go:822 +0x290
+created by os/exec.(*Cmd).Start in goroutine 36
+	/opt/homebrew/Cellar/go/1.26.0/libexec/src/os/exec/exec.go:783 +0x69c
+
+goroutine 39 [syscall, 9 minutes]:
+syscall.syscalln(0x1022c8500, {0x336db2e885c8, 0x6, 0x6})
+	/opt/homebrew/Cellar/go/1.26.0/libexec/src/runtime/sys_darwin.go:38 +0x20
+syscall.syscall6(0x90010100000000?, 0x10b2f5ae8?, 0x10463f098?, 0x90?, 0x336db2dbd008?, 0x336db2e1c000?, 0x336db2e88668?)
+	/opt/homebrew/Cellar/go/1.26.0/libexec/src/syscall/syscall_darwin.go:388 +0x28
+syscall.wait4(0x336db2e88698?, 0x1022dac1c?, 0x90?, 0x10252e460?)
+	/opt/homebrew/Cellar/go/1.26.0/libexec/src/syscall/zsyscall_darwin_arm64.go:44 +0x4c
+syscall.Wait4(0x0?, 0x336db2e886d4, 0x0?, 0x0?)
+	/opt/homebrew/Cellar/go/1.26.0/libexec/src/syscall/syscall_bsd.go:144 +0x28
+os.(*Process).pidWait.func1(...)
+	/opt/homebrew/Cellar/go/1.26.0/libexec/src/os/exec_unix.go:64
+os.ignoringEINTR2[...](...)
+	/opt/homebrew/Cellar/go/1.26.0/libexec/src/os/file_posix.go:266
+os.(*Process).pidWait(0x336db2e8aa80)
+	/opt/homebrew/Cellar/go/1.26.0/libexec/src/os/exec_unix.go:63 +0x9c
+os.(*Process).wait(0x0?)
+	/opt/homebrew/Cellar/go/1.26.0/libexec/src/os/exec_unix.go:28 +0x24
+os.(*Process).Wait(...)
+	/opt/homebrew/Cellar/go/1.26.0/libexec/src/os/exec.go:346
+os/exec.(*Cmd).Wait(0x336db2eb6680)
+	/opt/homebrew/Cellar/go/1.26.0/libexec/src/os/exec/exec.go:930 +0x38
+askcore-t0-inline.TestStartupNormalExit.func1()
+	/private/tmp/askcore-t0-09kf6w9r/terminal_test.go:25 +0x24
+created by askcore-t0-inline.TestStartupNormalExit in goroutine 36
+	/private/tmp/askcore-t0-09kf6w9r/terminal_test.go:25 +0x5fc
+
+goroutine 56 [select, 9 minutes]:
+io.(*pipe).write(0x336db2eb2660, {0x336db2e28040, 0xb, 0x10})
+	/opt/homebrew/Cellar/go/1.26.0/libexec/src/io/pipe.go:86 +0x198
+io.(*PipeWriter).Write(0x102573cc0?, {0x336db2e28040?, 0xb?, 0x336db2e98008?})
+	/opt/homebrew/Cellar/go/1.26.0/libexec/src/io/pipe.go:161 +0x24
+io.WriteString({0x10253a120, 0x336db2eb2660}, {0x336db2e28030?, 0xb?})
+	/opt/homebrew/Cellar/go/1.26.0/libexec/src/io/io.go:318 +0xa8
+github.com/charmbracelet/x/vt.(*Emulator).handleRequestMode(0x336db2f28008, {0x336db2f58100?, 0x336db2eecdb8?, 0x102370c40?}, 0x0)
+	/private/tmp/askcore-t0-mod-cache/github.com/charmbracelet/x/vt@v0.0.0-20261004011457-ad85c59fdf4e/csi.go:30 +0xe0
+github.com/charmbracelet/x/vt.(*Emulator).registerDefaultCsiHandlers.func38({0x336db2f58100?, 0x336db2ea1050?, 0x243f70?})
+	/private/tmp/askcore-t0-mod-cache/github.com/charmbracelet/x/vt@v0.0.0-20261004011457-ad85c59fdf4e/handlers.go:842 +0x38
+github.com/charmbracelet/x/vt.(*handlers).handleCsi(0x10b2f59a8?, 0x1022c6fc8?, {0x336db2f58100, 0x1, 0x1})
+	/private/tmp/askcore-t0-mod-cache/github.com/charmbracelet/x/vt@v0.0.0-20261004011457-ad85c59fdf4e/handlers.go:136 +0x8c
+github.com/charmbracelet/x/vt.(*Emulator).handleCsi(0x336db2f28008, 0x243f70, {0x336db2f58100, 0x1, 0x1})
+	/private/tmp/askcore-t0-mod-cache/github.com/charmbracelet/x/vt@v0.0.0-20261004011457-ad85c59fdf4e/csi.go:13 +0x4c
+github.com/charmbracelet/x/ansi.(*Parser).performAction(0x336db2eecf08?, 0x68?, 0x5c?, 0x30?)
+	/private/tmp/askcore-t0-mod-cache/github.com/charmbracelet/x/ansi@v0.11.7/parser.go:375 +0x474
+github.com/charmbracelet/x/ansi.(*Parser).advance(0x336db2e9c640, 0x70?)
+	/private/tmp/askcore-t0-mod-cache/github.com/charmbracelet/x/ansi@v0.11.7/parser.go:234 +0x10c
+github.com/charmbracelet/x/ansi.(*Parser).Advance(0x336db2ea10e0?, 0x12?)
+	/private/tmp/askcore-t0-mod-cache/github.com/charmbracelet/x/ansi@v0.11.7/parser.go:166 +0x38
+github.com/charmbracelet/x/vt.(*Emulator).Write(0x336db2f28008, {0x336db2eecf78, 0x12, 0x0?})
+	/private/tmp/askcore-t0-mod-cache/github.com/charmbracelet/x/vt@v0.0.0-20261004011457-ad85c59fdf4e/emulator.go:275 +0x84
+askcore-t0-inline.TestStartupNormalExit.func3()
+	/private/tmp/askcore-t0-09kf6w9r/terminal_test.go:26 +0x154
+created by askcore-t0-inline.TestStartupNormalExit in goroutine 36
+	/private/tmp/askcore-t0-09kf6w9r/terminal_test.go:26 +0x7f4
+FAIL	askcore-t0-inline	601.081s
+FAIL

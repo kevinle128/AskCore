@@ -1,0 +1,31 @@
+{
+  "binary_sha256_before": "77f726b9cd099788314fa1de0ca6066027397c5dbb4e0ce1c79ae125dfc042c1",
+  "binary_sha256_after": "77f726b9cd099788314fa1de0ca6066027397c5dbb4e0ce1c79ae125dfc042c1",
+  "unchanged": true,
+  "results": [
+    {
+      "backend": "alacritty",
+      "result": "pass",
+      "detail": {
+        "ordinary_commits": 2000,
+        "replay_snapshot_commits": [
+          1,
+          2000
+        ],
+        "real_pending_write_resize": "pass"
+      }
+    },
+    {
+      "backend": "ghostty",
+      "result": "pass",
+      "detail": {
+        "ordinary_commits": 2000,
+        "replay_snapshot_commits": [
+          1,
+          2000
+        ],
+        "real_pending_write_resize": "pass"
+      }
+    }
+  ]
+}

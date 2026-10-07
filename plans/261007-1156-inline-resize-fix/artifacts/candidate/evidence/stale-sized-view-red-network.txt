@@ -1,0 +1,7 @@
+go: downloading github.com/charmbracelet/x/exp/golden v0.0.0-20241212170349-ad4b7ae0f25f
+go: downloading github.com/aymanbagabas/go-udiff v0.2.0
+--- FAIL: TestResizeWaitsForSizedView (0.00s)
+    resize_frame_test.go:23: resize emitted stale-sized view before model render: "\x1b[?25l\r\x1b[Jeditor> abc界\r\x1b[3C\x1b[?25h"
+FAIL
+exit status 1
+FAIL	charm.land/bubbletea/v2	0.501s

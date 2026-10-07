@@ -1,0 +1,7 @@
+# askcore-t0-inline [askcore-t0-inline.test]
+./selector.go:16:2: undefined: top
+./selector.go:20:6: undefined: top
+./selector.go:23:63: undefined: top
+./selector.go:25:51: undefined: top
+FAIL	askcore-t0-inline [build failed]
+FAIL

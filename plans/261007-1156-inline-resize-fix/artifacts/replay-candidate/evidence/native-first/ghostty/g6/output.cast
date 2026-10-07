@@ -1,0 +1,8 @@
+{"env":{"TERM":"xterm-256color"},"height":12,"timestamp":1791351388,"version":2,"width":40}
+[0.003264792,"o","\r\u001b[12B\n\u001b[12A\u001b[LT0 startup\u001b[K\r\n"]
+[0.020853,"o","\u001b[?2026$p\u001b[?2027$p"]
+[0.020907,"o","\u001b[?5W\u001b[?2004h\u001b[>4;2m\u001b[>3u\u001b[?u\u001b[1 q\u001b[Jeditor>\r\nAlt+Enter: newline; Enter: submit\u001b[A\u001b[4Z\u001b[?25h"]
+[0.036811625,"o","\u001b[?2026h\u001b[?2027h\r\nShift/Ctrl/Alt+Enter: newline\u001b[K\u001b[A\u001b[3Z\u001b[?2026l"]
+[0.069995458,"o","\u001b[?2026ha\u001b[?2026l"]
+[0.137568542,"o","\u001b[?2026h\r\u001b[J1997    界😀?[13;2u\u001b[20G\r\n1998    界😀?[13;2u\u001b[20G\r\n1999    界😀?[13;2u\u001b[K\u001b[20G\r\nShift/Ctrl/Alt+Enter: newline\u001b[K\r\u001bM\u001b[19C\u001b[?2026l"]
+[0.152432958,"o","\u001b[>4m\u001b[<1u\r\n\u001b[J\u001b[?2004l\u001b[?2027l"]

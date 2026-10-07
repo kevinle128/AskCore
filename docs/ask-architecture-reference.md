@@ -107,6 +107,11 @@ Go has no classes. A "class" is a struct with methods. The rule is **one package
 | `internal/testsupport` | shared test helpers | |
 | `pkg/protocol` | WS frames, leader frames, `_ask/*` methods, event types, error codes | `pkg/protocol` |
 
+### Terminal UI boundary
+
+The accepted [TUI and UI extension architecture](tui-architecture.md) owns terminal state, components, client-local UI subprocesses, and the public UI SDK boundary.
+The packages are scaffolds; they do not change the current interactive command or the T0 gate.
+
 ### 3.1 Third-party vendors
 
 Ask has no `thirdparty/` folder. A vendor goes to the package of the capability that it serves:

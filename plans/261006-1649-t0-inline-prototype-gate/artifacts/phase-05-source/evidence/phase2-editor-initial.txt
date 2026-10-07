@@ -1,0 +1,8 @@
+=== RUN   TestEditorCellCursor
+--- PASS: TestEditorCellCursor (0.00s)
+=== RUN   TestInputPaste
+--- PASS: TestInputPaste (0.00s)
+=== RUN   TestInputAltEnter
+--- PASS: TestInputAltEnter (0.00s)
+PASS
+ok  	askcore-t0-inline	0.463s

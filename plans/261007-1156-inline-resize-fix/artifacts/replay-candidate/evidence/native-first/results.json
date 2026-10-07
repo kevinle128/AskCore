@@ -1,0 +1,125 @@
+{
+  "cli_version": "tui-test 0.1.0-beta.2",
+  "headless_only": true,
+  "d14_ready": false,
+  "cases": [
+    {
+      "backend": "alacritty",
+      "scenario": "g1",
+      "session": "askcore-e2e-7f9d4a1a76-alacritty-g1",
+      "result": "pass",
+      "detail": null
+    },
+    {
+      "backend": "alacritty",
+      "scenario": "g2",
+      "session": "askcore-e2e-7f9d4a1a76-alacritty-g2",
+      "result": "pass",
+      "detail": null
+    },
+    {
+      "backend": "alacritty",
+      "scenario": "g3",
+      "session": "askcore-e2e-7f9d4a1a76-alacritty-g3",
+      "result": "pass",
+      "detail": null
+    },
+    {
+      "backend": "alacritty",
+      "scenario": "g6",
+      "session": "askcore-e2e-7f9d4a1a76-alacritty-g6",
+      "result": "pass",
+      "detail": {
+        "negotiated_modified_keys": "pass",
+        "reason": null
+      }
+    },
+    {
+      "backend": "alacritty",
+      "scenario": "g3-draft-middle",
+      "session": "askcore-e2e-7f9d4a1a76-alacritty-g3-draft-middle",
+      "result": "pass",
+      "detail": null
+    },
+    {
+      "backend": "alacritty",
+      "scenario": "g3-draft-hard-lines",
+      "session": "askcore-e2e-7f9d4a1a76-alacritty-g3-draft-hard-lines",
+      "result": "pass",
+      "detail": null
+    },
+    {
+      "backend": "alacritty",
+      "scenario": "g3-draft-long",
+      "session": "askcore-e2e-7f9d4a1a76-alacritty-g3-draft-long",
+      "result": "fail",
+      "error": "bounded terminal predicate failed: {'bell_count': 0, 'cols': 13, 'cursor': {'x': 6, 'y': 3}, 'cwd': None, 'exited': None, 'last_command': None, 'last_exit': None, 'ready': False, 'rows': 6, 'session_shell': None, 'text': 'T0 startup\\nfghijklmnopqr\\nstuvwxyz01234\\n5\u754c\ud83d\ude00Z\\nShift/Ctrl/Al', 'timeouts': {'command': 30000, 'exit': 30000, 'idle': 5000, 'ready': 30000, 'text': 5000}, 'title': None}"
+    },
+    {
+      "backend": "alacritty",
+      "scenario": "g3-draft-trailing-space",
+      "session": "askcore-e2e-7f9d4a1a76-alacritty-g3-draft-trailing-space",
+      "result": "fail",
+      "error": "bounded terminal predicate failed: {'bell_count': 0, 'cols': 13, 'cursor': {'x': 6, 'y': 3}, 'cwd': None, 'exited': None, 'last_command': None, 'last_exit': None, 'ready': False, 'rows': 6, 'session_shell': None, 'text': 'T0 startup\\nfghijklmnopqr\\nstuvwxyz01234\\n \u754c\ud83d\ude00Z\\nShift/Ctrl/Al', 'timeouts': {'command': 30000, 'exit': 30000, 'idle': 5000, 'ready': 30000, 'text': 5000}, 'title': None}"
+    },
+    {
+      "backend": "ghostty",
+      "scenario": "g1",
+      "session": "askcore-e2e-7f9d4a1a76-ghostty-g1",
+      "result": "pass",
+      "detail": null
+    },
+    {
+      "backend": "ghostty",
+      "scenario": "g2",
+      "session": "askcore-e2e-7f9d4a1a76-ghostty-g2",
+      "result": "pass",
+      "detail": null
+    },
+    {
+      "backend": "ghostty",
+      "scenario": "g3",
+      "session": "askcore-e2e-7f9d4a1a76-ghostty-g3",
+      "result": "pass",
+      "detail": null
+    },
+    {
+      "backend": "ghostty",
+      "scenario": "g6",
+      "session": "askcore-e2e-7f9d4a1a76-ghostty-g6",
+      "result": "pass",
+      "detail": {
+        "negotiated_modified_keys": "pass",
+        "reason": null
+      }
+    },
+    {
+      "backend": "ghostty",
+      "scenario": "g3-draft-middle",
+      "session": "askcore-e2e-7f9d4a1a76-ghostty-g3-draft-middle",
+      "result": "pass",
+      "detail": null
+    },
+    {
+      "backend": "ghostty",
+      "scenario": "g3-draft-hard-lines",
+      "session": "askcore-e2e-7f9d4a1a76-ghostty-g3-draft-hard-lines",
+      "result": "pass",
+      "detail": null
+    },
+    {
+      "backend": "ghostty",
+      "scenario": "g3-draft-long",
+      "session": "askcore-e2e-7f9d4a1a76-ghostty-g3-draft-long",
+      "result": "fail",
+      "error": "bounded terminal predicate failed: {'bell_count': 0, 'cols': 13, 'cursor': {'x': 6, 'y': 3}, 'cwd': None, 'exited': None, 'last_command': None, 'last_exit': None, 'ready': False, 'rows': 6, 'session_shell': None, 'text': 'T0 startup\\nfghijklmnopqr\\nstuvwxyz01234\\n5\u754c\ud83d\ude00Z\\nShift/Ctrl/Al', 'timeouts': {'command': 30000, 'exit': 30000, 'idle': 5000, 'ready': 30000, 'text': 5000}, 'title': None}"
+    },
+    {
+      "backend": "ghostty",
+      "scenario": "g3-draft-trailing-space",
+      "session": "askcore-e2e-7f9d4a1a76-ghostty-g3-draft-trailing-space",
+      "result": "fail",
+      "error": "bounded terminal predicate failed: {'bell_count': 0, 'cols': 13, 'cursor': {'x': 6, 'y': 3}, 'cwd': None, 'exited': None, 'last_command': None, 'last_exit': None, 'ready': False, 'rows': 6, 'session_shell': None, 'text': 'T0 startup\\nfghijklmnopqr\\nstuvwxyz01234\\n \u754c\ud83d\ude00Z\\nShift/Ctrl/Al', 'timeouts': {'command': 30000, 'exit': 30000, 'idle': 5000, 'ready': 30000, 'text': 5000}, 'title': None}"
+    }
+  ]
+}

@@ -1,0 +1,31 @@
+{
+  "commands": {
+    "narrow": {
+      "command": "go test -v -run 'TestEditor|TestInput|TestG6|TestRestore' -count=1 -timeout 90s ./...",
+      "exit": 0
+    },
+    "race": {
+      "command": "go test -race -v -count=1 -timeout 90s ./...",
+      "exit": 0
+    },
+    "vet": {
+      "command": "go vet ./...",
+      "exit": 0
+    },
+    "build": {
+      "command": "go build -o evidence/tester-phase2/g6 .",
+      "exit": 0
+    },
+    "format": {
+      "command": "gofmt -l *.go",
+      "exit": 0
+    }
+  },
+  "narrow_top_level_passes": 6,
+  "race_top_level_passes": 12,
+  "archive_hashes_verified": 72,
+  "frozen_files_verified": 12,
+  "product_hashes_verified": 27,
+  "real_iTerm2": "pending",
+  "complete_G6": "not_claimed"
+}
