@@ -20,7 +20,6 @@ import (
 	"AskCore/internal/auth"
 	"AskCore/internal/providers"
 	"AskCore/internal/providers/anthropic"
-	"AskCore/internal/providers/openai"
 	"AskCore/internal/tools"
 	"AskCore/pkg/protocol"
 )
@@ -104,6 +103,9 @@ func runWithDependencies(argv []string, stdin io.Reader, stdout, stderr io.Write
 			}
 			return signalExitCodes[sig]
 		}
+	}
+	if len(argv) > 0 && argv[0] == "acp" {
+		return runACP(argv[1:], stdin, stdout, stderr, deps, sigs)
 	}
 	o, diags := parseArgs(argv)
 	failed := false
@@ -207,6 +209,16 @@ func newHeadlessAgent(o options, getenv func(string) string, extra ...tools.Tool
 }
 
 func newHeadlessAgentWithAuth(o options, getenv func(string) string, service *auth.Service, extra ...tools.Tool) (*agent.Agent, error) {
+	cwd, err := os.Getwd()
+	if err != nil {
+		return nil, err
+	}
+	return newNativeAgent(o, getenv, service, newSessionID(), cwd, extra...)
+}
+
+// newNativeAgent builds one independent agent for the session and directory.
+// The headless run and every ACP session use it, so both share one composition.
+func newNativeAgent(o options, getenv func(string) string, service *auth.Service, sessionID, cwd string, extra ...tools.Tool) (*agent.Agent, error) {
 	stream, model, err := openProvider(o, getenv)
 	if err != nil {
 		return nil, err
@@ -227,18 +239,6 @@ func newHeadlessAgentWithAuth(o options, getenv func(string) string, service *au
 			return nil, err
 		}
 	}
-	cwd, err := os.Getwd()
-	if err != nil {
-		return nil, err
-	}
-	wires := providers.NewRegistry()
-	wires.Register(model.API, stream)
-	if o.provider != defaultProvider {
-		env := func(k string) (string, bool) { v := getenv(k); return v, v != "" }
-		wires.RegisterProvider(anthropic.New(anthropic.WithEnv(env), anthropic.WithHTTPClient(&http.Client{Transport: o.transport})))
-		registerOpenAIWires(wires, o, getenv)
-	}
-	sessionID := newSessionID()
 	bound := providers.BoundKey{}
 	if o.apiKey != "" {
 		bound = providers.BoundKey{Provider: o.provider, Secret: o.apiKey}
@@ -246,35 +246,23 @@ func newHeadlessAgentWithAuth(o options, getenv func(string) string, service *au
 	cfg := agent.Config{
 		LoopConfig: agent.LoopConfig{
 			Model:    model,
-			Stream:   wires.Stream,
+			Stream:   stream,
 			BoundKey: bound,
 			Options:  providers.StreamOptions{Reasoning: reasoning, APIKey: o.apiKey},
 			Cwd:      cwd,
 			Wait:     o.wait,
 		},
-		Registry:  wires,
 		Tools:     reg,
 		SessionID: sessionID,
 	}
-	if service != nil {
-		cfg = app.BindAuth(cfg, service, wires)
+	native := app.NativeAgentConfig{
+		Config: cfg, InitialStream: stream, Auth: service,
+		Env: func(k string) (string, bool) { v := getenv(k); return v, v != "" },
 	}
-	return agent.New(cfg)
-}
-
-func registerOpenAIWires(reg *providers.Registry, o options, getenv func(string) string) {
-	opts := []openai.Option{openai.WithEnv(func(k string) (string, bool) {
-		v := getenv(k)
-		if v == "" {
-			return "", false
-		}
-		return v, true
-	})}
 	if o.transport != nil {
-		opts = append(opts, openai.WithHTTPClient(&http.Client{Transport: o.transport}))
+		native.HTTPClient = &http.Client{Transport: o.transport}
 	}
-	reg.RegisterProvider(openai.NewCompletions(opts...))
-	reg.RegisterProvider(openai.NewResponses(opts...))
+	return app.NewNativeAgent(native)
 }
 
 func newSessionID() string {

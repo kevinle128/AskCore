@@ -4,11 +4,14 @@ The Agent Client Protocol adapter over the agent's Go API. It is the server side
 
 ## What belongs here
 
-- The implementation of the ACP `Agent` interface on top of the `agent` Go API (`agent.go`)
-- The mapping from internal events to `session/update` notifications (`updates.go`)
-- `_meta` fields for Ask-only data such as `seq` and `runId` (`meta.go`)
-- The `_ask/*` method handlers: steer and follow-up, compact, fork and tree, usage (`ask_methods.go`)
+- The implementation of the ACP `Agent` interface on top of the `agent` Go API (`agent.go`): `Adapter`, its `Config` callbacks and the connection binding
+- The session host (`host.go`): one Agent and one ordered writer for each session, and the write barrier that holds a prompt result until the settled event is written
+- The mapping from internal events to `session/update` notifications and the follow subscriptions (`updates.go`)
+- `_meta` fields for Ask-only data such as `seq`, `epoch` and `runId` (`meta.go`)
+- The `_ask/*` method handlers: state, models, controls, steer and follow-up, usage; compact, fork and tree answer "unsupported" (`ask_methods.go`)
+- The one error mapper (`errors.go`)
 - The stdio server for `ask acp` (`stdio.go`)
+- The stdio guards `wire.go`: `CheckedWriter` turns a lost write into a connection failure, and `LineLimitReader` caps one inbound frame before the SDK scanner buffers it
 
 ## What does not belong here
 
@@ -25,12 +28,59 @@ The Agent Client Protocol adapter over the agent's Go API. It is the server side
 
 ## File names
 
-`agent.go`, `updates.go`, `meta.go`, `ask_methods.go`, `stdio.go`
+`agent.go`, `host.go`, `updates.go`, `meta.go`, `ask_methods.go`, `errors.go`, `stdio.go`, `wire.go`
 
 ## Imports
 
-- Allowed: `agent`, `sessions`, `bus`, `pkg/protocol`, the ACP Go SDK
+- Allowed: `agent`, `sessions`, `bus`, `providers` (model types and `Ref` only), `tools` (tests only), `pkg/protocol`, the ACP Go SDK (`github.com/coder/acp-go-sdk` v0.13.5, stable schema 0.13.5, ACP wire v1)
 - Denied: `internal/leader`; `internal/gateway`, `internal/http`, `internal/channels/<vendor>`; `internal/config`
+
+## SDK contract limits
+
+The conformance tests in `conformance_test.go` pin the SDK and its schema, and record these limits. The report is [conformance-261007-h13a-sdk.md](../../plans/reports/conformance-261007-h13a-sdk.md).
+
+- Wrap the SDK output in `CheckedWriter` and the input in `LineLimitReader`. The SDK ignores short writes and discards the error of a response write.
+- Do not block in a notification handler: `session/cancel` is queued behind it. `$/cancel_request` and requests are not.
+- Map every error before it returns. The SDK puts the text of an unmapped error into the error data.
+- Send Ask counters as decimal strings. Typed `_meta` decodes numbers as float64. Extension params are raw JSON and stay exact.
+- `usage_update` is not in the stable schema. Report usage with `_ask/session/usage`.
+
+## Adapter contract
+
+- Dependencies from the application come as function fields of `Config` (`Authenticate`, `Models`, `FindModel`, `ModelAuth`). The package never imports `auth`, `app` or `config`. A callback error is shown as "not signed in"; its text never leaves.
+- `Bind(conn, checkedWriter, out)` connects the SDK connection. The adapter learns from the checked writer when a follow result is on the wire, and it closes `out` when the output fails. The owner of the writer calls `Fail` from the failure hook of the writer and `CloseOutput` on a signal path.
+- Every error goes through `requestError`: a fixed text for each kind from `pkg/protocol` and the kind in the error data. Only a short failure code of a model request is added to the text.
+- `session/prompt` and `_ask/session/continue` return after the run settled and every update of the run was written. A request that the Agent refuses (busy, disposed, empty log) returns at once and never waits for the events of another run.
+- `session/cancel` calls `Agent.Abort`. A cancelled request (`$/cancel_request`, or a second prompt on the same session) does not stop a run and does not release the write barrier. The run ends by `session/cancel` only, and a started tool body drains without a time limit.
+- While a reset runs, steer and follow-up answer busy and admission stays closed until the held events are queued, so every event carries the epoch it belongs to and leaves in Agent order.
+- A `session/cancel` that comes after admission but before the run exists is kept and stops the run when it binds. A prompt waits up to 250 ms for an Agent that is busy with work it does not own (a queue_update delivery or a run that a queued input started); a longer run still gives busy.
+- Repeating `_ask/session/unfollow` succeeds after the subscription has ended. A subscription of another session gives `unknown_subscription`.
+- A model request that fails gives a failure frame after its updates: `no_api_key` for an AUTH failure, `internal` with the failure code for any other.
+- Model names are `provider/id@api`. Two catalog rows can share provider and id, so a name without `@api` that matches both is refused.
+- An explicit follow keeps its own follower. The result holds the cut (snapshot, open stream baseline, cursor). Events above the cut leave only after the result is on the wire. A follower that falls behind, or meets an event over the ring size limit, ends with `_ask/session/resync`; the client follows again and nothing is sent twice.
+- Standard `session/update` frames are written by the session writer, so an explicit follow does not duplicate them.
+The writer waits for each active subscription to write through the same event sequence, or to end with detach/resync, before it advances the prompt barrier.
+- Usage rows come from the committed `AttemptSettled` entries of the session log. A row has the outcome and the usage, never the failure text.
+- Follow entries leave out request deltas and system snapshots.
+- A follower gets Agent events as the Agent publishes them. Those events, and the message entries of a snapshot, hold the cleaned failure text of a model request, as the headless JSON stream does. The adapter does not rewrite them. Any redaction for a wider audience belongs to the stdio and gateway composition.
+
+## Stdio server
+
+`ServeStdio` ([stdio.go](stdio.go)) serves one connection over a reader and a writer. `cmd/tui/acp.go` registers it as `ask acp`, before prompt and mode parsing, with the composition of `internal/app.ACPModule`. The command takes no other argument. There is no TCP or Unix listener.
+
+- One framed reader owns stdin and one checked writer owns stdout. Diagnostics go to stderr only, with no raw input and no attribute (`NewQuietLogger`). An inbound frame over 8 MiB ends the connection.
+- Authentication uses the credentials that `ask auth login` saved on the host, or the environment key. `authenticate` and `_ask/session/set_model` with `authMethodId` check readiness and refresh an expired native credential through the normal resolver. They never read stdin, never start a sign-in and never change a credential. A mismatch answers `no_api_key` with the text that names `ask auth`.
+- Shutdown runs on end of input, on a lost output and on SIGINT, SIGTERM or SIGHUP. It closes admission, disposes the host (an ordinary cancel keeps the unbounded drain of a started tool), runs the owned cleanup (`AuthWait`) in parallel, waits for the active handlers, and then closes the output. Exit codes: 0, 1, 130, 143, 129.
+- A signal closes the output first, so a blocked write ends and no prompt result can follow. A second signal returns at once with `Forced` set and the command prints that the cleanup did not drain; it never reports completed work.
+- The server keeps the ID of each JSON-RPC request from the input line, including a final line without a newline, and waits until its response frame is written, so end of input never closes the output before a response. During shutdown a single output write that runs longer than `WriteStall` (default 2 s) closes the output; an ordinary tool drain is not bounded by it.
+- The host never gets a success after a lost output: the failure is latched by the checked writer.
+- A model failure text reaches `_ask/session/event` as the provider layer cleaned it. The stdio tests send a credential in a provider error body and check that no credential appears on any frame or on stderr.
+- The SDK sets its logger when it is bound, and reads at once. The server holds the first read until the bind ends, so an input that fails at once cannot race with the logger.
+
+Tests: `stdio_test.go` uses real pipes and Agent owners with the approved controlled tool and faulting log.
+`cmd/tui/acp_e2e_test.go` drives the built binary for every public operation.
+Provider and OAuth tests use an external HTTPS fixture through a CONNECT proxy and a temporary CA file.
+The tests use production HTTP clients, supported host login, real retry delays, and real credential expiry.
 
 ## Rules
 

@@ -21,6 +21,7 @@ This file provides context about the project for AI assistants.
 - Migrations: golang-migrate
 - Protobuf Tooling: buf
 - Dependency Injection: fx
+- ACP: `github.com/coder/acp-go-sdk` v0.13.5 (stable schema 0.13.5, wire v1); conformance evidence in `plans/reports/conformance-261007-h13a-sdk.md`
 - Native auth identity: `github.com/coreos/go-oidc/v3`; installed version authority is `go.mod`
 
 ## Architecture
@@ -76,6 +77,11 @@ Do not expose internal or Bubble Tea types in the public UI SDK.
 - `FSFAULT_ENGINE=docker internal/testsupport/fsfault/run-tests.sh` - Run optional Linux filesystem fault tests; follow the [fixture setup](internal/testsupport/README.md#filesystem-fault-tests).
 - `go run github.com/golangci/golangci-lint/v2/cmd/golangci-lint run ./...` - Lint, including the depguard import rules
 - `go fmt ./...` - Format code
+- `go run ./cmd/tui acp` - Serve ACP v1 over stdio (`ask acp`).
+  It dispatches before prompt and mode parsing and takes no other argument.
+  It uses `internal/app.ACPModule` with the shared native auth composition: no listener, no database, no leader, and no credential input on the protocol connection.
+  Sign in on the host with `ask auth login`; `authenticate` only checks readiness.
+  Exit codes: 0 input ended, 1 error or lost output, 130 SIGINT, 143 SIGTERM, 129 SIGHUP.
 - `go run ./cmd/tui -p "hello"` - Run a headless prompt in process.
   `--mode json` writes each agent event as one JSON line.
   `faux` remains the default provider.

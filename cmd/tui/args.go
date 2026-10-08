@@ -176,6 +176,7 @@ const usage = `ask - the Ask agent harness
 Usage:
   ask [options] [--] [@files...] [messages...]
   ask auth --help
+  ask acp --help
 
 Options:
   --print, -p           Non-interactive mode: run the prompt, print the reply and exit

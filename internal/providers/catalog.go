@@ -10,6 +10,9 @@ func catalog() []Model {
 	return []Model{TokenPlanMessages(), TokenPlanCompletions(), OpenAIGPT55(), OpenAIGPT56Sol(), AnthropicSonnet46(), XAIGrok47()}
 }
 
+// AvailableModels returns independent rows from the compiled model catalog.
+func AvailableModels() []Model { return catalog() }
+
 // TokenPlanMessages is the H3 Token Plan row on the Anthropic messages wire.
 func TokenPlanMessages() Model {
 	return Model{

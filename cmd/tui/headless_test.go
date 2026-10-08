@@ -5,6 +5,7 @@ import (
 	"bytes"
 	"context"
 	"errors"
+	"fmt"
 	"io"
 	"os"
 	"os/exec"
@@ -28,7 +29,15 @@ import (
 // os/signal.loop starts at the first signal.Notify and lives for the rest
 // of the process.
 func TestMain(m *testing.M) {
-	goleak.VerifyTestMain(m, goleak.IgnoreAnyFunction("os/signal.loop"))
+	code := m.Run()
+	removeACPBinary()
+	if code == 0 {
+		if err := goleak.Find(goleak.IgnoreAnyFunction("os/signal.loop")); err != nil {
+			fmt.Fprintf(os.Stderr, "goleak: errors on successful test run: %v\n", err)
+			code = 1
+		}
+	}
+	os.Exit(code)
 }
 
 var (

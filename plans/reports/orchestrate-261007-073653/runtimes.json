@@ -1,0 +1,46 @@
+{
+  "schema_version": 1,
+  "observed_at": "2026-10-07T07:36:53Z",
+  "host_os": "darwin",
+  "workspace_id": "wks_cb30d95c833bfccf",
+  "workspace_isolation": "worktree",
+  "selection_note": "No profile-list surface was exposed by the installed Paseo CLI, so routes were selected from the live provider/model catalog.",
+  "candidates": [
+    {
+      "id": "claude",
+      "kind": "native-workflow-subagent",
+      "state": "available",
+      "version": "2.1.289",
+      "authenticated": true,
+      "provider": "claude",
+      "model": "claude-sonnet-5-5",
+      "model_family": "claude",
+      "capability_tier": "C3",
+      "risk_tier": "R2",
+      "mode": "auto",
+      "thinking": "native workflow default (override unavailable)",
+      "cwd_control": "workspace-pinned",
+      "isolation": "existing-paseo-worktree",
+      "capture": ["paseo-timeline", "final-result", "agent-status"],
+      "evidence": ["paseo status --json", "paseo provider ls --json", "paseo provider models claude --json", "paseo provider diagnostic claude --json"]
+    },
+    {
+      "id": "codex",
+      "kind": "native-workflow-subagent",
+      "state": "available",
+      "version": "0.160.1",
+      "authenticated": true,
+      "provider": "codex",
+      "model": "gpt-6.1-sol",
+      "model_family": "openai",
+      "capability_tier": "C3",
+      "risk_tier": "R0",
+      "mode": "default",
+      "thinking": "native workflow default (override unavailable)",
+      "cwd_control": "workspace-pinned",
+      "isolation": "review-only-prompt-with-post-run-diff-audit",
+      "capture": ["paseo-timeline", "final-result", "agent-status"],
+      "evidence": ["paseo status --json", "paseo provider ls --json", "paseo provider models codex --json", "paseo provider diagnostic codex --json"]
+    }
+  ]
+}

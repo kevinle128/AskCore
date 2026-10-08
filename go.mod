@@ -9,6 +9,7 @@ require (
 	github.com/charmbracelet/bubbletea v1.3.10
 	github.com/charmbracelet/lipgloss v1.1.0
 	github.com/charmbracelet/openai-go v0.0.0-20260921175203-216db9e71b83
+	github.com/coder/acp-go-sdk v0.13.5
 	github.com/go-playground/validator/v10 v10.30.3
 	github.com/golang-migrate/migrate/v4 v4.19.1
 	github.com/golangci/golangci-lint/v2 v2.12.2

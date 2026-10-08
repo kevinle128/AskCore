@@ -152,3 +152,19 @@ func TestNativeCatalogAndKeys(t *testing.T) {
 		require.Equal(t, "native-key", LookupKey(row.provider, func(name string) (string, bool) { return "native-key", name == row.env }))
 	}
 }
+
+func TestAvailableModelsReturnsIndependentRows(t *testing.T) {
+	rows := AvailableModels()
+	if len(rows) != 6 {
+		t.Fatalf("rows: %d", len(rows))
+	}
+	for _, m := range rows {
+		if m.Provider == "faux" {
+			t.Fatalf("faux in catalog: %s", m.ID)
+		}
+	}
+	rows[0].ID = "changed"
+	if AvailableModels()[0].ID == "changed" {
+		t.Fatal("rows share storage")
+	}
+}

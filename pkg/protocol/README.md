@@ -9,11 +9,18 @@ JSON compatibility is deliberate: the public headless event projection remains P
 | Contract | Owner |
 |---|---|
 | Planned UI extension wire contracts | [TUI architecture](../../docs/tui-architecture.md); public author API belongs in [askui](../askui/README.md) |
-| Planned ACP frames and methods | [H13 roadmap](../../plans/260930-2254-pi-feature-inventory-go-roadmap/roadmap.md) |
+| ACP method names, `_ask/*` DTOs, error kinds and codes, event identity | [acp.go](acp.go), tests in [acp_test.go](acp_test.go); SDK and schema pins in [conformance report](../../plans/reports/conformance-261007-h13a-sdk.md); roadmap: [H13](../../plans/260930-2254-pi-feature-inventory-go-roadmap/roadmap.md) |
 | Messages, content, usage, and tool declarations | [message.go](message.go), [content.go](content.go), [usage.go](usage.go), [tool.go](tool.go) |
 | Agent event types and sequencing envelope | [events.go](events.go) |
 | Provider stream events and message reconstruction | [stream_events.go](stream_events.go), [builder.go](builder.go) |
 | Exact JSON and JSONL projection | [codec.go](codec.go) |
+
+## ACP wire rules
+
+The package holds no SDK type. Sequence counters are decimal strings. A turn has no ID of its own: name it with `cycleId` and the sequence.
+Errors carry one `ACPErrorKind` and no provider text. `ACPErrorMessage` returns the one fixed text of a kind, and `ACPErrorCode` its JSON-RPC code.
+The kinds are `unknown_session`, `not_initialized`, `busy`, `disposed`, `no_api_key`, `queue_full`, `invalid_model`, `invalid_content`, `invalid_params`, `invalid_state`, `cancelled`, `unsupported`, `output_failure` and `internal`.
+`invalid_params` means a request that cannot be decoded or whose value is out of range. `invalid_state` means a well-formed call that the current log does not allow, such as continuing an empty log or one that ends with an assistant message.
 
 ## Lifecycle terminology
 

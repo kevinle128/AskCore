@@ -181,5 +181,6 @@ AskCore/
 - `go vet ./...`: Run static analysis
 - `go run ./cmd/tui`: Run the TUI application
 - `go run ./cmd/tui -p "hello"`: Run one prompt headless and print the reply (`--mode json` streams every event as JSONL)
+- `go run ./cmd/tui acp`: Serve ACP v1 over stdin and stdout for an editor. Each session has its own agent. The command opens no listener and no database, and it never reads credentials from the protocol connection: sign in first with `ask auth login`. See [the ACP owner](internal/acp/README.md#stdio-server).
 - `protoc --go_out=. --go-grpc_out=. proto/*.proto`: Regenerate protobuf code
 - `go run github.com/bufbuild/buf/cmd/buf generate`: Generate protobuf code

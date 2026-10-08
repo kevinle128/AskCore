@@ -100,15 +100,20 @@ type oauthProcess struct {
 
 func startOAuthCommand(t *testing.T, home, server, capture string, args ...string) *oauthProcess {
 	t.Helper()
-	p := &oauthProcess{readDone: make(chan struct{})}
-	p.cmd = exec.Command(os.Args[0], append([]string{"-test.run=^TestAuthCommandSubprocessHelper$", "--"}, args...)...)
+	cmd := exec.Command(os.Args[0], append([]string{"-test.run=^TestAuthCommandSubprocessHelper$", "--"}, args...)...)
 	for _, v := range os.Environ() {
 		k := strings.SplitN(v, "=", 2)[0]
 		if k != "ASK_HOME" && k != "ASK_AUTH_COMMAND_HELPER" && k != "ASK_AUTH_EXTERNAL_SERVER" && k != "ASK_CAPTURE" && !strings.HasSuffix(k, "_API_KEY") {
-			p.cmd.Env = append(p.cmd.Env, v)
+			cmd.Env = append(cmd.Env, v)
 		}
 	}
-	p.cmd.Env = append(p.cmd.Env, "ASK_AUTH_COMMAND_HELPER=1", "ASK_HOME="+home, "ASK_AUTH_EXTERNAL_SERVER="+server, "ASK_CAPTURE="+capture)
+	cmd.Env = append(cmd.Env, "ASK_AUTH_COMMAND_HELPER=1", "ASK_HOME="+home, "ASK_AUTH_EXTERNAL_SERVER="+server, "ASK_CAPTURE="+capture)
+	return startOAuthProcess(t, cmd)
+}
+
+func startOAuthProcess(t *testing.T, cmd *exec.Cmd) *oauthProcess {
+	t.Helper()
+	p := &oauthProcess{cmd: cmd, readDone: make(chan struct{})}
 	var err error
 	p.input, err = p.cmd.StdinPipe()
 	if err != nil {

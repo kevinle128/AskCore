@@ -14,6 +14,13 @@ Composition root. fx modules that build every package, bind implementations to i
 Keep this composition reusable by later fx runtimes instead of adding command-specific auth services.
 Auth and inference use separate HTTP clients so capture cannot record token exchange, identity keys, or account discovery.
 
+## Editor connection composition
+
+[ACPModule](module_acp.go) provides `ACPRuntime` for `ask acp` from `ACPParams`: the native auth service (`NewNativeAuth`), the adapter callbacks and `Cleanup`, which stops the credential refresh and waits for `AuthWait`.
+The module reads no configuration, opens no database and starts no listener. `fx.ValidateApp` in [module_acp_test.go](module_acp_test.go) proves that the graph stands alone.
+The command supplies `NewAgent`, which must call `NewNativeAgent` with the given service, so all sessions share one credential resolver and direct headless runs keep their behavior.
+`Authenticate` and `ModelAuth` only check readiness through `NativeAuthReady`; they never start a sign-in. The adapter gets function fields, never the service.
+
 ## What does not belong here
 
 | Code | Put it in |
