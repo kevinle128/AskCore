@@ -1,0 +1,285 @@
+{
+  "skill_name": "dsh-subagent-plan",
+  "evals": [
+    {
+      "id": "vi-explicit-ak-plan-adapter",
+      "split": "train",
+      "prompt": "Chạy ak-plan bằng Claude Code sub-agent để viết plan, Codex sub-agent để review, còn agent chính chỉ orchestration.",
+      "expected_output": "Loads ak-plan as the workflow authority, assigns plan writes to Claude and read-only gates to Codex, and keeps the controller coordination-only.",
+      "files": [],
+      "assertions": [
+        {
+          "id": "preserves-authority-and-roles",
+          "text": "The response preserves ak-plan semantics, maps Claude and Codex to their defined roles, and does not let the controller author or review the plan.",
+          "kind": "rubric"
+        }
+      ]
+    },
+    {
+      "id": "en-hard-plan-delegation",
+      "split": "train",
+      "prompt": "Run ak-plan --hard through the native DSH Claude and Codex sub-agent tools; keep the parent coordination-only.",
+      "expected_output": "Preserves hard mode, delegates research and drafting to Claude, delegates red-team and validation to Codex, and performs no product implementation.",
+      "files": [],
+      "assertions": [
+        {
+          "id": "hard-mode-mapping",
+          "text": "The run uses the loaded ak-plan hard route without changing its gates and keeps every product source file read-only.",
+          "kind": "rubric"
+        }
+      ]
+    },
+    {
+      "id": "validate-existing-plan",
+      "split": "train",
+      "prompt": "Use the Claude/Codex DSH planning adapter to run ak-plan validate on plans/feature/plan.md.",
+      "expected_output": "Codex verifies and drafts questions, the controller presents them, Claude propagates confirmed answers, and fresh Codex re-review checks consistency.",
+      "files": [],
+      "assertions": [
+        {
+          "id": "validate-role-separation",
+          "text": "The validate workflow preserves the user interview and whole-plan consistency gate while keeping Codex read-only and Claude as the writer.",
+          "kind": "rubric"
+        }
+      ]
+    },
+    {
+      "id": "debate-provider-mapping",
+      "split": "train",
+      "prompt": "Run ak-plan --debate with Claude planner sub-agents and Codex review while the parent only coordinates.",
+      "expected_output": "Uses independent Claude candidates, delegates synthesis to a fresh Claude writer, then runs the Codex gates required by ak-plan.",
+      "files": [],
+      "assertions": [
+        {
+          "id": "debate-controller-boundary",
+          "text": "The controller does not synthesize candidate plans and the loaded ak-plan debate contract remains authoritative.",
+          "kind": "rubric"
+        }
+      ]
+    },
+    {
+      "id": "ultra-preserves-kongming",
+      "split": "holdout",
+      "prompt": "Run ak-plan --ultra through the DSH sub-agent planning adapter.",
+      "expected_output": "Uses Claude candidates, retains Kongming as verifier, delegates unchanged winner materialization to Claude, and keeps the controller from writing.",
+      "files": [],
+      "assertions": [
+        {
+          "id": "ultra-special-role-preserved",
+          "text": "The response does not replace Kongming with Codex or weaken the ak-plan ultra usable-candidate and reject-all gates.",
+          "kind": "rubric"
+        }
+      ]
+    },
+    {
+      "id": "fast-does-not-add-gate",
+      "split": "holdout",
+      "prompt": "Use the DSH Claude/Codex adapter for ak-plan --fast and preserve fast semantics exactly.",
+      "expected_output": "Uses Claude for the fast plan and does not invent a Codex review gate omitted by the loaded ak-plan route.",
+      "files": [],
+      "assertions": [
+        {
+          "id": "fast-semantics-preserved",
+          "text": "Provider adaptation does not change fast-mode workflow depth merely to force both provider tools into one run.",
+          "kind": "rubric"
+        }
+      ]
+    },
+    {
+      "id": "missing-provider-tool",
+      "split": "holdout",
+      "prompt": "Run the DSH ak-plan adapter, but the Codex provider tool is missing.",
+      "expected_output": "Stops before writes, names the missing tool, and does not substitute a generic subagent, direct CLI, or another runtime.",
+      "files": [],
+      "assertions": [
+        {
+          "id": "fail-closed-provider-contract",
+          "text": "The response preserves the requested provider-specific contract and reports the concrete recovery boundary.",
+          "kind": "rubric"
+        }
+      ]
+    },
+    {
+      "id": "ordinary-ak-plan-negative",
+      "split": "train",
+      "prompt": "Create an implementation plan with ak-plan.",
+      "expected_output": "Routes to ordinary ak-plan rather than activating the provider-specific adapter without an explicit Claude/Codex orchestration request.",
+      "files": [],
+      "assertions": [
+        {
+          "id": "does-not-hijack-ak-plan",
+          "text": "The provider-specific adapter remains inactive for a normal ak-plan request.",
+          "kind": "rubric"
+        }
+      ]
+    },
+    {
+      "id": "implementation-cycle-negative",
+      "split": "train",
+      "prompt": "Implement this accepted plan with Claude and have Codex review every phase.",
+      "expected_output": "Routes to dsh-subagent-cook because the request is implementation rather than planning.",
+      "files": [],
+      "assertions": [
+        {
+          "id": "implementation-boundary",
+          "text": "The planning adapter does not activate or permit product implementation.",
+          "kind": "rubric"
+        }
+      ]
+    },
+    {
+      "id": "provider-setup-negative",
+      "split": "holdout",
+      "prompt": "Install and configure the DSH Codex sub-agent provider.",
+      "expected_output": "Routes to provider setup guidance rather than changing provider configuration from the planning adapter.",
+      "files": [],
+      "assertions": [
+        {
+          "id": "setup-boundary",
+          "text": "The planning adapter does not install providers, alter authentication, or guess model configuration.",
+          "kind": "rubric"
+        }
+      ]
+    },
+    {
+      "id": "generic-research-negative",
+      "split": "holdout",
+      "prompt": "Ask Claude and Codex to research database options in parallel.",
+      "expected_output": "Routes to generic orchestration or research because no ak-plan workflow was requested.",
+      "files": [],
+      "assertions": [
+        {
+          "id": "generic-orchestration-boundary",
+          "text": "The skill remains scoped to provider-specific ak-plan orchestration.",
+          "kind": "rubric"
+        }
+      ]
+    },
+    {
+      "id": "advice-preserves-kongming",
+      "split": "train",
+      "prompt": "Run ak-plan --hard --advice with the DSH Claude/Codex planning adapter.",
+      "expected_output": "Retains Kongming advisory supervision, delegates plan writing to Claude, and preserves every advice handover field and failure protocol required by ak-plan.",
+      "files": [],
+      "assertions": [
+        {
+          "id": "advice-special-role",
+          "text": "The response resolves the live named Kongming delegation path and stops the advice route if that required role cannot be spawned.",
+          "kind": "rubric"
+        }
+      ]
+    },
+    {
+      "id": "red-team-adjudication",
+      "split": "train",
+      "prompt": "Use the DSH adapter to run ak-plan red-team on plans/feature/plan.md while the parent remains orchestration-only.",
+      "expected_output": "Codex reviewers produce findings, a fresh Codex adjudicator performs consolidation and proposed dispositions, the controller asks the user, and Claude applies accepted findings.",
+      "files": [],
+      "assertions": [
+        {
+          "id": "adjudication-owner",
+          "text": "The controller does not deduplicate, evidence-filter, or adjudicate red-team findings itself.",
+          "kind": "rubric"
+        }
+      ]
+    },
+    {
+      "id": "html-and-private-publishing",
+      "split": "train",
+      "prompt": "Run ak-plan --hard --html --wiki through the Claude/Codex adapter and keep the wiki share private.",
+      "expected_output": "Claude generates the reviewed HTML artifact and performs only the authorized private publication after the required gates; the controller reports paths and URLs.",
+      "files": [],
+      "assertions": [
+        {
+          "id": "artifact-publish-order",
+          "text": "The response preserves ak-plan visual-skill activation, post-gate generation, privacy, and publication authorization contracts.",
+          "kind": "rubric"
+        }
+      ]
+    },
+    {
+      "id": "archive-and-journal",
+      "split": "holdout",
+      "prompt": "Use the DSH adapter to run ak-plan archive for the active plan with normal journal behavior.",
+      "expected_output": "Delegates durable archive and journal writes to Claude while the controller coordinates authorization and reports results.",
+      "files": [],
+      "assertions": [
+        {
+          "id": "archive-ownership",
+          "text": "The archive route preserves ak-plan state and journal rules without letting the controller author plan records.",
+          "kind": "rubric"
+        }
+      ]
+    },
+    {
+      "id": "task-hydration",
+      "split": "holdout",
+      "prompt": "After the delegated ak-plan passes all gates, hydrate its phases into the live task surface.",
+      "expected_output": "The controller mechanically projects only accepted durable plan items and dependencies; it does not create new technical tasks or override plan state.",
+      "files": [],
+      "assertions": [
+        {
+          "id": "mechanical-hydration",
+          "text": "Runtime tasks remain a projection of the accepted plan, and --no-tasks still suppresses hydration.",
+          "kind": "rubric"
+        }
+      ]
+    },
+    {
+      "id": "codex-mutates-dirty-file",
+      "split": "holdout",
+      "prompt": "During read-only review Codex changed content in a file that was already dirty, so the changed-file name set is unchanged.",
+      "expected_output": "Detects the mutation through a content fingerprint, invalidates the verdict, and stops if the mutation is outside Claude's authorized plan paths.",
+      "files": [],
+      "assertions": [
+        {
+          "id": "content-mutation-detection",
+          "text": "The response does not rely only on changed-file names and does not authorize Claude to repair product source.",
+          "kind": "rubric"
+        }
+      ]
+    },
+    {
+      "id": "mode-conflict-hard-stop",
+      "split": "holdout",
+      "prompt": "Run the DSH planning adapter with ak-plan --fast --hard.",
+      "expected_output": "Mechanically rejects the mutually exclusive flags before child planning work and names the conflict.",
+      "files": [],
+      "assertions": [
+        {
+          "id": "mode-exclusivity",
+          "text": "The adapter preserves ak-plan mode exclusivity instead of silently selecting or merging modes.",
+          "kind": "rubric"
+        }
+      ]
+    },
+    {
+      "id": "partial-plan-write-recovery",
+      "split": "holdout",
+      "prompt": "Claude failed after partially writing the plan directory during an ak-plan adapter run.",
+      "expected_output": "Preserves the partial artifacts, dispatches a fresh Claude writer to inspect and continue within the same route, and keeps Codex review gated until a complete handoff exists.",
+      "files": [],
+      "assertions": [
+        {
+          "id": "partial-write-preservation",
+          "text": "The response neither resets the workspace nor lets the controller repair the plan.",
+          "kind": "rubric"
+        }
+      ]
+    },
+    {
+      "id": "ordinary-ak-plan-html-negative",
+      "split": "holdout",
+      "prompt": "Create an ak-plan --html roadmap for this feature.",
+      "expected_output": "Routes to ordinary ak-plan because the user did not request native Claude/Codex provider orchestration.",
+      "files": [],
+      "assertions": [
+        {
+          "id": "html-does-not-force-adapter",
+          "text": "The adapter does not hijack an ordinary ak-plan visual-output request.",
+          "kind": "rubric"
+        }
+      ]
+    }
+  ]
+}

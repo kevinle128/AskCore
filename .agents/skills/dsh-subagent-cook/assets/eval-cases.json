@@ -1,0 +1,48 @@
+{
+  "skill": "dsh-subagent-cook",
+  "version": "1.0.0",
+  "cases": [
+    {
+      "id": "vi-explicit-cycle",
+      "should_activate": true,
+      "prompt": "Implement kế hoạch này bằng Claude Code, Codex review xen kẽ, còn bạn chỉ điều phối qua DSH sub-agent plugin.",
+      "expected": ["preflight provider-specific tools", "Claude implementation", "Codex review", "controller does not edit or review"]
+    },
+    {
+      "id": "en-explicit-cycle",
+      "should_activate": true,
+      "prompt": "Coordinate this phased implementation: native DSH Claude sub-agent writes, native Codex sub-agent reviews each phase, and you must not touch product code.",
+      "expected": ["serial phase gates", "independent re-review after repair", "no runtime fallback"]
+    },
+    {
+      "id": "missing-tool-recovery",
+      "should_activate": true,
+      "prompt": "Use the Claude/Codex DSH sub-agent cycle, but one provider tool is missing.",
+      "expected": ["stop before edits", "name missing tool", "no generic subagent, workflow, Paseo, or direct CLI fallback"]
+    },
+    {
+      "id": "review-finds-bug",
+      "should_activate": true,
+      "prompt": "Claude finished the phase and Codex found a high-severity issue; continue the delegated implementation loop.",
+      "expected": ["send exact finding to Claude", "rerun affected checks", "fresh Codex re-review"]
+    },
+    {
+      "id": "generic-parallel-research",
+      "should_activate": false,
+      "prompt": "Ask three agents to research database options in parallel.",
+      "expected": ["route to generic orchestration or research"]
+    },
+    {
+      "id": "provider-installation",
+      "should_activate": false,
+      "prompt": "Install and configure the DSH Claude sub-agent provider.",
+      "expected": ["route to DSH configuration guidance"]
+    },
+    {
+      "id": "single-agent-code-review",
+      "should_activate": false,
+      "prompt": "Review my current diff with Codex only.",
+      "expected": ["route to model-specific code review"]
+    }
+  ]
+}
