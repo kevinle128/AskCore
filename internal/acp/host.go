@@ -4,9 +4,11 @@ import (
 	"context"
 	"crypto/rand"
 	"encoding/hex"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	"AskCore/internal/agent"
@@ -32,6 +34,9 @@ var ErrQueueOverflow = errors.New("acp: outbound queue overflow")
 
 // ErrHostClosed is returned when a host or session no longer takes work.
 var ErrHostClosed = errors.New("acp: host closed")
+
+// errStaleDriver is returned for a call that names an old driver generation.
+var errStaleDriver = newKindError(protocol.ACPErrNotDriver, "the driver generation is not current")
 
 // Factory builds one independent Agent for a new session.
 type Factory func(ctx context.Context, sessionID, cwd string) (*agent.Agent, error)
@@ -76,6 +81,18 @@ type Host struct {
 	mu       sync.Mutex
 	sessions map[string]*Session
 	closed   bool
+	// operations counts authentication checks and sessions being built.
+	// They remain work until the callback or session publication ends.
+	operations int
+	// admit orders the admission of work against the idle check. A new session
+	// or a new change holds the read side for the moment of its admission.
+	// QuiesceIfIdle holds the write side while it looks for work, so no work
+	// is admitted during the check and a failed check changes nothing.
+	// Lock order: admit, then mu, then a session's mu.
+	admit sync.RWMutex
+	// quiesced closes admission of new sessions and new changes. It is atomic
+	// because a session reads it while it holds its own lock.
+	quiesced atomic.Bool
 	failure  error
 	// failed closes when the host latches its first output failure.
 	failed   chan struct{}
@@ -148,10 +165,75 @@ func (h *Host) usable() error {
 	if h.failure != nil {
 		return h.failure
 	}
-	if h.closed {
+	if h.closed || h.quiesced.Load() {
 		return ErrHostClosed
 	}
 	return nil
+}
+
+// beginOperation counts host work unless admission is closed.
+func (h *Host) beginOperation() error {
+	h.admit.RLock()
+	defer h.admit.RUnlock()
+	h.mu.Lock()
+	defer h.mu.Unlock()
+	if h.failure != nil {
+		return h.failure
+	}
+	if h.closed || h.quiesced.Load() {
+		return ErrHostClosed
+	}
+	h.operations++
+	return nil
+}
+
+func (h *Host) endOperation() {
+	h.mu.Lock()
+	h.operations--
+	h.mu.Unlock()
+}
+
+// QuiesceIfIdle closes admission of new sessions and new changes, but only when
+// nothing is active: no session in the making, no run, no queued input and no
+// change in flight. It answers true once admission is closed. Reads still work.
+// A false answer leaves the host exactly as it was.
+func (h *Host) QuiesceIfIdle() bool {
+	h.admit.Lock()
+	defer h.admit.Unlock()
+	h.mu.Lock()
+	idle := !h.closed && h.failure == nil && h.operations == 0
+	list := make([]*Session, 0, len(h.sessions))
+	for _, s := range h.sessions {
+		list = append(list, s)
+	}
+	h.mu.Unlock()
+	for _, s := range list {
+		if !idle {
+			break
+		}
+		idle = s.idle()
+	}
+	if idle {
+		h.quiesced.Store(true)
+	}
+	return idle
+}
+
+// ActiveRuns counts the sessions that are not idle.
+func (h *Host) ActiveRuns() int {
+	h.mu.Lock()
+	list := make([]*Session, 0, len(h.sessions))
+	for _, s := range h.sessions {
+		list = append(list, s)
+	}
+	h.mu.Unlock()
+	n := 0
+	for _, s := range list {
+		if !s.idle() {
+			n++
+		}
+	}
+	return n
 }
 
 // Session returns the session with id.
@@ -164,9 +246,10 @@ func (h *Host) Session(id string) (*Session, bool) {
 
 // NewSession builds an Agent and publishes the session only when it is whole.
 func (h *Host) NewSession(ctx context.Context, cwd string) (*Session, error) {
-	if err := h.usable(); err != nil {
+	if err := h.beginOperation(); err != nil {
 		return nil, err
 	}
+	defer h.endOperation()
 	id, err := newSessionID()
 	if err != nil {
 		return nil, err
@@ -175,7 +258,7 @@ func (h *Host) NewSession(ctx context.Context, cwd string) (*Session, error) {
 	if err != nil {
 		return nil, err
 	}
-	s := &Session{ID: id, CWD: cwd, host: h, agent: a}
+	s := &Session{ID: id, CWD: cwd, host: h, agent: a, gen: 1}
 	s.cond = sync.NewCond(&s.qmu)
 	// The first Follow starts the replay ring and gives the first epoch. The
 	// follower is not needed: events reach the writer through the listener.
@@ -261,12 +344,23 @@ type Session struct {
 	agent       *agent.Agent
 	unsubscribe func()
 
+	// commit orders driver changes against Agent mutation commits. Listeners
+	// never acquire it. Lock order: commit, then mu; no Agent lock is held
+	// when acquiring commit.
+	commit sync.Mutex
 	// mu guards the admission state. It is never held over an Agent call.
 	mu        sync.Mutex
 	epoch     string
 	binding   *binding
 	resetting bool
 	closed    bool
+	// gen is the driver generation. The host is the only place that changes it,
+	// and a take is the only change. driverCaps are the capabilities of the
+	// client that drives the session now.
+	gen        uint64
+	driverCaps json.RawMessage
+	// muts counts the changes that passed admission and are not done.
+	muts int
 	// held keeps the events that arrive while Reset runs. Their epoch is known
 	// when the new cut is known.
 	held []protocol.Event
@@ -289,6 +383,129 @@ type Session struct {
 
 // Agent returns the Agent of the session.
 func (s *Session) Agent() *agent.Agent { return s.agent }
+
+// Gen returns the current driver generation.
+func (s *Session) Gen() uint64 {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	return s.gen
+}
+
+// DriverCaps returns the capabilities of the client that drives the session.
+func (s *Session) DriverCaps() json.RawMessage {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	return append(json.RawMessage(nil), s.driverCaps...)
+}
+
+// setDriver records the capabilities of the creating client.
+func (s *Session) setDriver(route *protocol.ACPRouteMeta) {
+	if route == nil {
+		return
+	}
+	s.mu.Lock()
+	s.driverCaps = append(json.RawMessage(nil), route.Capabilities...)
+	s.mu.Unlock()
+}
+
+// guard admits one change. Under the admission lock it checks that the caller
+// names the current driver generation, and it counts the change as in flight
+// until release runs. A take cannot commit between the check and the end of
+// the change when it has a live driver to protect. A call without a route is the
+// editor link and has no generation.
+func (s *Session) guard(route *protocol.ACPRouteMeta) (release func(), err error) {
+	if route != nil && route.DriverGen == 0 {
+		return nil, errBadRoute
+	}
+	s.host.admit.RLock()
+	defer s.host.admit.RUnlock()
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	switch {
+	case s.closed:
+		return nil, agent.ErrDisposed
+	case s.host.quiesced.Load():
+		return nil, ErrHostClosed
+	case route != nil && route.DriverGen != s.gen:
+		return nil, errStaleDriver
+	}
+	s.muts++
+	var once sync.Once
+	return func() {
+		once.Do(func() {
+			s.mu.Lock()
+			s.muts--
+			s.mu.Unlock()
+		})
+	}, nil
+}
+
+// mutationCommit checks ownership and holds it until the Agent mutation commits.
+// Agent calls may publish events, so mu is released before the call.
+func (s *Session) mutationCommit(route *protocol.ACPRouteMeta) (func(), error) {
+	s.commit.Lock()
+	s.mu.Lock()
+	var err error
+	switch {
+	case s.closed:
+		err = agent.ErrDisposed
+	case s.host.quiesced.Load():
+		err = ErrHostClosed
+	case route != nil && route.DriverGen != s.gen:
+		err = errStaleDriver
+	}
+	s.mu.Unlock()
+	if err != nil {
+		s.commit.Unlock()
+		return nil, err
+	}
+	return s.commit.Unlock, nil
+}
+
+// mutationContext delays the ownership check until Agent admission or commit,
+// after any idle wait or model readiness callback.
+func (s *Session) mutationContext(ctx context.Context, route *protocol.ACPRouteMeta) context.Context {
+	return agent.WithMutationGuard(ctx, func() (func(), error) { return s.mutationCommit(route) })
+}
+
+// Take makes the caller the driver. With a live driver it refuses while the
+// session is busy. Without one it works at any time, and the run goes on. The
+// commit runs under the admission lock, so no change with the old generation
+// passes after it.
+func (s *Session) Take(route protocol.ACPRouteMeta) (uint64, error) {
+	s.host.admit.RLock()
+	defer s.host.admit.RUnlock()
+	s.commit.Lock()
+	defer s.commit.Unlock()
+	// Read under commit so an admitted input cannot start a run after an idle
+	// snapshot but before take. State must stay outside mu for listeners.
+	status := s.agent.State().Status
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if s.closed {
+		return 0, agent.ErrDisposed
+	}
+	if s.host.quiesced.Load() {
+		return 0, ErrHostClosed
+	}
+	if route.LiveDriver && (status != agent.Idle || s.binding != nil || s.resetting || s.muts > 0 ||
+		len(s.steering) > 0 || len(s.followUp) > 0) {
+		return 0, agent.ErrBusy
+	}
+	s.gen++
+	s.driverCaps = append(json.RawMessage(nil), route.Capabilities...)
+	return s.gen, nil
+}
+
+// idle tells whether the session has no work: no run, no input in the queue,
+// no change in flight.
+func (s *Session) idle() bool {
+	status := s.agent.State().Status
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	return status == agent.Idle && s.binding == nil && !s.resetting && s.muts == 0 &&
+		len(s.steering) == 0 && len(s.followUp) == 0
+}
 
 // observe is the synchronous Agent listener. It never blocks on output and
 // never drops an event: when the queue is over its bound it fails the host.
@@ -491,7 +708,8 @@ func (s *Session) admit() (*binding, error) {
 // refused reports an error that the Agent returns before it runs anything, so
 // no event of the call can follow it.
 func refused(err error) bool {
-	return errors.Is(err, agent.ErrBusy) || errors.Is(err, agent.ErrDisposed) ||
+	return errors.Is(err, errStaleDriver) || errors.Is(err, ErrHostClosed) ||
+		errors.Is(err, agent.ErrBusy) || errors.Is(err, agent.ErrDisposed) ||
 		errors.Is(err, agent.ErrContinueEmpty) || errors.Is(err, agent.ErrContinueFromAssistant)
 }
 

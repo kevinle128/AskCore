@@ -107,6 +107,16 @@ func runWithDependencies(argv []string, stdin io.Reader, stdout, stderr io.Write
 	if len(argv) > 0 && argv[0] == "acp" {
 		return runACP(argv[1:], stdin, stdout, stderr, deps, sigs)
 	}
+	if len(argv) > 0 && argv[0] == "connect" {
+		exe, _ := os.Executable()
+		return runConnect(argv[1:], stdin, stdout, stderr, deps, sigs, exe)
+	}
+	if len(argv) > 0 && argv[0] == "leader" {
+		return runLeader(argv[1:], stdout, stderr, deps, sigs)
+	}
+	if len(argv) > 0 && argv[0] == "version" {
+		return runVersion(argv[1:], stdout, stderr)
+	}
 	o, diags := parseArgs(argv)
 	failed := false
 	for _, d := range diags {

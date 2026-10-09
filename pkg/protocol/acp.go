@@ -22,6 +22,12 @@ const (
 	ACPEvent       = "_ask/session/event"
 	ACPResync      = "_ask/session/resync"
 
+	// Live session membership on a shared leader. They never read durable storage.
+	ACPListLive = "_ask/session/list_live"
+	ACPAttach   = "_ask/session/attach"
+	ACPDetach   = "_ask/session/detach"
+	ACPTake     = "_ask/session/take"
+
 	// Owners of these three are not available yet. The host answers them with
 	// the unsupported error and never lists them as a capability.
 	ACPCompact = "_ask/session/compact"
@@ -244,6 +250,11 @@ const (
 	ACPErrUnsupported         ACPErrorKind = "unsupported"
 	ACPErrOutputFailure       ACPErrorKind = "output_failure"
 	ACPErrInternal            ACPErrorKind = "internal"
+
+	// ACPErrNotDriver means the caller is not the driver of the session.
+	ACPErrNotDriver ACPErrorKind = "not_driver"
+	// ACPErrClientNotInitialized means this client has not run initialize on the leader.
+	ACPErrClientNotInitialized ACPErrorKind = "client_not_initialized"
 )
 
 // Ask-only codes use the reserved implementation range and avoid the codes
@@ -254,7 +265,27 @@ const (
 	ACPCodeQueueFull     = -32012
 	ACPCodeOutputFailure = -32013
 	ACPCodeInvalidState  = -32014
+
+	// Leader codes: the caller is not the driver, or has not initialized on this link.
+	ACPCodeNotDriver            = -32015
+	ACPCodeNotInitializedClient = -32016
 )
+
+// ACPRouteMetaKey is the _meta key of the route context. Only the leader router
+// writes it, and it replaces any value a client sends.
+const ACPRouteMetaKey = "ask.dev/route"
+
+// ACPRouteMeta is the route context the router adds to a forwarded request.
+// DriverGen is decimal text because SDK _meta numbers decode as float64.
+type ACPRouteMeta struct {
+	ClientID string `json:"clientId"`
+	// SessionID is the session that the router checked the caller against. The
+	// host refuses a call whose own session id differs from it.
+	SessionID    string          `json:"sessionId,omitempty"`
+	DriverGen    uint64          `json:"driverGen,string"`
+	LiveDriver   bool            `json:"liveDriver,omitempty"`
+	Capabilities json.RawMessage `json:"capabilities,omitempty"`
+}
 
 // ACPErrorCode returns the JSON-RPC code of a kind. An unknown kind is an internal error.
 func ACPErrorCode(k ACPErrorKind) int {
@@ -281,6 +312,10 @@ func ACPErrorCode(k ACPErrorKind) int {
 		return -32601
 	case ACPErrOutputFailure:
 		return ACPCodeOutputFailure
+	case ACPErrNotDriver:
+		return ACPCodeNotDriver
+	case ACPErrClientNotInitialized:
+		return ACPCodeNotInitializedClient
 	default:
 		return -32603
 	}
@@ -320,6 +355,10 @@ func ACPErrorMessage(k ACPErrorKind) string {
 		return "not supported"
 	case ACPErrOutputFailure:
 		return "the output of the connection failed"
+	case ACPErrNotDriver:
+		return "only the driver of the session can do this; take the session first"
+	case ACPErrClientNotInitialized:
+		return "initialize this connection first"
 	default:
 		return "internal error"
 	}
@@ -328,4 +367,37 @@ func ACPErrorMessage(k ACPErrorKind) string {
 // ACPErrorData is the only error data Ask sends. It holds no provider text and no credential facts.
 type ACPErrorData struct {
 	Kind ACPErrorKind `json:"kind"`
+}
+
+// Roles of a client in a live session.
+const (
+	ACPRoleDriver   = "driver"
+	ACPRoleObserver = "observer"
+)
+
+// ACPTakeResult names the driver generation that the host committed.
+// DriverGen is decimal text, like the other Ask counters.
+type ACPTakeResult struct {
+	SessionID string `json:"sessionId"`
+	DriverGen uint64 `json:"driverGen,string"`
+}
+
+// ACPAttachResult is the answer to a live attach.
+type ACPAttachResult struct {
+	SessionID string `json:"sessionId"`
+	Role      string `json:"role"`
+}
+
+// ACPLiveSession is one row of the live session list. Role is the role of the caller.
+type ACPLiveSession struct {
+	SessionID   string `json:"sessionId"`
+	Cwd         string `json:"cwd"`
+	Role        string `json:"role,omitempty"`
+	HasDriver   bool   `json:"hasDriver"`
+	Subscribers int    `json:"subscribers"`
+}
+
+// ACPListLiveResult lists the sessions that live in the running leader.
+type ACPListLiveResult struct {
+	Sessions []ACPLiveSession `json:"sessions"`
 }

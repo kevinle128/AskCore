@@ -177,6 +177,9 @@ Usage:
   ask [options] [--] [@files...] [messages...]
   ask auth --help
   ask acp --help
+  ask connect --help
+  ask leader --help
+  ask version [--json]
 
 Options:
   --print, -p           Non-interactive mode: run the prompt, print the reply and exit

@@ -125,6 +125,19 @@ linters:
               desc: the ACP adapter wraps the agent; core packages must not import it
             - pkg: AskCore/internal/leader
               desc: the leader routes bytes to the agent; core packages must not import it
+        leader-router-boundary:
+          list-mode: strict
+          files:
+            - "**/internal/leader/**"
+          allow:
+            - $gostd
+            - AskCore/pkg/protocol
+            - AskCore/internal/logs
+            - golang.org/x/sys/unix
+            - go.uber.org/zap
+            # Test helpers only. Production code has no use for them.
+            - github.com/stretchr/testify
+            - go.uber.org/goleak
         providers-no-tools:
           list-mode: lax
           files:

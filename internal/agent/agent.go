@@ -16,6 +16,23 @@ import (
 	"AskCore/pkg/protocol"
 )
 
+type mutationGuardKey struct{}
+
+// WithMutationGuard checks external ownership at the commit of Prompt,
+// Continue or SetModel. The guard returns a release function that keeps ownership
+// stable until the Agent state is changed. It runs without Agent locks and must
+// not wait for a run or call Agent methods. Other callers need no guard.
+func WithMutationGuard(ctx context.Context, guard func() (func(), error)) context.Context {
+	return context.WithValue(ctx, mutationGuardKey{}, guard)
+}
+
+func mutationGuard(ctx context.Context) (func(), error) {
+	if guard, ok := ctx.Value(mutationGuardKey{}).(func() (func(), error)); ok {
+		return guard()
+	}
+	return func() {}, nil
+}
+
 // Agent runs the loop on one conversation, one run at a time. It numbers
 // the events of all its runs in one sequence, keeps the finished messages in
 // its session log and tells its listeners every event. The Agent driver is
@@ -293,6 +310,11 @@ func (a *Agent) SetModel(ctx context.Context, model providers.Model) error {
 		return ErrNoAPIKey
 	}
 
+	release, err := mutationGuard(ctx)
+	if err != nil {
+		return err
+	}
+	defer release()
 	a.mu.Lock()
 	defer a.mu.Unlock()
 	if a.disposed {
@@ -393,6 +415,11 @@ func thinkingLevel(level protocol.ThinkingLevel) protocol.ThinkingLevel {
 }
 
 func (a *Agent) begin(ctx context.Context) (*run, error) {
+	release, err := mutationGuard(ctx)
+	if err != nil {
+		return nil, err
+	}
+	defer release()
 	a.mu.Lock()
 	defer a.mu.Unlock()
 	if err := a.idleLocked(); err != nil {

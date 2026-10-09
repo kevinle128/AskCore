@@ -50,6 +50,10 @@ type Config struct {
 	Log io.Writer
 	// HostOptions change the session host.
 	HostOptions []HostOption
+	// RequireRoute makes the adapter refuse a call that has no route context.
+	// The leader link sets it. The editor link leaves it off and has no
+	// driver generation to check.
+	RequireRoute bool
 }
 
 // Adapter implements the ACP Agent interface over a Host. Each session has its
@@ -236,6 +240,10 @@ func (a *Adapter) Authenticate(ctx context.Context, req sdk.AuthenticateRequest)
 	if !listed || a.cfg.Authenticate == nil {
 		return sdk.AuthenticateResponse{}, requestError(newKindError(protocol.ACPErrInvalidParams, "unknown authentication method"))
 	}
+	if err := a.host.beginOperation(); err != nil {
+		return sdk.AuthenticateResponse{}, requestError(err)
+	}
+	defer a.host.endOperation()
 	if err := a.cfg.Authenticate(ctx, req.MethodId); err != nil {
 		return sdk.AuthenticateResponse{}, requestError(fmt.Errorf("%w: %w", ErrAuth, err))
 	}
@@ -255,11 +263,24 @@ func (a *Adapter) NewSession(ctx context.Context, req sdk.NewSessionRequest) (sd
 	case !filepath.IsAbs(req.Cwd):
 		return sdk.NewSessionResponse{}, requestError(newKindError(protocol.ACPErrInvalidParams, "cwd must be an absolute path"))
 	}
+	route, err := routeFromMeta(req.Meta)
+	if err == nil {
+		err = a.needRoute(route)
+	}
+	if err != nil {
+		return sdk.NewSessionResponse{}, requestError(err)
+	}
 	s, err := a.host.NewSession(ctx, req.Cwd)
 	if err != nil {
 		return sdk.NewSessionResponse{}, requestError(err)
 	}
-	return sdk.NewSessionResponse{SessionId: sdk.SessionId(s.ID)}, nil
+	res := sdk.NewSessionResponse{SessionId: sdk.SessionId(s.ID)}
+	if route != nil {
+		// The router needs the generation that the host committed. The editor link has no router.
+		s.setDriver(route)
+		res.Meta = map[string]any{protocol.ACPRouteMetaKey: protocol.ACPRouteMeta{DriverGen: s.Gen()}}
+	}
+	return res, nil
 }
 
 // userMessage converts prompt blocks. It accepts text and image blocks only.
@@ -312,11 +333,24 @@ func (a *Adapter) Prompt(ctx context.Context, req sdk.PromptRequest) (sdk.Prompt
 	if err != nil {
 		return sdk.PromptResponse{}, requestError(err)
 	}
+	// The authority of the call is checked before its content is read.
+	route, err := a.metaRoute(req.Meta)
+	if err == nil {
+		err = a.checkRouteSession(route, string(req.SessionId))
+	}
+	if err != nil {
+		return sdk.PromptResponse{}, requestError(err)
+	}
 	msg, err := userMessage(req.Prompt)
 	if err != nil {
 		return sdk.PromptResponse{}, requestError(err)
 	}
-	res, err := s.Prompt(ctx, msg)
+	release, err := s.guard(route)
+	if err != nil {
+		return sdk.PromptResponse{}, requestError(err)
+	}
+	defer release()
+	res, err := s.Prompt(s.mutationContext(ctx, route), msg)
 	if err != nil {
 		return sdk.PromptResponse{}, requestError(err)
 	}
@@ -333,7 +367,23 @@ func (a *Adapter) Cancel(_ context.Context, req sdk.CancelNotification) error {
 		return nil
 	}
 	if s, ok := a.host.Session(string(req.SessionId)); ok {
+		// A notification has no answer. A cancel without a valid route, or from
+		// an old driver generation, is dropped.
+		route, err := a.metaRoute(req.Meta)
+		if err != nil || (route != nil && route.DriverGen == 0) || a.checkRouteSession(route, string(req.SessionId)) != nil {
+			return nil
+		}
+		done, err := s.guard(route)
+		if err != nil {
+			return nil
+		}
+		defer done()
+		release, err := s.mutationCommit(route)
+		if err != nil {
+			return nil
+		}
 		s.Abort()
+		release()
 	}
 	return nil
 }
@@ -341,6 +391,15 @@ func (a *Adapter) Cancel(_ context.Context, req sdk.CancelNotification) error {
 func unsupported(method string) error {
 	return fmt.Errorf("%w: %s", errUnsupported, method)
 }
+
+// Session returns a live session by ID, for the composition that owns the host.
+func (a *Adapter) Session(id string) (*Session, bool) { return a.host.Session(id) }
+
+// QuiesceIfIdle closes admission when nothing is active. See Host.QuiesceIfIdle.
+func (a *Adapter) QuiesceIfIdle() bool { return a.host.QuiesceIfIdle() }
+
+// ActiveRuns counts the sessions that are not idle.
+func (a *Adapter) ActiveRuns() int { return a.host.ActiveRuns() }
 
 func (a *Adapter) Logout(context.Context, sdk.LogoutRequest) (sdk.LogoutResponse, error) {
 	return sdk.LogoutResponse{}, requestError(unsupported("logout"))
