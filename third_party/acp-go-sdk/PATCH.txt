@@ -1,0 +1,35 @@
+Ask copy of github.com/coder/acp-go-sdk
+
+Upstream:   https://github.com/coder/acp-go-sdk
+Version:    v0.13.5 (file "version")
+Module sum: h1:LI9jq5xon7xslaYlnoktvTVyDlE37yIk2daT7N9ASYk= (go.sum of the Ask module, before this copy)
+License:    Apache-2.0 (file LICENSE, unchanged)
+Used by:    internal/acp, internal/app, cmd/tui, through the replace line in the go.mod of the repository
+
+What is here
+  All non-test Go files of the module, go.mod, LICENSE, version and the schema folder
+  (internal/acp conformance tests read schema/*.json and pin their hashes).
+  Tests, examples and build files of upstream are not copied.
+
+The one change
+  connection.go, function receive: the scanner maximum is (65 << 20) + 1 bytes
+  instead of 10 MiB. The leader carries ACP messages of up to 64 MiB and adds up to
+  1 MiB of route data and one newline. Every other byte is the same as upstream.
+  The change is marked with the comment "Ask patch".
+
+Why
+  The upstream scanner stops at a line of 10 MiB. The common ACP connection of the
+  leader would close on a large prompt that the leader socket accepts.
+  Upstream main has the same limit (checked 2026-10-08).
+
+Guard
+  internal/acp: TestSDKAcceptsLeaderLineLimit sends a line at the new limit and one
+  byte over it through the SDK connection.
+
+How to update
+  1. Copy the non-test Go files, go.mod, LICENSE, version and schema folder of the
+     new upstream tag into this folder.
+  2. Apply the one change above again and keep the "Ask patch" comment.
+  3. Run: go test ./internal/acp/... ./internal/app/... ./cmd/tui/...
+  4. Drop this copy and the replace line when upstream makes the limit configurable
+     or raises it to at least 65 MiB.
