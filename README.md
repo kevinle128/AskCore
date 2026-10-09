@@ -182,5 +182,8 @@ AskCore/
 - `go run ./cmd/tui`: Run the TUI application
 - `go run ./cmd/tui -p "hello"`: Run one prompt headless and print the reply (`--mode json` streams every event as JSONL)
 - `go run ./cmd/tui acp`: Serve ACP v1 over stdin and stdout for an editor. Each session has its own agent. The command opens no listener and no database, and it never reads credentials from the protocol connection: sign in first with `ask auth login`. See [the ACP owner](internal/acp/README.md#stdio-server).
+- `go run ./cmd/tui leader`: Run the local leader in the foreground. It holds one agent for all local clients and listens on `<ASK_HOME>/leader.sock` (default `~/.ask`, mode 0600 in a 0700 directory, owner only). Clients start it on demand. `ask leader status|list|stop` manage it and never start one. See [the leader owner](internal/leader/README.md).
+- `go run ./cmd/tui connect`: A line-oriented client of the leader. It starts the leader when none runs, never falls back to an agent of its own, and reads prompts and `/commands` from stdin. `ask connect --help` lists them.
+- `go run ./cmd/tui version --json`: Print the build and the protocol versions as one JSON line.
 - `protoc --go_out=. --go-grpc_out=. proto/*.proto`: Regenerate protobuf code
 - `go run github.com/bufbuild/buf/cmd/buf generate`: Generate protobuf code

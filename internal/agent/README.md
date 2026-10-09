@@ -65,6 +65,9 @@ Tool implementations belong in tools; wire adapters belong in providers.
 Control contracts belong in pipeline; log types belong in sessions; replay buffering belongs in bus.
 Run lanes remain the planned responsibility of scheduler.
 Transport and ACP adapters wrap this typed API and must not be imported here.
+`WithMutationGuard` lets an owner check and hold authority at Prompt/Continue admission or SetModel commit after readiness.
+The guard runs before Agent locks, and its release runs before events or run execution.
+It must not wait for a run or call Agent methods.
 
 ## File names and imports
 

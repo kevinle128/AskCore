@@ -1,0 +1,39 @@
+package app
+
+import (
+	"AskCore/internal/agent"
+	"AskCore/internal/providers/faux"
+	"AskCore/internal/tools"
+	"context"
+	"github.com/stretchr/testify/require"
+	"testing"
+	"time"
+)
+
+func TestReviewNativeCleanupStartsWhileToolDrains(t *testing.T) {
+	release := make(chan struct{})
+	tool := &holdTool{started: make(chan struct{}), release: release}
+	registry := &tools.Registry{}
+	require.NoError(t, registry.Register(tool, tools.SourceInfo{Kind: "builtin", Name: "hold"}))
+	l := startLeader(t, fauxLeaderParamsWith(t, func() []faux.Step {
+		return []faux.Step{faux.Reply(faux.ToolCall("hold", nil, faux.ID("call-1"))), faux.Say("after")}
+	}, func(c *agent.Config) { c.Tools = registry }))
+	cleaned := make(chan struct{})
+	original := l.rt.cleanup
+	l.rt.cleanup = func(ctx context.Context) error { close(cleaned); return original(ctx) }
+	a := l.client(nil)
+	sid := a.newSession("/w")
+	a.request("session/prompt", promptArgs(sid))
+	<-tool.started
+	l.cancel()
+	<-a.done
+	early := false
+	select {
+	case <-cleaned:
+		early = true
+	case <-time.After(100 * time.Millisecond):
+	}
+	close(release)
+	<-l.done
+	require.True(t, early, "native auth cleanup did not start while the started tool body was draining")
+}

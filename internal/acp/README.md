@@ -11,6 +11,7 @@ The Agent Client Protocol adapter over the agent's Go API. It is the server side
 - The `_ask/*` method handlers: state, models, controls, steer and follow-up, usage; compact, fork and tree answer "unsupported" (`ask_methods.go`)
 - The one error mapper (`errors.go`)
 - The stdio server for `ask acp` (`stdio.go`)
+- The route context of the shared leader link: parsing, the driver generation guard, `take` and the quiesce check (`route.go`, `host.go`)
 - The stdio guards `wire.go`: `CheckedWriter` turns a lost write into a connection failure, and `LineLimitReader` caps one inbound frame before the SDK scanner buffers it
 
 ## What does not belong here
@@ -28,12 +29,16 @@ The Agent Client Protocol adapter over the agent's Go API. It is the server side
 
 ## File names
 
-`agent.go`, `host.go`, `updates.go`, `meta.go`, `ask_methods.go`, `errors.go`, `stdio.go`, `wire.go`
+`agent.go`, `host.go`, `updates.go`, `meta.go`, `ask_methods.go`, `errors.go`, `stdio.go`, `wire.go`, `route.go`
 
 ## Imports
 
-- Allowed: `agent`, `sessions`, `bus`, `providers` (model types and `Ref` only), `tools` (tests only), `pkg/protocol`, the ACP Go SDK (`github.com/coder/acp-go-sdk` v0.13.5, stable schema 0.13.5, ACP wire v1)
+- Allowed: `agent`, `sessions`, `bus`, `providers` (model types and `Ref` only), `tools` (tests only), `pkg/protocol`, the ACP Go SDK (`github.com/coder/acp-go-sdk` v0.13.5, stable schema 0.13.5, ACP wire v1; the repository holds a copy with one patch, see below)
 - Denied: `internal/leader`; `internal/gateway`, `internal/http`, `internal/channels/<vendor>`; `internal/config`
+
+## The SDK copy
+
+`go.mod` replaces `github.com/coder/acp-go-sdk` with `third_party/acp-go-sdk`: upstream v0.13.5 with one change. The scanner of the SDK stops a line at 10 MiB. The leader carries messages of up to 64 MiB, so the copy raises the limit to 65 MiB plus one byte. [PATCH.txt](../../third_party/acp-go-sdk/PATCH.txt) records the source, the licence (Apache-2.0), the change and the steps to update it. `TestSDKAcceptsLeaderLineLimit` fails if the patch is lost. The conformance tests still pin the version and the schema hashes. `ask acp` keeps its own 8 MiB input guard.
 
 ## SDK contract limits
 
@@ -63,6 +68,21 @@ The writer waits for each active subscription to write through the same event se
 - Usage rows come from the committed `AttemptSettled` entries of the session log. A row has the outcome and the usage, never the failure text.
 - Follow entries leave out request deltas and system snapshots.
 - A follower gets Agent events as the Agent publishes them. Those events, and the message entries of a snapshot, hold the cleaned failure text of a model request, as the headless JSON stream does. The adapter does not rewrite them. Any redaction for a wider audience belongs to the stdio and gateway composition.
+
+## Leader link
+
+The shared host behind `ask leader` uses the same `Adapter` with `Config.RequireRoute` set. `internal/app` builds the byte link; `internal/leader` is the router on the other end and never imports this package.
+
+- **Route context.** Every call on the link carries `_meta["ask.dev/route"]` (client, the session that the router checked, driver generation as decimal text, live-driver flag, driver capabilities). The host refuses a call whose own session id differs from the route, and on the leader link a call without the session in the route. `route.go` reads it for standard calls and for `_ask` calls (checked once in `HandleExtensionMethod`). A route that is present but not valid is refused on every link, so it never falls back to the editor path. The editor link has no route and no generation check, and its results carry no `_meta`.
+- **Driver generation.** The host is the only place that changes it. A session starts at generation 1. `Session.guard` checks the generation at admission and counts the change as in flight.
+A separate session commit lock checks it again and orders the actual mutation against `take`, including cancel.
+Prompt and continue check at Agent run admission, and set model checks after model/auth readiness.
+The commit lock is released before the run or tool drain; Agent listeners never acquire it.
+`session/cancel` is dropped when its generation is old.
+`_ask/session/take` commits under the same lock and returns the new generation: with a live driver it needs an idle session (otherwise `busy`), without one it works at any time and the run goes on.
+- **New session.** With a route, `session/new` stores the capabilities of the creator and returns the generation in the result `_meta` for the router.
+- **Idle.** `Adapter.QuiesceIfIdle` closes admission of new sessions and new changes, only when no session is being built, no authentication check is active, no run is active, no input is queued and no change is in flight. It holds the admission lock while it looks for work, so no work is admitted during the check, and a false answer leaves the host exactly as it was. `ActiveRuns` counts the sessions that are not idle. `Adapter.Session` gives the composition a live session.
+- A client leaving the router never reaches `Adapter.Fail`, `Adapter.Close` or the host.
 
 ## Stdio server
 

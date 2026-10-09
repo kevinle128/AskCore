@@ -1,0 +1,25 @@
+package leader
+
+import (
+	"AskCore/pkg/protocol"
+	"github.com/stretchr/testify/require"
+	"testing"
+)
+
+func TestReviewNonMemberDetachFencesPendingTake(t *testing.T) {
+	h := startHarness(t)
+	a, b := h.ready(nil), h.ready(nil)
+	sid := a.newSession("/w")
+	h.agent.mu.Lock()
+	h.agent.silent[protocol.ACPTake] = true
+	h.agent.mu.Unlock()
+	id := b.request(protocol.ACPTake, map[string]any{"sessionId": sid})
+	req := h.agent.waitRequests(protocol.ACPTake, 1)[0]
+	b.mustCall(protocol.ACPDetach, map[string]any{"sessionId": sid})
+	h.agent.result(req.ID, protocol.ACPTakeResult{SessionID: sid, DriverGen: 2})
+	_, e := b.await(id)
+	t.Logf("late take error: %v", e)
+	var driver bool
+	h.srv.r.call(func() { driver = h.srv.r.sessions[sid].driver == h.srv.r.clients[b.reg.Info.ClientID] })
+	require.False(t, driver, "detached non-member became driver after take result arrived")
+}

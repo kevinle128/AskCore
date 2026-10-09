@@ -21,6 +21,13 @@ The module reads no configuration, opens no database and starts no listener. `fx
 The command supplies `NewAgent`, which must call `NewNativeAgent` with the given service, so all sessions share one credential resolver and direct headless runs keep their behavior.
 `Authenticate` and `ModelAuth` only check readiness through `NativeAuthReady`; they never start a sign-in. The adapter gets function fields, never the service.
 
+## Leader composition
+
+[LeaderModule](module_leader.go) provides `LeaderRuntime` for `ask leader` from `LeaderParams`. It builds the editor composition (`NewACPRuntime`) once, sets `RequireRoute`, and puts one adapter and host behind one in-process byte link, with the `leader.Server` router on the other end. `Serve` starts the router and serves a listener that the command opened. The command (`cmd/tui/leader.go`) owns the lock, the socket, the log and the signals.
+`Stop` runs in this order: the router stops taking clients and tells them, the link closes, the host disposes every session and waits for the started tool bodies (no time bound), while the credential refresh drains in parallel.
+A client that leaves never reaches this path.
+`ActiveRuns` and `QuiesceIfIdle` of the adapter feed the status and the idle shutdown. The tests with a real socket, the real router and the real host are in [leader_routing_test.go](leader_routing_test.go).
+
 ## What does not belong here
 
 | Code | Put it in |
