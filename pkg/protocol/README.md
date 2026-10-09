@@ -10,6 +10,7 @@ JSON compatibility is deliberate: the public headless event projection remains P
 |---|---|
 | Planned UI extension wire contracts | [TUI architecture](../../docs/tui-architecture.md); public author API belongs in [askui](../askui/README.md) |
 | ACP method names, `_ask/*` DTOs, error kinds and codes, event identity | [acp.go](acp.go), tests in [acp_test.go](acp_test.go); SDK and schema pins in [conformance report](../../plans/reports/conformance-261007-h13a-sdk.md); roadmap: [H13](../../plans/260930-2254-pi-feature-inventory-go-roadmap/roadmap.md) |
+| Leader socket frames, control and status payloads, protocol and frame limits, the `ask version --json` payload | [leader.go](leader.go), tests in [leader_test.go](leader_test.go); behavior in [internal/leader](../../internal/leader/README.md) |
 | Messages, content, usage, and tool declarations | [message.go](message.go), [content.go](content.go), [usage.go](usage.go), [tool.go](tool.go) |
 | Agent event types and sequencing envelope | [events.go](events.go) |
 | Provider stream events and message reconstruction | [stream_events.go](stream_events.go), [builder.go](builder.go) |
@@ -19,8 +20,13 @@ JSON compatibility is deliberate: the public headless event projection remains P
 
 The package holds no SDK type. Sequence counters are decimal strings. A turn has no ID of its own: name it with `cycleId` and the sequence.
 Errors carry one `ACPErrorKind` and no provider text. `ACPErrorMessage` returns the one fixed text of a kind, and `ACPErrorCode` its JSON-RPC code.
-The kinds are `unknown_session`, `not_initialized`, `busy`, `disposed`, `no_api_key`, `queue_full`, `invalid_model`, `invalid_content`, `invalid_params`, `invalid_state`, `cancelled`, `unsupported`, `output_failure` and `internal`.
+The kinds are `unknown_session`, `not_initialized`, `busy`, `disposed`, `no_api_key`, `queue_full`, `invalid_model`, `invalid_content`, `invalid_params`, `invalid_state`, `cancelled`, `unsupported`, `output_failure` and `internal`. The leader adds `not_driver` (-32015) and `client_not_initialized` (-32016).
 `invalid_params` means a request that cannot be decoded or whose value is out of range. `invalid_state` means a well-formed call that the current log does not allow, such as continuing an empty log or one that ends with an assistant message.
+
+## Leader wire rules
+
+A leader frame is a four-byte big-endian length and a JSON envelope `{type, payload}` of at most 64 MiB (`LeaderMaxFrame`). An ACP payload is one nested JSON-RPC object, never a string and never a batch. The outer version `LeaderProtocolVersion` is separate from the ACP wire version, the SDK version and the build identity. The control schema (`status`, `shutdown` with `instanceId` and `ifIdle`) must stay the same in every protocol version, because a client of another version uses it to ask for an idle replacement.
+The live session methods are `_ask/session/list_live`, `attach`, `detach` and `take`. A take result and the route context carry the driver generation as decimal text (`ACPRouteMeta`, `ACPTakeResult`). The route context also names the session that the router checked (`sessionId`).
 
 ## Lifecycle terminology
 

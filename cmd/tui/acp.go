@@ -62,27 +62,10 @@ func runACP(argv []string, stdin io.Reader, stdout, stderr io.Writer, deps runDe
 	// ordinary stdout of the process goes to stderr for the whole run.
 	defer guardStdout(stderr)()
 
-	o := options{provider: defaultProvider, model: defaultModel}
-	if deps.inferenceHTTP != nil {
-		o.transport = deps.inferenceHTTP.Transport
-	}
-	o.wait = deps.wait
-	_, initial, err := openProvider(o, deps.getenv)
+	params, err := acpParams(deps)
 	if err != nil {
 		report(stderr, "Error:", err)
 		return 1
-	}
-	params := app.ACPParams{
-		Home:     deps.getenv("ASK_HOME"),
-		Env:      func(k string) (string, bool) { v := deps.getenv(k); return v, v != "" },
-		AuthHTTP: deps.authHTTP,
-		Now:      deps.now,
-		Wait:     deps.wait,
-		Initial:  initial,
-		Info:     sdk.Implementation{Name: "ask", Version: "dev"},
-		NewAgent: func(service *auth.Service, sessionID, cwd string) (*agent.Agent, error) {
-			return newNativeAgent(o, deps.getenv, service, sessionID, cwd)
-		},
 	}
 	var rt *app.ACPRuntime
 	graph := fx.New(app.ACPModule, fx.Supply(params), fx.NopLogger, fx.Populate(&rt))
@@ -112,4 +95,31 @@ func runACP(argv []string, stdin io.Reader, stdout, stderr io.Writer, deps runDe
 		return 1
 	}
 	return 0
+}
+
+// acpParams builds the facts of the shared agent host from the process
+// dependencies. ask acp and ask leader use the same ones, so both run the same
+// agent with the same native credentials.
+func acpParams(deps runDependencies) (app.ACPParams, error) {
+	o := options{provider: defaultProvider, model: defaultModel}
+	if deps.inferenceHTTP != nil {
+		o.transport = deps.inferenceHTTP.Transport
+	}
+	o.wait = deps.wait
+	_, initial, err := openProvider(o, deps.getenv)
+	if err != nil {
+		return app.ACPParams{}, err
+	}
+	return app.ACPParams{
+		Home:     deps.getenv("ASK_HOME"),
+		Env:      func(k string) (string, bool) { v := deps.getenv(k); return v, v != "" },
+		AuthHTTP: deps.authHTTP,
+		Now:      deps.now,
+		Wait:     deps.wait,
+		Initial:  initial,
+		Info:     sdk.Implementation{Name: "ask", Version: buildIdentity()},
+		NewAgent: func(service *auth.Service, sessionID, cwd string) (*agent.Agent, error) {
+			return newNativeAgent(o, deps.getenv, service, sessionID, cwd)
+		},
+	}, nil
 }

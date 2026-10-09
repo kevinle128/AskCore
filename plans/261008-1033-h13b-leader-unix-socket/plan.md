@@ -1,7 +1,7 @@
 ---
 title: "H13b leader over Unix socket"
 description: "Two ask client processes share one auto-started ask leader that routes ACP to one shared host over ~/.ask/leader.sock."
-status: pending
+status: completed
 priority: P1
 effort: "8.5d"
 branch: new-session
@@ -21,10 +21,10 @@ Risk score: **High** (more than five critical assumptions about concurrent proce
 Two separate built `ask connect` processes reach one auto-started `ask leader` over `~/.ask/leader.sock`.
 They share session updates, keep independent views and request ids, and a client exit never cancels a run or disposes the shared host.
 The leader is a router: it sees ACP bytes and routing fields, never prompts or tool calls.
-Phase 1 is written in full.
-Phases 2 to 6 are outlines; each gets its own scout pass before implementation.
-This is a plan review, not completion evidence.
-The leader package currently has no implementation or tests.
+All six phases have an implementation and tests.
+The independent review found runtime and safety gaps; the maintainer approved their repair on 2026-10-09.
+The repairs and full exit gates are complete.
+The [repair report](../reports/pm-261009-h13b-repairs.md) records the final evidence and accepted limits.
 
 **Scope authority:** [roadmap H13](../260930-2254-pi-feature-inventory-go-roadmap/roadmap.md#h13-leader-acp-adapter-and-gateway-pis-rpc-mode-multi-client) (H13b row, session and driver rules, spawn rules, version rule, leader test list).
 **Process contract:** [architecture 7.3](../../docs/ask-architecture-reference.md#73-process-model-leader-clients-and-headless-mode-acp).
@@ -34,7 +34,7 @@ The leader package currently has no implementation or tests.
 
 ### Constraints
 
-- `internal/leader` imports only stdlib, `pkg/protocol`, `internal/logs` (and `golang.org/x/sys/unix` for peer credentials).
+- `internal/leader` imports only stdlib, `pkg/protocol`, `internal/logs` (and `golang.org/x/sys/unix` for peer credentials, descriptor operations and Linux process handles).
   Depguard enforces it.
 - `internal/app` owns the internal ACP link, fx composition, native auth and lifetimes.
 - Editor `ask acp` and headless `ask -p` stay listener-free and leader-free, each with its own `fx.ValidateApp` test.
@@ -77,11 +77,11 @@ H13c gateway, token, Origin policy and daemon conversion; durable `session/load`
 | Live attach/take/detach/discovery | New `_ask/session/*` methods, because durable `session/load` stays unsupported until H8. **As Grok (user, 2026-10-08):** a client that sends any session-scoped message is also subscribed implicitly (Grok `server.rs:1821-1833`); `attach` is still used to observe without sending. Pending shared questions are cached and replayed to a client that attaches, and evicted when resolved (Grok `server.rs:519-545, 2141-2164`). | H13a `phase-02-session-adapter.md`; Grok source |
 | `ask leader list` | One row for the single configured endpoint. No registry. Never spawns. | `docs/ask-architecture-reference.md:268` |
 | Version identity | Outer protocol integer in `pkg/protocol`; build identity from `debug.ReadBuildInfo` (VCS revision, else `dev`); ACP wire and SDK identity unchanged. The literal ACP `Implementation.Version` uses the same source. | `cmd/tui/acp.go:82` (`Version: "dev"`), no ldflags in repo |
-| Idle authority | App supplies a narrow callback through typed leader config: `QuiesceIfIdle() bool` closes admission atomically only when no run, pending question, admitted queue item or in-flight mutation exists. Route-table emptiness is never used. | `internal/acp/host.go` admission owns idleness |
+| Idle authority | The router counts accepted requests and open reverse calls. App supplies `QuiesceIfIdle() bool` to close host admission atomically only when no run, admitted queue item, session creation, auth check or in-flight mutation exists. Route-table emptiness alone never proves idle. | `internal/acp/host.go` admission owns idleness |
 | No aggregate limits | **As Grok (user, 2026-10-08):** no cap on clients, sessions or pending requests, and no queue bound. | Grok `server.rs:1564` |
 | Skew test mechanics | Leader and client take their protocol version through typed config. In-process servers with a different version on a real socket cover rejection and replacement; disclosed as supplemental, not built-binary proof. | H13a rule: no production test flag |
 
-### Proposed wire names (review verbatim)
+### Wire contract
 
 All in `pkg/protocol/leader.go` unless noted.
 
@@ -111,12 +111,12 @@ All in `pkg/protocol/leader.go` unless noted.
 
 | # | Phase | Status | Effort | Depends on |
 |---|---|---|---|---|
-| 1 | [Transport and security foundation](phase-01-transport-security-foundation.md) | Pending | 2d | — |
-| 2 | [Router: routes, drivers, ordered output](phase-02-router-routes-drivers-output.md) | Pending | 1.5d | 1 |
-| 3 | [App link and ACP route context](phase-03-app-link-acp-route-context.md) | Pending | 1.5d | 1, 2 |
-| 4 | [Spawn, version and leader CLI](phase-04-spawn-version-leader-cli.md) | Pending | 1.5d | 1, 3 |
-| 5 | [`ask connect` and two-process E2E](phase-05-ask-connect-two-process-e2e.md) | Pending | 1d | 3, 4 |
-| 6 | [Reverse requests, shutdown, regressions, docs](phase-06-reverse-shutdown-regressions-docs.md) | Pending | 1d | 2, 3, 5 |
+| 1 | [Transport and security foundation](phase-01-transport-security-foundation.md) | Completed | 2d | — |
+| 2 | [Router: routes, drivers, ordered output](phase-02-router-routes-drivers-output.md) | Completed | 1.5d | 1 |
+| 3 | [App link and ACP route context](phase-03-app-link-acp-route-context.md) | Completed | 1.5d | 1, 2 |
+| 4 | [Spawn, version and leader CLI](phase-04-spawn-version-leader-cli.md) | Completed | 1.5d | 1, 3 |
+| 5 | [`ask connect` and two-process E2E](phase-05-ask-connect-two-process-e2e.md) | Completed | 1d | 3, 4 |
+| 6 | [Reverse requests, shutdown, regressions, docs](phase-06-reverse-shutdown-regressions-docs.md) | Completed | 1d | 2, 3, 5 |
 
 ### Dependency map
 
@@ -177,29 +177,32 @@ Do not change behavior of these without a failing test that proves the need:
 
 ## Runtime flow proof
 
-These statuses describe planned coverage, not executed results.
+These rows identify implemented paths and their test owners.
+The dated result below records the original evidence.
+Current repair evidence and passed final gates belong to the [repair report](../reports/pm-261009-h13b-repairs.md).
+Supplemental fixtures and manual limits remain explicit in that report.
 
 | Feature | Actor | Trigger | Entry point | Internal path | Observable result | E2E test | External fixtures | Prepared data | Status |
 |---|---|---|---|---|---|---|---|---|---|
-| Auto-start + share | Two users' terminals | `ask connect` ×2 | built `ask` | ConnectOrSpawn → spawn → flock winner → register | one leader PID, same instance id, both see updates | `TestLeaderE2ETwoClientsShareLeader` | none (faux) | short `/tmp` ASK_HOME | PLANNED |
-| Spawn race | Two clients at once | concurrent `ask connect` | built `ask` | two spawns, one flock owner | loser exits; both adopt winner | `TestLeaderE2ESpawnRace` | none | empty home | PLANNED |
-| Independent sessions | Two clients, two cwds | `/new` each | `ask connect` | router → link → adapter → Agent | distinct session ids/cwd | `TestLeaderE2EIndependentSessions` | none | two cwds | PLANNED |
-| Attach + observe | Client B | `/attach <id>` | `ask connect` | attach + Follow cut + pending-question replay | B receives A's updates and any open shared question, no prompt resend | `TestLeaderE2EAttachObserve` | none | A session running | PLANNED |
-| Driver disconnect | Client A killed mid-run | SIGKILL A | built `ask` | router detach; no `Fail` | run settles; B sees `agent_settled`; host alive | `TestLeaderE2EDriverKilledRunSurvives` | paced faux (`ASK_FAUX_TPS`) | running prompt | PLANNED |
-| Take | Client B | `/take` | `ask connect` | take with driver generation | B prompts; stale A gen rejected | `TestLeaderE2ETakeAfterDriverLoss` | paced faux | orphaned busy session | PLANNED |
-| Version mismatch | Old leader | register v≠ | real socket, in-process server (supplemental) | handshake gate | `leader_version_mismatch` with upgrade side | `TestHandshakeRejectsVersion` | none | config override | PLANNED |
-| Other UID | Non-owner peer | connect | real socket | peer-credential syscall | `leader_peer_rejected` | `TestPeerRejectsOtherUID` + manual root | none | injected owner UID | PLANNED |
-| Slow client | Non-reading client | flood updates | real socket | unbounded FIFO | healthy client completes; slow client still connected and receives all frames in order when it reads | `TestServerSlowClientDoesNotBlockOthers` + E2E | paced faux | reader paused | PLANNED |
-| Leader stop | User | `ask leader stop` | built `ask` | shutdown control → close admission → dispose → release flock | socket removed, lock inode kept | `TestLeaderE2EStop` | none | running leader | PLANNED |
-| Two binaries | `ask-server` caller | ConnectOrSpawn from a helper | helper binary, other cwd | sibling `ask`, then PATH | leader starts; missing `ask` gives clear error | `TestConnectOrSpawnFindsSiblingAsk` | none | temp bin dir | PLANNED |
-| No regression | Editor / script | `ask acp`, `ask -p` | built `ask` | unchanged | no listener, no leader | existing H13a E2E + `TestHeadlessNoLeader` | provider fixture | as H13a | PLANNED |
+| Auto-start + share | Two users' terminals | `ask connect` ×2 | built `ask` | ConnectOrSpawn → spawn → flock winner → register | one leader PID, same instance id, both see updates | `TestLeaderE2ETwoClientsShareLeader` | none (faux) | short `/tmp` ASK_HOME | Passed; see evidence limits |
+| Spawn race | Two clients at once | concurrent `ask connect` | built `ask` | two spawns, one flock owner | loser exits; both adopt winner | `TestLeaderE2ESpawnRace` | none | empty home | Passed; see evidence limits |
+| Independent sessions | Two clients, two cwds | `/new` each | `ask connect` | router → link → adapter → Agent | distinct session ids/cwd | `TestLeaderE2EIndependentSessions` | none | two cwds | Passed; see evidence limits |
+| Attach + observe | Client B | `/attach <id>` | `ask connect` | attach + Follow cut + pending-question replay | B receives A's updates and any open shared question, no prompt resend | `TestLeaderE2ETwoClientsShareLeader` + `TestLeaderDriverLossCancelsQuestionAndKeepsRealRun` | none | A session running | Passed; see evidence limits |
+| Driver disconnect | Client A killed mid-run | SIGKILL A | built `ask` | router detach; no `Fail` | run settles; B sees `agent_settled`; host alive | `TestLeaderE2EDriverKilledRunSurvivesAndAnotherTakes` | paced faux (`ASK_FAUX_TPS`) | running prompt | Passed; see evidence limits |
+| Take | Client B | `/take` | `ask connect` | take with driver generation | B prompts; stale A gen rejected | `TestLeaderE2EDriverKilledRunSurvivesAndAnotherTakes` | paced faux | orphaned busy session | Passed; see evidence limits |
+| Version mismatch | Old leader | register v≠ | real socket, in-process server (supplemental) | handshake gate | `leader_version_mismatch` with upgrade side | `TestHandshakeRejectsVersion` | none | config override | Passed; see evidence limits |
+| Other UID | Non-owner peer | connect | real socket | peer-credential syscall | `leader_peer_rejected` | `TestPeerRejectsOtherUID` + manual root | none | injected owner UID | Passed; see evidence limits |
+| Slow client | Non-reading client | flood updates | real socket | unbounded FIFO | healthy client completes; slow client still connected and receives all frames in order when it reads | `TestLeaderE2ESlowClientDoesNotBlockOthers` | paced faux | reader paused | Passed; see evidence limits |
+| Leader stop | User | `ask leader stop` | built `ask` | shutdown control → close admission → dispose → release flock | socket removed, lock inode kept | `TestLeaderE2EAutoStartStatusStop` | none | running leader | Passed; see evidence limits |
+| Two binaries | `ask-server` caller | ConnectOrSpawn from a helper | helper binary, other cwd | sibling `ask`, then PATH | leader starts; missing `ask` gives clear error | `TestLeaderE2ETwoBinaryResolver` | none | temp bin dir | Passed; see evidence limits |
+| No regression | Editor / script | `ask acp`, `ask -p` | built `ask` | unchanged | no listener, no leader | existing H13a E2E + `TestLeaderE2EHeadlessStartsNoLeader` | provider fixture | as H13a | Passed; see evidence limits |
 
 ## Test matrix
 
 | Level | Scenarios |
 |---|---|
 | Critical | Other-UID peer rejected (injected owner, real syscall). Dir 0700, socket/lock/log 0600, symlink refused. Version mismatch rejected before any ACP frame. Raw ids (number, string, > 2^53, separator-bearing) round-trip exactly. Client loss never calls `Fail`/`Close`/`latch` and never cancels a run. Follow events go to the owner only. Lock inode stable across stop/start. Only the flock owner removes a stale socket. |
-| High | Equal ids from two clients never collide. `$/cancel_request` rewrites only through the sender's pending table. Observer mutation rejected. Take rules (no driver → ok; live foreign + busy → reject; live foreign + idle → ok). `/new` changes only the caller's view. Driver loss cancels the open question; late answers ignored. Frame above the limit closes only that client. A slow client keeps an unbounded FIFO; socket writes never block another client. Stop sends shutdown before any signal; PID identity checked. |
+| High | Equal ids from two clients never collide. `$/cancel_request` rewrites only through the sender's pending table. Observer mutation rejected. Take rules (no driver → ok; live foreign + busy → reject; live foreign + idle → ok). `/new` changes only the caller's view. Driver loss cancels the open question; late answers ignored. Frame above the limit closes only that client. A slow client keeps an unbounded FIFO; socket writes never block another client. Stop sends shutdown before any signal; Linux fallback uses a verified pidfd and other platforms refuse the fallback. |
 | Medium | Spawn race starts one leader. Sibling `ask`, then PATH. Log rotation by size. Stale PID not signalled. `sun_path` length check. goleak after close. |
 
 ## Exit gate
@@ -221,6 +224,52 @@ These statuses describe planned coverage, not executed results.
 8.
   Every row in the roadmap coverage map has executed evidence.
   Supplemental fixtures cannot certify a production tool path.
+
+## Historical result (2026-10-08)
+
+The original implementation marked all six phases complete.
+The checks below describe the 2026-10-08 worktree.
+The 2026-10-09 independent review reopened runtime and safety gates.
+These historical results do not certify the repaired worktree.
+
+| Roadmap H13 leader test | Where it is proven |
+|---|---|
+| Two TUIs share one leader and see the same session updates | `TestLeaderE2ETwoClientsShareLeader` (built binary) |
+| Two clients with different cwd and capabilities create different sessions | `TestLeaderE2EIndependentSessions` (built binary); `TestLeaderRoutingIndependentSessions` (host holds the capabilities of each driver) |
+| A driver disconnects during a question | `TestRouterDriverLossCancelsQuestion` (scripted agent: no product part issues a question yet) |
+| `ask-server` starts first from another cwd, and with `ask` missing from `PATH` | `TestLeaderE2ETwoBinaryResolver` (built binary, helper caller) |
+| A version mismatch arrives while another client runs a tool | `TestLeaderQuiesceThroughManagement` (real host, supplemental: a client of another protocol asks for an idle shutdown during a run) and `TestReplaceOnlyIdleSpawnedLeader` |
+| A stale, reused pid is not signalled | `TestStopIgnoresAStalePIDInTheLockFile`, `TestStopRefusesUnverifiedPID`, `TestVerifyLeaderProcessRefusesOthers` |
+| Ids of two clients never collide | `TestLeaderE2EIDsNeverCollide` (built binary), `TestIDEqualAcrossClients` |
+| A client of a different protocol version is rejected | `TestHandshakeRejectsVersion`, `TestVersionMismatchOlderClientIsRefusedWithoutReplacement` |
+| A peer with another UID is rejected | `TestPeerRejectsOtherUID`, `TestHandshakeRejectsOtherUIDBeforeReading` (injected owner, real system call) |
+| A stale socket is replaced by the leader that wins the flock | `TestLeaderE2EStaleSocketReplacedByTheLockWinner` (built binary), `TestStaleSocketRemovedOnlyByOwner` |
+| A client disconnect does not cancel the run | `TestLeaderClientLossDoesNotFailHost` (real host), `TestLeaderE2EDriverKilledRunSurvivesAndAnotherTakes`, `TestLeaderE2EQuitDuringRunLeavesTheRun` (built binary) |
+
+Not proven by a built binary, by design: a question from the agent (no product part issues reverse calls yet) and a protocol skew (one binary has one version). Both are covered in process and labelled supplemental.
+
+## Historical independent review (2026-10-08)
+
+A reviewer who had not seen the work read the code and the plan and ran no test. Every finding was checked in the source, and a failing test was written before the fix. All were real.
+
+| Severity | Finding | Fix and test |
+|---|---|---|
+| Critical | A client could act on another client's session: `{"sessionId":"mine","sessionid":"theirs"}` passed the router, which reads the exact key, while the host decodes without regard to case and takes the last key | Params with two keys that differ only in case are refused (`foldKey`); a key that a decoder takes for `_meta` never reaches the host as it is; the route context names the checked session and the host refuses any call whose own session id differs, and on the leader link a call without it. `TestRouterRefusesKeysThatDifferOnlyInCase` (failed first), `TestRouterDropsAForgedRouteKeyWithAnotherCase`, `TestHostRefusesACallForAnotherSessionThanTheRoute`, `TestHostNeedsTheRouteSessionOnTheLeaderLink` |
+| High | `Server.Close` could hang for ever: a client whose handshake ended after the router stopped kept a writer that waited on a queue nobody closed, and `post` chose at random between a full stop and a free buffer | `post` checks the stop first; the reader closes the client queue when it ends. `TestServerRefusesAClientAfterTheRouterStopped` (failed first), `TestRouterPostRefusesAfterStop` |
+| Medium | A detach from one session removed the client from the open questions of its other sessions | `dropRecipient` takes a session. `TestRouterDetachFromOneSessionKeepsTheQuestionsOfAnother` |
+| Medium | A question could wait for ever with no recipient; the idle check then never passed | Refused at once when the session has no member; cancelled when the last recipient leaves. `TestRouterQuestionWithoutRecipientsEnds` |
+| Medium | A message that the agent link dropped for size left its request unanswered (and a take pending) | The size of client capabilities is bounded at 64 KiB, and the router refuses a message over the link limit before it registers the route. `TestRouterBoundsClientCapabilities` |
+| Medium | `QuiesceIfIdle` set its flag before it checked and cleared it on a busy host, so valid work could be refused during a probe | The check runs under the write side of the admission lock; the flag is set only when idle. `TestQuiesceCheckThatFailsRefusesNoOtherWork` (failed first) |
+| Low | A terminal id is the choice of the answering client and could take over the terminal of another session | The key is session plus id, and an id that is in use is not taken. `TestRouterTerminalIDOfAnotherSessionIsNotTaken` |
+| Low | `ask connect` wrote its disconnect frame while a prompt goroutine could write | The disconnect takes the writer lock |
+| Low | The record of ended subscriptions grew without a bound; a client field was never read | The record is bounded (`TestRouterEndedFollowsAreBounded`); the field is gone |
+| Low | A number whose exponent does not fit lost its sign in the duplicate-id key | `TestIDHugeExponentKeepsTheSign` |
+| High (second look) | `$/cancel_request` took a different path that skipped the key check, and the SDK reads `requestId` without regard to case, so a client could cancel a request of another client by a guessable internal id | The cancel is dropped when its params hold two keys that differ only in case. `TestCancelRequestRefusesKeysThatDifferInCase` (failed first) |
+| High (second look) | The internal unfollow for a follow whose client had left had no client id, so the real host refused it and the router dropped the error; the follower stayed in the host | The request names an internal client, and an unanswered refusal is logged. The scripted agent now applies the host's route checks to every call, which made the existing tests fail on this bug (`TestRouterLateResultsAfterClientLeft`); `TestHostAcceptsTheRoutersInternalUnfollow` proves the real host takes it |
+
+Plan compliance: the roadmap row "a version mismatch arrives while another client runs a **tool**" was only proven with a held model. `TestLeaderQuiesceThroughManagement` now holds a real tool body, repeats the refused shutdown five times, checks that the run completes and that new work is still admitted, and then checks that the idle shutdown works.
+
+The same review of the test fixtures found the cause of a rare hang of `TestConnectOrSpawnStartsOneLeaderForTwoClients` on Linux: the fixture could start a second leader after its own cleanup had taken the list of servers to close. The fixture now refuses to start after cleanup.
 
 ## Rollback
 
@@ -248,9 +297,10 @@ This supersedes the earlier bounded-queue and 8 MiB recommendations.
 - With no queue bound (as Grok), a client that stops reading grows leader memory until it disconnects or `ping` fails.
   Accepted by the user on 2026-10-08.
 - Grok's pending-response dependency does not establish first-answer semantics; the pending reverse table is an Ask-native design.
-- If the Phase 1 route-context spike fails, the fallback (one adapter per client around one host) changes the app-to-leader boundary and needs a plan revision before Phase 2.
+- The Phase 1 route-context spike passed, so the single shared adapter stands (no fallback was needed).
+- A prompt of about 130 KiB is very slow in the agent or the faux provider (32 KiB takes 50 ms). It is outside H13b and not investigated.
 
-## Review checkpoint (2026-10-08)
+## Historical review checkpoint (2026-10-08)
 
 Review: [findings and verification](../reports/code-review-261008-1627-h13b-leader-plan.md).
 The user confirmed that 64 MiB must remain supported.
@@ -260,7 +310,10 @@ Do not mark H13b complete while any phase or dependency gate is pending.
 
 ## Roadmap leader coverage map
 
-All rows below are requirements for execution; none has passed as H13b evidence yet.
+The rows below define the required evidence.
+The historical result above maps the original executed tests.
+The repair tests add the missing shared-host size, question, admission and process-safety evidence.
+Use the [repair report](../reports/pm-261009-h13b-repairs.md) for current gate results; test presence alone does not close a gate.
 
 | Roadmap requirement | Owning phase | Required evidence |
 |---|---|---|
@@ -269,7 +322,7 @@ All rows below are requirements for execution; none has passed as H13b evidence 
 | Driver loss during a question | 6 | Socket fixture plus real host run; agent gets cancellation, late answer ignored, run continues |
 | Server caller from another cwd; missing ask | 4 | Built caller helper, sibling and PATH cases, absent and incompatible candidates; no daemon conversion |
 | Version mismatch during a tool | 4, 6 | Real host with controlled started tool; skewed socket peer cannot stop or replace the busy leader |
-| Reused PID never signalled | 4 | Live unrelated process plus identity-change seam between check and signal |
+| Reused PID never signalled | 4 | Live unrelated process, changed lock owner, verified Linux pidfd and refusal on platforms without a stable handle |
 | Client ids never collide | 1, 5 | Same request id concurrently in two clients, exact restored ids and scoped cancellation |
 | Protocol mismatch rejected | 1, 4 | Real Unix socket, both mismatch directions, no ACP forwarded, isolated compatible management controls |
 | Other UID rejected | 1 | Real credential syscall on macOS and Linux with injected owner; literal second-user check stays manual |
@@ -277,3 +330,25 @@ All rows below are requirements for execution; none has passed as H13b evidence 
 | Disconnect never cancels a run | 3, 5 | Kill built driver mid-run; observer receives settled event; zero-client run also survives |
 | Stale frames fenced after attach | 2, 5 | Detach with events in flight, reattach and resume; old subscriptions cannot deliver after detach acknowledgment |
 | Resume has no gaps | 3, 5 | Compare event sequence to source cursor through disconnect, reset and resync; prompts admitted once |
+
+## Repair checks (2026-10-09)
+
+Source: [independent review](../reports/code-review-261009-1030-h13b-leader-unix-socket.md), which records the pre-repair worktree.
+Current evidence: [repair report](../reports/pm-261009-h13b-repairs.md).
+The repairs, focused checks and final gates passed.
+The full repository suite and selected full race suite passed.
+Build and vet passed; lint reported zero issues.
+The repair report owns the executed commands, results and remaining accepted limits.
+
+- [x] Fence every old driver mutation at its commit boundary, including model readiness and cancel.
+- [x] Register Follow ownership before the reader delivers later frames.
+- [x] Let a second signal bypass the active runtime drain.
+- [x] Fence pending take after detach even without prior membership.
+- [x] Count authenticate and router-accepted work in the idle barrier.
+- [x] Use descriptor-relative artifact operations and inode-checked socket cleanup with automatic unlink disabled.
+- [x] Start native auth cleanup in parallel with the Agent drain.
+- [x] Remove the foreground SIGTERM test data race.
+- [x] Use a stable Linux process handle for PID fallback and fail closed where unavailable.
+- [x] Prove large frames and driver-loss questions through a real shared host.
+- [x] Run all exit gates and record the final result in the repair report.
+- [x] Reconcile current phase, plan and roadmap claims; retain dated evidence as history.

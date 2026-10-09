@@ -31,7 +31,22 @@ func (a *Adapter) HandleExtensionMethod(ctx context.Context, method string, raw 
 	if err := a.gate(); err != nil {
 		return nil, requestError(err)
 	}
-	res, err := handler(ctx, raw)
+	// The route is checked once for every Ask method. A route that is present
+	// but not valid is refused here, so no handler can take it for an editor call.
+	route, err := routeFromParams(raw)
+	if err == nil {
+		err = a.needRoute(route)
+	}
+	if err == nil && route != nil {
+		// Decode the session the way the handlers do, so both read the same key.
+		var named protocol.ACPSessionRequest
+		_ = json.Unmarshal(raw, &named)
+		err = a.checkRouteSession(route, named.SessionID)
+	}
+	if err != nil {
+		return nil, requestError(err)
+	}
+	res, err := handler(withRouteCtx(ctx, route), raw)
 	if err != nil {
 		return nil, requestError(err)
 	}
@@ -48,12 +63,13 @@ func (a *Adapter) askHandlers() map[string]askHandler {
 		protocol.ACPSetThinking: a.setThinking,
 		protocol.ACPContinue:    a.continueRun,
 		protocol.ACPReset:       a.reset,
-		protocol.ACPSteer:       func(_ context.Context, raw json.RawMessage) (any, error) { return a.enqueue(raw, false) },
-		protocol.ACPFollowUp:    func(_ context.Context, raw json.RawMessage) (any, error) { return a.enqueue(raw, true) },
+		protocol.ACPSteer:       func(ctx context.Context, raw json.RawMessage) (any, error) { return a.enqueue(ctx, raw, false) },
+		protocol.ACPFollowUp:    func(ctx context.Context, raw json.RawMessage) (any, error) { return a.enqueue(ctx, raw, true) },
 		protocol.ACPRemove:      a.remove,
 		protocol.ACPFollow:      a.follow,
 		protocol.ACPUnfollow:    a.unfollow,
 		protocol.ACPUsage:       a.usage,
+		protocol.ACPTake:        a.take,
 	}
 }
 
@@ -137,6 +153,11 @@ func (a *Adapter) setModel(ctx context.Context, raw json.RawMessage) (any, error
 	if err != nil {
 		return nil, err
 	}
+	release, err := s.guard(routeOf(ctx))
+	if err != nil {
+		return nil, err
+	}
+	defer release()
 	ref, err := parseModelID(req.ModelID)
 	if err != nil {
 		return nil, err
@@ -153,7 +174,7 @@ func (a *Adapter) setModel(ctx context.Context, raw json.RawMessage) (any, error
 			return nil, fmt.Errorf("%w: %w", ErrAuth, err)
 		}
 	}
-	if err := s.Agent().SetModel(ctx, m); err != nil {
+	if err := s.Agent().SetModel(s.mutationContext(ctx, routeOf(ctx)), m); err != nil {
 		if classify(err) == protocol.ACPErrInternal {
 			err = fmt.Errorf("%w: %w", ErrAuth, err)
 		}
@@ -172,7 +193,7 @@ func validThinking(l protocol.ThinkingLevel) bool {
 	return false
 }
 
-func (a *Adapter) setThinking(_ context.Context, raw json.RawMessage) (any, error) {
+func (a *Adapter) setThinking(ctx context.Context, raw json.RawMessage) (any, error) {
 	var req protocol.ACPThinkingRequest
 	if err := decodeParams(raw, &req); err != nil {
 		return nil, err
@@ -181,9 +202,19 @@ func (a *Adapter) setThinking(_ context.Context, raw json.RawMessage) (any, erro
 	if err != nil {
 		return nil, err
 	}
+	release, err := s.guard(routeOf(ctx))
+	if err != nil {
+		return nil, err
+	}
+	defer release()
 	if !validThinking(req.Level) {
 		return nil, newKindError(protocol.ACPErrInvalidParams, "unknown thinking level")
 	}
+	commit, err := s.mutationCommit(routeOf(ctx))
+	if err != nil {
+		return nil, err
+	}
+	defer commit()
 	if err := s.Agent().SetThinkingLevel(req.Level); err != nil {
 		return nil, err
 	}
@@ -195,7 +226,12 @@ func (a *Adapter) continueRun(ctx context.Context, raw json.RawMessage) (any, er
 	if err != nil {
 		return nil, err
 	}
-	res, err := s.Continue(ctx)
+	release, err := s.guard(routeOf(ctx))
+	if err != nil {
+		return nil, err
+	}
+	defer release()
+	res, err := s.Continue(s.mutationContext(ctx, routeOf(ctx)))
 	if err != nil {
 		return nil, err
 	}
@@ -210,6 +246,16 @@ func (a *Adapter) reset(ctx context.Context, raw json.RawMessage) (any, error) {
 	if err != nil {
 		return nil, err
 	}
+	release, err := s.guard(routeOf(ctx))
+	if err != nil {
+		return nil, err
+	}
+	defer release()
+	commit, err := s.mutationCommit(routeOf(ctx))
+	if err != nil {
+		return nil, err
+	}
+	defer commit()
 	cut, err := s.Reset(ctx)
 	if err != nil {
 		return nil, err
@@ -219,7 +265,7 @@ func (a *Adapter) reset(ctx context.Context, raw json.RawMessage) (any, error) {
 
 // enqueue admits a steering or follow-up message. The ID that it returns names
 // the queued input; it is not a run ID.
-func (a *Adapter) enqueue(raw json.RawMessage, followUp bool) (any, error) {
+func (a *Adapter) enqueue(ctx context.Context, raw json.RawMessage, followUp bool) (any, error) {
 	var req protocol.ACPInputRequest
 	if err := decodeParams(raw, &req); err != nil {
 		return nil, err
@@ -232,6 +278,16 @@ func (a *Adapter) enqueue(raw json.RawMessage, followUp bool) (any, error) {
 	if err != nil {
 		return nil, err
 	}
+	release, err := s.guard(routeOf(ctx))
+	if err != nil {
+		return nil, err
+	}
+	defer release()
+	commit, err := s.mutationCommit(routeOf(ctx))
+	if err != nil {
+		return nil, err
+	}
+	defer commit()
 	var id string
 	if followUp {
 		id, err = s.FollowUp(msg)
@@ -244,7 +300,7 @@ func (a *Adapter) enqueue(raw json.RawMessage, followUp bool) (any, error) {
 	return protocol.ACPInputResult{InputID: id}, nil
 }
 
-func (a *Adapter) remove(_ context.Context, raw json.RawMessage) (any, error) {
+func (a *Adapter) remove(ctx context.Context, raw json.RawMessage) (any, error) {
 	var req protocol.ACPRemoveRequest
 	if err := decodeParams(raw, &req); err != nil {
 		return nil, err
@@ -253,6 +309,16 @@ func (a *Adapter) remove(_ context.Context, raw json.RawMessage) (any, error) {
 	if err != nil {
 		return nil, err
 	}
+	release, err := s.guard(routeOf(ctx))
+	if err != nil {
+		return nil, err
+	}
+	defer release()
+	commit, err := s.mutationCommit(routeOf(ctx))
+	if err != nil {
+		return nil, err
+	}
+	defer commit()
 	return protocol.ACPRemoveResult{Removed: s.Agent().Remove(req.InputID)}, nil
 }
 
@@ -320,4 +386,27 @@ func addOptional(dst, v *int64) *int64 {
 		sum += *dst
 	}
 	return &sum
+}
+
+// take makes the calling client the driver of a session. The leader router
+// sends it with the route context. The host commits it and returns the new
+// generation, which the router copies.
+func (a *Adapter) take(ctx context.Context, raw json.RawMessage) (any, error) {
+	var req protocol.ACPSessionRequest
+	if err := decodeParams(raw, &req); err != nil {
+		return nil, err
+	}
+	route := routeOf(ctx)
+	if route == nil {
+		return nil, newKindError(protocol.ACPErrInvalidParams, "take needs a leader route")
+	}
+	s, err := a.session(req.SessionID)
+	if err != nil {
+		return nil, err
+	}
+	gen, err := s.Take(*route)
+	if err != nil {
+		return nil, err
+	}
+	return protocol.ACPTakeResult{SessionID: s.ID, DriverGen: gen}, nil
 }

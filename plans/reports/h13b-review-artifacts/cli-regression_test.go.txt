@@ -1,0 +1,55 @@
+package main
+
+import (
+	"AskCore/internal/leader"
+	"AskCore/pkg/protocol"
+	"bytes"
+	"github.com/stretchr/testify/require"
+	"net"
+	"os"
+	"runtime"
+	"testing"
+)
+
+func TestReviewListenerClosePreservesReplacementSocket(t *testing.T) {
+	paths, err := leader.ResolvePaths(leaderHome(t))
+	require.NoError(t, err)
+	require.NoError(t, leader.EnsureHome(paths.Home))
+	lock, err := leader.Acquire(paths)
+	require.NoError(t, err)
+	defer func() { _ = lock.Release() }()
+	socket := paths.Socket
+	old, ident, err := listenPrivate(socket)
+	require.NoError(t, err)
+	require.NoError(t, os.Remove(socket))
+	replacement, err := net.Listen("unix", socket)
+	require.NoError(t, err)
+	defer replacement.Close()
+	require.NoError(t, old.Close())
+	require.ErrorIs(t, lock.RemoveSocket(ident), leader.ErrSocketInUse)
+	_, err = os.Lstat(socket)
+	require.NoError(t, err, "old listener removed a new socket before inode-checked cleanup")
+}
+
+// reviewFrameSink reports the request write without using a socket owner.
+type reviewFrameSink struct{ wrote chan struct{} }
+
+func (w reviewFrameSink) Write(b []byte) (int, error) { close(w.wrote); return len(b), nil }
+
+func TestReviewFollowKeepsEventsImmediatelyAfterResult(t *testing.T) {
+	previous := runtime.GOMAXPROCS(1)
+	defer runtime.GOMAXPROCS(previous)
+	wrote := make(chan struct{})
+	var out bytes.Buffer
+	c := newLineClient(&leader.Client{Registered: &leader.Registered{Writer: leader.NewFrameWriter(reviewFrameSink{wrote}, protocol.LeaderMaxFrame)}}, &out)
+	c.setView("s1")
+	done := make(chan struct{})
+	go func() { c.follow(nil); close(done) }()
+	<-wrote
+	// These two frames arrive back to back on the socket reader before the
+	// command waiter gets time to install its subscription.
+	c.handle(rpcBody(map[string]any{"id": 1, "result": map[string]any{"subscriptionId": "sub1", "cursor": map[string]any{"epoch": "e1", "seq": "1"}}}))
+	c.handle(rpcBody(map[string]any{"method": protocol.ACPEvent, "params": map[string]any{"subscriptionId": "sub1", "sessionId": "s1", "epoch": "e1", "seq": "2", "event": map[string]any{"type": "agent_settled"}}}))
+	<-done
+	require.Contains(t, out.String(), "event session=s1 seq=2", "the first live event after a Follow result was discarded")
+}
