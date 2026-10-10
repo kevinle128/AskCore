@@ -152,9 +152,14 @@ func TestHostQueueOverflowFailsConnection(t *testing.T) {
 	WithQueueLimit(3, 0)(h)
 	s, err := h.NewSession(hostDeadline(t), t.TempDir())
 	require.NoError(t, err)
+	// The writer skips every write after the host failed. One event sent before
+	// the run makes the writer block inside the write callback first. Only then
+	// does the run fill the queue, so the overflow cannot come before the first
+	// write on a slow machine.
+	require.NoError(t, s.observe(&protocol.QueueUpdate{Envelope: protocol.Envelope{Seq: 1}}))
+	<-entered
 	done := make(chan error, 1)
 	go func() { _, err := s.Prompt(hostDeadline(t), hostUser("hi")); done <- err }()
-	<-entered
 	var got error
 	select {
 	case got = <-done:

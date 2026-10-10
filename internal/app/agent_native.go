@@ -1,12 +1,14 @@
 package app
 
 import (
+	"AskCore/internal/acp"
 	"AskCore/internal/agent"
 	"AskCore/internal/auth"
 	"AskCore/internal/providers"
 	"AskCore/internal/providers/anthropic"
 	"AskCore/internal/providers/openai"
 	"context"
+	"errors"
 	"fmt"
 	"net/http"
 	"os"
@@ -68,7 +70,7 @@ func NewNativeAgent(in NativeAgentConfig) (*agent.Agent, error) {
 			if m.Provider == "faux" {
 				return nil
 			}
-			return ready(ctx, m, key)
+			return markModelAccess(ready(ctx, m, key))
 		}
 	}
 	return agent.New(cfg)
@@ -103,10 +105,19 @@ func NativeAuthReady(ctx context.Context, s *auth.Service, m providers.Model, ke
 	}
 	binding, err := s.Resolve(ctx, m, key)
 	if err != nil {
-		return err
+		return markModelAccess(err)
 	}
 	if requestedMethod != "" && binding.Method != requestedMethod {
 		return auth.ErrMethod
 	}
 	return nil
+}
+
+// markModelAccess tags an account access denial, so that a client can tell it
+// from a missing sign-in. Any other error stays as it is.
+func markModelAccess(err error) error {
+	if errors.Is(err, auth.ErrAccess) {
+		return fmt.Errorf("%w: %w", acp.ErrModelAccess, err)
+	}
+	return err
 }

@@ -95,7 +95,7 @@ func TestACPWireEventIdentity(t *testing.T) {
 }
 
 func TestACPWireErrorCodes(t *testing.T) {
-	kinds := []ACPErrorKind{ACPErrUnknownSession, ACPErrUnknownSubscription, ACPErrNotInitialized, ACPErrBusy, ACPErrDisposed, ACPErrNoAPIKey, ACPErrQueueFull, ACPErrInvalidModel, ACPErrInvalidContent, ACPErrCancelled, ACPErrUnsupported, ACPErrOutputFailure}
+	kinds := []ACPErrorKind{ACPErrUnknownSession, ACPErrUnknownSubscription, ACPErrNotInitialized, ACPErrBusy, ACPErrDisposed, ACPErrNoAPIKey, ACPErrModelAccess, ACPErrQueueFull, ACPErrInvalidModel, ACPErrInvalidContent, ACPErrCancelled, ACPErrUnsupported, ACPErrOutputFailure}
 	seen := map[int]ACPErrorKind{}
 	for _, k := range kinds {
 		c := ACPErrorCode(k)
@@ -155,7 +155,7 @@ func TestACPWireDeferredMethods(t *testing.T) {
 }
 
 func TestACPWireErrorMessages(t *testing.T) {
-	kinds := []ACPErrorKind{ACPErrUnknownSession, ACPErrUnknownSubscription, ACPErrNotInitialized, ACPErrBusy, ACPErrDisposed, ACPErrNoAPIKey, ACPErrQueueFull, ACPErrInvalidModel, ACPErrInvalidContent, ACPErrInvalidParams, ACPErrInvalidState, ACPErrCancelled, ACPErrUnsupported, ACPErrOutputFailure, ACPErrInternal}
+	kinds := []ACPErrorKind{ACPErrUnknownSession, ACPErrUnknownSubscription, ACPErrNotInitialized, ACPErrBusy, ACPErrDisposed, ACPErrNoAPIKey, ACPErrModelAccess, ACPErrQueueFull, ACPErrInvalidModel, ACPErrInvalidContent, ACPErrInvalidParams, ACPErrInvalidState, ACPErrCancelled, ACPErrUnsupported, ACPErrOutputFailure, ACPErrInternal}
 	seen := map[string]ACPErrorKind{}
 	for _, k := range kinds {
 		m := ACPErrorMessage(k)
@@ -166,6 +166,9 @@ func TestACPWireErrorMessages(t *testing.T) {
 			t.Fatalf("%s and %s share the message %q", prev, k, m)
 		}
 		seen[m] = k
+	}
+	if ACPErrorCode(ACPErrModelAccess) != ACPCodeModelAccess {
+		t.Fatal("model access code mapping changed")
 	}
 	if m := ACPErrorMessage(ACPErrNoAPIKey); !strings.Contains(m, "ask auth") {
 		t.Fatalf("auth guidance missing: %q", m)

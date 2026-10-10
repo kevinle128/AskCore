@@ -241,15 +241,18 @@ const (
 	ACPErrBusy                ACPErrorKind = "busy"
 	ACPErrDisposed            ACPErrorKind = "disposed"
 	ACPErrNoAPIKey            ACPErrorKind = "no_api_key"
-	ACPErrQueueFull           ACPErrorKind = "queue_full"
-	ACPErrInvalidModel        ACPErrorKind = "invalid_model"
-	ACPErrInvalidContent      ACPErrorKind = "invalid_content"
-	ACPErrInvalidParams       ACPErrorKind = "invalid_params"
-	ACPErrInvalidState        ACPErrorKind = "invalid_state"
-	ACPErrCancelled           ACPErrorKind = "cancelled"
-	ACPErrUnsupported         ACPErrorKind = "unsupported"
-	ACPErrOutputFailure       ACPErrorKind = "output_failure"
-	ACPErrInternal            ACPErrorKind = "internal"
+	// ACPErrModelAccess means the sign-in is valid but the account cannot use
+	// the model. A client that does not know this kind shows its generic text.
+	ACPErrModelAccess    ACPErrorKind = "model_access"
+	ACPErrQueueFull      ACPErrorKind = "queue_full"
+	ACPErrInvalidModel   ACPErrorKind = "invalid_model"
+	ACPErrInvalidContent ACPErrorKind = "invalid_content"
+	ACPErrInvalidParams  ACPErrorKind = "invalid_params"
+	ACPErrInvalidState   ACPErrorKind = "invalid_state"
+	ACPErrCancelled      ACPErrorKind = "cancelled"
+	ACPErrUnsupported    ACPErrorKind = "unsupported"
+	ACPErrOutputFailure  ACPErrorKind = "output_failure"
+	ACPErrInternal       ACPErrorKind = "internal"
 
 	// ACPErrNotDriver means the caller is not the driver of the session.
 	ACPErrNotDriver ACPErrorKind = "not_driver"
@@ -269,6 +272,8 @@ const (
 	// Leader codes: the caller is not the driver, or has not initialized on this link.
 	ACPCodeNotDriver            = -32015
 	ACPCodeNotInitializedClient = -32016
+	// ACPCodeModelAccess is the code of a model that the account cannot use.
+	ACPCodeModelAccess = -32017
 )
 
 // ACPRouteMetaKey is the _meta key of the route context. Only the leader router
@@ -312,6 +317,8 @@ func ACPErrorCode(k ACPErrorKind) int {
 		return -32601
 	case ACPErrOutputFailure:
 		return ACPCodeOutputFailure
+	case ACPErrModelAccess:
+		return ACPCodeModelAccess
 	case ACPErrNotDriver:
 		return ACPCodeNotDriver
 	case ACPErrClientNotInitialized:
@@ -339,6 +346,8 @@ func ACPErrorMessage(k ACPErrorKind) string {
 		return "the session is closed"
 	case ACPErrNoAPIKey:
 		return "not signed in for this model; run `ask auth` on the host and retry"
+	case ACPErrModelAccess:
+		return "the account cannot use this model"
 	case ACPErrQueueFull:
 		return "the input queue is full"
 	case ACPErrInvalidModel:

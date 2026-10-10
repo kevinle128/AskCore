@@ -16,6 +16,9 @@ var (
 	// ErrAuth means the configured credential is missing or does not match the
 	// requested method. An app callback wraps its own error with it.
 	ErrAuth = errors.New("acp: authentication required")
+	// ErrModelAccess means the sign-in works but the account cannot use the
+	// model. An app callback wraps its own error with it.
+	ErrModelAccess = errors.New("acp: model access denied")
 	// ErrOutputFailed marks a failure of the connection output.
 	ErrOutputFailed = errors.New("acp: output failed")
 
@@ -58,6 +61,8 @@ func classify(err error) protocol.ACPErrorKind {
 		return protocol.ACPErrBusy
 	case errors.Is(err, agent.ErrDisposed), errors.Is(err, ErrHostClosed):
 		return protocol.ACPErrDisposed
+	case errors.Is(err, ErrModelAccess):
+		return protocol.ACPErrModelAccess
 	case errors.Is(err, agent.ErrNoAPIKey), errors.Is(err, ErrAuth):
 		return protocol.ACPErrNoAPIKey
 	case errors.Is(err, agent.ErrQueueFull):
