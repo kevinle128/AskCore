@@ -140,6 +140,17 @@ For the T1a design, `plans/261009-2239-t1a-local-tui/artifacts/` holds the gener
 2. From the plan directory, run `python3 artifacts/build-design.py`. It rebuilds `design.md` from the template and the generated sketches, checks every sketch width with `verify-widths.py`, and runs `preview-gen.py` to write `preview.html`.
 3. Open `preview.html` in a browser. A change to a sketch is a visible change: set `design-status: draft` and ask for a new approval.
 
+The provider setup design (`plans/261010-1424-t1c-provider-setup-design/`) has its own generators in `artifacts/`: `python3 artifacts/make-design.py` from that directory rebuilds `design.md` and `preview.html` (it checks widths through `verify-widths.py`). Its sketches are the visual authority for these screens:
+
+| Screen | Golden test (under `internal/tui/testdata`) |
+|---|---|
+| Provider box: list, narrow window, row menu, removal | `TestProviderBoxGoldens`, `TestProviderRowMenu`, `TestRemoveConfirmFlow`, `TestRemoveNoteEnvStillSet` |
+| Key box: hidden paste, checking, refused, saved, not checked | `TestKeyBoxCheckingLocksInput`, `TestKeyBoxRefusedClearsInput`, `TestKeyBoxSavedNoteAndRail`, `TestAlibabaKeyBoxSaysNotChecked`, `TestKeySavedNotCheckedNote` |
+| Login boxes: browser URL, address and code, device code, failed, busy, lost, cancelled | `TestBrowserBoxGoldens`, `TestAnthropicAddressAndCodeBoxes`, `TestDeviceBoxGoldens`, `TestLoginFailedTryAgain`, `TestLoginCannotStartBusy`, `TestLoginBoxLeaderLost`, `TestLoginCancelledByRemovalShowsReason`, `TestLoginSuccessNamesAccount` |
+| First run, no model | `TestFirstRunGoldens`, `TestNoModelSendRefusedKeepsDraft` |
+| Model line (start, change, two formats, fallback) and `/model` | `TestModelLineGoldens`, `TestModelChangeLine`, `TestFallbackNoticeNamesModelInUse`, `TestModelSelectorGroupsUsableProviders`, `TestModelSelectorEmptyHint`, `TestModelSelectorTagsDefault` |
+| `TEA_TRACE` warning | `TestTraceWarningOnceAtStart`, `TestTraceWarningOnKeyBox`, `TestNoTraceWarningWhenUnset` |
+
 ### Golden checks: component screens
 
 1. Write the failing test first. The harness is `startScreen` in `internal/tui/screen_test.go`: it runs a model in a real Bubble Tea program, feeds the renderer output into an `x/vt` emulator, and reads the plain grid (`grid`, `text`, `waitText`, `resize`, `settle`).
@@ -151,7 +162,7 @@ For the T1a design, `plans/261009-2239-t1a-local-tui/artifacts/` holds the gener
 ### End-to-end checks: the built `ask`
 
 - Go end-to-end tests in `cmd/tui` (`interactive_test.go`) run the compiled `ask` on a pseudo terminal with an isolated `ASK_HOME` and read the screen through `x/vt`. The TUI starts its own leader; the faux provider replaces only the model service.
-- Checks that need a real terminal engine (resize while streaming, idle and selector screens) run with `python3 e2e/tui/run.py --driver ask`, which drives the compiled `ask` through the pinned `tui-test` CLI. See `e2e/tui/README.md`. Provider keys reach `ask` only through the inherited environment, and the runner scans its artifacts for key values.
+- Checks that need a real terminal engine (resize while streaming, idle and selector screens) run with `python3 e2e/tui/run.py --driver ask`, which drives the compiled `ask` through the pinned `tui-test` CLI. See `e2e/tui/README.md`. The runner removes every credential variable and `ASK_*` variable from the child, sets `ASK_FAUX=1`, and scans its artifacts for key values. A run against real providers is by hand only (`e2e/tui/real_provider_scenarios.py`); it pastes the key through the PTY and never passes it in the environment or an argument.
 - Each acceptance criterion in the design file maps to one named test in the plan; a criterion with no test is not done.
 
 ### Finish

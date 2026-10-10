@@ -43,6 +43,9 @@ type Options struct {
 	Home string
 	// Version is the build version in the startup header.
 	Version string
+	// TraceFile is the file that Bubble Tea writes raw input to, or empty. The
+	// warning names it. The package does not read the environment.
+	TraceFile string
 	// Location is the time zone of the send times. Nil means local time.
 	Location *time.Location
 	// Now is the clock of the session view. Nil means time.Now.
@@ -197,6 +200,13 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.frameReady = true
 	case StopMsg:
 		m.quitting = true
+		if m.sv != nil {
+			// An open login is cancelled before the program ends. The buffers
+			// of a key or a code are dropped.
+			if cancel := m.sv.stopCmd(); cancel != nil {
+				return m, tea.Sequence(cancel, tea.Quit)
+			}
+		}
 		return m, tea.Quit
 	}
 	var viewCmd tea.Cmd

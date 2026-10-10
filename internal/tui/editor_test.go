@@ -511,8 +511,8 @@ func TestEditorNewlineKeys(t *testing.T) {
 func TestCompletionFiltersAndRuns(t *testing.T) {
 	app, h := startEditorApp(t, 80, 16)
 	h.send(tea.KeyPressMsg{Code: '/', Text: "/"})
-	h.waitText("/model     Select a model")
-	for _, want := range []string{"/new ", "/sessions  Watch another live session", "/take ", "/quit "} {
+	h.waitText("/model      Select a model")
+	for _, want := range []string{"/new ", "/sessions   Watch another live session", "/take ", "/quit "} {
 		require.GreaterOrEqual(t, h.count(want), 1, want)
 	}
 	require.GreaterOrEqual(t, h.count("❯ /model"), 1, "the first command is selected")
@@ -526,7 +526,7 @@ func TestCompletionFiltersAndRuns(t *testing.T) {
 	h.waitFor("closed list", func(h *screenHarness) bool { return h.count("/sessions") == 0 })
 	require.GreaterOrEqual(t, h.count("❯ /s"), 1, "esc keeps the draft")
 
-	app.sendKeys(h, t, "backspace", "down", "down", "enter")
+	app.sendKeys(h, t, "backspace", "down", "down", "down", "enter")
 	h.stop()
 	require.Empty(t, app.ed.Text(), "a command clears the draft")
 	last := app.results[len(app.results)-1]

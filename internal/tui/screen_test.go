@@ -62,7 +62,7 @@ type screenHarness struct {
 }
 
 // startScreen starts the program with a fixed window size.
-func startScreen(t *testing.T, model tea.Model, width, height int) *screenHarness {
+func startScreen(t *testing.T, model tea.Model, width, height int, extra ...tea.ProgramOption) *screenHarness {
 	t.Helper()
 	out := &syncBuffer{}
 	h := &screenHarness{
@@ -81,13 +81,14 @@ func startScreen(t *testing.T, model tea.Model, width, height int) *screenHarnes
 	// the last row of the screen.
 	_, err := h.emu.Write([]byte("\x1b[20h" + strings.Repeat("\n", height-1)))
 	require.NoError(t, err)
-	h.prog = tea.NewProgram(model,
+	programOpts := []tea.ProgramOption{
 		tea.WithInput(nil),
 		tea.WithOutput(out),
 		tea.WithWindowSize(width, height),
 		tea.WithEnvironment([]string{"TERM=xterm-256color"}),
 		tea.WithoutSignalHandler(),
-	)
+	}
+	h.prog = tea.NewProgram(model, append(programOpts, extra...)...)
 	go func() {
 		final, err := h.prog.Run()
 		h.done <- runResult{model: final, err: err}

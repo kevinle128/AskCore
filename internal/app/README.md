@@ -28,6 +28,11 @@ The command supplies `NewAgent`, which must call `NewNativeAgent` with the given
 A client that leaves never reaches this path.
 `ActiveRuns` and `QuiesceIfIdle` of the adapter feed the status and the idle shutdown. The tests with a real socket, the real router and the real host are in [leader_routing_test.go](leader_routing_test.go).
 
+The leader owns interactive provider setup; provider auth calls on an editor connection and the in-process link check readiness only.
+[NewLeaderRuntime](module_leader.go) owns the provider broker and its shutdown before the credential refresh drain.
+See the [provider method boundary](../acp/README.md#provider-methods).
+[Default model selection](default_model.go) and the [settings store](../settings/README.md#default-model) share the choice across new sessions.
+
 ## What does not belong here
 
 | Code | Put it in |

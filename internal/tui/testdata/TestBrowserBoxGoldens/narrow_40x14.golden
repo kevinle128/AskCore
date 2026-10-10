@@ -1,0 +1,14 @@
+◢◤ ask   v0.1.0 · leader 7c1e · ~/src/a…
+  alibaba-token-plan/deepseek-v4.1-flash
+
+┊ ◌ Waiting… 12s
+╭─ ChatGPT Plus/Pro sign-in ───────────╮
+│  Open this URL and sign in:          │
+│  https://auth.example.test/oauth/aut │
+│  horize?response_type=code&client_id │
+│  =ask-cli&redirect_uri=http%3A%2F%2F │
+│  127.0.0.1%3A1455%2Fcallback&scope=o │
+│  … ctrl+y copies the full URL        │
+╰──────────────────────────────────────╯
+   ctrl+y copy URL · esc cancel
+  ● 7c1e         deepseek-v4.1-flash 0%

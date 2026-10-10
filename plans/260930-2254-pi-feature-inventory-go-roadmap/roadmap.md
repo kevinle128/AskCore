@@ -16,6 +16,7 @@ Revision 15 (2026-10-06): the lifecycle redesign is implemented (plan `261006-09
 The implemented control points, in-memory request reconstruction, queues, retry, tool outcomes, disposal, and follow path are removed from the remaining H8, H9, H11, and H12 work.
 Revision 16 (2026-10-06): prioritize the local Leader ACP and TUI path after completed H4, H7a and lifecycle work.
 Revision 17 (2026-10-08): H13b (leader over the Unix socket) is implemented (plan `261008-1033-h13b-leader-unix-socket`). The line client `ask connect` is its runnable exit; the T1a TUI replaces it. The repository holds a patched copy of the ACP SDK (`third_party/acp-go-sdk`, one scanner limit raised to 65 MiB).
+Revision 18 (2026-10-10): T1c (provider setup in the TUI: `/providers`, `/model` with usable models only, first run with no model) follows T1a; see the T1 section. It delivers the local part of H17 rows H-SLASH-10 and H-AUTH-10 and of the T2 login and logout dialogs early; the gateway transport stays in H17.
 Reference: Pi 1.0.1, commit `4c6fb7cfe`, at `/Users/dale/Desktop/workspace/opensources/pi` (user, 2026-10-05; before that Pi 0.99.1, commit `2bbfcca4`). Line citations written before 2026-10-05 are at `2bbfcca4`. Each phase checks and fixes the citations it uses.
 Inputs: `inventory-harness.md` (H-*), `inventory-extensions.md` (E-*), `inventory-tui.md` (T-*), `timeline.md`, the edge-case report `plans/reports/researcher-260930-2254-pi-edge-cases.md` (E§N; the top-30 list is E§24#N), and the waku report `plans/reports/researcher-260930-2254-waku-watch-it-think.md`.
 
@@ -702,6 +703,12 @@ Rules behind this order:
   - Run acceptance with a built `ask`, its actual Unix socket and real providers.
     Verify terminal restoration after normal exit, errors and signals.
     Protocol and local HTTP tests support acceptance but do not replace the real-provider check.
+- **T1c: provider setup in the TUI.** Plan: [`261010-1424-t1c-provider-setup`](../261010-1424-t1c-provider-setup/plan.md), with the approved [design](../261010-1424-t1c-provider-setup-design/design.md). Follows T1a (user, 2026-10-10).
+  - `/providers` lists seven login options and signs in by API key, browser URL, copy-code or device code; removal asks for confirmation. The leader runs each sign-in on its host over the owner-only socket and checks an API key before it saves it (the Alibaba Token Plan key cannot be checked and is saved as it is).
+  - `/model` lists only the models of usable providers and saves the choice as the default in `settings.json`. With no usable provider a session has no model: the footer shows `no model` and a prompt is not sent.
+  - The faux provider is opt-in with `ASK_FAUX=1` on the leader, `ask acp` and the in-process TUI agent; `ask -p` keeps faux as its default.
+  - Overlap with M2 (user, 2026-10-10): this is the local part of the H17 rows H-SLASH-10 (`/login`, `/logout`) and H-AUTH-10 (transport over the local leader), and of the T2 login and logout dialogs. The gateway transport and the breadth of providers stay in H17 and T2.
+  - Real-provider run: [report](../reports/real-provider-acceptance-2026-10-10-t1c-providers.md).
 - **T1b: complete the remaining M1 TUI scope.**
   - Connect H5 builtin tools, H6 settings/trust, H7 catalog, H8 durable resume, H9 remaining overflow/usage, H10 compaction, H11 extensions and H12 observability as each phase completes.
   - Connect H14 session tree, H15 commands/resources and X1 extension tools within their M1 scope.
@@ -716,7 +723,7 @@ Rules behind this order:
   - keybindings;
   - themes;
   - width and Unicode handling.
-- **Harness rows that T1 commands need:** H-SESS-18 (H13), H-SESS-20 (H14) and the H-SESS-10 picker (built in T1), H7/H7a model/auth readiness. `/session` and `/resume` are enabled when their phase is done. Full TUI `/login` remains M2 (H17 transport, T2 dialogs); M1 can use H7a headless login on the inference host or environment API keys. Show provider, model, auth method and readiness without assuming entitlement.
+- **Harness rows that T1 commands need:** H-SESS-18 (H13), H-SESS-20 (H14) and the H-SESS-10 picker (built in T1), H7/H7a model/auth readiness. `/session` and `/resume` are enabled when their phase is done. Full TUI `/login` over the gateway remains M2 (H17 transport, T2 dialogs); the local leader path has `/providers` since T1c, and H7a headless login or environment API keys still work. Show provider, model, auth method and readiness without assuming entitlement.
 - **Constraint:** the TUI uses one `AgentClient` interface: `remote` (ACP to the leader, or to a remote agent) and `direct` (in-process agent, the fallback when the leader connect fails at startup; never after a successful start, where the TUI reconnects). Headless mode uses `direct` (D5). User decision 2026-10-10.
 - **Tests:** E§24#23 to #27.
 - **Exit (T1a):** the completed H4, H7a and lifecycle behavior works from the terminal through Leader ACP.

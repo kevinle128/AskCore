@@ -34,6 +34,8 @@ const (
 	stateColWidth   = 18
 	selectorMaxRows = 8
 	selectorMinRows = 3
+	// selectorRows is the height that the window of a selector is sized for.
+	selectorRows = 12
 )
 
 // selItem is one row of a selector.
@@ -44,6 +46,11 @@ type selItem struct {
 	role   Role   // role of the dot
 	right  string // right text, already padded to its column width
 	filter string // text that the filter matches
+	// header marks a group header row: the cursor skips it, and it shows only
+	// while a row of its group matches the filter.
+	header bool
+	// group is the index of the header of a row in a grouped list, or -1.
+	group int
 }
 
 // selAction tells the root what a key did.
@@ -69,16 +76,42 @@ type selector struct {
 	busy bool
 	// gen is the generation of the view when the selector opened.
 	gen uint64
+	// empty is true for a model list with no row: the box shows a hint and has
+	// no filter row.
+	empty bool
 }
 
-// visible returns the indexes of the items that match the filter.
+// visible returns the indexes of the rows that match the filter. Group headers
+// are never in it, so the cursor skips them.
 func (sl *selector) visible() []int {
 	var out []int
 	q := strings.ToLower(sl.filter)
 	for i, it := range sl.items {
+		if it.header {
+			continue
+		}
 		if q == "" || strings.Contains(strings.ToLower(it.filter), q) {
 			out = append(out, i)
 		}
+	}
+	return out
+}
+
+// dispRow is one drawn row: an item and its place among the selectable rows,
+// or -1 for a group header.
+type dispRow struct{ item, pos int }
+
+// display lists the drawn rows for the matching rows. A group header comes
+// before the first matching row of its group and not at all without one.
+func (sl *selector) display(vis []int) []dispRow {
+	out := make([]dispRow, 0, len(vis)+4)
+	emitted := map[int]bool{}
+	for k, idx := range vis {
+		if h := sl.items[idx].group; h >= 0 && !emitted[h] {
+			emitted[h] = true
+			out = append(out, dispRow{item: h, pos: -1})
+		}
+		out = append(out, dispRow{item: idx, pos: k})
 	}
 	return out
 }
@@ -135,7 +168,7 @@ func (sl *selector) key(k tea.KeyPressMsg) selAction {
 // rowBudget is the number of item rows the selector can draw in a terminal
 // height, with the rows of an error taken out.
 func (sl *selector) rowBudget(height, errRows int) int {
-	total := min(modalMaxRows, height)
+	total := min(selectorRows, height)
 	return min(selectorMaxRows, max(selectorMinRows, total-4-errRows))
 }
 
@@ -155,6 +188,13 @@ func (sl *selector) slot(width, height int, th *Theme) EditorSlot {
 	fill := max(0, width-displayWidth(head)-displayWidth(title)-1)
 	rows := []string{th.Render(RoleBorder, head) + th.Style(RoleAccent).Bold(true).Render(title) +
 		th.Render(RoleBorder, strings.Repeat("─", fill)+"╮")}
+
+	if sl.empty {
+		rows = append(rows, boxed(""), boxed(" No usable models yet."), boxed(" Use /providers to add providers."), boxed(""))
+		rows = append(rows, th.Render(RoleBorder, "╰"+strings.Repeat("─", max(0, width-2))+"╯"))
+		rows = append(rows, "   "+th.Style(RoleDim).Italic(true).Render(truncateTo(sl.hint, max(1, width-3))))
+		return EditorSlot{Rows: rows, Modal: true}
+	}
 
 	filterPlain := " " + GlyphFilter + " " + sl.filter
 	filterStyled := " " + GlyphFilter + " " + sl.filter
@@ -191,25 +231,33 @@ func (sl *selector) slot(width, height int, th *Theme) EditorSlot {
 	}
 
 	vis := sl.visible()
+	disp := sl.display(vis)
 	budget := sl.rowBudget(height, errRows)
 	sel := min(sl.sel, max(0, len(vis)-1))
-	shown, hidden := len(vis), 0
+	selPos := 0
+	for i, d := range disp {
+		if d.pos == sel {
+			selPos = i
+		}
+	}
+	shown, hidden := len(disp), 0
 	if shown > budget {
 		shown = budget - 1
-		hidden = len(vis) - shown
+		hidden = len(disp) - shown
 	}
-	if sel < sl.top {
-		sl.top = sel
+	if selPos < sl.top {
+		sl.top = selPos
 	}
-	if sel >= sl.top+shown {
-		sl.top = sel - shown + 1
+	if selPos >= sl.top+shown {
+		sl.top = selPos - shown + 1
 	}
-	sl.top = max(0, min(sl.top, len(vis)-shown))
+	sl.top = max(0, min(sl.top, len(disp)-shown))
 	if len(vis) == 0 {
 		rows = append(rows, styledBoxed("   no match", "   "+th.Render(RoleDim, "no match")))
 	}
-	for i := sl.top; i < sl.top+shown && i < len(vis); i++ {
-		rows = append(rows, sl.itemRow(sl.items[vis[i]], i == sel, inner, bar, th))
+	for i := sl.top; i < sl.top+shown && i < len(disp); i++ {
+		d := disp[i]
+		rows = append(rows, sl.itemRow(sl.items[d.item], d.pos == sel && d.pos >= 0, inner, bar, th))
 	}
 	if hidden > 0 {
 		more := fmt.Sprintf("   … %d more", hidden)
@@ -228,6 +276,11 @@ func (sl *selector) slot(width, height int, th *Theme) EditorSlot {
 
 // itemRow draws one row of the list.
 func (sl *selector) itemRow(it selItem, selected bool, inner int, bar string, th *Theme) string {
+	if it.header {
+		plain := "  " + it.dot + " " + it.label
+		styled := "  " + th.Render(it.role, it.dot) + " " + th.Style(RoleMuted).Bold(true).Render(it.label)
+		return bar + " " + styled + strings.Repeat(" ", max(0, inner-displayWidth(plain))) + " " + bar
+	}
 	mark := "  "
 	if selected {
 		mark = GlyphUser + " "
@@ -284,46 +337,95 @@ func padLeft(s string, width int) string {
 	return s
 }
 
-// newModelSelector builds the model list. The current model starts selected.
+// newModelSelector builds a flat model list. The current model starts selected.
 func newModelSelector(models []protocol.ACPModel, current string) *selector {
+	return newModelSelectorFor(protocol.ACPModelsResult{Models: models}, current)
+}
+
+// newModelSelectorFor builds the model list of an answer. When the leader
+// filtered the list (UsableOnly), the rows are grouped by provider, with a
+// header for each. An old leader sends every row, and the list stays flat. The
+// current model starts selected; a saved default that is not current gets a
+// tag of its own.
+func newModelSelectorFor(res protocol.ACPModelsResult, current string) *selector {
 	sl := &selector{kind: selectModel, title: "Select model", hint: "enter select  ·  esc close  ·  your draft is kept"}
+	grouped := res.UsableOnly
 	order := map[string]int{}
 	// One model can be listed on two wire formats. The label then names the
 	// format, so that two rows never look the same.
 	seen := map[string]bool{}
 	shown := map[string]int{}
-	for _, m := range models {
+	for _, m := range res.Models {
 		if !seen[m.ModelID] {
 			seen[m.ModelID] = true
 			shown[m.Provider+"/"+m.ID]++
 		}
 	}
 	seen = map[string]bool{}
-	for _, m := range models {
+	headers := map[string]int{}
+	for _, m := range res.Models {
 		if seen[m.ModelID] {
 			continue
 		}
 		seen[m.ModelID] = true
+		role := providerRole(order, m.Provider)
+		group := -1
+		if grouped {
+			h, ok := headers[m.Provider]
+			if !ok {
+				h = len(sl.items)
+				headers[m.Provider] = h
+				sl.items = append(sl.items, selItem{
+					label: m.Provider, dot: GlyphToolDone, role: role, header: true, group: -1,
+				})
+			}
+			group = h
+		}
 		tag := ""
 		switch {
 		case m.ModelID == current:
 			tag = "current"
-			sl.sel = len(sl.items)
+			sl.sel = countRows(sl.items)
+		case res.Default != "" && m.ModelID == res.Default:
+			tag = "default"
 		case m.Reasoning:
 			tag = "reasoning"
 		}
 		name := m.Provider + "/" + m.ID
 		label := name
+		if grouped {
+			label = m.ID
+		}
 		if shown[name] > 1 && m.API != "" {
 			label += " (" + m.API + ")"
 		}
-		sl.items = append(sl.items, selItem{
-			id: m.ModelID, label: label, dot: GlyphToolDone, role: providerRole(order, m.Provider),
+		it := selItem{
+			id: m.ModelID, label: label, dot: GlyphToolDone, role: role, group: group,
 			right:  padLeft(formatWindow(m.ContextWindow), windowColWidth) + "  " + padTo(tag, tagColWidth) + " ",
-			filter: label,
-		})
+			filter: name + " " + label,
+		}
+		if grouped {
+			it.dot = ""
+			it.label = "  " + label
+		}
+		sl.items = append(sl.items, it)
+	}
+	if countRows(sl.items) == 0 {
+		sl.empty = true
+		sl.hint = "esc close  ·  your draft is kept"
 	}
 	return sl
+}
+
+// countRows counts the rows that are not group headers.
+func countRows(items []selItem) int {
+	n := 0
+	for _, it := range items {
+		if !it.header {
+			n++
+		}
+	}
+	return n
 }
 
 // newSessionSelector builds the list of live sessions.
@@ -346,6 +448,7 @@ func newSessionSelector(list []protocol.ACPLiveSession, current, home string) *s
 			label:  ShortID(ls.SessionID) + "  " + cwd,
 			right:  padLeft(state, stateColWidth),
 			filter: ShortID(ls.SessionID) + " " + cwd,
+			group:  -1,
 		})
 	}
 	return sl

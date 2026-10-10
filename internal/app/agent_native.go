@@ -18,8 +18,11 @@ import (
 // NativeAgentConfig supplies session ownership and private inference transport.
 // Config retains tool, session writer, pipeline, and lifecycle options.
 type NativeAgentConfig struct {
-	Config        agent.Config
+	Config agent.Config
+	// InitialStream serves InitialAPI, or Config.Model.API when InitialAPI is
+	// empty. Its API can differ from the saved model of a new session.
 	InitialStream providers.StreamFn
+	InitialAPI    providers.API
 	Auth          *auth.Service
 	Env           func(string) (string, bool)
 	HTTPClient    *http.Client
@@ -41,11 +44,16 @@ func NewNativeAgent(in NativeAgentConfig) (*agent.Agent, error) {
 	if !info.IsDir() {
 		return nil, fmt.Errorf("native agent: cwd must be a directory")
 	}
-	if in.InitialStream == nil {
-		return nil, fmt.Errorf("native agent: initial stream is required")
-	}
 	wires := providers.NewRegistry()
-	wires.Register(cfg.Model.API, in.InitialStream)
+	// The initial stream serves the demo model. A session with no demo model
+	// has none and uses the native wires only.
+	if in.InitialStream != nil {
+		api := in.InitialAPI
+		if api == "" {
+			api = cfg.Model.API
+		}
+		wires.Register(api, in.InitialStream)
+	}
 	aopts := []anthropic.Option{anthropic.WithEnv(in.Env)}
 	oopts := []openai.Option{openai.WithEnv(in.Env)}
 	if in.HTTPClient != nil {

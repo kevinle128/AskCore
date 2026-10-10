@@ -15,7 +15,12 @@ import (
 	"time"
 )
 
-var errAuthorizationDenied = errors.New("auth: authorization denied")
+var (
+	// ErrAuthorizationDenied means the browser callback carried an error answer.
+	ErrAuthorizationDenied = errors.New("auth: authorization denied")
+	// ErrCallbackPort means the loopback callback port could not be bound.
+	ErrCallbackPort = errors.New("auth: callback port is unavailable")
+)
 
 type authorization struct{ code, client string }
 
@@ -66,7 +71,7 @@ func parseCallback(input, redirect, state string, bare, client bool) (authorizat
 		return authorization{}, bad
 	}
 	if q.Get("error") != "" {
-		return authorization{}, errAuthorizationDenied
+		return authorization{}, ErrAuthorizationDenied
 	}
 	if len(q["code"]) != 1 || strings.TrimSpace(q.Get("code")) == "" {
 		return authorization{}, bad
@@ -90,7 +95,7 @@ func awaitAuthorization(ctx context.Context, r LoginRequest, authorize, redirect
 		u, _ := url.Parse(redirect)
 		listener, e := net.Listen("tcp", "127.0.0.1:"+u.Port())
 		if e != nil {
-			return authorization{}, errors.New("auth: callback port is unavailable")
+			return authorization{}, ErrCallbackPort
 		}
 		server = &http.Server{ReadHeaderTimeout: 5 * time.Second, ReadTimeout: 5 * time.Second, WriteTimeout: 5 * time.Second, MaxHeaderBytes: 32 * 1024}
 		server.Handler = http.HandlerFunc(func(w http.ResponseWriter, req *http.Request) {
@@ -100,7 +105,7 @@ func awaitAuthorization(ctx context.Context, r LoginRequest, authorize, redirect
 			}
 			a, e := parseCallback(redirect+"?"+req.URL.RawQuery, redirect, state, false, issued)
 			if e != nil {
-				if errors.Is(e, errAuthorizationDenied) {
+				if errors.Is(e, ErrAuthorizationDenied) {
 					select {
 					case results <- struct {
 						a authorization
@@ -123,7 +128,15 @@ func awaitAuthorization(ctx context.Context, r LoginRequest, authorize, redirect
 			_, _ = w.Write([]byte("Callback received. Return to the command to confirm that credentials were saved."))
 		})
 		serveDone := make(chan struct{})
-		defer func() { _ = server.Close(); <-serveDone }()
+		defer func() {
+			// A result can arrive before the HTTP response is sent. Let active
+			// handlers finish before closing their connections.
+			shutdownCtx, shutdownCancel := context.WithTimeout(context.Background(), 5*time.Second)
+			defer shutdownCancel()
+			_ = server.Shutdown(shutdownCtx)
+			_ = server.Close()
+			<-serveDone
+		}()
 		go func() { defer close(serveDone); _ = server.Serve(listener) }()
 	}
 	if e := notify(ctx, r, LoginNotice{URL: authorize, Message: "Complete sign-in, then paste the callback or code if required."}); e != nil {

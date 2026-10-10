@@ -99,6 +99,8 @@ type noticeView struct {
 	text  string
 	until time.Time
 	err   bool
+	// ok puts the success glyph before the text: a result line.
+	ok bool
 }
 
 type reconnectView struct {
@@ -146,18 +148,59 @@ type sessionView struct {
 	queue         queueView
 	notice        noticeView
 
-	models    []protocol.ACPModel
-	modelID   string
-	thinking  protocol.ThinkingLevel
-	thinkTry  protocol.ThinkingLevel
-	ctxTokens int64
-	costMicro int64
+	models  []protocol.ACPModel
+	modelID string
+	// hadModel keeps the next step after a model was removed from this session.
+	hadModel bool
+	// haveState is true once a state answer of the current session was applied;
+	// stateGen is the generation that answer belonged to. Until then an empty
+	// modelID does not mean that the session has no model.
+	haveState bool
+	stateGen  uint64
+	// modelSeq grows with every model event, so a state answer that started
+	// before one does not set the model back.
+	modelSeq uint64
+	// fallback is the saved default that the session did not start on.
+	fallback *protocol.ACPModelFallback
+	// lastRef is the model that the last start or change line named.
+	lastRef modelRef
+	// baseline is the cursor of the last follow cut. A model event at or below
+	// it is already part of the state.
+	baseline protocol.ACPCursor
+	// starts are the placeholders of start lines that wait for the state.
+	starts      []startSlot
+	headerBlock startupHeader
+	trace       string
+	thinking    protocol.ThinkingLevel
+	thinkTry    protocol.ThinkingLevel
+	ctxTokens   int64
+	costMicro   int64
 	// modelReq numbers the set-model requests. Only the answer to the latest
 	// request, in the generation it started in, changes the model.
 	modelReq uint64
 
 	sel          *selector
 	openingModel bool
+
+	// pbox is the provider box and dlg the login or removal box. At most one of
+	// them is open; a flow replaces the provider box with its own box.
+	pbox         *providerBox
+	dlg          *loginDialog
+	dlgSeq       uint64
+	provReq      uint64
+	providersGen uint64
+	// closed holds sign-ins whose box is gone and whose end is not known yet.
+	closed map[string]*closedLogin
+	// afterModels runs when the model list that a token asked for arrives.
+	afterModels  map[uint64]func(res *protocol.ACPModelsResult) tea.Cmd
+	fetchSeq     uint64
+	appliedFetch uint64
+	modelList    protocol.ACPModelsResult
+	// ownGen is the latest providers generation that this client caused. A
+	// change notice at or below it is not shown. deferred holds notices that
+	// arrived while a change of this client was still open.
+	ownGen   uint64
+	deferred []ProvidersChangedMsg
 
 	tickPending bool
 	headerShown bool
@@ -171,6 +214,9 @@ type sessionView struct {
 	// set when the user asked to quit.
 	quitUntil time.Time
 	quitNote  *quitNote
+	// copiedUntil is the end of the "Copied" line. It shows above the wait line
+	// of a login, because the copy happens while the box waits.
+	copiedUntil time.Time
 }
 
 // newSessionView builds the view of a Model.
@@ -181,6 +227,7 @@ func newSessionView(m *Model, o Options) *sessionView {
 		open:    o.Open,
 		editor:  NewEditor(DefaultCommands()),
 		version: o.Version,
+		trace:   o.TraceFile,
 		cwd:     o.Cwd,
 		home:    o.Home,
 		now:     o.Now,
@@ -195,6 +242,8 @@ func newSessionView(m *Model, o Options) *sessionView {
 	if s.home == "" {
 		s.home, _ = os.UserHomeDir()
 	}
+	s.closed = map[string]*closedLogin{}
+	s.afterModels = map[uint64]func(res *protocol.ACPModelsResult) tea.Cmd{}
 	s.trl = NewTranslator(TranslatorOptions{Location: o.Location})
 	if s.client != nil {
 		s.adoptClient(s.client)
@@ -313,7 +362,14 @@ func (s *sessionView) Slots(width int) Slots {
 		Footer:  s.footerText(width),
 		Pending: s.pendingRows(width),
 	}
-	if s.sel != nil {
+	switch {
+	case s.dlg != nil:
+		out.Editor = s.dlg.slot(s, width, s.m.height)
+		return out
+	case s.pbox != nil:
+		out.Editor = s.pbox.slot(width, s.m.height, th)
+		return out
+	case s.sel != nil:
 		out.Editor = s.sel.slot(width, s.m.height, th)
 		return out
 	}

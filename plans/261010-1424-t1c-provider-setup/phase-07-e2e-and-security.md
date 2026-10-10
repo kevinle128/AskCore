@@ -1,7 +1,7 @@
 ---
 phase: 7
 title: "E2E and security acceptance"
-status: pending
+status: completed
 priority: P1
 effort: "1.5d"
 dependencies: [6]
@@ -9,18 +9,19 @@ dependencies: [6]
 
 # Phase 7: E2E and security acceptance
 
-Outline with scouted evidence. Run a scout pass and update this file before cooking.
+Scout record and results of the run of 2026-10-10 are below. Criterion numbers follow the re-approved design (1-60).
 
 ## Goal
 
-Criterion numbers follow the re-approved design (1-58). Prove the leader-path criteria and the security criteria on the built `ask` in a PTY, with a real leader that the TUI starts, an isolated `ASK_HOME`, the faux provider (`ASK_FAUX=1`) or no provider, and the provider fixture for key probes and OAuth endpoints. Every leader-path test asserts the leader id in the footer, so an in-process fallback cannot pass.
+Prove the leader-path criteria and the security criteria on the built `ask` in a PTY, with a real leader that the TUI starts, an isolated `ASK_HOME`, the faux provider (`ASK_FAUX=1`) or no provider, and the provider fixture for key probes and OAuth endpoints. Every leader-path test asserts the leader id in the footer, so an in-process fallback cannot pass.
 
-## Evidence (scouted 2026-10-10)
+## Evidence (re-scouted 2026-10-10 against the tree after phase 6)
 
-- PTY helpers and env: `cmd/tui/interactive_test.go:61` (`interactiveEnv` removes credential variables of the developer shell; phase 4 adds `ASK_FAUX=1`).
-- Existing flow tests: `cmd/tui/interactive_flow_test.go` (uncommitted T1a edits; not edited here, new tests go in new files).
-- Provider fixture: `cmd/tui/acp_e2e_test.go:1464-1560`, an HTTPS backend behind a CONNECT proxy with a temporary CA; it already answers `https://api.anthropic.com/v1/messages` and `https://platform.claude.com/v1/oauth/token` (`:1490-1505`). The leader inherits it through the environment (`f.env()`, `:1554`). It needs routes for the key probes (`/v1/models` of the four providers) and the xAI device endpoints (`auth.x.ai/oauth2/device/code`, `/oauth2/token`).
-- Terminal runner: `e2e/tui/run.py` with secret scanning (`:516-517`, `secret_values` `:633`, `scan_secrets` `:639`).
+- PTY helpers and env: `cmd/tui/interactive_test.go:61` (`interactiveEnv`). `ASK_FAUX=1` is in `leaderEnv` (`leader_e2e_test.go:26`); a first-run test appends `ASK_FAUX=0`. The process has no controlling terminal, so a resize needs the in-band report of the emulator and `SIGWINCH` (`askTerm.resize`).
+- Provider fixture: `cmd/tui/acp_e2e_test.go` (HTTPS backend behind a CONNECT proxy with a temporary CA). It now has one host list for the certificate and the proxy, and a `route` hook for every destination the switch does not know. The routes of the provider flows are in `providers_flow_test.go` (`providerRoutes`): the three key checks, the device authorization and token poll of xAI, the token and key set of ChatGPT, and the Token Plan messages endpoint (401). A unit check (`TestProviderFixtureAnswersProviderRoutes`) drives them through the proxy.
+- The leader inherits the fixture through the environment of the first `ask` that starts it; a second `ask` joins that leader.
+- Terminal runner: `e2e/tui/run.py`. It records what it types in `commands.json` and in the input events of `output.cast`; the new case redacts its fake key there and adds the value to the scan, so the scan finds it only when the product wrote it.
+- A single link of the built `ask` cannot be dropped from outside. `linkProxy` (`providers_reconnect_test.go`) forwards the leader socket of one home to the leader of another; the client runs with the proxy home. Dropping it ends only the links, and while stalled it never refuses, so the client never starts a leader of its own.
 
 ## Tests (all new files; failing first against the phase 6 build)
 
@@ -62,16 +63,29 @@ Criterion numbers follow the re-approved design (1-58). Prove the leader-path cr
 
 The security tests run without `TEA_TRACE` (the design's stated exception). The UI-only security criteria (38, 39, 40, 42, 43) stay with their phase 6 tests, which can read the history, the rings, the buffer and the clipboard command directly.
 
+Notes on how the tests meet the map (2026-10-10):
+
+- Criterion 5 and the draft: the command `/providers` is the whole editor line, so the editor holds no draft when the box opens. The test checks that esc brings the editor back (empty, placeholder). The design text "your draft is kept" can only hold for the empty editor (design gap, see the report).
+- Criterion 20 uses the xAI device sign-in. The account comes from the `email` claim of the fixture id token. The ChatGPT account name stays with the auth unit tests; the ChatGPT sign-in is used here only to put a saved record in the home of criterion 5, with the production `ask auth login` against the fixture.
+- Criterion 17: after the leader is stopped and a new one started, the box still shows the stopped text until esc, and the fixture sees no second device authorization.
+- Criterion 41 also reads every frame between the client and the leader through `linkProxy`: the key is in the frames to the leader once and in none from it.
+- Criterion 57: the test pastes no key, so the trace file holds no secret; it deletes the file at the end.
+- Criterion 35: the resize test uses `askTerm.resize`.
+- `TestConnectFollowUpWithoutModelRefused`: `ask connect` has no follow-up verb, so the follow-up and the steer go over the same leader link with the raw call helper, on the session that `ask connect` made.
+- Reconnect with two missed model changes: `TestInteractiveReconnectDrawsNoMissedModelChanges` (built `ask`, link dropped through `linkProxy`), `TestClientResumedFollowNamesReplayHead` (tuiclient and leader), `TestRestoreMissedModelChangesDrawNoLine` (view, the failing case first), `TestFollowHeadNamesTheEndOfTheReplay` (agent).
+
 `e2e/tui/run.py`: one structural case `ask-providers` (provider box at 80×24, draft kept, esc back) for a real terminal engine, plus the secret scan of its artifacts. The runner writes typed text into argv and `commands.json` (`run.py:145-158,208-209`), so a case that types a fake key adds that value to the scan set (`secret_values`, `run.py:633`) and never types a real one.
 
 ## Files owned
 
 | File | Action |
 |---|---|
-| `cmd/tui/providers_flow_test.go`, `cmd/tui/providers_security_test.go` | create |
-| `cmd/tui/acp_e2e_test.go` | modify: fixture routes for probes, device flow and the Token Plan messages endpoint (401) |
-| `cmd/tui/interactive_flow_test.go` | modify: criteria 48, 49 assertions (only after the T1a work is committed) |
-| `e2e/tui/run.py`, `e2e/tui/README.md` | modify: `ask-providers` case |
+| `cmd/tui/providers_flow_test.go`, `cmd/tui/providers_security_test.go`, `cmd/tui/providers_reconnect_test.go` | created |
+| `cmd/tui/acp_e2e_test.go` | modified: one host list, `route` hook |
+| `cmd/tui/interactive_flow_test.go` | modified: change line (48) and start line under the divider (49) |
+| `e2e/tui/run.py`, `e2e/tui/test-assertions.py`, `e2e/tui/README.md` | modified: `ask-providers` case, redaction of the typed fake key, controls, environment text |
+| Product fix for a replayed model change after a reconnect: `pkg/protocol/acp.go` (`ACPFollowResult.Head`), `internal/agent/follow.go` (`Follow.Head`), `internal/acp/updates.go`, `internal/tuiclient/events.go`, `internal/tui/client.go` (`SnapshotMsg.Head`), `internal/tui/update_session.go` (baseline), `internal/acp/README.md` | modified, additive |
+| `internal/agent/follow_head_test.go`, `internal/tui/restore_missed_model_test.go` | created |
 
 ## Steps
 
@@ -102,8 +116,20 @@ Test-only files and fixture routes; revert the commit.
 
 ## Todo
 
-- [ ] Fixture routes
-- [ ] Flow tests (incl. default model, removal cancels sign-in)
-- [ ] Security tests (incl. trace warning)
-- [ ] Runner case and scan
-- [ ] Full suite green
+- [x] Fixture routes
+- [x] Flow tests (incl. default model, removal cancels sign-in)
+- [x] Security tests (incl. trace warning)
+- [x] Runner case and scan
+- [x] Full suite green
+
+## Results (2026-10-10)
+
+- `go test ./...` passes; `go test -race` passes for `internal/tui`, `internal/tuiclient`, `internal/agent`, `internal/acp`, `pkg/protocol`; `go vet ./...` and `golangci-lint run ./...` report no issue.
+- The new E2E tests passed three times in a row (`-count=3`).
+- `python3 e2e/tui/run.py` passes (T0 and ask drivers, both engines, with `ask-providers`); `python3 e2e/tui/test-assertions.py` passes.
+
+### Reconnect with two missed model changes
+
+Reproduced in the view: with the state answer first and a resumed follow whose cursor stays at the client cut, the events A to B and B to C drew two change lines (`TestRestoreMissedModelChangesDrawNoLine` failed with both lines before the fix). In the built `ask` the order is almost always events first (the replay is written right after the follow answer), so the E2E passes with and without the fix; it is the acceptance test, and the view test is the deterministic proof.
+
+Fix (additive): the follow result carries `head`, the last event published when the follow was answered. The client keeps it as the baseline of the follow when it lies above the cursor, so a replayed model event at or below it draws no line and the state read shows the model. A leader without `head` behaves as before. No known limit remains: a change that the leader posted but had not published at that moment reaches the client above `head` and draws its line, or draws nothing when the state already shows the same model.

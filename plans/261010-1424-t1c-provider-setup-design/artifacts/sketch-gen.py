@@ -316,11 +316,11 @@ def url_rows(w, url=URL, cap=None):
 # Names are checked against cmd/tui/auth_args.go (methods) and internal/providers/catalog.go (providers).
 
 ROWS = [("alibaba-token-plan", "Alibaba Token Plan API key"),
-        ("anthropic", "Claude Pro/Max account"),
+        ("anthropic", "Claude Pro/Max sign-in"),
         ("anthropic", "Anthropic API key"),
-        ("openai", "ChatGPT Plus/Pro subscription"),
+        ("openai", "ChatGPT Plus/Pro sign-in"),
         ("openai", "OpenAI API key"),
-        ("xai", "xAI Grok account"),
+        ("xai", "xAI Grok sign-in"),
         ("xai", "xAI API key")]
 # Status of the credential that each row names: row index -> (suffix, role).
 BASE = {0: ("api key", "success"), 2: ("env ANTHROPIC_API_KEY", "success"), 3: ("signed in", "success")}
@@ -415,7 +415,7 @@ def p_list_narrow(w, h):
 
 def p_actions(w, h):
     rows = [[t("  Signed in. What do you want to do?", "muted")], []]
-    box = [_box_title(w, "ChatGPT Plus/Pro subscription")] + [_box_row(w, r) for r in rows]
+    box = [_box_title(w, "ChatGPT Plus/Pro sign-in")] + [_box_row(w, r) for r in rows]
     for label, desc, sel in [("Sign in again", "Use another account or refresh this one", True),
                              ("Remove", "Delete the saved sign-in for openai", False)]:
         bg = " selected" if sel else ""
@@ -503,7 +503,7 @@ def browser_box(w, cap=None, waiting=True):
     rows = [[t("  Open this URL in a browser and sign in to openai:", "muted")], []]
     rows += url_rows(w, URL, cap)
     rows += [[], [t("  This box closes by itself when you approve.", "muted")]]
-    return dlg(w, "ChatGPT Plus/Pro subscription", rows, [("ctrl+y copy URL", 1), ("esc cancel", 0)])
+    return dlg(w, "ChatGPT Plus/Pro sign-in", rows, [("ctrl+y copy URL", 1), ("esc cancel", 0)])
 
 
 def p_browser_wait(w, h):
@@ -514,7 +514,7 @@ def p_browser_wait(w, h):
 def p_browser_narrow(w, h):
     rows = [[t("  Open this URL and sign in:", "muted")]]
     rows += url_rows(w, URL, 4)
-    box = dlg(w, "ChatGPT Plus/Pro subscription", rows, [("ctrl+y copy URL", 1), ("esc cancel", 0)])
+    box = dlg(w, "ChatGPT Plus/Pro sign-in", rows, [("ctrl+y copy URL", 1), ("esc cancel", 0)])
     live = [rail_work(w, "Waiting…", " 12s")] + box + footer(w)
     return frame(w, h, header(w, model=DEF), live)
 
@@ -522,21 +522,21 @@ def p_browser_narrow(w, h):
 def p_browser_failed(w, h):
     rows = [[t("  ✗ ", "error bold"), t("Sign-in failed: the browser returned access_denied.", "error")], [],
             [t("  Nothing was saved. You can try again.", "muted")]]
-    box = dlg(w, "ChatGPT Plus/Pro subscription", rows, [("enter try again", 0), ("esc close", 0)])
+    box = dlg(w, "ChatGPT Plus/Pro sign-in", rows, [("enter try again", 0), ("esc close", 0)])
     return frame(w, h, history(w), box + footer(w))
 
 
 def p_busy(w, h):
     rows = [[t("  ✗ ", "error bold"), t("Could not start: another client is signing in to openai.", "error")], [],
             [t("  Try again in a moment.", "muted")]]
-    box = dlg(w, "ChatGPT Plus/Pro subscription", rows, [("enter try again", 0), ("esc close", 0)])
+    box = dlg(w, "ChatGPT Plus/Pro sign-in", rows, [("enter try again", 0), ("esc close", 0)])
     return frame(w, h, history(w), box + footer(w))
 
 
 def p_removed_elsewhere(w, h):
     rows = [[t("  ✗ ", "error bold"), t("Sign-in cancelled: another client removed openai.", "error")], [],
             [t("  Nothing was saved. You can sign in again.", "muted")]]
-    box = dlg(w, "ChatGPT Plus/Pro subscription", rows, [("enter try again", 0), ("esc close", 0)])
+    box = dlg(w, "ChatGPT Plus/Pro sign-in", rows, [("enter try again", 0), ("esc close", 0)])
     return frame(w, h, history(w), box + footer(w))
 
 
@@ -544,7 +544,7 @@ def p_lost(w, h):
     rows = [[t("  ✗ ", "error bold"), t("The sign-in stopped because the leader is gone.", "error")], [],
             [t("  Nothing was saved. When the leader is back, start again with /providers.", "muted")]]
     live = [rail_err(w, "Disconnected from the leader", " · reconnecting (attempt 1, next in 1s)")]
-    live += dlg(w, "ChatGPT Plus/Pro subscription", rows, [("esc close", 0)])
+    live += dlg(w, "ChatGPT Plus/Pro sign-in", rows, [("esc close", 0)])
     live += footer(w, dot=("●", "error"), place="leader lost", place_role="error")
     return frame(w, h, history(w), live)
 
@@ -581,7 +581,7 @@ def code_box(w, state="empty", mode="address"):
     else:
         rows.append([t(label), t("(hidden)", "dim italic")])
         hint = [("esc cancel", 0)]
-    return dlg(w, "Claude Pro/Max account", rows, hint)
+    return dlg(w, "Claude Pro/Max sign-in", rows, hint)
 
 
 def p_code_wait(w, h):
@@ -603,13 +603,13 @@ def device_box(w, expired=False):
     if expired:
         rows = [[t("  ✗ ", "error bold"), t("The code expired. No sign-in happened.", "error")], [],
                 [t("  Get a new code to try again.", "muted")]]
-        return dlg(w, "xAI Grok account", rows, [("enter get a new code", 0), ("esc close", 0)])
+        return dlg(w, "xAI Grok sign-in", rows, [("enter get a new code", 0), ("esc close", 0)])
     rows = [[t("  1. Open this page on any device:", "muted")],
             [t("     " + DEVICE_URL)], [],
             [t("  2. Enter this code:", "muted")],
             [t("     "), t("WDJB-MJHT", "accent bold")], [],
             [t("  The code expires in 8:12.", "muted")]]
-    return dlg(w, "xAI Grok account", rows, [("ctrl+y copy code", 1), ("esc cancel", 0)])
+    return dlg(w, "xAI Grok sign-in", rows, [("ctrl+y copy code", 1), ("esc cancel", 0)])
 
 
 def p_device_wait(w, h):
@@ -624,7 +624,7 @@ def p_device_expired(w, h):
 def p_remove_confirm(w, h):
     rows = [[t("  This deletes the saved sign-in for openai from this leader.", "muted")],
             [t("  Environment variables are not changed.", "muted")]]
-    box = dlg(w, "Remove ChatGPT Plus/Pro subscription?", rows, [("enter remove", 0), ("esc keep it", 0)])
+    box = dlg(w, "Remove ChatGPT Plus/Pro sign-in?", rows, [("enter remove", 0), ("esc keep it", 0)])
     return frame(w, h, history(w), box + footer(w))
 
 

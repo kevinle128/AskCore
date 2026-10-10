@@ -12,9 +12,14 @@ import (
 	"AskCore/internal/agent"
 	"AskCore/internal/app"
 	"AskCore/internal/auth"
+	"AskCore/internal/providers"
 
 	sdk "github.com/coder/acp-go-sdk"
 )
+
+// fauxEnv enables the faux demo provider for the leader, `ask acp` and the
+// in-process agent. `ask -p` has the demo provider as its default and ignores it.
+const fauxEnv = "ASK_FAUX"
 
 const acpUsage = `ask acp - serve ACP v1 (Agent Client Protocol) over stdin and stdout
 
@@ -106,9 +111,16 @@ func acpParams(deps runDependencies) (app.ACPParams, error) {
 		o.transport = deps.inferenceHTTP.Transport
 	}
 	o.wait = deps.wait
-	_, initial, err := openProvider(o, deps.getenv)
-	if err != nil {
-		return app.ACPParams{}, err
+	// The faux demo provider is listed, usable and the first choice only with
+	// ASK_FAUX=1. Without it a session starts on a catalog model, or on none.
+	var demoStream providers.StreamFn
+	var initial providers.Model
+	if deps.getenv(fauxEnv) == "1" {
+		var err error
+		demoStream, initial, err = openProvider(o, deps.getenv)
+		if err != nil {
+			return app.ACPParams{}, err
+		}
 	}
 	return app.ACPParams{
 		Home:     deps.getenv("ASK_HOME"),
@@ -118,8 +130,8 @@ func acpParams(deps runDependencies) (app.ACPParams, error) {
 		Wait:     deps.wait,
 		Initial:  initial,
 		Info:     sdk.Implementation{Name: "ask", Version: buildIdentity()},
-		NewAgent: func(service *auth.Service, sessionID, cwd string) (*agent.Agent, error) {
-			return newNativeAgent(o, deps.getenv, service, sessionID, cwd)
+		NewAgent: func(service *auth.Service, sessionID, cwd string, start providers.Model) (*agent.Agent, error) {
+			return newNativeAgentOn(o, deps.getenv, service, sessionID, cwd, demoStream, start)
 		},
 	}, nil
 }

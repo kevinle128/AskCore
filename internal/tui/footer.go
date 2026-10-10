@@ -124,6 +124,18 @@ func (s *sessionView) footerText(w int) string {
 		}
 	}
 
+	if s.noModel() {
+		// No model: the model name, the bar and the cost give way to one word.
+		right := []segment{{"no model ", RoleMuted}}
+		for _, cwd := range s.cwdOptions(short) {
+			l := append(append([]segment(nil), left...), cwd...)
+			if segmentsWidth(l)+1+segmentsWidth(right) <= w {
+				return s.joinFooter(l, right, w)
+			}
+		}
+		return s.joinFooter(left, right, w)
+	}
+
 	name := s.modelName()
 	level := ""
 	if name != "" && s.reasoning() && s.thinking != "" && !short {

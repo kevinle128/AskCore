@@ -77,7 +77,7 @@ Exact manual terminal versions and physical recordings were not supplied; histor
 
 ## Built `ask` driver
 
-Run `python3 e2e/tui/run.py --driver ask` (or `--case ask-idle`, `--case ask-selector`, `--case ask-resize`).
+Run `python3 e2e/tui/run.py --driver ask` (or `--case ask-idle`, `--case ask-selector`, `--case ask-resize`, `--case ask-providers`).
 The driver compiles `./cmd/tui` into a temporary directory under `/tmp`, so the leader socket path stays short, and starts `ask` with no arguments in an owned tui-test session.
 It is a separate driver, not a setting of the T0 path: it has its own cases, its own checks and its own process environment.
 The T0 scenarios and their assertions are unchanged.
@@ -87,6 +87,7 @@ The T0 scenarios and their assertions are unchanged.
 | `ask-idle` | 80×24 | One startup header, a full-width editor box with the placeholder, the cursor in the editor, a `leader <id>` footer. |
 | `ask-selector` | 80×24 | `ctrl+l` replaces the editor with the model selector, the draft is kept, `esc` brings the draft back with its cursor. |
 | `ask-resize` | 120×40 to 80×24 | A reply streams, a draft is in the editor, the size changes. The draft and cursor stay, one purge and rebuild follows, and after the run the header, the prompt and the reply each appear once, in order. |
+| `ask-providers` | 80×24 | `/providers` replaces the editor with the box: seven rows in order, the search row last, full-width rows, the hint ending `your draft is kept`. The filter `key` keeps the four key rows. `enter` on `OpenAI API key` opens the key box at once. A fake key is pasted, the box shows `(hidden)`, the key is on no row of the screen or scrollback, and `esc` brings the editor back. |
 
 These checks use structure, not exact sketch text: the sketches show `~/src/askcore` and a real model, while the run shows a temporary directory and the `faux-1` model.
 The golden tests in `internal/tui` own the exact rows.
@@ -99,10 +100,11 @@ A leader or tui-test process from outside the run is never signaled.
 
 ### Environment and secrets
 
-The runner passes `ASK_HOME`, `ASK_FAUX_TPS`, `TERM` and `LANG` to the session through the environment of the `tui-test run` call. It drops other `ASK_*` variables of the caller. Every other variable, including provider keys, is inherited.
-Keys never appear in a command argument or in `--env`.
-`commands.json` records `environment_names` (names only), and `ask-environment.json` lists the names that were set and the credential-like names that were inherited.
-At the end the runner scans every artifact file for the values of credential-like variables (`*API_KEY*`, `*TOKEN*`, `*SECRET*`, `*PASSWORD*`, `*CREDENTIAL*`, `*AUTH*`, value of 8 or more characters).
+The runner passes `ASK_HOME`, `ASK_FAUX`, `ASK_FAUX_TPS`, `TERM` and `LANG` to the session through the environment of the `tui-test run` call. It drops other `ASK_*` variables of the caller and every variable whose name looks like a credential, so no case can reach a billed provider. Every other variable is inherited.
+Keys of the caller never appear in a command argument or in `--env`.
+`commands.json` records `environment_names` (names only), and `ask-environment.json` lists the names that were set and the credential-like names that were dropped.
+The `ask-providers` case types one fake key, made new for each run. The runner replaces it in the records of its own calls (`commands.json`) and in the input events of `output.cast`, and it adds the value to the scan below. The scan then finds it only when the product wrote it: on the screen, in the scrollback, in the recording of the output or in a cell dump.
+At the end the runner scans every artifact file for the values of credential-like variables (`*API_KEY*`, `*TOKEN*`, `*SECRET*`, `*PASSWORD*`, `*CREDENTIAL*`, `*AUTH*`, value of 8 or more characters) and for the fake key.
 A file with a value is removed, only the variable names are reported, and the run fails.
 The tui-test daemon log is not enabled for this driver, because it records all terminal input and output.
 
@@ -111,4 +113,25 @@ Run `python3 e2e/tui/test-assertions.py` for the controls of these assertions an
 
 ### Real-provider driver
 
-`real_provider.py` and `real_provider_scenarios.py` run the built `ask` against real providers for acceptance runs by hand (they are not part of `run.py`). They need the Python package `pyte` (`pip install pyte`, for example into a virtual environment outside the repository). Keys reach `ask` only through the inherited environment. Copy an OAuth `ASK_HOME` to a short path under `/private/tmp` first, because a token refresh rewrites its credential file.
+`real_provider.py` and `real_provider_scenarios.py` run the built `ask` against real providers for acceptance runs by hand (they are not part of `run.py`).
+They need the Python package `pyte` (`pip install --target /private/tmp/ask-rp-py pyte`, then `PYTHONPATH=/private/tmp/ask-rp-py`).
+The runner compiles `./cmd/tui` at the start of each run into `/private/tmp/ask-rp-bin/ask` unless `ASK_BIN` names a file.
+
+- `python3 e2e/tui/real_provider_scenarios.py acceptance` runs the provider-setup scenarios in order; `acceptance`, `providers` and `oauth` in [real_provider_scenarios.py](real_provider_scenarios.py) own the steps.
+  The OAuth scenario uses existing credentials from a copy of `~/.ask-t1a-oauth`.
+  It does not start a new OAuth sign-in.
+- The child process gets no credential variable and no `ASK_*` variable (`run.is_credential_name`), so the leader it starts inherits none.
+  The key is read from the environment of the runner, then sent as a bracketed paste through the PTY descriptor.
+  The paste helper does not place it in a process argument or a runner log.
+- Every scenario entry point calls `cleanup` in its `finally` block.
+  It stops the sessions and leaders owned by that run, then calls `artifact_scan` before it removes the homes.
+  The scan reads the current credential fields as well as the values registered at start, so it includes refreshed tokens.
+  A file with a value is removed and the step fails; only names and counts are printed.
+- Each scenario run owns a unique home under `/private/tmp`.
+  The OAuth home copies only `auth.json` and `settings.json`, because a token refresh rewrites its credential file.
+  The source home is never used by the child process.
+  A failed process stop keeps the owned homes for cleanup.
+- `python3 e2e/tui/test-real-provider-safety.py` checks cleanup and secret scan ordering with fake sessions and processes.
+  It reads the real-run source through an AST and makes no provider request.
+- Set `RP_OUT` to choose the output directory (default `/private/tmp/ask-rp-out`).
+  The older single-purpose scenarios (`repeat`, `cancel-esc`, `cancel-ctrl-c`, `ctrlc-running`, `switch`, `thinking`, `detach`) save the key through `/providers` first.

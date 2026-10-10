@@ -43,6 +43,29 @@ type fakeClient struct {
 
 	nextPrompt uint64
 	nextInput  int
+
+	// Provider calls. A fake in process answers ErrNeedsLeader before it records
+	// the call, as the real client sends nothing.
+	providers      protocol.ACPProvidersResult
+	providersErr   error
+	keyOutcome     protocol.ACPLoginOutcome
+	keyErr         error
+	keyGate        chan struct{}
+	sentKey        string
+	loginStart     protocol.ACPLoginStartResult
+	loginStartErr  error
+	loginOutcome   protocol.ACPLoginOutcome
+	loginWaitErr   error
+	loginWaitGate  chan struct{}
+	loginCodeErr   error
+	sentCode       string
+	loginCancelled bool
+	logout         protocol.ACPLogoutResult
+	logoutErr      error
+	savedDefault   map[string]bool // model id -> saveDefault of the last SetModel
+	// modelsErrAfter makes every Models call after that many calls fail.
+	modelsErrAfter int
+	modelsCalls    int
 }
 
 const (
@@ -222,31 +245,51 @@ func (f *fakeClient) Models(context.Context) (protocol.ACPModelsResult, error) {
 	f.record("models")
 	f.mu.Lock()
 	defer f.mu.Unlock()
+	f.modelsCalls++
+	if f.modelsErrAfter > 0 && f.modelsCalls > f.modelsErrAfter {
+		return protocol.ACPModelsResult{}, errors.New("models are not available")
+	}
 	return f.models, nil
 }
 
-func (f *fakeClient) SetModel(_ context.Context, id string) (protocol.ACPSetModelResult, error) {
+func (f *fakeClient) SetModel(_ context.Context, id string, saveDefault bool) (protocol.ACPSetModelResult, error) {
 	f.record("set_model:" + id)
 	f.mu.Lock()
+	if f.savedDefault == nil {
+		f.savedDefault = map[string]bool{}
+	}
+	f.savedDefault[id] = saveDefault
 	gate, err := f.setModelGate[id], f.setModelErr[id]
 	f.mu.Unlock()
-	if gate != nil {
-		<-gate
-	}
 	if err != nil {
+		if gate != nil {
+			<-gate
+		}
 		return protocol.ACPSetModelResult{}, err
 	}
 	level := protocol.ThinkingOff
+	f.mu.Lock()
+	var row protocol.ACPModel
 	for _, m := range f.models.Models {
-		if m.ModelID == id && m.Reasoning {
-			level = protocol.ThinkingMedium
+		if m.ModelID == id {
+			row = m
+			if m.Reasoning {
+				level = protocol.ThinkingMedium
+			}
 		}
 	}
-	f.mu.Lock()
 	f.state.ModelID, f.state.ThinkingLevel = id, level
+	f.state.ModelFallback = nil
 	f.models.Current = id
+	sid := f.sessionID
 	f.mu.Unlock()
-	return protocol.ACPSetModelResult{ModelID: id, ThinkingLevel: level}, nil
+	// The leader applies the change and announces it as an event, as the agent
+	// does. A gate holds only the answer.
+	f.push(SessionEventMsg{SessionID: sid, Event: &protocol.ModelUpdate{Provider: row.Provider, ID: row.ID, API: row.API}})
+	if gate != nil {
+		<-gate
+	}
+	return protocol.ACPSetModelResult{ModelID: id, ThinkingLevel: level, DefaultSaved: saveDefault}, nil
 }
 
 func (f *fakeClient) SetThinking(_ context.Context, level protocol.ThinkingLevel) (protocol.ThinkingLevel, error) {
@@ -274,6 +317,102 @@ func (f *fakeClient) Usage(context.Context) (protocol.ACPUsageResult, error) {
 	f.mu.Lock()
 	defer f.mu.Unlock()
 	return f.usage, nil
+}
+
+// leaderCall records a provider call. It returns ErrNeedsLeader without a
+// record when the fake runs in process. The record names no key or code.
+func (f *fakeClient) leaderCall(what string) error {
+	if f.Info().Mode != ModeLeader {
+		return ErrNeedsLeader
+	}
+	f.record(what)
+	return nil
+}
+
+func (f *fakeClient) Providers(context.Context) (protocol.ACPProvidersResult, error) {
+	if err := f.leaderCall("providers"); err != nil {
+		return protocol.ACPProvidersResult{}, err
+	}
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	return f.providers, f.providersErr
+}
+
+func (f *fakeClient) SaveAPIKey(_ context.Context, loginID, provider, key string) (protocol.ACPLoginOutcome, error) {
+	if err := f.leaderCall("api_key:" + loginID + ":" + provider); err != nil {
+		return protocol.ACPLoginOutcome{}, err
+	}
+	f.mu.Lock()
+	f.sentKey = key
+	gate, out, err := f.keyGate, f.keyOutcome, f.keyErr
+	f.mu.Unlock()
+	if gate != nil {
+		<-gate
+	}
+	if out.LoginID == "" {
+		out.LoginID = loginID
+	}
+	return out, err
+}
+
+func (f *fakeClient) StartLogin(_ context.Context, provider, method string) (protocol.ACPLoginStartResult, error) {
+	if err := f.leaderCall("login_start:" + provider + "/" + method); err != nil {
+		return protocol.ACPLoginStartResult{}, err
+	}
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	return f.loginStart, f.loginStartErr
+}
+
+func (f *fakeClient) SendLoginCode(_ context.Context, loginID, code string) error {
+	if err := f.leaderCall("login_input:" + loginID); err != nil {
+		return err
+	}
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	f.sentCode = code
+	return f.loginCodeErr
+}
+
+func (f *fakeClient) WaitLogin(ctx context.Context, loginID string) (protocol.ACPLoginOutcome, error) {
+	if err := f.leaderCall("login_wait:" + loginID); err != nil {
+		return protocol.ACPLoginOutcome{}, err
+	}
+	f.mu.Lock()
+	gate := f.loginWaitGate
+	f.mu.Unlock()
+	if gate != nil {
+		select {
+		case <-gate:
+		case <-ctx.Done():
+			return protocol.ACPLoginOutcome{}, ctx.Err()
+		}
+	}
+	f.mu.Lock()
+	out, err := f.loginOutcome, f.loginWaitErr
+	f.mu.Unlock()
+	if out.LoginID == "" {
+		out.LoginID = loginID
+	}
+	return out, err
+}
+
+func (f *fakeClient) CancelLogin(_ context.Context, loginID string) (bool, error) {
+	if err := f.leaderCall("login_cancel:" + loginID); err != nil {
+		return false, err
+	}
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	return f.loginCancelled, nil
+}
+
+func (f *fakeClient) Logout(_ context.Context, provider, method string) (protocol.ACPLogoutResult, error) {
+	if err := f.leaderCall("logout:" + provider + "/" + method); err != nil {
+		return protocol.ACPLogoutResult{}, err
+	}
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	return f.logout, f.logoutErr
 }
 
 func (f *fakeClient) Close() error { return nil }
@@ -307,8 +446,15 @@ type viewRig struct {
 }
 
 type rigConfig struct {
-	opts func(*Options)
-	fc   *fakeClient
+	opts    func(*Options)
+	fc      *fakeClient
+	program []tea.ProgramOption
+}
+
+// withProgram adds options of the Bubble Tea program, for example a color
+// profile for a test that reads the escape sequences of the output.
+func withProgram(o ...tea.ProgramOption) rigOption {
+	return func(c *rigConfig) { c.program = append(c.program, o...) }
 }
 
 type rigOption func(*rigConfig)
@@ -342,11 +488,14 @@ func startView(t *testing.T, width, height int, ro ...rigOption) *viewRig {
 	}
 	m := New(opts)
 	r := &viewRig{t: t, fc: cfg.fc, m: m, clock: clock}
-	r.h = startScreen(t, m, width, height)
+	r.h = startScreen(t, m, width, height, cfg.program...)
 	t.Cleanup(func() { close(cfg.fc.events) })
 	if opts.Client != nil {
 		r.h.waitText("Ask anything")
 		r.h.waitText("ask   v0.1.0")
+		// The start line below the header comes with the first state answer.
+		r.waitCall("usage")
+		r.h.settle()
 	}
 	return r
 }

@@ -17,6 +17,13 @@ import (
 // HandleExtensionMethod serves the Ask methods. The SDK calls it for every
 // method whose name starts with an underscore.
 func (a *Adapter) HandleExtensionMethod(ctx context.Context, method string, raw json.RawMessage) (any, error) {
+	// The provider table is checked first: its calls carry a route and no session.
+	if handled, res, err := a.handleProviderMethod(ctx, method, raw); handled {
+		if err != nil {
+			return nil, err
+		}
+		return res, nil
+	}
 	handler, ok := a.askHandlers()[method]
 	if !ok {
 		switch method {
@@ -83,10 +90,22 @@ func (a *Adapter) sessionOf(raw json.RawMessage) (*Session, error) {
 }
 
 // modelID names a model row as "provider/id@api". Two rows can share provider
-// and id, so the API makes the name reversible.
+// and id, so the API makes the name reversible. A session with no model has the
+// empty name.
 func modelID(m providers.Model) string {
+	if m.ID == "" {
+		return ""
+	}
 	return fmt.Sprintf("%s/%s@%s", m.Provider, m.ID, m.API)
 }
+
+// ModelID names a model row as "provider/id@api", as the Ask methods do. A zero
+// model has the empty name.
+func ModelID(m providers.Model) string { return modelID(m) }
+
+// ParseModelID reads a name made by ModelID. A name without "@api" gives an
+// empty API.
+func ParseModelID(s string) (providers.Ref, error) { return parseModelID(s) }
 
 // parseModelID is the reverse of modelID. A name without "@api" gives an empty
 // API, which the catalog refuses when two rows match.
@@ -121,17 +140,42 @@ func (a *Adapter) state(_ context.Context, raw json.RawMessage) (any, error) {
 		MessageCount:  len(st.Messages),
 		Steering:      steering,
 		FollowUp:      followUp,
+		ModelFallback: s.fallbackNow(),
 	}, nil
 }
 
-func (a *Adapter) models(_ context.Context, raw json.RawMessage) (any, error) {
-	s, err := a.sessionOf(raw)
+func (a *Adapter) models(ctx context.Context, raw json.RawMessage) (any, error) {
+	var req protocol.ACPModelsRequest
+	if err := decodeParams(raw, &req); err != nil {
+		return nil, err
+	}
+	s, err := a.session(req.SessionID)
 	if err != nil {
 		return nil, err
 	}
 	rows := a.cfg.Models()
-	out := protocol.ACPModelsResult{Current: modelID(s.Agent().State().Model), Models: make([]protocol.ACPModel, 0, len(rows))}
+	// Only a host with provider setup can tell which providers are usable. Without
+	// them the flag is not echoed, so the client knows the list is not filtered.
+	filter := req.UsableOnly && a.cfg.ProviderSetup != nil
+	usable := map[string]bool{}
+	out := protocol.ACPModelsResult{Current: modelID(s.Agent().State().Model), Models: make([]protocol.ACPModel, 0, len(rows)), UsableOnly: filter}
+	if a.cfg.DefaultModel != nil {
+		// A store that cannot be read means no default; the list still works.
+		if id, err := a.cfg.DefaultModel(ctx); err == nil {
+			out.Default = id
+		}
+	}
 	for _, m := range rows {
+		if filter {
+			ok, seen := usable[m.Provider]
+			if !seen {
+				ok = a.cfg.ProviderSetup.Usable(ctx, m.Provider)
+				usable[m.Provider] = ok
+			}
+			if !ok {
+				continue
+			}
+		}
 		out.Models = append(out.Models, protocol.ACPModel{
 			ModelID: modelID(m), Provider: m.Provider, ID: m.ID, Name: m.Name, API: string(m.API),
 			Reasoning: m.Reasoning, Input: append([]string{}, m.Input...),
@@ -174,14 +218,33 @@ func (a *Adapter) setModel(ctx context.Context, raw json.RawMessage) (any, error
 			return nil, fmt.Errorf("%w: %w", ErrAuth, err)
 		}
 	}
-	if err := s.Agent().SetModel(s.mutationContext(ctx, routeOf(ctx)), m); err != nil {
+	mutationCtx := s.mutationContext(ctx, routeOf(ctx))
+	if a.cfg.ProviderSetup != nil {
+		mutationCtx = agent.WithMutationGuard(ctx, func() (func(), error) {
+			release, err := s.mutationCommit(routeOf(ctx))
+			if err != nil {
+				return nil, err
+			}
+			if !a.cfg.ProviderSetup.Usable(ctx, m.Provider) {
+				release()
+				return nil, agent.ErrNoAPIKey
+			}
+			return release, nil
+		})
+	}
+	if err := s.Agent().SetModel(mutationCtx, m); err != nil {
 		if classify(err) == protocol.ACPErrInternal {
 			err = fmt.Errorf("%w: %w", ErrAuth, err)
 		}
 		return nil, err
 	}
 	st := s.Agent().State()
-	return protocol.ACPSetModelResult{ModelID: modelID(st.Model), ThinkingLevel: st.ThinkingLevel}, nil
+	res := protocol.ACPSetModelResult{ModelID: modelID(st.Model), ThinkingLevel: st.ThinkingLevel}
+	if req.SaveDefault && a.cfg.SaveDefault != nil {
+		// A failed save never undoes the switch: the client reads defaultSaved.
+		res.DefaultSaved = a.cfg.SaveDefault(ctx, res.ModelID) == nil
+	}
+	return res, nil
 }
 
 func validThinking(l protocol.ThinkingLevel) bool {

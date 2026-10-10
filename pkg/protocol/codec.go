@@ -32,6 +32,13 @@ func EncodeEvent(ev Event) ([]byte, error) {
 			Steering []string `json:"steering"`
 			FollowUp []string `json:"followUp"`
 		}{newEnvelopeWire(&e.Envelope, e.EventType()), steering, followUp})
+	case *ModelUpdate:
+		return marshalJSON(struct {
+			envelopeWire
+			Provider string `json:"provider"`
+			ID       string `json:"id"`
+			API      string `json:"api"`
+		}{newEnvelopeWire(&e.Envelope, e.EventType()), e.Provider, e.ID, e.API})
 	case *TurnStart:
 		return marshalJSON(struct {
 			envelopeWire
@@ -257,6 +264,16 @@ func DecodeEvent(data []byte) (Event, error) {
 			return nil, err
 		}
 		return &QueueUpdate{Envelope: env, Steering: w.Steering, FollowUp: w.FollowUp}, nil
+	case TypeModelUpdate:
+		var w struct {
+			Provider string `json:"provider"`
+			ID       string `json:"id"`
+			API      string `json:"api"`
+		}
+		if err := json.Unmarshal(data, &w); err != nil {
+			return nil, err
+		}
+		return &ModelUpdate{Envelope: env, Provider: w.Provider, ID: w.ID, API: w.API}, nil
 	case TypeTurnStart:
 		var w struct {
 			CycleID string `json:"cycleId"`

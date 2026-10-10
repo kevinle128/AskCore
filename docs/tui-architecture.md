@@ -116,6 +116,38 @@ Remaining application shortcuts are resolved after component handling.
 Closing an interaction restores the prior focus only if its target still exists.
 Agent events are processed regardless of focus.
 
+## Provider setup, secret input and the model line
+
+The [provider setup design](../plans/261010-1424-t1c-provider-setup-design/design.md) is the UI authority for these parts.
+Provider account methods require the leader link; see [the ACP owner](../internal/acp/README.md#provider-methods).
+The in-process agent still uses the model line and the no-model state.
+
+**Dialog slot.** `/providers` and its key, login and removal boxes replace the editor slot, as the selectors do, and keep the draft.
+They follow the input order above: the active box receives keys before the editor.
+A box ignores the history keys and does not touch the draft.
+
+**Secret input.** An API key, a pasted code or a pasted callback address lives only in one buffer of the box ([secret_input.go](../internal/tui/secret_input.go)).
+The screen shows the fixed text `(hidden)`.
+The text never reaches the editor, the prompt history, the undo or kill ring, a transcript block, a note, the title, the bell or the clipboard.
+The buffer is zeroed on every exit of the box.
+The leader gets the secret once, in the request that carries it, and does not log or echo it.
+Stated exception: `TEA_TRACE=<file>` makes Bubble Tea write raw input, a pasted key included, to that file.
+The TUI shows a warning with the file name when the variable is set: once at start, and on the key box and the code input.
+Do not set it when you sign in.
+
+**Rail priority.** The status shows one state on the live rail.
+The order is in [status.go](../internal/tui/status.go).
+
+**Model line.** The agent is the authority for the model.
+The state and `model_update` event carry that model to the TUI.
+The [model line renderer](../internal/tui/model_line.go) owns its layout.
+The footer and the reply meta line keep the bare model id, as the user decided.
+
+**Default model and fallback.** A choice in `/model` saves the default for new sessions; sign-in keeps the default and the current model.
+This is a user decision; see section 3 of the approved design.
+The [default model owner](../internal/app/default_model.go) selects the start model and records a fallback.
+The [settings owner](../internal/settings/README.md#default-model) stores the choice.
+
 ## Request and event reconciliation
 
 Keep client request state distinct from agent execution state.
@@ -189,7 +221,10 @@ The implemented TUI is checked at three levels, and each level uses the real cod
 
 1. **Golden screens.** [screen_test.go](../internal/tui/screen_test.go) runs a model in a real Bubble Tea program and feeds the renderer output into an `x/vt` terminal emulator. A test compares the plain grid with a file under `internal/tui/testdata`. Refresh the files with `go test ./internal/tui -run <TestName> -update` and review the diff.
 2. **Go end-to-end.** [interactive_test.go](../cmd/tui/interactive_test.go) starts the compiled `ask` on a pseudo terminal with an isolated `ASK_HOME`, so the TUI starts a real leader and talks over the real Unix socket. An `x/vt` emulator reads the screen, and the tests read the terminal state before and after the run. The faux provider replaces only the model service.
-3. **tui-test.** [e2e/tui/run.py](../e2e/tui/run.py) drives the compiled `ask` in native terminal engines (Alacritty and Ghostty) through the pinned `tui-test` CLI. It covers what needs a real engine: the idle and selector screens, and a resize from 120×40 to 80×24 while a reply streams, with the draft and cursor kept and the transcript drawn once. The same runner keeps the T0 gate scenarios. See [e2e/tui/README.md](../e2e/tui/README.md).
+3. **tui-test.** [e2e/tui/run.py](../e2e/tui/run.py) drives the compiled `ask` in native terminal engines (Alacritty and Ghostty) through the pinned `tui-test` CLI.
+Its Ask scenario owners cover the idle and selector screens, streaming resize, and provider setup.
+The same runner keeps the T0 gate scenarios.
+See [e2e/tui/README.md](../e2e/tui/README.md).
 
 Headless engines do not certify Terminal.app or iTerm2 rendering; a manual run on a real terminal stays a separate record.
 The extension contract stays in the X1 track and full UI rendering stays in T2 unless the roadmap is explicitly changed.

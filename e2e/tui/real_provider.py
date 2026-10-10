@@ -1,11 +1,16 @@
 #!/usr/bin/env python3
 """PTY driver for the real-provider acceptance run of the built `ask`.
 
-Keys reach `ask` only through the inherited environment. The driver never reads
-or prints credential values; screens are saved as plain text.
+The child gets no credential variable: every name that looks like a credential
+(`run.is_credential_name`) and every `ASK_*` name is removed from its
+environment, so the leader it starts inherits none either. A key reaches `ask`
+only as a paste through the PTY. The driver never prints credential values;
+screens are saved as plain text.
 
-Usage: real_provider.py <scenario> [--cols N --rows N]
-Needs pyte (pip install --target /tmp/ask-rp-py pyte; PYTHONPATH=/tmp/ask-rp-py).
+Usage: real_provider.py <home> [--cols N --rows N --seconds S]
+Needs pyte (pip install --target /private/tmp/ask-rp-py pyte;
+PYTHONPATH=/private/tmp/ask-rp-py). The binary comes from ASK_BIN or is
+compiled by `ensure_ask` at the start of a run.
 """
 import argparse
 import fcntl
@@ -23,9 +28,34 @@ import time
 
 import pyte
 
-ASK = os.environ.get("ASK_BIN", "/tmp/ask-rp-bin/ask")
-OUT = os.environ.get("RP_OUT", "/tmp/ask-rp-out")
+import run as runner  # noqa: E402  (credential name rules and the artifact scan)
+
+ASK = os.environ.get("ASK_BIN", "/private/tmp/ask-rp-bin/ask")
+OUT = os.environ.get("RP_OUT", "/private/tmp/ask-rp-out")
+ROOT = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 os.makedirs(OUT, exist_ok=True)
+
+
+def ensure_ask():
+    """Compile ./cmd/tui to ASK; keep a file that ASK_BIN names."""
+    if os.path.exists(ASK) and os.environ.get("ASK_BIN"):
+        return ASK
+    os.makedirs(os.path.dirname(ASK), exist_ok=True)
+    with open(os.path.join(OUT, "go-compile.txt"), "w") as log:
+        r = subprocess.run(["go", "build", "-o", ASK, "./cmd/tui"], cwd=ROOT, stdout=log,
+                           stderr=subprocess.STDOUT, env=dict(os.environ, GOWORK="off"), timeout=600)
+    if r.returncode != 0:
+        raise SystemExit("compile of ./cmd/tui failed; see go-compile.txt")
+    return ASK
+
+
+def child_env(home, extra=None):
+    """The environment of `ask`: no ASK_* and no credential variable."""
+    e = {k: v for k, v in os.environ.items() if not k.startswith("ASK_") and not runner.is_credential_name(k)}
+    e.update({"ASK_HOME": home, "TERM": "xterm-256color", "LANG": "en_US.UTF-8", "COLORTERM": "truecolor"})
+    if extra:
+        e.update(extra)
+    return e
 
 
 class Session:
@@ -34,32 +64,33 @@ class Session:
         self.screen = pyte.HistoryScreen(cols, rows, history=2000, ratio=0.5)
         self.stream = pyte.ByteStream(self.screen)
         self.lock = threading.Lock()
-        e = dict(os.environ)
-        for k in [k for k in e if k.startswith("ASK_")]:
-            del e[k]
-        e.update({"ASK_HOME": home, "TERM": "xterm-256color", "LANG": "en_US.UTF-8", "COLORTERM": "truecolor"})
-        if env:
-            e.update(env)
+        e = child_env(home, env)
         self.home = home
         master, slave = pty.openpty()
         fcntl.ioctl(slave, termios.TIOCSWINSZ, struct.pack("HHHH", rows, cols, 0, 0))
-        self.proc = subprocess.Popen([ASK, *args], stdin=slave, stdout=slave, stderr=slave,
-                                     env=e, start_new_session=True, close_fds=True, cwd="/tmp")
-        os.close(slave)
+        try:
+            self.proc = subprocess.Popen([ASK, *args], stdin=slave, stdout=slave, stderr=slave,
+                                         env=e, start_new_session=True, close_fds=True, cwd="/tmp")
+        except BaseException:
+            os.close(master)
+            raise
+        finally:
+            os.close(slave)
         self.fd = master
         self.screen.write_process_input = lambda d: os.write(self.fd, d.encode())
         self.alive = True
         self.raw = b""
-        threading.Thread(target=self._read, daemon=True).start()
+        self.reader = threading.Thread(target=self._read, daemon=True)
+        self.reader.start()
 
     def _read(self):
         while self.alive:
-            r, _, _ = select.select([self.fd], [], [], 0.1)
-            if not r:
-                continue
             try:
+                r, _, _ = select.select([self.fd], [], [], 0.1)
+                if not r:
+                    continue
                 d = os.read(self.fd, 65536)
-            except OSError:
+            except (OSError, ValueError):
                 break
             if not d:
                 break
@@ -124,17 +155,22 @@ class Session:
         if self.proc.poll() is None:
             try:
                 os.killpg(self.proc.pid, signal.SIGTERM)
+            except ProcessLookupError:
+                pass
+            try:
                 self.proc.wait(5)
-            except Exception:
+            except subprocess.TimeoutExpired:
                 try:
                     os.killpg(self.proc.pid, signal.SIGKILL)
-                except Exception:
+                except ProcessLookupError:
                     pass
+                self.proc.wait(5)
         self.alive = False
         try:
             os.close(self.fd)
         except OSError:
             pass
+        self.reader.join(1)
 
 
 def save(name, sess, tail=24):
@@ -146,7 +182,7 @@ def save(name, sess, tail=24):
 
 
 def leader_stop(home):
-    return subprocess.run([ASK, "leader", "stop"], env={**os.environ, "ASK_HOME": home}, capture_output=True, text=True, timeout=20)
+    return subprocess.run([ASK, "leader", "stop"], env=child_env(home), capture_output=True, text=True, timeout=20)
 
 
 KEYS = {"esc": "\x1b", "ctrl+c": "\x03", "ctrl+d": "\x04", "ctrl+l": "\x0c", "ctrl+t": "\x14", "enter": "\r",
@@ -159,10 +195,15 @@ if __name__ == "__main__":
     ap.add_argument("--rows", type=int, default=24)
     ap.add_argument("--seconds", type=float, default=6)
     a = ap.parse_args()
+    ensure_ask()
     s = Session(a.home, a.cols, a.rows)
-    time.sleep(a.seconds)
-    print(s.view())
-    s.send("\x04")
-    time.sleep(1)
-    s.close()
-    leader_stop(a.home)
+    try:
+        time.sleep(a.seconds)
+        print(s.view())
+        s.send("\x04")
+        time.sleep(1)
+    finally:
+        try:
+            s.close()
+        finally:
+            leader_stop(a.home)

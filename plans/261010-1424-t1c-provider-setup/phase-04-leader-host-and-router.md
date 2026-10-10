@@ -1,7 +1,7 @@
 ---
 phase: 4
 title: "Leader host and router"
-status: pending
+status: completed
 priority: P1
 effort: "2d"
 dependencies: [2, 3]
@@ -28,6 +28,17 @@ The leader serves the provider methods to every client over the socket, broadcas
 - The idle check counts forwarded requests in flight (`router.go:810-815`), so a pending `login/wait` keeps the leader from a quiet stop. `ask leader stop` and shutdown must cancel logins (broker `Close`).
 - Real-host routing tests live in `internal/app/leader_routing_test.go`; scripted router tests in `internal/leader/router_*_test.go` (`internal/leader/README.md:64`).
 - E2E env helpers that rely on the faux default: `interactiveEnv` (`cmd/tui/interactive_test.go:61`), `leaderEnv` (`cmd/tui/leader_e2e_test.go:25`), `withoutCredentialEnv` (`cmd/tui/tui_client_e2e_test.go:313`), `pacedEnv` (`cmd/tui/connect_e2e_test.go:28`). [Scout: list every test that starts a leader and add `ASK_FAUX=1` where it needs faux.]
+
+## Scout result (2026-10-10, before coding)
+
+- Baseline: `go test ./...` was green with the phase 2 and 3 code in the tree.
+- Evidence items above still match the source; the lines moved only by the phase 2 and 3 edits. Re-checked: `ask_methods.go` dispatch and `modelID` (now `""` for a zero model), `route.go` (`needRoute`, `checkRouteSession`), `agent.go` config and `Initialize`, `host.go` (`refused`, `noteQueueLocked`), `module_acp.go`, `agent_native.go` (`InitialStream` was required), `policy.go`, `router.go` (`onAgentNotification`, `removeClient`, `internalRequest`).
+- `ACPProvidersReleaseClient` (`_ask/providers/release_client`) is not in the router policy table, so a client gets `unsupported`.
+- The SDK serves each request on its own goroutine (`third_party/acp-go-sdk/connection.go:415`), so a blocking `login/wait` handler does not stop other calls.
+- `Factory` keeps its signature. The runtime picks the start model inside its factory closure and hands it to `ACPParams.NewAgent` (new fourth parameter `start`). The fallback note reaches the session through the optional `Config.StartFallback`, read once when the adapter publishes the session. The start model is set through `agent.Config.Model`, not `SetModel`, so no readiness call (token refresh, HTTP) can leave a usable provider with no model.
+- The router sends the release only for a client that made an account call (`client.usedAccounts`), so closing any other client adds no agent-side request.
+- A start that ends before it shows a notice (`auth.StartError`, for example a busy ChatGPT callback port) has no wire outcome today; the host answers it as a fixed `internal` error. A wrong pasted address or code ends `failed/internal`, as phase 3 noted. Neither needs a new text now; both are recorded for the TUI phases.
+- `ACPLogoutResult.generation` is the broker generation after the removal (it can be higher when a save followed at once; clients drop stale values anyway).
 
 ## Design
 
@@ -161,9 +172,9 @@ The key and the code cross the router as request params only. The router logs me
 
 ## Todo
 
-- [ ] Scout and update this file
-- [ ] Host provider methods, models flag, no model
-- [ ] App accounts, composition, faux opt-in, env helpers
-- [ ] Router policy, broadcast, release
-- [ ] Routing and E2E tests green
-- [ ] Package READMEs of `acp`, `leader` updated
+- [x] Scout and update this file
+- [x] Host provider methods, models flag, no model
+- [x] App accounts, composition, faux opt-in, env helpers
+- [x] Router policy, broadcast, release
+- [x] Routing and E2E tests green
+- [x] Package READMEs of `acp`, `leader` updated

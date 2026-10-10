@@ -240,6 +240,26 @@ func TestRebuildMessageRedrawsCommittedOnce(t *testing.T) {
 	require.Equal(t, 1, strings.Count(h.out.all(), purgeSequence))
 }
 
+// A rebuild that runs while stable blocks wait for a commit draws those blocks
+// itself. They must not stay in the live tail: the frame of the rebuild would
+// show them, and the commit after it would write them a second time.
+func TestRebuildTakesStableBlocksThatWaitForCommit(t *testing.T) {
+	m := newTestModel(fakeSource{placeholder: true})
+	m.Update(tea.WindowSizeMsg{Width: 60, Height: 20, Generation: 1})
+	m.Update(firstFrameMsg{})
+	m.Update(AppendBlockMsg{ID: "a", Block: textBlock{"alpha-text"}, Stable: true})
+	require.True(t, m.committing, "the first commit is running")
+	m.Update(AppendBlockMsg{ID: "b", Block: textBlock{"beta-text"}, Stable: true})
+	m.Update(RebuildMsg{})
+	require.Equal(t, 1, m.transcript.Committed(), "the busy output holds the second block back")
+
+	_, cmd := m.Update(commitDoneMsg{})
+	require.NotNil(t, cmd)
+	require.True(t, m.replaying, "the rebuild starts when the commit ends")
+	require.Equal(t, 2, m.transcript.Committed())
+	require.Empty(t, m.transcript.TailLines(m.renderContext()), "the frame of the rebuild holds no row that is written again")
+}
+
 // appendSettled adds a block and waits until the screen stops changing. A
 // golden compares one exact screen, and the renderer leaves different gaps
 // below the frame when the frame size changes between draws, so goldens add

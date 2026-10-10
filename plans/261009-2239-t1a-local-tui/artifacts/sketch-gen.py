@@ -70,18 +70,32 @@ THINK = ("The stale check runs before the deadline starts, so the deadline is to
 META = "deepseek-v4.1-flash · 4.2s · ↑12.4k ↓1.8k · $0.004"
 
 MODELS = [
-    ("alibaba", "deepseek-v4.1-flash", "128k", "current"),
-    ("alibaba", "qwen4-coder-plus", "256k", ""),
+    ("alibaba-token-plan", "deepseek-v4.1-flash", "128k", "current"),
+    ("alibaba-token-plan", "qwen4-coder-plus", "256k", ""),
     ("anthropic", "claude-opus-5-5", "1M", "reasoning"),
     ("anthropic", "claude-sonnet-5-5", "1M", "reasoning"),
     ("openai", "gpt-5.5-codex", "400k", "reasoning"),
     ("xai", "grok-5-code", "256k", "reasoning"),
 ]
-PROVIDER_ROLE = {"alibaba": "prov-1", "anthropic": "prov-2", "openai": "prov-3", "xai": "prov-4"}
+PROVIDER_ROLE = {"alibaba-token-plan": "prov-1", "anthropic": "prov-2", "openai": "prov-3", "xai": "prov-4"}
 
 
-def header(w, place="leader 7c1e"):
-    return [L(w, ("◢◤ ", "logo"), ("ask", "logo"), (f"   v0.1.0 · {place} · ~/src/askcore", "muted")), L(w)]
+DEFAULT_PAIR = "alibaba-token-plan/deepseek-v4.1-flash"  # provider/model of the session in most sketches
+
+
+def model_line(w, pair, was=None):
+    """The model line under the header: `  model  <provider>/<model>`. Under 60 columns the label is dropped."""
+    label = "  model  " if w >= 60 else "  "
+    segs = [(label, "muted"), (pair, "")]
+    if was and w >= 60 and cw(label + pair + " · was " + was) <= w:
+        segs.append((" · was " + was, "dim"))
+    return [L(w, *segs)]
+
+
+def header(w, place="leader 7c1e", model=None):
+    """Startup header, then the model line when the session has a model, then one empty row."""
+    top = [L(w, ("◢◤ ", "logo"), ("ask", "logo"), (f"   v0.1.0 · {place} · ~/src/askcore", "muted"))]
+    return top + (model_line(w, model) if model else []) + [L(w)]
 
 
 def user(w, q, time):
@@ -123,7 +137,7 @@ def tool_done(w):
 
 
 def history(w, place="leader 7c1e"):
-    return header(w, place) + user(w, Q1, "14:02") + answer(w, A1) + code(w) + meta(w)
+    return header(w, place, DEFAULT_PAIR) + user(w, Q1, "14:02") + answer(w, A1) + code(w) + meta(w)
 
 
 def status(w, mark, text, tail, role="accent"):
@@ -187,7 +201,7 @@ def state_start(w, h):
 
 
 def state_in_process(w, h):
-    scroll = header(w, "in-process agent")
+    scroll = header(w, "in-process agent", DEFAULT_PAIR)
     live = editor(w) + footer(w, dot=("○", "muted"), place="in-process", pct=0, cost="$0.00")
     return frame(w, h, scroll, live, top_anchor=True)
 
@@ -279,15 +293,20 @@ def _box_row(w, segs, right=None, fill=""):
 
 
 def model_rows(w, rows, sel):
-    out = []
-    for k, (p, m, ctx, note) in enumerate(rows):
+    """Model rows grouped by provider: a header row for each provider, then its models."""
+    out, k, last = [], 0, None
+    for p, m, ctx, note in rows:
+        if p != last:
+            out.append(_box_row(w, [("   ", ""), ("● ", PROVIDER_ROLE[p]), (p, "muted bold")]))
+            last = p
         s = k == sel
         bg = " selected" if s else ""
-        out.append(_box_row(w, [(" ❯ " if s else "   ", "accent bold" + bg), ("● ", PROVIDER_ROLE[p] + bg),
-                                (f"{p}/", "muted" + bg), (m, ("bold" if s else "") + bg)],
+        out.append(_box_row(w, [(" ❯ " if s else "   ", "accent bold" + bg), ("  ", bg.strip()),
+                                (m, ("bold" if s else "") + bg)],
                             right=[(f"{ctx:>5}  ", "muted" + bg),
                                    (f"{note:<10} ", ("assistant" if note == "reasoning" else "success") + bg)],
                             fill=bg.strip()))
+        k += 1
     return out
 
 
@@ -345,7 +364,8 @@ def state_disconnected(w, h):
 
 
 def state_reconnected(w, h):
-    scroll = history(w) + [L(w, ("  ↻ ", "success"), ("Reconnected. Session 3f2a restored.", "success")), L(w)]
+    scroll = history(w) + [L(w, ("  ↻ ", "success"), ("Reconnected. Session 3f2a restored.", "success"))] + model_line(
+        w, DEFAULT_PAIR) + [L(w)]
     return frame(w, h, scroll, editor(w, DRAFT) + footer(w))
 
 

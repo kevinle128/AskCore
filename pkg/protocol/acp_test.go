@@ -95,7 +95,7 @@ func TestACPWireEventIdentity(t *testing.T) {
 }
 
 func TestACPWireErrorCodes(t *testing.T) {
-	kinds := []ACPErrorKind{ACPErrUnknownSession, ACPErrUnknownSubscription, ACPErrNotInitialized, ACPErrBusy, ACPErrDisposed, ACPErrNoAPIKey, ACPErrModelAccess, ACPErrQueueFull, ACPErrInvalidModel, ACPErrInvalidContent, ACPErrCancelled, ACPErrUnsupported, ACPErrOutputFailure}
+	kinds := []ACPErrorKind{ACPErrUnknownSession, ACPErrUnknownSubscription, ACPErrNotInitialized, ACPErrBusy, ACPErrDisposed, ACPErrNoAPIKey, ACPErrModelAccess, ACPErrQueueFull, ACPErrInvalidModel, ACPErrInvalidContent, ACPErrCancelled, ACPErrUnsupported, ACPErrOutputFailure, ACPErrNoModel, ACPErrProviderBusy}
 	seen := map[int]ACPErrorKind{}
 	for _, k := range kinds {
 		c := ACPErrorCode(k)
@@ -111,7 +111,7 @@ func TestACPWireErrorCodes(t *testing.T) {
 		t.Fatal("standard code mapping changed")
 	}
 	// Ask-only codes must not collide with the codes that the pinned ACP schema defines.
-	for _, c := range []int{ACPCodeBusy, ACPCodeDisposed, ACPCodeQueueFull, ACPCodeOutputFailure} {
+	for _, c := range []int{ACPCodeBusy, ACPCodeDisposed, ACPCodeQueueFull, ACPCodeOutputFailure, ACPCodeNoModel, ACPCodeProviderBusy} {
 		if c == -32000 || c == -32002 || c < -32099 {
 			t.Fatalf("code %d outside the free reserved range", c)
 		}
@@ -155,7 +155,7 @@ func TestACPWireDeferredMethods(t *testing.T) {
 }
 
 func TestACPWireErrorMessages(t *testing.T) {
-	kinds := []ACPErrorKind{ACPErrUnknownSession, ACPErrUnknownSubscription, ACPErrNotInitialized, ACPErrBusy, ACPErrDisposed, ACPErrNoAPIKey, ACPErrModelAccess, ACPErrQueueFull, ACPErrInvalidModel, ACPErrInvalidContent, ACPErrInvalidParams, ACPErrInvalidState, ACPErrCancelled, ACPErrUnsupported, ACPErrOutputFailure, ACPErrInternal}
+	kinds := []ACPErrorKind{ACPErrUnknownSession, ACPErrUnknownSubscription, ACPErrNotInitialized, ACPErrBusy, ACPErrDisposed, ACPErrNoAPIKey, ACPErrModelAccess, ACPErrQueueFull, ACPErrInvalidModel, ACPErrInvalidContent, ACPErrInvalidParams, ACPErrInvalidState, ACPErrCancelled, ACPErrUnsupported, ACPErrOutputFailure, ACPErrInternal, ACPErrNoModel, ACPErrProviderBusy}
 	seen := map[string]ACPErrorKind{}
 	for _, k := range kinds {
 		m := ACPErrorMessage(k)

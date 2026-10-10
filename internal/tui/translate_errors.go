@@ -38,6 +38,11 @@ func classifyError(code, provider string) (kind, next string) {
 		kind, next = k.kind, k.next
 		if code == "AUTH" {
 			next = "Run in a shell: " + loginCommand(provider) + ". Then send again."
+			if uncheckedProviders[provider] {
+				// The key of this provider was saved without a check, so a wrong
+				// key shows up here, and /providers replaces it.
+				next = "Replace the key with /providers. Then send again."
+			}
 		}
 		return kind, next
 	}
@@ -102,6 +107,8 @@ func providerErrorText(msg, provider string) string {
 	code, _ := strconv.Atoi(m[1])
 	var what string
 	switch {
+	case (code == 401 || code == 403) && uncheckedProviders[provider]:
+		what = "refused the key"
 	case code == 401:
 		what = "rejected the credentials"
 	case code == 403:

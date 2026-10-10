@@ -123,7 +123,7 @@ func TestLeaderSecondSignalEscapesStartedToolDrain(t *testing.T) {
 	fp.Set(faux.Reply(faux.ToolCall("hold", nil, faux.ID("call-1"))), faux.Say("after"))
 	rt, err := app.NewLeaderRuntime(app.LeaderParams{
 		ACPParams: app.ACPParams{Home: home, Initial: model,
-			NewAgent: func(service *auth.Service, id, cwd string) (*agent.Agent, error) {
+			NewAgent: func(service *auth.Service, id, cwd string, _ providers.Model) (*agent.Agent, error) {
 				return app.NewNativeAgent(app.NativeAgentConfig{Auth: service, InitialStream: fp.Stream,
 					Config: agent.Config{SessionID: id, Tools: registry, LoopConfig: agent.LoopConfig{
 						Model: model, Stream: fp.Stream, Cwd: cwd, Options: providers.StreamOptions{APIKey: "test-key"},

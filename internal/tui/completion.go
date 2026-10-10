@@ -21,6 +21,7 @@ type CommandSpec struct {
 func DefaultCommands() []CommandSpec {
 	return []CommandSpec{
 		{"/model", "Select a model"},
+		{"/providers", "Add or remove providers"},
 		{"/new", "Start a new session in this directory"},
 		{"/sessions", "Watch another live session"},
 		{"/take", "Take control of this session"},

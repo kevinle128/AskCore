@@ -1,0 +1,21 @@
+◢◤ ask   v0.1.0 · leader 7c1e · ~/src/askcore
+  model  alibaba-token-plan/deepseek-v4.1-flash
+
+  ❯ why does TestLeaderStale fail on CI?                                 14:02
+
+  ◆ The test waits for the stale socket check, but CI runs it with a 1 s
+    deadline. The leader removes the stale socket after the lock probe, and the
+    probe can take 1.2 s.
+
+    go
+    deadline := 5 * time.Second
+    deepseek-v4.1-flash · 4.2s · ↑12.4k ↓1.8k · $0.004
+
+┊ ◌ Checking the key with openai… 0s · esc to cancel
+╭─ OpenAI API key ─────────────────────────────────────────────────────────────╮
+│  Paste your API key. It is sent once to the leader and is never shown.       │
+│                                                                              │
+│  key  (hidden)                                                               │
+╰──────────────────────────────────────────────────────────────────────────────╯
+   esc cancel
+  ● leader 7c1e   ⌂ ~/src/askcore      deepseek-v4.1-flash  ▰▱▱▱▱▱▱▱ 18%  $0.04

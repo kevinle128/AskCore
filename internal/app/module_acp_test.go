@@ -22,7 +22,7 @@ func testACPParams(t *testing.T) ACPParams {
 		Home:    t.TempDir(),
 		Initial: providers.Model{ID: "faux-1", Name: "faux-1", Provider: "faux", API: "faux"},
 		Info:    sdk.Implementation{Name: "ask", Version: "test"},
-		NewAgent: func(*auth.Service, string, string) (*agent.Agent, error) {
+		NewAgent: func(*auth.Service, string, string, providers.Model) (*agent.Agent, error) {
 			return nil, errors.New("not used")
 		},
 	}

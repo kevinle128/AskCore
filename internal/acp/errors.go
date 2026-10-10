@@ -63,6 +63,10 @@ func classify(err error) protocol.ACPErrorKind {
 		return protocol.ACPErrDisposed
 	case errors.Is(err, ErrModelAccess):
 		return protocol.ACPErrModelAccess
+	case errors.Is(err, agent.ErrNoModel):
+		return protocol.ACPErrNoModel
+	case errors.Is(err, ErrProviderBusy):
+		return protocol.ACPErrProviderBusy
 	case errors.Is(err, agent.ErrNoAPIKey), errors.Is(err, ErrAuth):
 		return protocol.ACPErrNoAPIKey
 	case errors.Is(err, agent.ErrQueueFull):

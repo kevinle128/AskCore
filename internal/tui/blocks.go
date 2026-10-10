@@ -128,7 +128,12 @@ func styleRows(th *Theme, role Role, rows []string) []string {
 
 // --- startup header ---
 
-type startupHeader struct{ version, where, cwd string }
+type startupHeader struct {
+	version, where, cwd string
+	// start is the model line and the notes that follow the header row. The
+	// empty row of the header comes after them.
+	start modelLineBlock
+}
 
 // NewStartupHeader returns the one-line header at the top of the scrollback.
 // where is "leader <id>" or "in-process agent".
@@ -146,7 +151,9 @@ func (b startupHeader) Lines(rc RenderContext) []string {
 	}
 	logo := "◢◤ ask"
 	room := rc.Width - displayWidth(logo)
-	return []string{rc.Theme.RenderLogo(logo) + rc.Theme.Render(RoleMuted, truncateTo(rest, max(0, room))), ""}
+	rows := []string{rc.Theme.RenderLogo(logo) + rc.Theme.Render(RoleMuted, truncateTo(rest, max(0, room)))}
+	rows = append(rows, b.start.rows(rc)...)
+	return append(rows, "")
 }
 
 // --- user prompt ---
@@ -462,6 +469,29 @@ func NewReconnectNote(text string) Block {
 // empty, a muted row that tells the user what to do.
 func NewErrorBlock(headline, next string) Block {
 	return noteBlock{glyph: GlyphFail, glyphRole: RoleError, textRole: RoleError, text: headline, next: next}
+}
+
+// NewSuccessNote returns a result note: "✓ <text>" in the success role and,
+// for each row of more, a muted row at the text column.
+func NewSuccessNote(text string, more ...string) Block {
+	return successNote{text: text, more: more}
+}
+
+type successNote struct {
+	text string
+	more []string
+}
+
+func (b successNote) Lines(rc RenderContext) []string {
+	th := rc.Theme
+	out := leadRows(th.Render(RoleSuccess, GlyphOK), styleRows(th, RoleSuccess, wrapUntrusted(b.text, bodyWidth(rc))))
+	pad := strings.Repeat(" ", textIndent)
+	for _, m := range b.more {
+		for _, row := range styleRows(th, RoleMuted, wrapUntrusted(m, bodyWidth(rc))) {
+			out = append(out, pad+row)
+		}
+	}
+	return append(out, "")
 }
 
 // NewCancelMarker returns the marker for a cancelled run: "⊘ <text>".

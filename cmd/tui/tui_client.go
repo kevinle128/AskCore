@@ -128,10 +128,7 @@ func openInProcessClient(ctx context.Context, deps runDependencies) (*tuiclient.
 		OnClose: func() error {
 			select {
 			case exit := <-exited:
-				if exit.Err != nil && !errors.Is(exit.Err, context.Canceled) {
-					return exit.Err
-				}
-				return nil
+				return inProcessExitError(exit.Err)
 			case <-time.After(inProcessStopWait):
 				return errors.New("the in-process agent did not stop in time")
 			}
@@ -143,4 +140,27 @@ func openInProcessClient(ctx context.Context, deps runDependencies) (*tuiclient.
 		return nil, err
 	}
 	return c, nil
+}
+
+func inProcessExitError(err error) error {
+	if joined, ok := err.(interface{ Unwrap() []error }); ok {
+		var failures []error
+		for _, failure := range joined.Unwrap() {
+			if failure = inProcessExitError(failure); failure != nil {
+				failures = append(failures, failure)
+			}
+		}
+		if len(failures) == 2 &&
+			((failures[0] == acp.ErrOutputFailed && failures[1] == io.ErrClosedPipe) ||
+				(failures[1] == acp.ErrOutputFailed && failures[0] == io.ErrClosedPipe)) {
+			return nil
+		}
+		return errors.Join(failures...)
+	}
+	// Closing the client pipe can stop a final host notification.
+	if errors.Is(err, context.Canceled) ||
+		(errors.Is(err, acp.ErrOutputFailed) && errors.Is(err, io.ErrClosedPipe)) {
+		return nil
+	}
+	return err
 }

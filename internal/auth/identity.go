@@ -54,6 +54,15 @@ func (v *ChatGPTIdentityVerifier) Verify(ctx context.Context, rawToken, issuedCl
 	if v == nil || strings.TrimSpace(rawToken) == "" || strings.TrimSpace(issuedClientID) == "" || strings.TrimSpace(nonce) == "" {
 		return "", errors.New("auth: incomplete identity verification input")
 	}
+	id, err := v.verify(ctx, rawToken, issuedClientID, nonce)
+	return id.subject, err
+}
+
+// verifyLogin is Verify that also returns the display name of the account.
+func (v *ChatGPTIdentityVerifier) verifyLogin(ctx context.Context, rawToken, issuedClientID, nonce string) (verifiedIdentity, error) {
+	if v == nil || strings.TrimSpace(rawToken) == "" || strings.TrimSpace(issuedClientID) == "" || strings.TrimSpace(nonce) == "" {
+		return verifiedIdentity{}, errors.New("auth: incomplete identity verification input")
+	}
 	return v.verify(ctx, rawToken, issuedClientID, nonce)
 }
 
@@ -62,28 +71,41 @@ func (v *ChatGPTIdentityVerifier) VerifyRefresh(ctx context.Context, rawToken, i
 	if v == nil || strings.TrimSpace(rawToken) == "" || strings.TrimSpace(issuedClientID) == "" {
 		return "", errors.New("auth: incomplete identity verification input")
 	}
-	return v.verify(ctx, rawToken, issuedClientID, "")
+	id, err := v.verify(ctx, rawToken, issuedClientID, "")
+	return id.subject, err
 }
 
-func (v *ChatGPTIdentityVerifier) verify(ctx context.Context, rawToken, issuedClientID, nonce string) (string, error) {
+// verifiedIdentity holds the signed subject and the optional display claims.
+type verifiedIdentity struct{ subject, email, name string }
+
+func (v *ChatGPTIdentityVerifier) verify(ctx context.Context, rawToken, issuedClientID, nonce string) (verifiedIdentity, error) {
 	verifier := oidc.NewVerifier(v.issuer, v.keys, &oidc.Config{ClientID: issuedClientID, SupportedSigningAlgs: []string{oidc.RS256}})
 	token, err := verifier.Verify(ctx, rawToken)
 	if err != nil {
-		return "", fmt.Errorf("auth: invalid identity token: %w", err)
+		return verifiedIdentity{}, fmt.Errorf("auth: invalid identity token: %w", err)
 	}
 	if token.Subject == "" || nonce != "" && token.Nonce != nonce {
-		return "", errors.New("auth: identity subject or nonce mismatch")
+		return verifiedIdentity{}, errors.New("auth: identity subject or nonce mismatch")
 	}
 	var claims struct {
 		AuthorizedParty string `json:"azp"`
+		Email           string `json:"email"`
+		Name            string `json:"name"`
+		Profile         struct {
+			Email string `json:"email"`
+		} `json:"https://api.openai.com/profile"`
 	}
 	if err := token.Claims(&claims); err != nil {
-		return "", fmt.Errorf("auth: invalid identity claims: %w", err)
+		return verifiedIdentity{}, fmt.Errorf("auth: invalid identity claims: %w", err)
 	}
 	if (len(token.Audience) > 1 || claims.AuthorizedParty != "") && claims.AuthorizedParty != issuedClientID {
-		return "", errors.New("auth: identity authorized party mismatch")
+		return verifiedIdentity{}, errors.New("auth: identity authorized party mismatch")
 	}
-	return token.Subject, nil
+	email := claims.Email
+	if strings.TrimSpace(email) == "" {
+		email = claims.Profile.Email
+	}
+	return verifiedIdentity{subject: token.Subject, email: email, name: claims.Name}, nil
 }
 
 // identityTransport limits the key response before the OIDC library reads it.

@@ -53,8 +53,12 @@ func (m *Model) pump() tea.Cmd {
 		m.rebuildWanted = false
 		m.replaying = true
 		// The rebuild draws every committed row, including the ones that
-		// were taken from the transcript but not written yet.
+		// were taken from the transcript but not written yet. Stable rows
+		// that no commit has taken yet join it. Left for a commit after the
+		// rebuild, they would be in the frame that the rebuild draws and
+		// again above it until the next frame.
 		m.outbox = nil
+		m.transcript.TakeStable(m.renderContext())
 		entries := m.transcript.CommittedLines(m.renderContext())
 		return tea.ReplayInlineTranscript(m.width, m.height, m.generation, entries)
 	}

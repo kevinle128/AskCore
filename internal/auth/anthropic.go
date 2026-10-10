@@ -34,7 +34,15 @@ func (n *native) anthropicLogin(ctx context.Context, r LoginRequest, _ settings.
 	if e = success(status, e); e != nil {
 		return settings.Credential{}, e
 	}
-	return n.credential(t, "anthropic-oauth", settings.Credential{}, false)
+	c, e := n.credential(t, "anthropic-oauth", settings.Credential{}, false)
+	if e == nil && r.Account != nil {
+		fallback := ""
+		if t.Account != nil {
+			fallback = t.Account.EmailAddress
+		}
+		reportAccount(r, n.anthropicAccount(ctx, t.Access, fallback))
+	}
+	return c, e
 }
 func (n *native) anthropicRefresh(ctx context.Context, c settings.Credential) (settings.Credential, error) {
 	if c.OAuth == nil {

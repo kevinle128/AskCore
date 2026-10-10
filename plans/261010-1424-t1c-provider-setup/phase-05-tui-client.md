@@ -1,7 +1,7 @@
 ---
 phase: 5
 title: "TUI client contract and tuiclient"
-status: pending
+status: completed
 priority: P1
 effort: "1d"
 dependencies: [4]
@@ -9,7 +9,7 @@ dependencies: [4]
 
 # Phase 5: TUI client contract and tuiclient
 
-Outline with scouted evidence. Run a scout pass and update this file before cooking.
+Scouted again on 2026-10-10 after phases 2 to 4 (see "Scout result"). Implemented and verified.
 
 ## Goal
 
@@ -22,6 +22,25 @@ The UI gets the provider calls, the usable model list and the providers-changed 
 - Notifications are read in `internal/tuiclient/events.go:80-112` (`_ask/session/event`, resync); the queue to the UI is unbounded and ordered (`mailbox.go`).
 - UI calls use `callContext()` with a fixed timeout (`internal/tui/session.go:235-237`). A login wait can last up to 10 min, so `WaitLogin` gets its own context that the UI cancels.
 - The in-process client is built in `cmd/tui/tui_client.go:88-140` over the same `tuiclient.Client`.
+
+## Scout result
+
+- The evidence above still holds. Lines moved by the T1a commit and the phase 2 to 4 edits: `Client` interface now `internal/tui/client.go:91-190`, `needsLeader` `internal/tuiclient/client.go:400`, `request` `:422`. The wire types are in `pkg/protocol/acp_providers.go` (phase 2): `ACPModelsRequest{SessionID, UsableOnly}`, `ACPModelRequest.SaveDefault`, `ACPLoginOutcome`, `ACPLogoutRequest.SessionID`.
+- Provider methods need no session, so the client uses `live()` and not `withSession()`. `Logout` names the current session when there is one, because the host sets `clearedModel` only for a named session.
+- `SetModel` has one caller: `internal/tui/update_input.go` (`setModelCmd`). It passes `true`, as the design says for a choice in `/model`.
+- A real leader started from a test binary has no hook for an auth fixture. The leader E2E tests therefore use the Token Plan key (saved without a check, no network) and the ChatGPT browser flow (loopback callback, no network). The two real-leader tests live in `cmd/tui/tui_client_e2e_test.go`, because they need the built `ask`.
+- Pre-existing: `TestClientInProcessAgent` fails in about 5 percent of runs at its follow-up queue check (also on the commit before phase 2). Not caused by this phase.
+
+### Carry-overs from phase 4
+
+| Case | Wire result | Client behavior | For phase 6 |
+|---|---|---|---|
+| Sign-in ends before it shows a notice (callback port busy and no other way) | `StartLogin` fails with a `*RequestError`, Kind `internal`, fixed text | Passed through unchanged | P12a "Could not start: <reason>" needs a reason text for `internal` (for example "the sign-in could not start on the leader"). The design lists `provider_busy` only. |
+| Wrong pasted address or code | `SendLoginCode` is accepted; `WaitLogin` ends `failed`, reason `internal` | Passed through | P12 text is "the browser returned <reason>". It needs a text for `internal` that does not name the browser (for example "the leader could not complete the sign-in"). |
+| In-process link | none; the client answers `ErrNeedsLeader` before it sends | Checked by `ConnInfo.Mode` on every provider call | UI shows the needs-the-leader text (criterion 29). An old leader that answers `unsupported` stays a `*RequestError` and is the P3 load failure. |
+| Generation per leader instance | `ProvidersChangedMsg` | Last value is reset when `ConnInfo.InstanceID` changes; a reconnect to the same instance keeps it | Phase 6 drops stale list results by its own request id. |
+
+The design needs no edit if phase 6 picks the two `internal` texts. If the user wants other words, the design gets them in an amendment.
 
 ## Design
 
@@ -49,11 +68,13 @@ All provider calls in process return `ErrNeedsLeader` before sending (P24). `mod
 |---|---|---|---|
 | `internal/tui/client.go` | modify | +60 | compile of `internal/tui` fakes |
 | `internal/tui/session_rig_test.go` (fake client) | modify: new methods | +60 | — |
-| `internal/tuiclient/providers.go` | create | ~120 | — |
-| `internal/tuiclient/providers_test.go` | create | ~250 | — |
+| `internal/tui/update_input.go` | modify: one call site of `SetModel` (compile; passes `saveDefault` true) | +1 | — |
+| `internal/tuiclient/providers.go` | create | ~210 | — |
+| `internal/tuiclient/providers_test.go` | create | ~520 | — |
 | `internal/tuiclient/events.go` | modify: providers changed | +20 | — |
-| `internal/tuiclient/client.go` | modify: models flag, release on close | +20 | `client_test.go` |
-| `cmd/tui/tui_client_e2e_test.go` | modify: provider calls on a real leader | +80 | — |
+| `internal/tuiclient/client.go` | modify: models flag, release on close | +30 | `client_test.go` |
+| `cmd/tui/tui_client_e2e_test.go` | modify: provider calls on a real leader, `SetModel` signature, readiness test takes its model from the catalog | +150 | — |
+| `cmd/tui/interactive_flow_test.go` | modify: one env entry (a placeholder Token Plan key), because `/model` now lists usable providers only | +2 | — |
 
 ## Tests first
 
@@ -75,9 +96,10 @@ All provider calls in process return `ErrNeedsLeader` before sending (P24). `mod
 | `TestClientSecretNotInErrors` | Errors of `SaveAPIKey` and `SendLoginCode` (closed link, refused, bad answer) do not hold the value |
 | `TestClientModelsAsksUsableOnly` | `Models` sends `usableOnly: true` |
 | `TestClientPassesDefaultSavedAndFallback` | `SetModel` sends `saveDefault`; the results keep `defaultSaved`, `modelFallback` and `default` |
-| `TestClientWaitLoginCancelledByRemoval` (real leader) | A second client's removal ends this client's `WaitLogin` with `cancelled/removed` |
+| `TestClientWaitLoginCancelledByRemoval` (real leader, in `cmd/tui`) | A second client's removal ends this client's `WaitLogin` with `cancelled/removed` |
 | `TestClientCancelsOpenLoginOnClose` | Close with an open login sends one cancel first |
-| `TestClientProviderCallsOnLeader` (E2E, real leader, fixture) | List, key save, logout and the changed message on a second client |
+| `TestClientProviderCallsOnLeader` (E2E, real leader, Token Plan key) | List, key save, logout and the changed message on a second client |
+| `TestClientLogoutNamesCurrentSession`, `TestClientProviderBusyIsRequestError`, `TestClientSameInstanceAfterReconnectKeepsGeneration`, `TestClientEndedLoginIsNotCancelledOnClose`, `TestClientCancelLoginRequestError` | Added: session id in logout, busy kind, generation kept on the same instance, no cancel for an ended login, cancel error |
 
 ## Steps
 
@@ -107,7 +129,7 @@ Revert the phase commit; the leader side stays compatible with the old client (a
 
 ## Todo
 
-- [ ] Scout
-- [ ] Interface and fake
-- [ ] tuiclient provider calls, message, models flag
-- [ ] Tests green, lint clean (depguard boundaries unchanged)
+- [x] Scout
+- [x] Interface and fake
+- [x] tuiclient provider calls, message, models flag
+- [x] Tests green, lint clean (depguard boundaries unchanged)

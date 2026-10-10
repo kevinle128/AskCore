@@ -38,6 +38,8 @@ type Method struct {
 	Login       func(context.Context, LoginRequest, settings.Credential) (settings.Credential, error)
 	Refresh     func(context.Context, settings.Credential) (settings.Credential, error)
 	CheckAccess func(context.Context, providers.Model, settings.Credential) error
+	// Forget drops per-provider cached answers after a credential change.
+	Forget func()
 }
 
 type Service struct {
@@ -49,6 +51,18 @@ type Service struct {
 	active   int
 	idle     chan struct{}
 	stopping bool
+}
+
+// Forget drops the cached answers of the methods of one provider only.
+func (s *Service) Forget(provider string) {
+	if s == nil {
+		return
+	}
+	for _, m := range s.Methods {
+		if m.Provider == provider && m.Forget != nil {
+			m.Forget()
+		}
+	}
 }
 
 // WaitRefresh waits for all registered rotating operations to finish.

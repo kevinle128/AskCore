@@ -12,6 +12,7 @@ import (
 
 	"AskCore/internal/acp"
 	"AskCore/internal/leader"
+	"AskCore/pkg/protocol"
 
 	sdk "github.com/coder/acp-go-sdk"
 )
@@ -77,8 +78,17 @@ func NewLeaderRuntime(p LeaderParams) (*LeaderRuntime, error) {
 	}
 	cfg := acpRT.Config
 	cfg.RequireRoute = true
-	a, err := acp.NewAdapter(context.Background(), cfg)
+	// The provider setup exists on the leader link only: an editor link never takes a
+	// secret. A credential change reaches the adapter through ProvidersChanged,
+	// which the broker calls after Serve starts, so a is set by then.
+	var a *acp.Adapter
+	setup := newProviderSetup(acpRT, func(gen uint64, provider string, change protocol.ACPProviderChange) {
+		a.ProvidersChanged(gen, provider, change)
+	})
+	cfg.ProviderSetup = setup
+	a, err = acp.NewAdapter(context.Background(), cfg)
 	if err != nil {
+		setup.Close()
 		return nil, err
 	}
 
@@ -103,9 +113,15 @@ func NewLeaderRuntime(p LeaderParams) (*LeaderRuntime, error) {
 	})
 	if err != nil {
 		_ = a.Close()
+		setup.Close()
 		return nil, err
 	}
-	return &LeaderRuntime{Server: srv, Adapter: a, cleanup: acpRT.Cleanup}, nil
+	// Sign-ins end first: each one holds a refresh slot that the drain waits for.
+	cleanup := func(ctx context.Context) error {
+		setup.Close()
+		return acpRT.Cleanup(ctx)
+	}
+	return &LeaderRuntime{Server: srv, Adapter: a, cleanup: cleanup}, nil
 }
 
 // Serve starts the router and serves the clients of ln until ctx ends, the link

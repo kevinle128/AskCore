@@ -156,6 +156,7 @@ func (a *Adapter) follow(_ context.Context, raw json.RawMessage) (any, error) {
 		Entries:        entries,
 		Resumed:        f.Resumed,
 		Resync:         f.Resync,
+		Head:           &protocol.ACPCursor{Epoch: f.Head.Epoch, Seq: f.Head.Seq},
 	}
 	if f.Stream != nil {
 		res.Stream = &protocol.ACPStreamBaseline{AttemptID: f.Stream.AttemptID, Seq: f.Stream.Seq, Message: f.Stream.Message, Open: f.Stream.Open}

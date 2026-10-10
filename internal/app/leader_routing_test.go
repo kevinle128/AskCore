@@ -4,21 +4,28 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"io"
 	"net"
+	"net/http"
 	"os"
 	"path/filepath"
+	"strings"
 	"sync"
 	"testing"
 	"time"
 
 	"github.com/stretchr/testify/require"
 	"go.uber.org/fx"
+	"go.uber.org/zap"
+	"go.uber.org/zap/zapcore"
+	"go.uber.org/zap/zaptest/observer"
 
 	"AskCore/internal/agent"
 	"AskCore/internal/auth"
 	"AskCore/internal/leader"
 	"AskCore/internal/providers"
 	"AskCore/internal/providers/faux"
+	"AskCore/internal/settings"
 	"AskCore/internal/tools"
 	"AskCore/pkg/protocol"
 )
@@ -53,13 +60,18 @@ func fauxLeaderParams(t *testing.T, steps func() []faux.Step) LeaderParams {
 func fauxLeaderParamsWith(t *testing.T, steps func() []faux.Step, edit func(*agent.Config)) LeaderParams {
 	t.Helper()
 	p := testACPParams(t)
-	p.NewAgent = func(_ *auth.Service, id, cwd string) (*agent.Agent, error) {
+	p.NewAgent = func(_ *auth.Service, id, cwd string, start providers.Model) (*agent.Agent, error) {
 		fp, err := faux.New(faux.WithChunk(1000, 1000))
 		if err != nil {
 			return nil, err
 		}
 		m, _ := fp.Model("faux-1")
 		fp.Set(steps()...)
+		// The session runs on the model that the runtime chose. The demo model
+		// is the faux row, so its scripted stream serves it.
+		if start.Provider != "faux" {
+			m = start
+		}
 		cfg := agent.Config{SessionID: id, LoopConfig: agent.LoopConfig{
 			Model: m, Stream: fp.Stream, Cwd: cwd,
 			Options: providers.StreamOptions{APIKey: "test-key"},
@@ -585,4 +597,295 @@ func TestLeaderShutdownOrder(t *testing.T) {
 	}
 	_, ok := l.rt.Adapter.Session(sid)
 	require.False(t, ok)
+}
+
+// ---- provider calls through the real host ----
+
+// authFixture stands in for the provider endpoints: the key probe, the device
+// code request and the token poll. It never holds a real credential.
+type authFixture struct {
+	mu      sync.Mutex
+	refused map[string]bool // keys that the probe refuses
+	probes  int
+}
+
+func (f *authFixture) RoundTrip(r *http.Request) (*http.Response, error) {
+	reply := func(code int, body string) (*http.Response, error) {
+		return &http.Response{StatusCode: code, Header: make(http.Header), Body: io.NopCloser(strings.NewReader(body)), Request: r}, nil
+	}
+	switch {
+	case r.URL.Host == "auth.x.ai" && strings.HasSuffix(r.URL.Path, "/device/code"):
+		return reply(200, `{"device_code":"dev-private","user_code":"USER-CODE","verification_uri":"https://auth.x.ai/device","expires_in":600,"interval":1}`)
+	case r.URL.Host == "auth.x.ai":
+		return reply(400, `{"error":"authorization_pending"}`)
+	case r.Method == http.MethodGet && strings.HasSuffix(r.URL.Path, "/models"):
+		key := strings.TrimPrefix(r.Header.Get("Authorization"), "Bearer ")
+		if key == "" {
+			key = r.Header.Get("x-api-key")
+		}
+		f.mu.Lock()
+		f.probes++
+		refused := f.refused[key]
+		f.mu.Unlock()
+		if refused {
+			// A provider can repeat the key in its body. The host must not.
+			return reply(401, `{"error":{"code":"invalid_api_key","message":"bad key `+key+`"}}`)
+		}
+		return reply(200, `{"data":[]}`)
+	}
+	return nil, fmt.Errorf("unexpected request to %s", r.URL.Host)
+}
+
+// providerSetupLeader starts a leader with the faux demo model and the auth fixture.
+func providerSetupLeader(t *testing.T, edit func(*LeaderParams)) (*runningLeader, *authFixture, LeaderParams) {
+	t.Helper()
+	fixture := &authFixture{refused: map[string]bool{}}
+	p := fauxLeaderParams(t, saying("ok"))
+	p.AuthHTTP = &http.Client{Transport: fixture}
+	p.Wait = func(ctx context.Context, _ time.Duration) error { <-ctx.Done(); return ctx.Err() }
+	if edit != nil {
+		edit(&p)
+	}
+	return startLeader(t, p), fixture, p
+}
+
+func decodeInto[T any](t *testing.T, raw json.RawMessage) T {
+	t.Helper()
+	var v T
+	require.NoError(t, json.Unmarshal(raw, &v))
+	return v
+}
+
+func TestLeaderRoutingProviderCalls(t *testing.T) {
+	l, fx, _ := providerSetupLeader(t, nil)
+	a, b := l.client(nil), l.client(nil)
+
+	list := decodeInto[protocol.ACPProvidersResult](t, a.must(protocol.ACPProvidersList, map[string]any{}))
+	require.Len(t, list.Options, 7)
+	require.Equal(t, uint64(0), list.Generation)
+
+	// A key is checked by the probe, then saved. Both clients hear of it.
+	key := "sk-fake-openai-key"
+	out := decodeInto[protocol.ACPLoginOutcome](t, a.must(protocol.ACPProvidersAPIKey, map[string]any{"loginId": "k1", "providerId": "openai", "key": key}))
+	require.Equal(t, protocol.ACPLoginStatusSaved, out.Status)
+	require.False(t, out.NotChecked)
+	require.Equal(t, uint64(1), out.Generation)
+	require.Equal(t, 1, fx.probes)
+	a.waitCount(protocol.ACPProvidersChanged, 1)
+	b.waitCount(protocol.ACPProvidersChanged, 1)
+
+	list = decodeInto[protocol.ACPProvidersResult](t, b.must(protocol.ACPProvidersList, map[string]any{}))
+	for _, o := range list.Options {
+		if o.ProviderID == "openai" && o.MethodID == "api-key" {
+			require.Equal(t, protocol.ACPLoginStateAPIKey, o.State)
+		}
+	}
+
+	// The model list of a session names only usable providers.
+	sid := a.newSession("/w")
+	all := decodeInto[protocol.ACPModelsResult](t, a.must(protocol.ACPModels, map[string]any{"sessionId": sid}))
+	usable := decodeInto[protocol.ACPModelsResult](t, a.must(protocol.ACPModels, map[string]any{"sessionId": sid, "usableOnly": true}))
+	require.False(t, all.UsableOnly)
+	require.True(t, usable.UsableOnly)
+	providersSeen := map[string]bool{}
+	for _, m := range usable.Models {
+		providersSeen[m.Provider] = true
+	}
+	require.Equal(t, map[string]bool{"faux": true, "openai": true}, providersSeen)
+	require.Greater(t, len(all.Models), len(usable.Models))
+
+	// A device sign-in: start, wait, cancel.
+	start := decodeInto[protocol.ACPLoginStartResult](t, a.must(protocol.ACPLoginStart, map[string]any{"providerId": "xai", "methodId": "xai-oauth"}))
+	require.Equal(t, protocol.ACPLoginKindDevice, start.Kind)
+	require.Equal(t, "USER-CODE", start.UserCode)
+	require.NotEmpty(t, start.LoginID)
+	waitID := a.request(protocol.ACPLoginWait, map[string]any{"loginId": start.LoginID})
+	_, e := b.call(protocol.ACPLoginCancel, map[string]any{"loginId": start.LoginID})
+	require.NotNil(t, e, "another client cannot reach the sign-in")
+	cancel := decodeInto[protocol.ACPLoginCancelResult](t, a.must(protocol.ACPLoginCancel, map[string]any{"loginId": start.LoginID}))
+	require.True(t, cancel.Cancelled)
+	res, werr := a.await(waitID)
+	require.Nil(t, werr)
+	require.Equal(t, protocol.ACPLoginStatusCancelled, decodeInto[protocol.ACPLoginOutcome](t, res).Status)
+
+	// A removal reaches both clients and clears the model of a session on that provider.
+	set := a.must(protocol.ACPSetModel, map[string]any{"sessionId": sid, "modelId": acp2ID(providers.OpenAIGPT55())})
+	require.Contains(t, string(set), "openai/gpt-5.5")
+	lo := decodeInto[protocol.ACPLogoutResult](t, a.must(protocol.ACPProvidersLogout, map[string]any{"providerId": "openai", "methodId": "api-key", "sessionId": sid}))
+	require.True(t, lo.Removed)
+	require.Equal(t, acp2ID(providers.OpenAIGPT55()), lo.ClearedModel)
+	require.Equal(t, uint64(2), lo.Generation)
+	a.waitCount(protocol.ACPProvidersChanged, 2)
+	b.waitCount(protocol.ACPProvidersChanged, 2)
+	st := decodeInto[protocol.ACPStateResult](t, a.must(protocol.ACPState, map[string]any{"sessionId": sid}))
+	require.Equal(t, "", st.ModelID)
+}
+
+func acp2ID(m providers.Model) string { return fmt.Sprintf("%s/%s@%s", m.Provider, m.ID, m.API) }
+
+func TestHostLogoutCancelsOtherClientSignIn(t *testing.T) {
+	l, _, _ := providerSetupLeader(t, nil)
+	a, b := l.client(nil), l.client(nil)
+	start := decodeInto[protocol.ACPLoginStartResult](t, a.must(protocol.ACPLoginStart, map[string]any{"providerId": "xai", "methodId": "xai-oauth"}))
+	waitID := a.request(protocol.ACPLoginWait, map[string]any{"loginId": start.LoginID})
+
+	// A second sign-in to the same provider is refused while the first waits.
+	_, e := b.call(protocol.ACPLoginStart, map[string]any{"providerId": "xai", "methodId": "xai-oauth"})
+	require.NotNil(t, e)
+	require.Equal(t, "provider_busy", e.Data.Kind)
+
+	lo := decodeInto[protocol.ACPLogoutResult](t, b.must(protocol.ACPProvidersLogout, map[string]any{"providerId": "xai", "methodId": "xai-oauth"}))
+	require.True(t, lo.Removed)
+	res, werr := a.await(waitID)
+	require.Nil(t, werr)
+	out := decodeInto[protocol.ACPLoginOutcome](t, res)
+	require.Equal(t, protocol.ACPLoginStatusCancelled, out.Status)
+	require.Equal(t, protocol.ACPLoginReasonRemoved, out.Reason)
+	a.waitCount(protocol.ACPProvidersChanged, 1)
+	b.waitCount(protocol.ACPProvidersChanged, 1)
+}
+
+func TestLeaderStopWithPendingLoginIsQuick(t *testing.T) {
+	l, _, _ := providerSetupLeader(t, nil)
+	a := l.client(nil)
+	start := decodeInto[protocol.ACPLoginStartResult](t, a.must(protocol.ACPLoginStart, map[string]any{"providerId": "xai", "methodId": "xai-oauth"}))
+	a.request(protocol.ACPLoginWait, map[string]any{"loginId": start.LoginID})
+	a.barrier() // the wait request was read before the stop starts
+
+	began := time.Now()
+	require.NoError(t, l.rt.Stop(context.Background()))
+	require.Less(t, time.Since(began), 5*time.Second, "a waiting sign-in does not hold the refresh drain")
+}
+
+func TestHostNeverLogsSecrets(t *testing.T) {
+	core, logs := observer.New(zapcore.DebugLevel)
+	fixtureKey, code := "sk-fake-refused-key-value", "fake-code-value-7788"
+	l, fx, _ := providerSetupLeader(t, func(p *LeaderParams) { p.Logger = zap.New(core) })
+	fx.refused[fixtureKey] = true
+	a := l.client(nil)
+
+	out := decodeInto[protocol.ACPLoginOutcome](t, a.must(protocol.ACPProvidersAPIKey, map[string]any{"loginId": "k1", "providerId": "openai", "key": fixtureKey}))
+	require.Equal(t, protocol.ACPLoginStatusRefused, out.Status)
+	require.Equal(t, 401, out.HTTPStatus)
+	require.Equal(t, "invalid_api_key", out.ProviderCode)
+	_, e := a.call(protocol.ACPLoginInput, map[string]any{"loginId": "unknown", "code": code})
+	require.NotNil(t, e)
+	a.barrier()
+
+	for _, entry := range logs.All() {
+		text := entry.Message
+		for k, v := range entry.ContextMap() {
+			text += " " + k + "=" + fmt.Sprint(v)
+		}
+		require.NotContains(t, text, fixtureKey)
+		require.NotContains(t, text, code)
+	}
+	a.mu.Lock()
+	defer a.mu.Unlock()
+	for _, m := range a.msgs {
+		raw, _ := json.Marshal(m)
+		require.NotContains(t, string(raw), fixtureKey, "no frame to a client repeats the key")
+		require.NotContains(t, string(raw), code)
+	}
+}
+
+// A session on a leader with no usable provider has no model and refuses a prompt.
+func TestLeaderSessionWithoutModelRefusesPrompt(t *testing.T) {
+	l, _, _ := providerSetupLeader(t, func(p *LeaderParams) { p.Initial = providers.Model{} })
+	a := l.client(nil)
+	sid := a.newSession("/w")
+	st := decodeInto[protocol.ACPStateResult](t, a.must(protocol.ACPState, map[string]any{"sessionId": sid}))
+	require.Equal(t, "", st.ModelID)
+	models := decodeInto[protocol.ACPModelsResult](t, a.must(protocol.ACPModels, map[string]any{"sessionId": sid, "usableOnly": true}))
+	require.Empty(t, models.Models)
+	require.Equal(t, "", models.Current)
+	_, e := a.call("session/prompt", promptArgs(sid))
+	require.NotNil(t, e)
+	require.Equal(t, "no_model", e.Data.Kind)
+
+	// A new session after a key save starts on the recommended model.
+	out := decodeInto[protocol.ACPLoginOutcome](t, a.must(protocol.ACPProvidersAPIKey, map[string]any{"loginId": "k1", "providerId": "openai", "key": "sk-fake-openai-key"}))
+	require.Equal(t, protocol.ACPLoginStatusSaved, out.Status)
+	other := a.newSession("/w")
+	st = decodeInto[protocol.ACPStateResult](t, a.must(protocol.ACPState, map[string]any{"sessionId": other}))
+	require.Equal(t, acp2ID(providers.OpenAIGPT55()), st.ModelID)
+	require.Nil(t, st.ModelFallback)
+}
+
+func TestDefaultModelSavedOnSelect(t *testing.T) {
+	l, _, p := providerSetupLeader(t, func(p *LeaderParams) { p.Initial = providers.Model{} })
+	prefs, err := settings.NewSettingsStore(p.Home)
+	require.NoError(t, err)
+	a := l.client(nil)
+	a.must(protocol.ACPProvidersAPIKey, map[string]any{"loginId": "k1", "providerId": "openai", "key": "sk-fake-openai-key"})
+	a.must(protocol.ACPProvidersAPIKey, map[string]any{"loginId": "k2", "providerId": "anthropic", "key": "sk-fake-anthropic-key"})
+	sid := a.newSession("/w")
+	saved := func() string {
+		id, err := prefs.DefaultModel(context.Background())
+		require.NoError(t, err)
+		return id
+	}
+	require.Empty(t, saved(), "a sign-in sets no default")
+	_, statErr := os.Stat(filepath.Join(p.Home, "settings.json"))
+	require.True(t, os.IsNotExist(statErr), "a sign-in writes no settings file")
+
+	sol := acp2ID(providers.OpenAIGPT56Sol())
+	res := decodeInto[protocol.ACPSetModelResult](t, a.must(protocol.ACPSetModel, map[string]any{"sessionId": sid, "modelId": sol}))
+	require.False(t, res.DefaultSaved)
+	require.Empty(t, saved(), "no flag, nothing saved")
+
+	_, e := a.call(protocol.ACPSetModel, map[string]any{"sessionId": sid, "modelId": "openai/none@x", "saveDefault": true})
+	require.NotNil(t, e)
+	require.Empty(t, saved(), "a refused switch saves nothing")
+
+	res = decodeInto[protocol.ACPSetModelResult](t, a.must(protocol.ACPSetModel, map[string]any{"sessionId": sid, "modelId": sol, "saveDefault": true}))
+	require.True(t, res.DefaultSaved)
+	require.Equal(t, sol, saved())
+	info, err := os.Stat(filepath.Join(p.Home, "settings.json"))
+	require.NoError(t, err)
+	require.Equal(t, os.FileMode(0o600), info.Mode().Perm())
+
+	// The next session starts on the saved default, and the list names it.
+	next := a.newSession("/w")
+	st := decodeInto[protocol.ACPStateResult](t, a.must(protocol.ACPState, map[string]any{"sessionId": next}))
+	require.Equal(t, sol, st.ModelID)
+	require.Nil(t, st.ModelFallback)
+	models := decodeInto[protocol.ACPModelsResult](t, a.must(protocol.ACPModels, map[string]any{"sessionId": next, "usableOnly": true}))
+	require.Equal(t, sol, models.Default)
+	require.Equal(t, sol, models.Current)
+
+	// Removing the provider of the default: a new session falls back and says so.
+	a.must(protocol.ACPProvidersLogout, map[string]any{"providerId": "openai", "methodId": "api-key"})
+	after := a.newSession("/w")
+	st = decodeInto[protocol.ACPStateResult](t, a.must(protocol.ACPState, map[string]any{"sessionId": after}))
+	require.Equal(t, acp2ID(providers.AnthropicSonnet46()), st.ModelID)
+	require.NotNil(t, st.ModelFallback)
+	require.Equal(t, protocol.ACPModelFallback{SavedDefault: sol, Reason: protocol.ACPFallbackNoCredential}, *st.ModelFallback)
+	require.Equal(t, sol, saved(), "a fallback keeps the saved default")
+}
+
+func TestDefaultNotSetBySignIn(t *testing.T) {
+	l, _, p := providerSetupLeader(t, func(p *LeaderParams) { p.Initial = providers.Model{} })
+	a := l.client(nil)
+	sid := a.newSession("/w")
+	a.must(protocol.ACPProvidersAPIKey, map[string]any{"loginId": "k1", "providerId": "openai", "key": "sk-fake-openai-key"})
+	a.must(protocol.ACPProvidersAPIKey, map[string]any{"loginId": "k2", "providerId": "alibaba-token-plan", "key": "fake-token-plan-key"})
+	_, err := os.Stat(filepath.Join(p.Home, "settings.json"))
+	require.True(t, os.IsNotExist(err), "a sign-in writes no default")
+	st := decodeInto[protocol.ACPStateResult](t, a.must(protocol.ACPState, map[string]any{"sessionId": sid}))
+	require.Equal(t, "", st.ModelID, "a sign-in does not change the model of a session")
+}
+
+func TestModelsReportsSavedDefault(t *testing.T) {
+	l, _, p := providerSetupLeader(t, nil)
+	prefs, err := settings.NewSettingsStore(p.Home)
+	require.NoError(t, err)
+	a := l.client(nil)
+	sid := a.newSession("/w")
+	models := decodeInto[protocol.ACPModelsResult](t, a.must(protocol.ACPModels, map[string]any{"sessionId": sid}))
+	require.Empty(t, models.Default)
+	id := acp2ID(providers.AnthropicSonnet46())
+	require.NoError(t, prefs.SetDefaultModel(context.Background(), id))
+	models = decodeInto[protocol.ACPModelsResult](t, a.must(protocol.ACPModels, map[string]any{"sessionId": sid}))
+	require.Equal(t, id, models.Default, "the list names the saved default whether or not it is usable")
 }

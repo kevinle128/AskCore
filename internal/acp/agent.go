@@ -50,6 +50,20 @@ type Config struct {
 	Log io.Writer
 	// HostOptions change the session host.
 	HostOptions []HostOption
+	// ProviderSetup serves the provider methods. Only the leader composition sets it,
+	// together with RequireRoute: a link without both answers every provider
+	// method with unsupported. It also lets the model list keep usable rows only.
+	ProviderSetup ProviderSetup
+	// DefaultModel reads the saved default model id. It reports "" when none is
+	// saved. Nil means the host has no default store.
+	DefaultModel func(ctx context.Context) (string, error)
+	// SaveDefault stores a model id as the default model for new sessions. Nil
+	// means the host has no default store.
+	SaveDefault func(ctx context.Context, modelID string) error
+	// StartFallback returns the fallback of a session that the Factory just
+	// built, once: the saved default that the session could not start on. Nil
+	// means no session has one.
+	StartFallback func(sessionID string) *protocol.ACPModelFallback
 	// RequireRoute makes the adapter refuse a call that has no route context.
 	// The leader link sets it. The editor link leaves it off and has no
 	// driver generation to check.
@@ -273,6 +287,17 @@ func (a *Adapter) NewSession(ctx context.Context, req sdk.NewSessionRequest) (sd
 	s, err := a.host.NewSession(ctx, req.Cwd)
 	if err != nil {
 		return sdk.NewSessionResponse{}, requestError(err)
+	}
+	if a.cfg.StartFallback != nil {
+		s.setFallback(a.cfg.StartFallback(s.ID))
+	}
+	if a.cfg.ProviderSetup != nil {
+		s.commit.Lock()
+		provider := s.Agent().State().Model.Provider
+		if provider != "" && !a.cfg.ProviderSetup.Usable(ctx, provider) {
+			s.Agent().ClearModel()
+		}
+		s.commit.Unlock()
 	}
 	res := sdk.NewSessionResponse{SessionId: sdk.SessionId(s.ID)}
 	if route != nil {

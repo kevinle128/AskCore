@@ -67,9 +67,9 @@ type dequeuedMsg struct {
 
 // modelsMsg is the result of the catalog call that opens the selector.
 type modelsMsg struct {
-	gen uint64
-	res protocol.ACPModelsResult
-	err error
+	gen, token uint64
+	res        protocol.ACPModelsResult
+	err        error
 }
 
 type setModelMsg struct {
@@ -107,12 +107,14 @@ type takeMsg struct {
 
 // refreshMsg is the result of the state, usage and catalog calls.
 type refreshMsg struct {
-	gen      uint64
-	runSeq   uint64
-	queueSeq uint64
-	state    *protocol.ACPStateResult
-	usage    *protocol.ACPUsageResult
-	models   *protocol.ACPModelsResult
+	gen         uint64
+	runSeq      uint64
+	queueSeq    uint64
+	modelSeq    uint64
+	modelsToken uint64
+	state       *protocol.ACPStateResult
+	usage       *protocol.ACPUsageResult
+	models      *protocol.ACPModelsResult
 }
 
 // tickMsg is the animation clock.
@@ -178,6 +180,22 @@ func (s *sessionView) update(msg tea.Msg) tea.Cmd {
 		cmd = s.onTake(msg)
 	case refreshMsg:
 		s.onRefresh(msg)
+	case provListedMsg:
+		s.onProvListed(msg)
+	case loginStartedMsg:
+		cmd = s.onLoginStarted(msg)
+	case keySavedMsg:
+		cmd = s.onKeySaved(msg)
+	case loginEndedMsg:
+		cmd = s.onLoginEnded(msg)
+	case codeSentMsg:
+		s.onCodeSent(msg)
+	case cancelAnsweredMsg:
+		cmd = s.onCancelAnswered(msg)
+	case logoutDoneMsg:
+		cmd = s.onLogoutDone(msg)
+	case modelsFetchedMsg:
+		cmd = s.onModelsFetched(msg)
 	case cancelFailedMsg:
 		s.onCancelFailed(msg)
 	case tickMsg:
@@ -231,6 +249,7 @@ func (s *sessionView) onNewSession(msg newSessionMsg) tea.Cmd {
 	}
 	if msg.err != nil {
 		s.needNew = true
+		s.settleStarts()
 		s.appendBlock(NewErrorBlock(ErrorHeadline("session", sentence("Could not start a session: "+errText(msg.err))),
 			"Your next prompt tries again."))
 		return nil
@@ -241,6 +260,9 @@ func (s *sessionView) onNewSession(msg newSessionMsg) tea.Cmd {
 
 // useSession makes a session the current one.
 func (s *sessionView) useSession(info SessionInfo) {
+	if info.ID != s.sess.ID {
+		s.hadModel = false
+	}
 	if info.Cwd == "" {
 		info.Cwd = s.sess.Cwd
 	}
@@ -254,14 +276,26 @@ func (s *sessionView) useSession(info SessionInfo) {
 func (s *sessionView) onClient(msg Message) tea.Cmd {
 	switch v := msg.(type) {
 	case ConnectedMsg:
+		if v.Info.InstanceID != s.info.InstanceID {
+			// A new leader counts the providers generation from zero again.
+			s.ownGen, s.deferred = 0, nil
+			s.providersGen = 0
+			if s.pbox != nil {
+				s.pbox.gen = 0
+			}
+		}
 		s.info = v.Info
 		s.conn = connUp
 		s.reconnect = reconnectView{}
 		s.maybeHeader()
+		return s.onBoxReconnected()
+	case ProvidersChangedMsg:
+		return s.onProvidersChanged(v)
 	case DisconnectedMsg:
 		s.conn = connDown
 		s.reconnect = reconnectView{at: s.now()}
 		s.gen++
+		s.onBoxDisconnected()
 	case ReconnectingMsg:
 		s.conn = connDown
 		s.reconnect.attempt, s.reconnect.wait, s.reconnect.at = v.Attempt, v.Wait, s.now()
@@ -285,6 +319,7 @@ func (s *sessionView) onClientError(v ClientErrorMsg) tea.Cmd {
 	s.appendBlock(NewErrorBlock(ErrorHeadline("client", sentence(errText(v.Err))), ""))
 	if v.Fatal {
 		s.fatal = v.Err
+		s.dropSecrets()
 		s.m.quitting = true
 		return tea.Quit
 	}
@@ -301,11 +336,12 @@ func (s *sessionView) maybeHeader() {
 	if s.info.Mode != ModeInProcess {
 		where = "leader " + ShortID(s.info.InstanceID)
 	}
-	s.m.applyBlock(AppendBlockMsg{
-		ID:     "header",
-		Block:  NewStartupHeader(s.version, where, tildePath(s.cwd, s.home)),
-		Stable: true,
-	})
+	s.headerBlock = startupHeader{version: s.version, where: where, cwd: tildePath(s.cwd, s.home)}
+	// The header stays open until the start line below it is known; the model
+	// comes with the first state answer.
+	s.m.applyBlock(AppendBlockMsg{ID: "header", Block: s.headerBlock, Stable: false})
+	s.starts = append(s.starts, startSlot{id: "header", kind: startHeader})
+	s.settleStartsIfKnown()
 }
 
 // ---- snapshot and events ----
@@ -325,13 +361,21 @@ func (s *sessionView) replaceTranscript() {
 	s.m.transcript = NewTranscript()
 	s.m.rebuildWanted = true
 	s.headerShown = false
+	s.starts = nil
 	s.maybeHeader()
 }
 
 func (s *sessionView) onSnapshot(v SnapshotMsg) tea.Cmd {
 	var refresh bool
+	s.baseline = v.Cursor
+	if v.Head.Epoch == v.Cursor.Epoch && v.Head.Seq > v.Cursor.Seq {
+		// A resumed follow replays what the client missed. Those events are in
+		// the state that the view reads next, so they draw no change line.
+		s.baseline = v.Head
+	}
 	switch {
 	case v.SessionID != s.followed:
+		s.hadModel = false
 		if s.followed != "" {
 			// The old run continues. Freeze only the content we stopped following.
 			s.apply(s.trl.Detach())
@@ -342,6 +386,7 @@ func (s *sessionView) onSnapshot(v SnapshotMsg) tea.Cmd {
 				s.promptID, s.promptSession = 0, ""
 			}
 			s.appendBlock(NewDividerBlock("session " + ShortID(v.SessionID)))
+			s.addStartSlot(startDivider, "")
 		}
 		s.trl.Reset()
 		s.resetSessionState()
@@ -399,6 +444,10 @@ func (s *sessionView) onSessionEvent(v SessionEventMsg) tea.Cmd {
 	case *protocol.AgentStart:
 		s.run.running, s.run.started, s.run.cancelling, s.run.retry = true, s.now(), false, nil
 		s.run.seq++
+		if s.notice.ok {
+			// A result line must not hide the status of the run that starts now.
+			s.notice = noticeView{}
+		}
 	case *protocol.AutoRetryStart:
 		s.run.retry = &retryView{
 			attempt: e.Attempt, limit: e.MaxAttempts, reason: retryReason(e.ErrorMessage),
@@ -419,6 +468,8 @@ func (s *sessionView) onSessionEvent(v SessionEventMsg) tea.Cmd {
 		cmd = s.refreshCmd(false)
 	case *protocol.AgentDisposed:
 		s.endRun()
+	case *protocol.ModelUpdate:
+		s.onModelUpdate(v, e)
 	}
 	return cmd
 }
@@ -465,7 +516,7 @@ func (s *sessionView) onPromptMessage(msg Message) {
 		}
 		s.accepted = nil
 		s.promptID, s.promptSession = 0, ""
-		s.failure = &failureView{text: failureText(failed.Err, failed.OutcomeUnknown), rev: s.editor.Revision()}
+		s.failure = &failureView{text: s.failureText(failed.Err, failed.OutcomeUnknown), rev: s.editor.Revision()}
 		return
 	}
 	if failed, ok := msg.(PromptRunErrorMsg); ok && s.accepted != nil && failed.ID == s.accepted.id {
@@ -484,7 +535,7 @@ func (s *sessionView) onPromptMessage(msg Message) {
 	case PromptSendFailedMsg:
 		if v.ID == s.send.id {
 			s.send = nil
-			s.failure = &failureView{text: failureText(v.Err, v.OutcomeUnknown), rev: s.editor.Revision()}
+			s.failure = &failureView{text: s.failureText(v.Err, v.OutcomeUnknown), rev: s.editor.Revision()}
 		}
 	case PromptRunErrorMsg:
 		// The events already tell what failed; the draft is cleared at acceptance.
@@ -509,7 +560,7 @@ func (s *sessionView) onPromptCalled(msg promptCalledMsg) tea.Cmd {
 		if errors.Is(msg.err, ErrSessionGone) || errors.Is(msg.err, ErrNoSession) {
 			s.needNew = true
 		}
-		s.failure = &failureView{text: failureText(msg.err, false), rev: s.editor.Revision()}
+		s.failure = &failureView{text: s.failureText(msg.err, false), rev: s.editor.Revision()}
 		return cmd
 	}
 	s.send.id = msg.id
@@ -523,7 +574,7 @@ func (s *sessionView) onPromptCalled(msg promptCalledMsg) tea.Cmd {
 }
 
 // failureText is the text of the "Not sent" row.
-func failureText(err error, outcomeUnknown bool) string {
+func (s *sessionView) failureText(err error, outcomeUnknown bool) string {
 	var re *RequestError
 	switch {
 	case outcomeUnknown || errors.Is(err, ErrOutcomeUnknown):
@@ -536,6 +587,9 @@ func failureText(err error, outcomeUnknown bool) string {
 		if kind == string(protocol.ACPErrNotDriver) {
 			return "Not sent: " + kind + " · draft kept · /take to drive"
 		}
+		if kind == string(protocol.ACPErrNoModel) {
+			return s.noModelRefusal()
+		}
 		return "Not sent: " + kind + " · draft kept"
 	case errors.Is(err, ErrDisconnected):
 		return "Not sent: not connected · draft kept"
@@ -545,6 +599,15 @@ func failureText(err error, outcomeUnknown bool) string {
 		return "Not sent: the session is gone · draft kept · send again to start a new one"
 	}
 	return "Not sent: " + oneLine(err.Error()) + " · draft kept"
+}
+
+// noModelRefusal is the "Not sent" row of a prompt with no model.
+func (s *sessionView) noModelRefusal() string {
+	next := "Add a provider with /providers"
+	if s.hadModel || len(s.models) > 0 {
+		next = "Choose one with /model"
+	}
+	return "Not sent: no model · draft kept · " + next
 }
 
 // errText is the one-line text of an error.
@@ -683,11 +746,16 @@ func (s *sessionView) onDequeued(msg dequeuedMsg) {
 // refreshCmd reads the state, the usage and, when asked, the model catalog.
 func (s *sessionView) refreshCmd(withModels bool) tea.Cmd {
 	c, gen := s.client, s.gen
-	runSeq, queueSeq := s.run.seq, s.queue.seq
+	runSeq, queueSeq, modelSeq := s.run.seq, s.queue.seq, s.modelSeq
+	var modelsToken uint64
+	if withModels {
+		s.fetchSeq++
+		modelsToken = s.fetchSeq
+	}
 	return func() tea.Msg {
 		ctx, cancel := callContext()
 		defer cancel()
-		out := refreshMsg{gen: gen, runSeq: runSeq, queueSeq: queueSeq}
+		out := refreshMsg{gen: gen, runSeq: runSeq, queueSeq: queueSeq, modelSeq: modelSeq, modelsToken: modelsToken}
 		if withModels {
 			if res, err := c.Models(ctx); err == nil {
 				out.models = &res
@@ -707,14 +775,18 @@ func (s *sessionView) onRefresh(msg refreshMsg) {
 	if msg.gen != s.gen {
 		return
 	}
-	if msg.models != nil {
-		s.models = msg.models.Models
-		if msg.state == nil {
+	if msg.models != nil && s.applyModelList(msg.modelsToken, *msg.models) {
+		if msg.state == nil && msg.modelSeq == s.modelSeq {
 			s.modelID = msg.models.Current
 		}
 	}
 	if st := msg.state; st != nil {
-		s.modelID, s.thinking = st.ModelID, st.ThinkingLevel
+		if msg.modelSeq == s.modelSeq {
+			s.modelID = st.ModelID
+		}
+		s.thinking = st.ThinkingLevel
+		s.fallback = st.ModelFallback
+		s.haveState, s.stateGen = true, s.gen
 		if msg.runSeq == s.run.seq && st.Running != s.run.running {
 			s.run.running = st.Running
 			if st.Running {
@@ -731,11 +803,22 @@ func (s *sessionView) onRefresh(msg refreshMsg) {
 	if msg.usage != nil {
 		s.costMicro = msg.usage.Total.Cost.Total
 	}
+	if s.modelID != "" {
+		s.hadModel = true
+	}
+	// The state of the session is known now, or the read failed; a start line
+	// must not wait for ever.
+	s.settleStarts()
 }
 
 // ---- notices and the animation clock ----
 
 func (s *sessionView) setNotice(text string, isErr bool) { s.setNoticeFor(text, noticeFor, isErr) }
+
+// setResult shows a result line with the success glyph for a short time.
+func (s *sessionView) setResult(text string) {
+	s.notice = noticeView{text: text, until: s.now().Add(noticeFor), ok: true}
+}
 
 // setNoticeFor shows a notice for a given time.
 func (s *sessionView) setNoticeFor(text string, d time.Duration, isErr bool) {
@@ -749,7 +832,7 @@ func (s *sessionView) noticeActive() bool {
 // needsTick tells whether something on screen changes with time.
 func (s *sessionView) needsTick() bool {
 	return s.run.running || s.send != nil || s.run.retry != nil || s.conn != connUp ||
-		s.noticeActive() || s.now().Before(s.reconnect.hintUntil)
+		s.noticeActive() || s.now().Before(s.reconnect.hintUntil) || s.dialogTicks() || s.now().Before(s.copiedUntil)
 }
 
 // schedule arms the animation clock when it is needed and not armed yet.

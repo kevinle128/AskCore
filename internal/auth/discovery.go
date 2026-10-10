@@ -20,6 +20,13 @@ type modelAccess struct {
 	expires       time.Time
 }
 
+// forgetAccess drops every cached model-access answer, so the next request asks again.
+func (n *native) forgetAccess() {
+	n.accessMu.Lock()
+	n.access = nil
+	n.accessMu.Unlock()
+}
+
 func (n *native) checkChatGPTAccess(ctx context.Context, m providers.Model, c settings.Credential) error {
 	if c.OAuth == nil || c.OAuth.ClientID == "" || c.OAuth.Subject == "" || c.OAuth.Issuer != chatGPTIssuer || c.Method != "openai-chatgpt" || m.Provider != "openai" || m.BaseURL != providers.OpenAIURL {
 		return ErrAccess

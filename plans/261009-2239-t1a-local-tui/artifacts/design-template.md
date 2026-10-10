@@ -30,7 +30,7 @@ Quitting detaches from the session and restores the terminal; a running turn con
 ## 2. Non-goals
 
 - Fullscreen or alternate-screen mode (D15), overlays, images (T2).
-- Login and logout dialogs (M2). The user signs in with the headless `ask auth login`.
+- Login and logout dialogs. The [provider setup design](../261010-1424-t1c-provider-setup-design/design.md) adds `/providers` and the login boxes; the headless `ask auth login` still works.
 - Tool approval dialogs and the permission policy (M2).
 - Rich tool renderers, diffs, bash mode, compaction, session picker, session tree, resume, and resources.
   These arrive with their owner phases in T1b.
@@ -61,7 +61,7 @@ Committed block formats (details in the style guide, "Patterns"):
 
 | Block | Format |
 |---|---|
-| Startup header | `◢◤ ask   v<version> · leader <id> · <cwd>` |
+| Startup header | `◢◤ ask   v<version> · leader <id> · <cwd>`, then the model line `  model  <provider>/<model>` when the session has a model, then one empty row |
 | User prompt | Full-width `panel` band: `❯ ` and the prompt in bold, send time at the right |
 | Reply | `◆ ` then rendered markdown, four-space indent on later rows |
 | Code block | `code-panel` band: language name, then code |
@@ -92,21 +92,21 @@ To change the design, edit [artifacts/design-template.md](artifacts/design-templ
 |---|---|---|
 | S1 Starting | `ask` starts; no leader answers | S3 when the leader is ready; S2 on any connect error (`unsafe_endpoint`, `malformed_peer`, `version_refused`, `startup_failed`, start timeout) |
 | S2 In-process agent | Leader connect failed at startup | Same states as S3 to S12 and S15 to S19, with these differences: the footer shows `in-process` and no leader id; `/sessions` and `/take` show `Needs the leader; this session runs in process.`; S13 to S14 do not occur; quitting stops the run, so S15 says `Press ctrl+c again to quit. The run stops.` and S16 says `Run stopped. Session ended.` |
-| S3 Idle | Leader ready and the session is attached as driver | S5a on enter with text; S4 on `/`; S11 on ctrl+l |
+| S3 Idle | Leader ready and the session is attached as driver. The header is followed by the model line. With no usable provider the session has no model: there is no model line and the footer shows `no model` | S5a on enter with text; S4 on `/`; S11 on ctrl+l |
 | S4 Completion | `/` at the start of an empty draft | Closes on esc, on a space, or when no command matches; enter runs the selected command |
 | S5 Multi-line draft | shift+enter or ctrl+j | Same as S3 |
 | S5a Sending | enter with text while idle | The draft stays in the editor and `status` shows `Sending…`. On acceptance: the draft is cleared (only if it was not edited since enter), the `❯` prompt band commits, then S6. On failure: S5b |
-| S5b Send failed | The prompt request fails (`leader_not_driver`, a frame error, or a disconnect before acceptance) | The draft is kept and `status` shows the reason. After a disconnect the outcome is unknown: the TUI does not resend, and the resync after reconnect shows whether the prompt arrived |
+| S5b Send failed | The prompt request fails (`not_driver`, a frame error, or a disconnect before acceptance) | The draft is kept and `status` shows the reason. After a disconnect the outcome is unknown: the TUI does not resend, and the resync after reconnect shows whether the prompt arrived |
 | S6 Streaming | `agent_start` and `message_update` events | Committed blocks move to scrollback; S3 on `agent_settled`; S8 on `auto_retry_start`; S9 on an error end; S10 on cancel |
 | S7 Queued input | enter (steer) or alt+enter (follow-up) while running; `queue_update` event | Rows leave the list when the agent takes the input; alt+up moves them back to the editor |
 | S8 Retry wait | `auto_retry_start` | S6 when the retry starts; S9 when `auto_retry_end` reports failure; S10 on esc |
 | S9 Error | `cycle_end` with reason `error`, or a failed `auto_retry_end` | S3; the error stays in scrollback |
 | S10 Cancelled | esc while running; lifecycle reports `aborted` | S3 only after `agent_settled`; the marker is committed at settle, not at the key press |
-| S11 Selector | ctrl+l or `/model` while idle | S3 on esc or after a successful `set_model`; S12 on a readiness failure |
+| S11 Selector | ctrl+l or `/model` while idle. The list shows only models of usable providers, grouped by provider | S3 on esc or after a successful `set_model`; the transcript then shows a change line `model  <provider>/<model> · was <old>` and the footer keeps the bare model id; S12 on a readiness failure |
 | S12 Selector error | `set_model` fails | Stays open; the previous model stays current |
-| S12a Session selector | `/sessions` | Lists `list_live` sessions with id, cwd, driver state and watchers. enter: `detach` from the current session, `attach` to the chosen one as observer, then `follow`; the transcript shows a divider `── session 8d07 ──` and the followed history. esc: S3 |
+| S12a Session selector | `/sessions` | Lists `list_live` sessions with id, cwd and driver state. enter: `detach` from the current session, `attach` to the chosen one as observer, then `follow`; the transcript shows a divider `── session 8d07 ──`, then the model line of the watched session, then the followed history. esc: S3 |
 | S13 Disconnected | The socket closes or a frame fails | Reconnect with backoff from 1 s, doubling to 30 s, with no attempt limit; `ConnectOrSpawn` may start a new leader. Typing works; enter shows `Reconnecting, please wait…` and sends nothing. S13a or S13b when connected |
-| S13a Restored | Reconnected to the same leader and the session is live | `attach`, then `follow` from the last seen cursor; missed blocks are added below the transcript; then S3 or S6 |
+| S13a Restored | Reconnected to the same leader and the session is live | `attach`, then `follow` from the last seen cursor; missed blocks are added below the transcript. The restore note is followed by the model line; then S3 or S6 |
 | S13b Session gone | Reconnected, but the session id is not in `list_live` (the leader restarted; H8 storage does not exist yet) | Transcript kept as history; the next prompt creates a new session; then S3 |
 | S14 Observer | Another client is the driver | S3 after `/take` succeeds when the session is idle |
 | S18 Thinking shown | Default; ctrl+t while hidden | S19 on ctrl+t |
@@ -157,6 +157,7 @@ The live region gives rows in this order, and the last items lose rows first:
 At fewer than 8 rows the footer is hidden. At fewer than 4 rows only the editor and status remain.
 
 At 120 columns the layout is the same as at 80; long lines wrap later and the footer has room for full values.
+Under 60 columns the model line has no `model` label; a pair that is still too wide wraps after the slash.
 Below 60 columns the footer uses the short form in S17.
 
 Resize follows D14: after the size stops changing for 120 ms, the renderer clears the screen and native scrollback and draws the committed transcript again at the new width.
@@ -181,32 +182,43 @@ Without color support, the roles fall back to bold, dim, italic and plain text, 
 
 ## 10. Acceptance criteria
 
-1. At 80×24, after `ask` starts with no leader, the screen shows `Starting leader…` in `status`, then the startup header and an empty editor (S1, S3).
-2. At 80×24, with an unsafe socket, `ask` starts an in-process agent, the footer shows `○ in-process`, and a prompt gets a reply (S2).
+1. At 80×24, after `ask` starts with no leader, the screen shows `Starting leader…` in `status`, then the startup header, the model line when there is a model, and an empty editor (S1, S3).
+2. At 80×24, with an unsafe socket, `ask` starts an in-process agent, the footer shows `○ in-process`, the model line shows when the agent has a model, and a prompt gets a reply (S2).
 3. At 80×24, after a prompt and enter, `status` shows `Sending…` with the draft still in the editor; after acceptance the `❯` prompt band is in scrollback, the reply streams in the transcript tail, and `status` shows `Working…` with elapsed seconds (S5a, S6).
 3a. At 80×24, when the prompt is refused, the draft stays in the editor and `status` shows `✗ Not sent:` with the reason (S5b).
 3b. At 80×24, a tool call shows `◇ <tool>` with `running` in the tail, and then commits as `● <tool>` with `✓ <duration>` or `✗` (S6, S7).
 4. At 80×24, after enter and alt+enter during a run, `pending` shows `⧗ steer` and `⧗ next` rows on the dashed rail; after alt+up the draft holds both texts and `pending` is empty (S7).
-5. At 80×24, after a provider 429 with retry, `status` shows `Retrying (1/3) in 4s` and scrollback shows `↻ Attempt 1 failed` (S8).
+5. At 80×24, after a provider 429 with retry, `status` shows `Retrying (1/5) in 4s` and scrollback shows `↻ Attempt 1 failed` (S8).
 6. At 80×24, after an expired subscription token, scrollback shows `✗ Error (auth)` and the next action line (S9).
 7. At 80×24, after esc during a run, scrollback shows `⊘ Cancelled by you.` only after the run settles, and the next prompt runs normally (S10).
-8. At 80×24, after ctrl+l, the selector replaces the editor, the draft is kept, and enter on a ready model changes the model in the footer (S11).
-9. At 80×24, selecting a model whose provider is not signed in shows `✗ <provider> is not ready` and the footer model does not change (S12).
+8. At 80×24, after ctrl+l, the selector replaces the editor, the draft is kept, and enter on a ready model changes the model in the footer and adds the change line `model  <provider>/<model> · was <old>` to the transcript; the footer keeps the bare model id (S11).
+9. At 80×24, `/model` lists only the models of usable providers; a provider that is not signed in is hidden. Selecting a model whose provider has a failed token shows `✗ <provider> is not ready` and the footer model does not change (S12).
 10. At 80×24, after the leader stops, `status` shows `Disconnected from the leader` with the attempt number, enter sends nothing, and the draft is kept (S13).
-10a. At 80×24, after only the socket drops and the leader stays up, the screen shows `Reconnected. Session 3f2a restored.` and blocks produced during the outage appear once (S13a).
+10a. At 80×24, after only the socket drops and the leader stays up, the screen shows `Reconnected. Session 3f2a restored.`, then the model line, and blocks produced during the outage appear once (S13a).
 10b. At 80×24, after the leader restarts, the screen shows `Session 3f2a is gone`, the old transcript stays, the next prompt starts a new session, and no earlier prompt is sent again (S13b).
 11. At 80×24, a second client in the same session shows `◉ observer` in the footer and the watching text in the editor slot (S14).
-11a. At 80×24, in a second `ask`, `/sessions` lists the first client's session as `driver busy`; enter attaches as observer and the followed reply streams in the transcript tail (S12a, S14).
+11a. At 80×24, in a second `ask`, `/sessions` lists the first client's session as `driver busy`; enter attaches as observer, the transcript shows the divider and the model line, and the followed reply streams in the transcript tail (S12a, S14).
 12. At 80×24, after ctrl+d during a run, the screen shows `Detached from session` and the leader still runs the turn (S16).
 13a. At 80×24, after ctrl+t, every thinking block in scrollback shows `Thinking...` and `status` shows `Thinking blocks: hidden`; after ctrl+t again, the full text is back (S18, S19).
 13. At 40×14, a prompt with `日本語` wraps without split characters, and the footer uses the short form (S17).
-14. At 120×40, S3, S6, S7 and S11 match their 120-column sketches.
+14. At 120×40, S3, S6, S7 and S11 match their 120-column sketches, with the model line under the header.
 15. After normal quit, an error exit, SIGINT, SIGTERM, and SIGHUP, the terminal echo, cursor, and line mode are restored.
 16. During a resize from 120×40 to 80×24 while streaming, the draft and cursor stay, and no row is drawn twice after 120 ms.
 
 ## 11. Decisions and open questions
 
-All questions below are decided. No open question remains.
+All questions below are decided.
+No open question remains.
+
+12. **Kind text of a refused prompt.** Decided (user, 2026-10-10): S5b shows `not_driver`, the kind the leader sends.
+    The sketch row and criterion 4 are updated.
+11. **Retry count.** Decided (user, 2026-10-10): the retry sketch shows `Retrying (1/5)`, the number of attempts the retry policy allows.
+10. **Sessions list.** Decided (user, 2026-10-10): the `/sessions` list shows id, cwd and driver state only; the `N watching` column is removed.
+9. **Model the sign-in cannot use.** Decided (user, 2026-10-10): a model that the ChatGPT sign-in cannot use gives `<provider>: this model is not available with your ChatGPT sign-in. Model not changed.` with no login hint.
+    Selector rows get no readiness mark.
+
+8. **Login hint text.** Decided (user, 2026-10-10): the auth error block says `ask auth login --provider <id>`, because the real command requires `--provider` and the old text `ask auth login anthropic` fails.
+    Only this text changed.
 
 7. **Visual direction.** Decided (user, 2026-10-10): B4 "Soft + live rail", chosen from directions A, B, B2, B3, B4 and C in [artifacts/style-directions.html](artifacts/style-directions.html). Rules are in [docs/tui-style-guide.md](../../docs/tui-style-guide.md).
 
@@ -215,5 +227,8 @@ All questions below are decided. No open question remains.
 1. **Newline key.** Decided (user, 2026-10-09): Pi keys. alt+enter queues a follow-up while running; ctrl+j or shift+enter inserts a new line. This replaces the T0 alt+enter new line.
 2. **Thinking text.** Decided (user, 2026-10-09): Pi behavior. Shown by default; ctrl+t hides or shows all blocks by rebuilding the transcript; observer take-control moves to `/take`. Not saved until H6 settings.
 3. **Reconnect.** Decided (user, 2026-10-09): Grok behavior adapted to Ask. Automatic reconnect with 1 s to 30 s backoff and no limit, may spawn a leader, typing allowed but sending blocked, restore by attach and follow, explicit notice when the session is gone, never resend.
-4. **Slash commands in T1a.** Decided (user, 2026-10-09): `/model`, `/new`, `/sessions`, `/take` and `/quit`. `/sessions` reuses the selector to watch a live session. Resume and the session tree stay in T1b.
+4. **Slash commands in T1a.** Decided (user, 2026-10-09): `/model`, `/new`, `/sessions`, `/take` and `/quit`.
+    `/sessions` reuses the selector to watch a live session.
+    Resume and the session tree stay in T1b.
+    Command names are case-insensitive like Grok CLI (user, 2026-10-10): only the command token is folded; arguments keep their case.
 5. **Sketch sizes.** Decided (user, 2026-10-09): 80×24 for every state; 120×40 only where the layout changes; a narrow case when truncation matters. The skill is updated to match.

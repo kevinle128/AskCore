@@ -46,10 +46,25 @@ Plan: `plans/261006-0933-lifecycle-event-pipeline-redesign/plan.md` (12 phases, 
 
 Plan: `plans/261010-1424-t1c-provider-setup/plan.md` (8 phases; cook `--auto --tdd`; phase 1 design approved).
 - [x] Phase 1 TUI design
-- [ ] Phase 2 protocol shapes, model event, no-model contract (parallel with 3)
-- [ ] Phase 3 auth broker, key check, status, default-model store (parallel with 2)
-- [ ] Phase 4 leader host and router
-- [ ] Phase 5 TUI client contract and tuiclient
-- [ ] Phase 6 TUI screens and design amendments
-- [ ] Phase 7 E2E and security acceptance
-- [ ] Phase 8 real-provider acceptance and docs
+- [x] Phase 2 protocol shapes, model event, no-model contract (parallel with 3)
+- [x] Phase 3 auth broker, key check, status, default-model store (parallel with 2)
+- [x] Phase 4 leader host and router
+- [x] Phase 5 TUI client contract and tuiclient
+- [x] Phase 6 TUI screens and design amendments
+- [x] Phase 7 E2E and security acceptance
+- [ ] Phase 8 real-provider acceptance and docs: new OAuth sign-in not run
+
+## Provider access glossary follow-ups (2026-10-10)
+
+Glossary: `docs/CONTEXT.md`. User decisions on 2026-10-10.
+- [x] Rename the provider setup feature away from "account": `internal/app/provider_setup.go` (+ test), `cmd/tui/leader_provider_setup_e2e_test.go`, `internal/leader/router_provider_setup_test.go`, `acp.ProviderSetup` and `Config.ProviderSetup`, comments and package READMEs
+- [x] Make the login option labels consistent: user chose `sign-in` labels (2026-10-10); code, goldens, design and preview updated (third round in the design change table)
+- [x] Key save is not a sign-in: new status `saved` for a key save; wire change `signed_in` -> `saved`; rail `<provider> key saved · N models`; other clients see `credential saved`
+- [x] Fallback reason `not_signed_in` -> `no_credential`; TUI text `(no credential)`, not-ready text `no credential`
+- [x] `ProviderDefault` / `providerDefault` -> `RecommendedModel` / `recommendedModel`
+- [x] Removal copy: already neutral ("Removed the saved credential for …"); protocol name `logout` stays
+
+### Review
+- Full `go test ./...` passed twice; `-race` passed on protocol, auth, providers, app, acp, leader, tuiclient, tui; golangci-lint 0 issues.
+- Four goldens changed by one line each (rail and fallback text only).
+- Plans are historical records and keep the old names.

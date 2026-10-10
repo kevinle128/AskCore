@@ -233,6 +233,13 @@ func newNativeAgent(o options, getenv func(string) string, service *auth.Service
 	if err != nil {
 		return nil, err
 	}
+	return newNativeAgentOn(o, getenv, service, sessionID, cwd, stream, model, extra...)
+}
+
+// newNativeAgentOn builds the agent on a given model. stream serves the demo
+// model and may be nil when the model is a catalog model or when the agent has
+// no model.
+func newNativeAgentOn(o options, getenv func(string) string, service *auth.Service, sessionID, cwd string, stream providers.StreamFn, model providers.Model, extra ...tools.Tool) (*agent.Agent, error) {
 	reasoning := o.thinking
 	if o.provider == anthropic.ProviderID && reasoning == "" {
 		reasoning = protocol.ThinkingMedium
@@ -268,6 +275,9 @@ func newNativeAgent(o options, getenv func(string) string, service *auth.Service
 	native := app.NativeAgentConfig{
 		Config: cfg, InitialStream: stream, Auth: service,
 		Env: func(k string) (string, bool) { v := getenv(k); return v, v != "" },
+	}
+	if o.provider == "faux" {
+		native.InitialAPI = "faux"
 	}
 	if o.transport != nil {
 		native.HTTPClient = &http.Client{Transport: o.transport}

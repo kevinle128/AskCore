@@ -55,10 +55,13 @@ type ACPSessionRequest struct {
 }
 
 // ACPModelRequest constrains the existing host auth method when supplied.
+// SaveDefault asks the leader to keep the choice as its default model for new
+// sessions. A client that does not set it leaves the saved default alone.
 type ACPModelRequest struct {
 	SessionID    string `json:"sessionId"`
 	ModelID      string `json:"modelId"`
 	AuthMethodID string `json:"authMethodId,omitempty"`
+	SaveDefault  bool   `json:"saveDefault,omitempty"`
 }
 
 type ACPThinkingRequest struct {
@@ -139,6 +142,10 @@ type ACPFollowResult struct {
 	Stream         *ACPStreamBaseline `json:"stream,omitempty"`
 	Resumed        bool               `json:"resumed"`
 	Resync         bool               `json:"resync"`
+	// Head is the last event that the log held when the follow was answered.
+	// A resumed follow keeps the cursor of the client, and the events up to
+	// Head are a replay. An older leader sends none.
+	Head *ACPCursor `json:"head,omitempty"`
 }
 
 // ACPEventNotification preserves the source cursor independently of derived frames.
@@ -172,6 +179,9 @@ type ACPStateResult struct {
 	MessageCount  int           `json:"messageCount"`
 	Steering      []string      `json:"steering"`
 	FollowUp      []string      `json:"followUp"`
+	// ModelFallback is set when the session started on another model because
+	// the saved default was not usable. It stays until the model changes.
+	ModelFallback *ACPModelFallback `json:"modelFallback,omitempty"`
 }
 
 // ACPModel is one catalog row. ModelID is "provider/id@api" and names one row,
@@ -188,14 +198,23 @@ type ACPModel struct {
 	MaxTokens     int      `json:"maxTokens"`
 }
 
+// ACPModelsResult lists the catalog rows. Current is empty when the session
+// has no model. UsableOnly echoes the request flag, so a client can tell a
+// leader that filtered the list from one that ignored the flag. Default is the
+// saved default model id and is omitted when none is saved.
 type ACPModelsResult struct {
-	Current string     `json:"current"`
-	Models  []ACPModel `json:"models"`
+	Current    string     `json:"current"`
+	Models     []ACPModel `json:"models"`
+	UsableOnly bool       `json:"usableOnly,omitempty"`
+	Default    string     `json:"default,omitempty"`
 }
 
+// ACPSetModelResult names the model and thinking level now in force.
+// DefaultSaved is true when the choice was also saved as the leader default.
 type ACPSetModelResult struct {
 	ModelID       string        `json:"modelId"`
 	ThinkingLevel ThinkingLevel `json:"thinkingLevel"`
+	DefaultSaved  bool          `json:"defaultSaved,omitempty"`
 }
 
 type ACPThinkingResult struct {
@@ -254,6 +273,11 @@ const (
 	ACPErrOutputFailure  ACPErrorKind = "output_failure"
 	ACPErrInternal       ACPErrorKind = "internal"
 
+	// ACPErrNoModel means the session has no model, so no run can start.
+	ACPErrNoModel ACPErrorKind = "no_model"
+	// ACPErrProviderBusy means another client is signing in to the provider.
+	ACPErrProviderBusy ACPErrorKind = "provider_busy"
+
 	// ACPErrNotDriver means the caller is not the driver of the session.
 	ACPErrNotDriver ACPErrorKind = "not_driver"
 	// ACPErrClientNotInitialized means this client has not run initialize on the leader.
@@ -274,6 +298,10 @@ const (
 	ACPCodeNotInitializedClient = -32016
 	// ACPCodeModelAccess is the code of a model that the account cannot use.
 	ACPCodeModelAccess = -32017
+	// ACPCodeNoModel is the code of a call that needs a model on a session that has none.
+	ACPCodeNoModel = -32018
+	// ACPCodeProviderBusy is the code of a sign-in that another client already holds.
+	ACPCodeProviderBusy = -32019
 )
 
 // ACPRouteMetaKey is the _meta key of the route context. Only the leader router
@@ -319,6 +347,10 @@ func ACPErrorCode(k ACPErrorKind) int {
 		return ACPCodeOutputFailure
 	case ACPErrModelAccess:
 		return ACPCodeModelAccess
+	case ACPErrNoModel:
+		return ACPCodeNoModel
+	case ACPErrProviderBusy:
+		return ACPCodeProviderBusy
 	case ACPErrNotDriver:
 		return ACPCodeNotDriver
 	case ACPErrClientNotInitialized:
@@ -364,6 +396,10 @@ func ACPErrorMessage(k ACPErrorKind) string {
 		return "not supported"
 	case ACPErrOutputFailure:
 		return "the output of the connection failed"
+	case ACPErrNoModel:
+		return "the session has no model; choose one first"
+	case ACPErrProviderBusy:
+		return "another client is signing in to this provider"
 	case ACPErrNotDriver:
 		return "only the driver of the session can do this; take the session first"
 	case ACPErrClientNotInitialized:

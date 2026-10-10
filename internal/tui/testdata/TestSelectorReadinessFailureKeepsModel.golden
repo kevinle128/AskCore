@@ -1,11 +1,12 @@
 ◢◤ ask   v0.1.0 · leader 7c1e · ~/src/askcore
+  model  alibaba/deepseek-v4.1-flash
 
 ╭─ Select model ───────────────────────────────────────────────────────────────╮
 │  ⌕ anth                                                                      │
 │ ❯ ● anthropic/claude-opus-5-5                                 1M  reasoning  │
 │   ● anthropic/claude-sonnet-5-5                               1M  reasoning  │
 │                                                                              │
-│  ✗ anthropic is not ready: not signed in. Model not changed.                 │
+│  ✗ anthropic is not ready: no credential. Model not changed.                 │
 │    Run in a shell: ask auth login --provider anthropic                       │
 ╰──────────────────────────────────────────────────────────────────────────────╯
    enter select  ·  esc close  ·  your draft is kept

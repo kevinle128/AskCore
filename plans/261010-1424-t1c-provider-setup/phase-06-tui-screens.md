@@ -1,7 +1,7 @@
 ---
 phase: 6
 title: "TUI screens and design amendments"
-status: pending
+status: completed
 priority: P1
 effort: "3d"
 dependencies: [1, 5]
@@ -10,6 +10,19 @@ dependencies: [1, 5]
 # Phase 6: TUI screens and design amendments
 
 Outline with scouted evidence. Run a scout pass and update this file before cooking. Citations into `internal/tui` are against the working tree of 2026-10-10, which has uncommitted T1a edits.
+
+## Scout record (2026-10-10, run of phase 6)
+
+Re-checked against the working tree before the code was written.
+
+- Header, divider and restore note take the start line as a placeholder block that the first state answer replaces (`model_line.go`, `settleStarts`). The transcript only appends; `Replace` and `Finish` on an unstable block keep the line in the right place. Every path that cannot get a state (failed new session, gone session, failed state read) settles the placeholder, so the commit frontier never stalls.
+- The change line comes only from a leader `model_update` event. The cut of the last follow is the baseline: an event of another epoch or at or below the cut draws nothing. A zero cut means no baseline. While a start line waits for the state, events only move the model.
+- `ACPStateResult` has no cursor, so the baseline is `SnapshotMsg.Cursor`. A resumed follow keeps the cursor of the client, so missed events arrive above it. The state read comes after them and shows the current model; events that arrive while the start line waits are folded into it, and a later event with the same pair draws nothing.
+- `layout.go`: the provider box with an error under its seven rows needs 14 rows, so `modalMaxRows` is 14. The model and session selectors keep their own height of 12 (`selectorRows`), so their goldens do not change.
+- The model box with no row has no filter row (P26) and hides the persistent no-model notice while it is open, because the P26 sketch has no rail row.
+- The only wire hint that a provider cannot be checked is the provider id. `uncheckedProviders` in `login_box.go` names it, and `translate_errors.go` uses the same set for the P9b text.
+- `StopMsg` returns early in `Model.Update`; it now asks the view for one cancel of an open login and drops the key buffers before the program ends.
+- Interactive E2E expectations of the `/model` list and `e2e/tui/run.py` changed with the grouped list (see the report); phase 7 owns the rest of them.
 
 ## Goal
 
@@ -61,6 +74,9 @@ Every state of the [re-approved design](../261010-1424-t1c-provider-setup-design
 | `internal/tui/screen_test.go`, `session_test.go`, `blocks_screen_test.go`, `model_test.go` | modify: amendments | +60 | — |
 | `cmd/tui/interactive.go` | modify: pass `traceFile` (the value of `TEA_TRACE`) into the UI options; `TEA_TRACE` itself is kept (D14) | +5 | E2E in phase 7 |
 | `internal/tui/testdata/**` | new goldens; amended goldens of section 12 | ~40 files | reviewed diff per file |
+| `internal/tui/layout.go`, `layout_test.go` | modify (added during cooking): `modalMaxRows` 12 to 14, so the provider box with its error rows fits; selectors keep 12 | +6 | `TestLayoutSlotPriority` |
+| `internal/tui/model.go`, `translate_errors.go`, `README.md`, `editor_test.go` | modify (added during cooking): `Options.TraceFile` and the stop cancel; the unchecked-key auth text; package map; the command list has `/providers` | +40 | existing tests updated |
+| `cmd/tui/interactive_flow_test.go`, `e2e/tui/run.py`, `e2e/tui/test-assertions.py` | modify (added during cooking): the `/model` list is grouped by provider, so the rows these checks read changed | +10 | phase 7 owns the rest of the interactive cases |
 
 ## Tests first
 
@@ -109,7 +125,9 @@ Extract the row and window helpers of `selector.go` (`itemRow`, `rowBudget`, `fo
 
 ## Steps
 
-1. Scout. The design has the D16 states (P6b, P9a, P9b; criteria 59, 60). The design is approved again and the [criterion map](plan.md#criterion-to-test-map) is synced to its criteria 1-58 (2026-10-10); re-check both before cooking.
+1. Scout.
+The design has the D16 states (P6b, P9a, P9b; criteria 59, 60).
+The design is approved again and the [criterion map](plan.md#criterion-to-test-map) includes criteria 1-60 (2026-10-10); re-check both before cooking.
 2. Secret input and its security tests first (criteria 9, 21, 22, 36-40, 43).
 3. Provider box, row menu, removal; then login boxes and the flow handlers.
 4. `/model` grouping and empty state; footer and rail; first run.
@@ -147,11 +165,11 @@ Stated exception (D14): when the user sets `TEA_TRACE`, Bubble Tea writes raw in
 ## Todo
 
 - [x] Design re-approved; criterion map synced in plan.md (2026-10-10)
-- [ ] Scout
-- [ ] Default status, fallback notice, trace warning, removal reason (D12, D14, D15)
-- [ ] Secret input and security tests
-- [ ] Provider box, row menu, removal
-- [ ] Login boxes and flow
-- [ ] `/model`, footer, rail, first run
-- [ ] Model line and T1a amendments
-- [ ] All phase 6 criterion tests green
+- [x] Scout
+- [x] Default status, fallback notice, trace warning, removal reason (D12, D14, D15)
+- [x] Secret input and security tests
+- [x] Provider box, row menu, removal
+- [x] Login boxes and flow
+- [x] `/model`, footer, rail, first run
+- [x] Model line and T1a amendments
+- [x] All phase 6 criterion tests green

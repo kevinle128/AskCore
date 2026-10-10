@@ -1,4 +1,5 @@
 ◢◤ ask   v0.1.0 · leader 7c1e · ~/src/askcore
+  model  alibaba/deepseek-v4.1-flash
 
   ❯ why does TestLeaderStale fail on CI?                                 14:02
 
@@ -11,6 +12,7 @@
     deepseek-v4.1-flash · 4.2s · ↑12.4k ↓1.8k · $0.004
 
   ↻ Reconnected. Session 3f2a restored.
+  model  alibaba/deepseek-v4.1-flash
 
 ╭──────────────────────────────────────────────────────────────────────────────╮
 │ ❯ also check the lock timeout                                                │

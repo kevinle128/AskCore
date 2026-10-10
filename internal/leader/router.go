@@ -263,6 +263,10 @@ func (r *router) onClientMsg(c *client, raw json.RawMessage) {
 		r.fail(c, m, protocol.ACPErrUnsupported)
 	case callAuthenticate:
 		r.forward(c, m, protocol.ACPRouteMeta{ClientID: c.id}, nil)
+	case callAccount:
+		// The host owns a sign-in by client id, so it must be told when the client leaves.
+		c.usedProviderSetup = true
+		r.forward(c, m, protocol.ACPRouteMeta{ClientID: c.id}, nil)
 	case callNewSession:
 		r.handleNewSession(c, m)
 	case callListLive:
@@ -481,7 +485,19 @@ func (r *router) removeClient(c *client) {
 	}
 	r.dropRecipient(c, "")
 	r.forgetTerminals(c)
+	if c.usedProviderSetup {
+		r.releaseProviderSetup(c.id)
+	}
 	c.finish()
+}
+
+// releaseProviderSetup tells the host that a client is gone, so the sign-ins that it
+// started end. The host sees the request only on the leader link.
+func (r *router) releaseProviderSetup(clientID string) {
+	meta := protocol.ACPRouteMeta{ClientID: clientID}
+	r.internalRequest(protocol.ACPProvidersReleaseClient, map[string]any{
+		"_meta": map[string]any{protocol.ACPRouteMetaKey: meta},
+	}, nil)
 }
 
 // ---- attach, detach, take, list ----
@@ -797,6 +813,13 @@ func (r *router) onAgentNotification(m *rpcMessage) {
 		}
 		c := f.owner
 		c.sendACP(m.raw, f.session, c.members[f.session].gen)
+	case protocol.ACPProvidersChanged:
+		// Every initialized client may show providers, so the notice is not tied to a session.
+		for _, c := range r.clients {
+			if c.initialized && !c.closed {
+				c.sendACP(m.raw, "", 0)
+			}
+		}
 	case "$/cancel_request":
 		r.agentCancelled(params)
 	default:

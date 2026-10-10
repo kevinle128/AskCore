@@ -8,6 +8,7 @@ const (
 	callSession      callKind = iota // forward a call that names a session
 	callInitialize                   // answered by the router from the cached link result
 	callAuthenticate                 // forward without a session
+	callAccount                      // provider account call: forward with the client id, no session
 	callNewSession
 	callFollow
 	callUnfollow
@@ -33,6 +34,16 @@ var policies = map[string]policy{
 	"initialize":   {kind: callInitialize},
 	"authenticate": {kind: callAuthenticate},
 	"session/new":  {kind: callNewSession},
+
+	// Provider account calls. protocol.ACPProvidersReleaseClient is not here: only
+	// the router sends it, so a client that sends it gets unsupported.
+	protocol.ACPProvidersList:   {kind: callAccount},
+	protocol.ACPProvidersAPIKey: {kind: callAccount},
+	protocol.ACPLoginStart:      {kind: callAccount},
+	protocol.ACPLoginInput:      {kind: callAccount},
+	protocol.ACPLoginWait:       {kind: callAccount},
+	protocol.ACPLoginCancel:     {kind: callAccount},
+	protocol.ACPProvidersLogout: {kind: callAccount},
 
 	"session/prompt": {kind: callSession, driverOnly: true},
 	"session/cancel": {kind: callSession, driverOnly: true},

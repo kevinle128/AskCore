@@ -2,10 +2,11 @@
 
 ## Status
 
-T1a is implemented. The package holds the root `Model`, the live region layout, the transcript commit path with resize rebuild, the width helpers, the theme, the editor, the transcript blocks and markdown, the event translator, status, queue, footer, selectors and connection states.
+T1a and T1c are implemented. The package holds the root `Model`, the live region layout, the transcript commit path with resize rebuild, the width helpers, the theme, the editor, the transcript blocks and markdown, the event translator, status, queue, footer, selectors and connection states.
 The session view talks to an agent through the `Client` interface in [client.go](client.go). The implementation is [`internal/tuiclient`](../tuiclient), and `cmd/tui` supplies it: it connects to the leader and falls back to an agent in process only when the connect fails at startup (see [interactive.go](../../cmd/tui/interactive.go)).
 `ask` with no arguments on a terminal runs this package; see [Session view contract](#session-view-contract).
-Extension composition (widgets, dialogs, extension views) and key resolution are comment-only scaffolds.
+Extension composition (widgets and extension views) and key resolution are comment-only scaffolds. The provider boxes, the key and login boxes and the removal box are implemented dialogs.
+T1c adds `/providers`, the model line (start and change lines), the first run with no model, and a `/model` list of usable models only; see [Provider setup contract](#provider-setup-contract). The plan is [t1c-provider-setup](../../plans/261010-1424-t1c-provider-setup/plan.md) and its [design](../../plans/261010-1424-t1c-provider-setup-design/design.md) is the UI authority.
 See the [TUI architecture](../../docs/tui-architecture.md) for the accepted boundaries and the [validation gates](../../docs/tui-architecture.md#validation-and-remaining-decisions).
 
 ## Ownership
@@ -50,7 +51,10 @@ See the [inline transcript contract](../../docs/tui-architecture.md#inline-trans
 | Event translation (events, errors, history snapshot) | [translate.go](translate.go), [translate_errors.go](translate_errors.go), [translate_snapshot.go](translate_snapshot.go) |
 | Queue and execution presentation | [pending.go](pending.go), [status.go](status.go), [footer.go](footer.go) |
 | Selection and completion | [selector.go](selector.go), [completion.go](completion.go) |
-| Extension composition (scaffold) | [widget.go](widget.go), [dialog.go](dialog.go), [update_extension.go](update_extension.go) |
+| Boxes (provider list, key, login and removal) | [dialog.go](dialog.go), [providers_box.go](providers_box.go), [login_box.go](login_box.go), [update_providers.go](update_providers.go) |
+| Secret input (key, code, callback address) | [secret_input.go](secret_input.go) |
+| Model line (start and change lines) | [model_line.go](model_line.go) |
+| Extension composition (scaffold) | [widget.go](widget.go), [update_extension.go](update_extension.go) |
 | Geometry and theme | [layout.go](layout.go), [theme.go](theme.go) |
 
 Files marked "scaffold" are comment-only and have no behavior yet.
@@ -88,3 +92,13 @@ Core packages must not import this package.
 - State: the agent is the authority for run, queue, model and usage. Results of client calls carry the generation they started in; an older result changes nothing.
 - Clock: `Options.Now` and `Options.TickInterval` exist for tests; a negative interval turns the animation clock off.
 - Footer numbers: context use is the token total of the last reply over the context window of the current model; the cost is the session total from `Client.Usage`.
+
+## Provider setup contract
+
+- `/providers` (any letter case) opens the provider box in the editor slot and keeps the draft. It has seven rows in the catalog order and a search row. The rows come from `Client.Providers`; every provider call needs the leader. With the in-process agent, `Client` returns `ErrNeedsLeader` and the TUI shows `Needs the leader; this session runs in process.` and the shell command `ask auth login`.
+- A key, a code or a pasted callback address lives only in the buffer of [secret_input.go](secret_input.go). The screen shows the fixed text `(hidden)`. The text never reaches the editor, the prompt history, the undo or kill ring, a block, a note, the title, the bell or the clipboard, and the buffer is zeroed on every exit of the box. A paste with a line break or a space inside is refused without an echo.
+- The call that carries a secret goes out once and the box does not keep it afterwards. A late result of a cancelled sign-in is dropped by its login id and request generation.
+- `TEA_TRACE` is the one stated exception: Bubble Tea writes raw input to that file. When the variable is set, the TUI shows a warning with the file name once at start, and on the key box and the code input ([model_line.go](model_line.go)).
+- With no model (`ACPStateResult.ModelID` empty) there is no model line, the footer shows `no model`, and the rail shows a notice ([status.go](status.go)). A prompt is refused with `Not sent: no model`, and the draft stays.
+- A model line `  model  <provider>/<model>` follows the header, a divider that starts an attach, and a restore note; a change line follows a model event of the leader with the current epoch. The footer and the reply meta line keep the bare model id. A start under a fallback shows the reason under the pair.
+- A choice in `/model` switches the session and the leader saves it as the default (`setResult("Default model: …")` when `defaultSaved` is true). Signing in does not change the default or the current model.

@@ -25,14 +25,43 @@ func (s *sessionView) statusRow(role Role, glyph, word, tail string) string {
 	return th.Render(RoleDim, GlyphRailStatus) + " " + th.Render(role, glyph+" "+word) + th.Render(RoleMuted, tail)
 }
 
-// noticeRow draws a plain notice on the rail.
-func (s *sessionView) noticeRow(text string, isErr bool) string {
+// noticeRow draws a notice on the rail. A text with line breaks takes one rail
+// row for each line.
+func (s *sessionView) noticeRow(n noticeView) string {
 	th := s.m.theme
 	role := RoleDim
-	if isErr {
+	if n.err {
 		role = RoleError
 	}
-	return th.Render(RoleDim, GlyphRailStatus) + " " + th.Render(role, text)
+	rail := th.Render(RoleDim, GlyphRailStatus) + " "
+	lines := strings.Split(n.text, "\n")
+	rows := make([]string, len(lines))
+	for i, line := range lines {
+		rows[i] = rail
+		if n.ok && i == 0 {
+			rows[i] += th.Render(RoleSuccess, GlyphOK) + " "
+		}
+		rows[i] += th.Render(role, line)
+	}
+	return strings.Join(rows, "\n")
+}
+
+// noModel tells that the state of the session was read and the session has no
+// model. Before the first state answer an empty model id means "not known".
+func (s *sessionView) noModel() bool {
+	return s.haveState && s.modelID == "" && !s.opening
+}
+
+// noModelNotice is the persistent rail notice while there is no model.
+// A session whose model was removed keeps model selection as its next step.
+func (s *sessionView) noModelNotice(short bool) string {
+	switch {
+	case s.hadModel || len(s.models) > 0:
+		return "No model. Choose one with /model"
+	case short:
+		return "Add a provider with /providers"
+	}
+	return "Add a provider with /providers · then choose a model with /model"
 }
 
 // elapsed writes the time since a start in whole seconds.
@@ -50,7 +79,7 @@ func (s *sessionView) statusText(width int) string {
 	short := width < shortWidth
 	switch {
 	case s.opening && s.noticeActive():
-		return s.noticeRow(s.notice.text, s.notice.err)
+		return s.noticeRow(s.notice)
 	case s.opening:
 		return s.statusRow(RoleAccent, GlyphWorking, "Starting leader…", "  first run can take a few seconds")
 	case s.conn == connDown:
@@ -59,8 +88,12 @@ func (s *sessionView) statusText(width int) string {
 		return s.statusRow(RoleAccent, GlyphWorking, "Sending…", "")
 	case s.failure != nil && s.failure.rev == s.editor.Revision():
 		return th.Render(RoleDim, GlyphRailStatus) + " " + th.Render(RoleError, GlyphFail+" "+s.failure.text)
+	case s.now().Before(s.copiedUntil):
+		return s.noticeRow(noticeView{text: "Copied", ok: true})
+	case s.waitRow() != "":
+		return s.waitRow()
 	case s.noticeActive():
-		return s.noticeRow(s.notice.text, s.notice.err)
+		return s.noticeRow(s.notice)
 	case s.run.running && s.run.retry != nil:
 		return s.retryRow(short)
 	case s.run.running && s.run.cancelling:
@@ -76,6 +109,9 @@ func (s *sessionView) statusText(width int) string {
 			tail += " · esc to interrupt"
 		}
 		return s.statusRow(RoleAccent, GlyphWorking, "Working…", tail)
+	case s.noModel() && s.sel == nil:
+		// The model list says the same thing, so the notice waits while it is open.
+		return s.noticeRow(noticeView{text: s.noModelNotice(short)})
 	}
 	return ""
 }

@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"io"
 	"net"
 	"os"
 	"strings"
@@ -13,7 +14,9 @@ import (
 
 	"github.com/stretchr/testify/require"
 
+	"AskCore/internal/acp"
 	"AskCore/internal/leader"
+	"AskCore/internal/providers"
 	"AskCore/internal/tui"
 	"AskCore/internal/tuiclient"
 	"AskCore/pkg/protocol"
@@ -288,15 +291,14 @@ func TestClientSetModelReadinessFailure(t *testing.T) {
 	defer cancel()
 	models, err := c.Models(ctx)
 	require.NoError(t, err)
-	var other string
+	// The model list holds usable providers only, so the model of a provider
+	// without a sign-in comes from the catalog.
+	other := modelIDOf(providers.OpenAIGPT55())
+	require.NotEqual(t, models.Current, other)
 	for _, m := range models.Models {
-		if m.ModelID != models.Current && m.Provider != "faux" {
-			other = m.ModelID
-			break
-		}
+		require.NotEqual(t, "openai", m.Provider, "the list has usable providers only")
 	}
-	require.NotEmpty(t, other, "the catalog has a model of a provider that is not signed in")
-	_, err = c.SetModel(ctx, other)
+	_, err = c.SetModel(ctx, other, false)
 	var re *tui.RequestError
 	require.ErrorAs(t, err, &re, "the readiness failure comes back as a request error")
 	st, err := c.State(ctx)
@@ -304,7 +306,7 @@ func TestClientSetModelReadinessFailure(t *testing.T) {
 	require.Equal(t, models.Current, st.ModelID, "the model did not change")
 
 	// A ready model changes.
-	res, err := c.SetModel(ctx, models.Current)
+	res, err := c.SetModel(ctx, models.Current, false)
 	require.NoError(t, err)
 	require.Equal(t, models.Current, res.ModelID)
 }
@@ -524,6 +526,9 @@ func inProcessDeps(home string, extra map[string]string) runDependencies {
 		if k == "ASK_HOME" {
 			return home
 		}
+		if k == fauxEnv {
+			return "1"
+		}
 		return ""
 	}}
 }
@@ -562,12 +567,17 @@ func TestClientInProcessAgent(t *testing.T) {
 		}, clientWait, 20*time.Millisecond)
 	}
 	waitIdle()
-	_, err = c.Prompt(strings.Repeat("a long answer to cancel ", 12))
+	streamFrom := len(col.all())
+	longPromptID, err := c.Prompt(strings.Repeat("a long answer to cancel ", 12))
 	require.NoError(t, err)
+	col.waitFor("the long prompt was accepted", func(m tui.Message) bool {
+		accepted, ok := m.(tui.PromptAcceptedMsg)
+		return ok && accepted.ID == longPromptID
+	})
 	require.Eventually(t, func() bool {
-		st, err := c.State(ctx)
-		return err == nil && st.Running
-	}, clientWait, 10*time.Millisecond)
+		i, _ := col.find(streamFrom, isEvent(protocol.TypeMessageUpdate))
+		return i >= 0
+	}, clientWait, 10*time.Millisecond, "the reply must stream before the follow-up is queued")
 	inputID, err := c.FollowUp(ctx, "later")
 	require.NoError(t, err)
 	st, err := c.State(ctx)
@@ -587,7 +597,7 @@ func TestClientInProcessAgent(t *testing.T) {
 	models, err := c.Models(ctx)
 	require.NoError(t, err)
 	require.NotEmpty(t, models.Models)
-	res, err := c.SetModel(ctx, models.Current)
+	res, err := c.SetModel(ctx, models.Current, false)
 	require.NoError(t, err)
 	require.Equal(t, models.Current, res.ModelID)
 	_, err = c.Usage(ctx)
@@ -601,10 +611,24 @@ func TestClientInProcessAgent(t *testing.T) {
 	require.ErrorIs(t, c.Detach(ctx), tui.ErrNeedsLeader)
 	_, err = c.Take(ctx)
 	require.ErrorIs(t, err, tui.ErrNeedsLeader)
+	_, err = c.Providers(ctx)
+	require.ErrorIs(t, err, tui.ErrNeedsLeader)
+	_, err = c.SaveAPIKey(ctx, "k1", providers.ProviderTokenPlan, "fake-token-plan-key-0002")
+	require.ErrorIs(t, err, tui.ErrNeedsLeader)
+	_, err = c.StartLogin(ctx, "openai", "openai-chatgpt")
+	require.ErrorIs(t, err, tui.ErrNeedsLeader)
 
 	// Closing stops the agent and ends the event stream.
 	require.NoError(t, c.Close())
 	require.Eventually(t, func() bool { _, open := <-c.Events(); return !open }, 5*time.Second, time.Millisecond)
+}
+
+func TestInProcessExitKeepsCleanupFailure(t *testing.T) {
+	closed := fmt.Errorf("%w: %w", acp.ErrOutputFailed, io.ErrClosedPipe)
+	require.NoError(t, inProcessExitError(closed))
+	cleanup := errors.New("cleanup failed")
+	require.ErrorIs(t, inProcessExitError(errors.Join(closed, cleanup)), cleanup)
+	require.ErrorIs(t, inProcessExitError(io.ErrClosedPipe), io.ErrClosedPipe)
 }
 
 // makeHomeUnsafe turns the home into a symlink, which the leader code refuses to
@@ -658,5 +682,141 @@ func TestClientStartupFallbackOnlyAtStartup(t *testing.T) {
 			require.Error(t, r.Err)
 			require.False(t, errors.Is(r.Err, tui.ErrNeedsLeader))
 		}
+	}
+}
+
+// openCredentialFreeClient opens a client of the leader of home. The leader
+// that it starts has no provider key from the developer shell.
+func openCredentialFreeClient(t *testing.T, bin, home string) (*tuiclient.Client, *collector) {
+	t.Helper()
+	cfg := leaderClientConfig(bin, home)
+	dial := e2eConnect(home, bin)
+	dial.Env = withoutCredentialEnv(dial.Env)
+	cfg.Dial = tuiclient.LeaderDial(dial)
+	c, err := tuiclient.Open(context.Background(), cfg)
+	require.NoError(t, err)
+	return c, collect(t, c)
+}
+
+func providersChangedOf(provider string, change protocol.ACPProviderChange) func(tui.Message) bool {
+	return func(m tui.Message) bool {
+		v, ok := m.(tui.ProvidersChangedMsg)
+		return ok && v.Provider == provider && v.Change == change
+	}
+}
+
+// A key is saved and removed through a real leader. The second client hears of
+// both changes in order, and the model list follows the credential.
+func TestClientProviderCallsOnLeader(t *testing.T) {
+	bin, home := newE2EHome(t)
+	a, colA := openCredentialFreeClient(t, bin, home)
+	defer func() { require.NoError(t, a.Close()) }()
+	b, colB := openCredentialFreeClient(t, bin, home)
+	defer func() { require.NoError(t, b.Close()) }()
+	newSessionOf(t, a)
+	ctx, cancel := context.WithTimeout(context.Background(), clientWait)
+	defer cancel()
+
+	list, err := a.Providers(ctx)
+	require.NoError(t, err)
+	require.Len(t, list.Options, 7)
+	var method string
+	for _, o := range list.Options {
+		if o.ProviderID == providers.ProviderTokenPlan {
+			method = o.MethodID
+			require.Equal(t, protocol.ACPLoginStateNone, o.State)
+		}
+	}
+	require.NotEmpty(t, method, "the Token Plan key is a login option")
+
+	// A Token Plan key is saved without a live check, so no request leaves the test.
+	out, err := a.SaveAPIKey(ctx, "k1", providers.ProviderTokenPlan, "fake-token-plan-key-0003")
+	require.NoError(t, err)
+	require.Equal(t, protocol.ACPLoginStatusSaved, out.Status)
+	require.True(t, out.NotChecked)
+	_, saved := colB.waitFor("the save reaches the second client", providersChangedOf(providers.ProviderTokenPlan, protocol.ACPProviderChangeSaved))
+	colA.waitFor("the save reaches the saving client", providersChangedOf(providers.ProviderTokenPlan, protocol.ACPProviderChangeSaved))
+	require.Equal(t, out.Generation, saved.(tui.ProvidersChangedMsg).Generation)
+
+	list, err = b.Providers(ctx)
+	require.NoError(t, err)
+	require.Equal(t, out.Generation, list.Generation)
+	for _, o := range list.Options {
+		if o.ProviderID == providers.ProviderTokenPlan {
+			require.Equal(t, protocol.ACPLoginStateAPIKey, o.State)
+		}
+	}
+	models, err := a.Models(ctx)
+	require.NoError(t, err)
+	require.True(t, models.UsableOnly, "the leader filtered the list")
+	var seen bool
+	for _, m := range models.Models {
+		require.NotEqual(t, "openai", m.Provider, "a provider without a credential is not listed")
+		seen = seen || m.Provider == providers.ProviderTokenPlan
+	}
+	require.True(t, seen, "the models of the new provider are listed")
+
+	lo, err := a.Logout(ctx, providers.ProviderTokenPlan, method)
+	require.NoError(t, err)
+	require.True(t, lo.Removed)
+	require.Greater(t, lo.Generation, out.Generation)
+	_, gone := colB.waitFor("the removal reaches the second client", providersChangedOf(providers.ProviderTokenPlan, protocol.ACPProviderChangeRemoved))
+	require.Equal(t, lo.Generation, gone.(tui.ProvidersChangedMsg).Generation)
+}
+
+// A removal by a second client ends the first client's wait with the removed
+// reason. The sign-in is a browser flow with a loopback callback, which needs
+// no network.
+func TestClientWaitLoginCancelledByRemoval(t *testing.T) {
+	bin, home := newE2EHome(t)
+	a, _ := openCredentialFreeClient(t, bin, home)
+	defer func() { require.NoError(t, a.Close()) }()
+	b, _ := openCredentialFreeClient(t, bin, home)
+	defer func() { require.NoError(t, b.Close()) }()
+	ctx, cancel := context.WithTimeout(context.Background(), clientWait)
+	defer cancel()
+
+	list, err := a.Providers(ctx)
+	require.NoError(t, err)
+	var method string
+	for _, o := range list.Options {
+		if o.ProviderID == providers.ProviderOpenAI && o.MethodID != "api-key" {
+			method = o.MethodID
+		}
+	}
+	require.NotEmpty(t, method, "OpenAI has a browser sign-in")
+
+	start, err := a.StartLogin(ctx, providers.ProviderOpenAI, method)
+	if err != nil {
+		var re *tui.RequestError
+		if errors.As(err, &re) && re.Kind == string(protocol.ACPErrInternal) {
+			t.Skipf("the loopback callback port of the browser sign-in is not free on this machine: %v", err)
+		}
+		require.NoError(t, err)
+	}
+	require.NotEmpty(t, start.LoginID)
+	require.NotEmpty(t, start.URL)
+
+	type waited struct {
+		out protocol.ACPLoginOutcome
+		err error
+	}
+	done := make(chan waited, 1)
+	go func() {
+		out, err := a.WaitLogin(ctx, start.LoginID)
+		done <- waited{out, err}
+	}()
+	// The second client's removal may run before the wait request reaches the
+	// leader; the sign-in is then cancelled before it is waited for, and the
+	// wait still reports the end.
+	_, err = b.Logout(ctx, providers.ProviderOpenAI, method)
+	require.NoError(t, err)
+	select {
+	case w := <-done:
+		require.NoError(t, w.err)
+		require.Equal(t, protocol.ACPLoginStatusCancelled, w.out.Status)
+		require.Equal(t, protocol.ACPLoginReasonRemoved, w.out.Reason)
+	case <-time.After(clientWait):
+		t.Fatal("the wait did not end after the removal")
 	}
 }

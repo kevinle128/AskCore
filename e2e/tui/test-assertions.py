@@ -3,11 +3,13 @@ import json
 from pathlib import Path
 import tempfile
 import unittest
+from unittest.mock import patch
+from subprocess import CompletedProcess
 
-from run import (PURGE, assert_editor, assert_cursor, assert_frame, assert_idle_screen, assert_no_alt_screen,
-                 assert_no_replay, assert_one_draft, assert_rebuild_once, assert_resize_replay,
-                 assert_selector_screen, assert_stream_text, assert_transcript, ask_ready, output_bytes,
-                 scan_secrets, secret_values)
+from run import (ASK_FAKE_KEY, PROVIDER_HINT, PROVIDER_NAMES, PURGE, Session, assert_editor, assert_cursor, assert_frame, assert_idle_screen,
+                 assert_no_alt_screen, assert_no_replay, assert_one_draft, assert_provider_box, assert_rebuild_once,
+                 assert_resize_replay, assert_selector_screen, assert_stream_text, assert_transcript, ask_environment,
+                 ask_ready, hide_typed_secret, output_bytes, provider_names, scan_secrets, secret_values)
 
 
 class AssertionControls(unittest.TestCase):
@@ -72,7 +74,7 @@ def screen(editor='❯ Ask anything  ·  / commands  ·  ctrl+l model', footer='
 
 def selector(hint='enter select  ·  esc close  ·  your draft is kept', current='current', title='Select model'):
     rows = ['◢◤ ask', '', ('╭─ ' + title + ' ').ljust(WIDTH - 1, '─') + '╮', box_row('⌕ type to filter'),
-            box_row('❯ ● faux/faux-1    128k  ' + current), '╰' + '─' * (WIDTH - 2) + '╯', '   ' + hint,
+            box_row('  ● faux'), box_row('❯   faux-1    128k  ' + current), '╰' + '─' * (WIDTH - 2) + '╯', '   ' + hint,
             '  ● leader 1cb8   faux-1']
     return '\n'.join(rows)
 
@@ -105,6 +107,48 @@ class AskControls(unittest.TestCase):
                 assert_selector_screen({'text': invalid}, WIDTH)
         with self.assertRaises(AssertionError):
             assert_selector_screen({'text': text}, WIDTH + 1)
+
+    def test_provider_box(self):
+        status = {'Alibaba Token Plan API key': 'api key', 'ChatGPT Plus/Pro sign-in': 'signed in'}
+        rows = ['◢◤ ask', '', ('╭─ Providers ').ljust(WIDTH - 1, '─') + '╮']
+        for name in PROVIDER_NAMES:
+            suffix = status.get(name, '')
+            rows.append(('│ ' + ('❯' if name == PROVIDER_NAMES[0] else ' ') + ' ● ' + name).ljust(WIDTH - 2 - len(suffix) - 1) + ' ' + suffix + ' │'
+                        if suffix else box_row(('❯' if name == PROVIDER_NAMES[0] else ' ') + ' ● ' + name))
+        rows += [box_row(' ⌕ Type to search'), '╰' + '─' * (WIDTH - 2) + '╯', '   ' + PROVIDER_HINT, '  ● leader 1cb8   faux-1']
+        text = '\n'.join(rows)
+        assert provider_names(text.split('\n')) == PROVIDER_NAMES
+        assert_provider_box({'text': text}, WIDTH)
+        for invalid in [text.replace(PROVIDER_HINT, 'enter sign in'), text.replace('OpenAI API key', 'OpenAI key'),
+                        text.replace('│ ❯ ● Alibaba', '│ ❯ Ask anything\n│ ❯ ● Alibaba'),
+                        text.replace('⌕ Type to search', 'Type to search'), text.replace('╮', '')]:
+            with self.subTest(text=invalid), self.assertRaises(AssertionError):
+                assert_provider_box({'text': invalid}, WIDTH)
+        with self.assertRaises(AssertionError):
+            assert_provider_box({'text': text}, WIDTH + 1)
+
+    def test_typed_secret_is_hidden_in_input_events_only(self):
+        header = json.dumps({'version': 2})
+        typed = json.dumps([0.1, 'i', '\x1b[200~sk-control-key\x1b[201~'])
+        shown = json.dumps([0.2, 'o', 'echoed sk-control-key'])
+        result = hide_typed_secret('\n'.join([header, typed, shown]) + '\n', 'sk-control-key')
+        assert '<secret>' in result
+        # An output event keeps the value, so a product leak still shows in the scan.
+        assert result.count('sk-control-key') == 1 and 'echoed sk-control-key' in result
+
+    def test_recording_keeps_typed_secret_out_of_call_artifacts(self):
+        recording = '\n'.join([json.dumps({'version': 2}), json.dumps([0.1, 'i', ASK_FAKE_KEY])]) + '\n'
+        with tempfile.TemporaryDirectory() as temporary:
+            session = Session.__new__(Session)
+            session.cli, session.name = 'control-cli', 'control-session'
+            session.artifacts, session.calls = Path(temporary), []
+            with patch('run.subprocess.run', return_value=CompletedProcess([], 0, recording, '')):
+                assert session.recording() == ''
+            assert scan_secrets(temporary, {'fake-key': ASK_FAKE_KEY}) == {}
+            leaked = recording + json.dumps([0.2, 'o', ASK_FAKE_KEY]) + '\n'
+            with patch('run.subprocess.run', return_value=CompletedProcess([], 0, leaked, '')):
+                assert session.recording() == ASK_FAKE_KEY
+            assert set(scan_secrets(temporary, {'fake-key': ASK_FAKE_KEY})) == {'commands.json', 'output.cast'}
 
     def test_stream_text(self):
         words = [f'm{i:03d}' for i in range(3)]
@@ -156,6 +200,17 @@ class AskControls(unittest.TestCase):
             assert scan_secrets(root, secrets) == {'sub/leak.cast': ['EXAMPLE_API_KEY']}
             assert not (root / 'sub' / 'leak.cast').exists() and (root / 'clean.json').exists()
             assert scan_secrets(root, secrets) == {}
+
+    def test_ask_environment_enables_faux_and_drops_credentials(self):
+        # Made-up values: the control reads no real credential.
+        environ = {'OPENAI_API_KEY': 'sk-control-value-1', 'ANTHROPIC_AUTH_TOKEN': 'control-token-2',
+                   'XAI_API_KEY': 's', 'ASK_HOME': '/elsewhere', 'ASK_FAUX': '0', 'SSH_AUTH_SOCK': '/tmp/agent.sock',
+                   'PATH': '/usr/bin:/bin', 'HOME': '/home/someone'}
+        env = ask_environment('/tmp/home', environ)
+        assert env['ASK_FAUX'] == '1' and env['ASK_HOME'] == '/tmp/home'
+        for name in ('OPENAI_API_KEY', 'ANTHROPIC_AUTH_TOKEN', 'XAI_API_KEY'):
+            assert name not in env, name
+        assert env['PATH'] == '/usr/bin:/bin' and env['SSH_AUTH_SOCK'] == '/tmp/agent.sock'
 
 
 if __name__ == '__main__':

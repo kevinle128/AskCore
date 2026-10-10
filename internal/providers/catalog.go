@@ -13,6 +13,26 @@ func catalog() []Model {
 // AvailableModels returns independent rows from the compiled model catalog.
 func AvailableModels() []Model { return catalog() }
 
+// RecommendedModel names the one catalog row that a provider uses when the
+// default model of the user cannot be used, or when there is no default model. The Ref carries the API, so a provider that has one
+// model on two wire formats stays exact.
+func RecommendedModel(provider string) (Ref, bool) {
+	var m Model
+	switch provider {
+	case ProviderTokenPlan:
+		m = TokenPlanMessages()
+	case ProviderAnthropic:
+		m = AnthropicSonnet46()
+	case ProviderOpenAI:
+		m = OpenAIGPT55()
+	case ProviderXAI:
+		m = XAIGrok47()
+	default:
+		return Ref{}, false
+	}
+	return Ref{Provider: m.Provider, ID: m.ID, API: m.API}, true
+}
+
 // TokenPlanMessages is the H3 Token Plan row on the Anthropic messages wire.
 func TokenPlanMessages() Model {
 	return Model{

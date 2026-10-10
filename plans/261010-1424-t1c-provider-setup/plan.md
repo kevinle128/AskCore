@@ -1,7 +1,7 @@
 ---
 title: "T1c provider setup: /providers, /model and first run"
 description: "Add, check and remove providers from the TUI through the local leader, list only usable models in /model, and start with no model when no provider is usable, as the approved design specifies."
-status: pending
+status: in_progress
 priority: P1
 effort: "12-14d"
 branch: new-session
@@ -21,13 +21,14 @@ In `ask` (leader path), `/providers` lists the seven login options, signs in by 
 The leader runs every sign-in on its host, checks an API key before it saves it (mode 0600 store), and never logs or echoes a secret.
 `/model` lists only the models of usable providers. With no usable provider, a session has no model, the footer shows `no model` and a prompt is not sent.
 Every session shows its `<provider>/<model>` on a start line under the header and on a change line when the leader reports a new model.
-All criteria of [design section 10](../261010-1424-t1c-provider-setup-design/design.md#10-acceptance-criteria) pass with the built `ask`, a real leader, and the faux provider or the provider fixture. Phase 8 adds one real-provider run.
+The tests below cover [design section 10](../261010-1424-t1c-provider-setup-design/design.md#10-acceptance-criteria) with the built `ask`, a real leader, and the faux provider or the provider fixture.
+Phase 8 has a recorded real-provider run; a new OAuth sign-in remains unverified.
 
 ## Authority and links
 
 | Link | Role |
 |---|---|
-| [Approved design](../261010-1424-t1c-provider-setup-design/design.md) | **UI authority** (approved by Kevin Le on 2026-10-10, and approved again on 2026-10-10 after the D11, D12, D14, D15 amendments; `design.md:3-5,15-27`). States P1 to P31 plus P6a, P12c, P15a, P25a, P28b, P28c; keys, widths, criteria 1-58, section 12 amendments, section 3 "What the TUI needs from the leader". A visible change sends it back to `draft` ([ask-tui-design skill](../../.claude/skills/ask-tui-design/SKILL.md)). Read only in this plan. |
+| [Approved design](../261010-1424-t1c-provider-setup-design/design.md) | **UI authority** (approved by Kevin Le on 2026-10-10, and approved again after the confirmed amendments). Section 10 owns criteria 1-60, section 12 owns the T1a amendments, and section 3 owns the leader contract. A visible change sends it back to `draft` ([ask-tui-design skill](../../.claude/skills/ask-tui-design/SKILL.md)). Read only in this plan. |
 | [Design preview](../261010-1424-t1c-provider-setup-design/artifacts/preview.html) | Visual form of the sketches. |
 | [Flow analysis](../reports/xia-261010-1416-provider-model-flow.md) | omp, Pi and Grok behavior; dependency matrix; risks. Its claim "default model deepseek" is stale: the leader default is faux (see decision D10). |
 | [T1a plan](../261009-2239-t1a-local-tui/plan.md) and [T1a design](../261009-2239-t1a-local-tui/design.md) | Layout and quality model. Section 12 of the new design amends the T1a design and its goldens (phases 6 and 8). |
@@ -88,13 +89,13 @@ Deep mode: phase 2 is detailed; every later phase starts with a scout pass that 
 | # | Phase | Status | Depends on | Effort |
 |---|---|---|---|---|
 | 1 | [TUI design](phase-01-tui-design.md) | completed (approved, then approved again after the D11, D12, D14, D15 amendments, 2026-10-10) and the D16 variant (P6b, P9a, P9b), 2026-10-10 | — | done |
-| 2 | [Protocol shapes, model event and no-model contract](phase-02-protocol-and-model-contract.md) | pending | 1 | 1d |
-| 3 | [Auth broker, key check, provider status and default-model store](phase-03-auth-broker.md) | pending | 1 | 2.5d |
-| 4 | [Leader host and router](phase-04-leader-host-and-router.md) | pending | 2, 3 | 2.5d |
-| 5 | [TUI client contract and tuiclient](phase-05-tui-client.md) | pending | 4 | 1d |
-| 6 | [TUI screens and design amendments](phase-06-tui-screens.md) | pending | 1, 5 | 3d |
-| 7 | [E2E and security acceptance](phase-07-e2e-and-security.md) | pending | 6 | 1.5d |
-| 8 | [Real-provider acceptance and docs](phase-08-real-provider-and-docs.md) | pending | 7 | 1d |
+| 2 | [Protocol shapes, model event and no-model contract](phase-02-protocol-and-model-contract.md) | completed | 1 | 1d |
+| 3 | [Auth broker, key check, provider status and default-model store](phase-03-auth-broker.md) | completed | 1 | 2.5d |
+| 4 | [Leader host and router](phase-04-leader-host-and-router.md) | completed | 2, 3 | 2.5d |
+| 5 | [TUI client contract and tuiclient](phase-05-tui-client.md) | completed | 4 | 1d |
+| 6 | [TUI screens and design amendments](phase-06-tui-screens.md) | completed | 1, 5 | 3d |
+| 7 | [E2E and security acceptance](phase-07-e2e-and-security.md) | completed | 6 | 1.5d |
+| 8 | [Real-provider acceptance and docs](phase-08-real-provider-and-docs.md) | in progress: new OAuth sign-in not run | 7 | 1d |
 
 Phases 2 and 3 can run in parallel: phase 2 owns `pkg/protocol/**` and `internal/agent/**`; phase 3 owns `internal/auth/**`, `internal/settings/settings.go` (with its test and README) and `internal/providers/keys.go` and `catalog.go` (disjoint). No other phase pair runs in parallel. A later phase may edit a file that an earlier phase changed; each phase file lists the files it edits. Shared across sequential phases: `internal/tui/session_rig_test.go` (5, 6), `cmd/tui/tui_client_e2e_test.go` (4, 5), `cmd/tui/acp_e2e_test.go` (4, 7), `e2e/tui/run.py` (4, 7), `cmd/tui/interactive_flow_test.go` (7 only, after the T1a work is committed).
 
@@ -148,14 +149,14 @@ Synced on 2026-10-10 with the final criteria 1-60 (59 and 60 added for D16; 1-58
 | 32 | Second client: providers changed in place | `TestProvidersChangedUpdatesOpenBox` + `TestRouterBroadcastsProvidersChanged` + `TestInteractiveProvidersChangedSecondClient` | 4, 6, 7 |
 | 33 | Stale login id, request id, generation | `TestStaleProviderResultsIgnored` + `TestClientDropsStaleProvidersChanged` | 5, 6 |
 | 34 | Key box ignores up; draft kept | `TestKeyBoxIgnoresHistoryKeepsDraft` | 6 |
-| 35 | Resize with login box open | `TestLoginBoxResizeKeepsLogin` + `TestInteractiveLoginResizeKeepsLogin` (PTY resize; fixture sees one start) | 6, 7 |
+| 35 | Resize with login box open | `TestLoginBoxResizeKeepsLogin` + `TestAddressBufferSurvivesResizeAndIsSentOnce` + `TestKeyBufferSurvivesResizeAndIsSentOnce` + `TestInteractiveLoginResizeKeepsLogin` (PTY resize; fixture sees one start) | 6, 7 |
 | 36 | Key never on the screen grid | `TestSecretNeverOnScreenGrid` + `TestInteractiveSecretNeverOnScreen` | 6, 7 |
 | 37 | Key not in scrollback, blocks, notes | `TestSecretNotInTranscriptBlocks` + `TestInteractiveSecretNotInTranscript` | 6, 7 |
-| 38 | Key not in prompt history | `TestSecretNotInPromptHistory` | 6 |
-| 39 | Key not in undo or kill ring; draft same | `TestSecretNotInUndoOrKillRing` | 6 |
-| 40 | Buffer cleared on every exit | `TestSecretBufferClearedOnEveryExit` | 6 |
-| 41 | No key or code in logs or event stream; leader gets it once | `TestHostNeverLogsSecrets` + `TestInteractiveSecretNotInLogsOrEvents` | 4, 7 |
-| 42 | Not in title, bell, clipboard | `TestClipboardCopiesOnlyURLOrCode` | 6 |
+| 38 | Key not in prompt history | `TestSecretNotInPromptHistory` + `TestInteractiveSecretNotInTranscript` (Up in the real editor) | 6, 7 |
+| 39 | Key not in undo or kill ring; draft same | `TestSecretNotInUndoOrKillRing` + `TestSecretFlowKeepsDraftAndUndo` (box handlers with a saved nonempty draft) | 6 |
+| 40 | Buffer cleared on every exit | `TestSecretBufferClearedOnEveryExit` + `TestSecretExitOverwritesFormerBuffer` (old bytes after close, save, refusal and disconnect) | 6 |
+| 41 | No key or code in logs or event stream; leader gets it once | `TestHostNeverLogsSecrets` + `TestInteractiveSecretNotInLogsOrEvents` + `TestInteractiveCopyCodeNotInLogsOrEvents` (successful code flow, proxy frames and one exchange) | 4, 7 |
+| 42 | Not in title, bell, clipboard | `TestClipboardCopiesOnlyURLOrCode` + `TestNoTitleOrBellInOutput` | 6 |
 | 43 | Bad paste refused without echo | `TestSecretPasteRefusedWithoutEcho` | 6 |
 | 44 | Start line 80×24, footer bare id | `TestModelLineGoldens/start_80x24` + `TestInteractiveStartLineShowsPair` | 6, 7 |
 | 45 | Start line 120×40 | `TestModelLineGoldens/start_120x40` | 6 |
@@ -164,7 +165,7 @@ Synced on 2026-10-10 with the final criteria 1-60 (59 and 60 added for D16; 1-58
 | 48 | Change line after `/model` | `TestModelChangeLine` + `TestAgentSetModelPublishesModelUpdate` + `TestInteractiveModelSwitch` (updated) | 2, 6, 7 |
 | 49 | Observer attach: divider, line, history | `TestObserverAttachStartLine` + `TestInteractiveSessionsAttach` (updated) | 6, 7 |
 | 50 | Reconnect note then line | `TestReconnectStatesGoldens/restored` (updated) | 6 |
-| 51 | No model: no line, notice stays | `TestNoModelHasNoModelLine` | 6 |
+| 51 | No model: no line, notice stays | `TestNoModelHasNoModelLine` + `TestLiveModelClearKeepsRemovalNoticeWithoutLine` (live clear, footer, notice and resize; prior history stays) | 6 |
 | 52 | Stale model event adds no row | `TestStaleModelEventAddsNoRow` | 6 |
 | 53 | `/model` saves the default; rail; `/new` uses it | `TestDefaultModelSavedOnSelect` + `TestModelSelectShowsDefaultSavedStatus` + `TestSessionStartUsesSavedDefault` + `TestInteractiveDefaultModelSurvivesNewSession` + `TestLeaderDefaultModelSurvivesRestart` | 4, 6, 7 |
 | 54 | P28c saved default not usable; fallback row | `TestSessionStartFallsBackWhenDefaultUnusable` + `TestSessionStartUsesProviderDefault` + `TestFallbackNoticeNamesModelInUse` + `TestInteractiveFallbackNoticeWhenDefaultRemoved` | 4, 6, 7 |

@@ -244,6 +244,17 @@ func (h *Host) Session(id string) (*Session, bool) {
 	return s, ok
 }
 
+// Sessions returns the live sessions in no fixed order.
+func (h *Host) Sessions() []*Session {
+	h.mu.Lock()
+	defer h.mu.Unlock()
+	list := make([]*Session, 0, len(h.sessions))
+	for _, s := range h.sessions {
+		list = append(list, s)
+	}
+	return list
+}
+
 // NewSession builds an Agent and publishes the session only when it is whole.
 func (h *Host) NewSession(ctx context.Context, cwd string) (*Session, error) {
 	if err := h.beginOperation(); err != nil {
@@ -369,6 +380,9 @@ type Session struct {
 	// steering and followUp are the texts of the last queue_update.
 	steering []string
 	followUp []string
+	// fallback is the saved default that the session could not start on. It
+	// holds until the model of the session changes.
+	fallback *protocol.ACPModelFallback
 
 	// qmu guards the outbound queue. The Agent listener only appends to it.
 	qmu     sync.Mutex
@@ -544,12 +558,38 @@ func (s *Session) observe(ev protocol.Event) error {
 	return nil
 }
 
-// noteQueueLocked keeps the queue texts of a queue_update. mu must be held.
+// noteQueueLocked keeps the queue texts of a queue_update and drops the start
+// fallback when the model changes. mu must be held.
 func (s *Session) noteQueueLocked(ev protocol.Event) {
-	if q, ok := ev.(*protocol.QueueUpdate); ok {
-		s.steering = append([]string{}, q.Steering...)
-		s.followUp = append([]string{}, q.FollowUp...)
+	switch e := ev.(type) {
+	case *protocol.QueueUpdate:
+		s.steering = append([]string{}, e.Steering...)
+		s.followUp = append([]string{}, e.FollowUp...)
+	case *protocol.ModelUpdate:
+		s.fallback = nil
 	}
+}
+
+// setFallback records the saved default that the session could not start on.
+func (s *Session) setFallback(f *protocol.ACPModelFallback) {
+	if f == nil {
+		return
+	}
+	cp := *f
+	s.mu.Lock()
+	s.fallback = &cp
+	s.mu.Unlock()
+}
+
+// fallbackNow returns a copy of the start fallback while it still holds.
+func (s *Session) fallbackNow() *protocol.ACPModelFallback {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if s.fallback == nil {
+		return nil
+	}
+	cp := *s.fallback
+	return &cp
 }
 
 // enqueue adds ev to the outbound queue, or fails the host when the queue is
@@ -709,7 +749,7 @@ func (s *Session) admit() (*binding, error) {
 // no event of the call can follow it.
 func refused(err error) bool {
 	return errors.Is(err, errStaleDriver) || errors.Is(err, ErrHostClosed) ||
-		errors.Is(err, agent.ErrBusy) || errors.Is(err, agent.ErrDisposed) ||
+		errors.Is(err, agent.ErrBusy) || errors.Is(err, agent.ErrDisposed) || errors.Is(err, agent.ErrNoModel) ||
 		errors.Is(err, agent.ErrContinueEmpty) || errors.Is(err, agent.ErrContinueFromAssistant)
 }
 

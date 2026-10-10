@@ -21,16 +21,17 @@ import (
 )
 
 // leaderEnv is a process environment with an isolated Ask home and a PATH that
-// holds only the given directories plus the system ones.
+// holds only the given directories plus the system ones. It enables the faux
+// demo provider, which a leader lists only on request.
 func leaderEnv(home string, pathDirs ...string) []string {
 	var env []string
 	for _, kv := range os.Environ() {
-		if strings.HasPrefix(kv, "ASK_HOME=") || strings.HasPrefix(kv, "PATH=") {
+		if strings.HasPrefix(kv, "ASK_HOME=") || strings.HasPrefix(kv, "ASK_FAUX=") || strings.HasPrefix(kv, "PATH=") {
 			continue
 		}
 		env = append(env, kv)
 	}
-	return append(env, "ASK_HOME="+home, "PATH="+strings.Join(append(pathDirs, "/usr/bin", "/bin"), ":"))
+	return append(env, "ASK_HOME="+home, "ASK_FAUX=1", "PATH="+strings.Join(append(pathDirs, "/usr/bin", "/bin"), ":"))
 }
 
 func e2eConnect(home, bin string) leader.ConnectConfig {

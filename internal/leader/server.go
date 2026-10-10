@@ -438,9 +438,12 @@ type client struct {
 	q   *queue[outItem]
 
 	initialized bool
-	caps        json.RawMessage
-	members     map[string]member
-	closed      bool
+	// usedProviderSetup is set by the first provider setup call. Only such a
+	// client needs a release when it leaves.
+	usedProviderSetup bool
+	caps              json.RawMessage
+	members           map[string]member
+	closed            bool
 }
 
 func newClient(acc *Accepted) *client {

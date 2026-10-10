@@ -1,7 +1,7 @@
 ---
 phase: 3
 title: "Auth broker, key check, provider status and default-model store"
-status: pending
+status: completed
 priority: P1
 effort: "2d"
 dependencies: [1]
@@ -36,6 +36,17 @@ Outline with scouted evidence. Run a scout pass and update this file before cook
   - When no field is present, the outcome has no account and the shorter text applies. Tests: `TestChatGPTAccountFromIDToken`, `TestAnthropicAccountFromProfileThenTokenAnswer` (fixture profile endpoint; profile failure falls back, then no account), `TestXAIAccountFromIDToken`.
 - Token Plan key check: none (user decision D16, 2026-10-10: the Token Plan subscription expired and no free read-only check is known). The Token Plan API key is saved without a live check.
 
+## Scout result (2026-10-10, re-checked against the source before coding)
+
+- All evidence items above still match the source at the cited lines; no line moved.
+- Account name: the three mechanics are implementable as written. `identity.go` returned only the subject, so a struct-returning internal path (`verifyLogin`) now also reads `email`, the `https://api.openai.com/profile` e-mail and `name`; `Verify` and `VerifyRefresh` keep their signatures. The xAI ID token is read without a signature check, because the name is display-only (the comment in `account.go` states this). The Anthropic profile request runs only when the caller set `LoginRequest.Account`, so the CLI path makes no extra request. Every name is cleaned (control and format characters removed, 128 bytes) before it leaves the method.
+- Default models per provider: the omp defaults are not in this tree, so the table choices stand (Token Plan deepseek on anthropic-messages, claude-sonnet-4-6, gpt-5.5, grok-4.7); the test proves each exists in the catalog.
+- `goleak` is already in `go.mod`; no new dependency.
+- Gate design (found while coding): `LoginRequest.BeforeCommit` runs right before `Store.Replace`. It orders a cancel against the commit for both sign-ins and key saves. A key save writes under a context that a cancel cannot end, so the write is all or nothing.
+- The Anthropic Pro/Max flow tries `browser` first and falls back to `copy-code` only when the callback port fails before any notice (`ErrCallbackPort`).
+- The ChatGPT sign-in passes no `Input`: the callback port is the only way in, as the design says (browser only).
+- Open point for phase 4: a wrong pasted address or code ends `failed/internal`, because the fixed reason set has no `invalid_input`. A phase 2 reason would let the TUI say it better.
+
 ## Design
 
 | Unit | File | Contract |
@@ -54,7 +65,8 @@ Outline with scouted evidence. Run a scout pass and update this file before cook
 Broker methods (owner is the route client id; a call from another owner gets `ErrLoginNotFound`):
 
 - `Start(owner, provider, method) (StartInfo, error)`: refuses with `ErrProviderBusy` while that provider has a login or a key check. Runs `Service.Login` on its own goroutine with a context derived from the broker root context (never from the request context: the SDK cancels a request context when its handler returns, `third_party/acp-go-sdk/connection.go:415-421`), and returns at the first notice (kind, URL, user code, expiry) or the early error. Kinds: Anthropic browser interaction returns `browser_address` (callback, or a pasted callback address); on `ErrCallbackPort` it starts again with copy-code and returns `copy_code`. ChatGPT: `browser` with the host id. xAI: `device`.
-- `Input(owner, id, code) error`: one value into the waiting `Input`; a second value while one is checked gives `ErrInvalidState`. The code is never stored on the login.
+- `Input(owner, id, code) error`: one value into the waiting input channel; a second value while one is checked gives `ErrInvalidState`.
+  The channel holds the value until the sign-in reads it or the broker drains it at completion.
 - `Wait(ctx, owner, id) (Outcome, error)`: blocks until the login ends or ctx ends. A ctx end does not cancel the login.
 - `Cancel(owner, id) (beforeCommit bool)`, `ReleaseOwner(owner)`, `Close()` (leader shutdown): cancel the context; the outcome is `cancelled`; a later result of that id is dropped. `Close` cancels and joins every login goroutine; the composition calls it before `StopRefresh` and `AuthWait`, because each login holds a refresh slot (`login.go:85-91`) and `AuthWait` waits up to 20 s (`internal/app/module_auth.go:53-58`).
 - `SaveKey(ctx, owner, loginID, provider, key) Outcome`: takes the provider slot under `loginID` (so `Cancel` can reach it), `CheckKey` only when `KeyCheckable(provider)` (otherwise no request at all, and the outcome has `notChecked: true`; D16), checks for a cancel immediately before the commit, then `Service.Login(provider, "api-key")` with an `Input` that returns the key once. A cancel that comes after the commit returns `beforeCommit = false`. The key lives only in this call.
@@ -158,13 +170,15 @@ New files plus additive fields; the CLI path is unchanged. Revert the phase comm
 
 ## Security
 
-The key and the code exist only in the request, the `Input` closure and the store. The broker keeps login ids, owners and channels, never the values.
+The broker keeps a submitted code or callback address in the login input channel until the sign-in reads it.
+The broker drains any unread input when the login ends; see `Broker.Input`, `login.inputFunc` and `Broker.release` in [broker.go](../../internal/auth/broker.go).
+The broker outcome contains no secret.
 
 ## Todo
 
-- [ ] Scout and record the two unverified items
-- [ ] Status and env names
-- [ ] Key probe
-- [ ] Broker (removal cancels a pending sign-in)
-- [ ] Default model store and provider defaults
-- [ ] Regression and CLI tests green
+- [x] Scout and record the two unverified items
+- [x] Status and env names
+- [x] Key probe
+- [x] Broker (removal cancels a pending sign-in)
+- [x] Default model store and provider defaults
+- [x] Regression and CLI tests green

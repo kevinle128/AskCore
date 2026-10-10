@@ -25,8 +25,11 @@ type native struct {
 	access   map[accessKey]modelAccess
 }
 
-// NativeMethods returns the native OAuth strategies with fixed destination bindings.
-func NativeMethods(o NativeOptions) []Method {
+// ErrHTTPExchange means a request to a provider failed before an answer came.
+var ErrHTTPExchange = errors.New("auth: HTTP exchange failed")
+
+// boundedClient copies the caller client with a 15 second limit and no redirects.
+func boundedClient(o NativeOptions) *http.Client {
 	client := http.Client{Timeout: 15 * time.Second}
 	if o.HTTPClient != nil {
 		client = *o.HTTPClient
@@ -35,6 +38,12 @@ func NativeMethods(o NativeOptions) []Method {
 		client.Timeout = 15 * time.Second
 	}
 	client.CheckRedirect = func(*http.Request, []*http.Request) error { return http.ErrUseLastResponse }
+	return &client
+}
+
+// NativeMethods returns the native OAuth strategies with fixed destination bindings.
+func NativeMethods(o NativeOptions) []Method {
+	client := boundedClient(o)
 	now := o.Now
 	if now == nil {
 		now = time.Now
@@ -52,10 +61,10 @@ func NativeMethods(o NativeOptions) []Method {
 			}
 		}
 	}
-	n := &native{client: &client, now: now, wait: wait}
+	n := &native{client: client, now: now, wait: wait}
 	return []Method{
 		{Provider: "anthropic", ID: "anthropic-oauth", API: providers.APIAnthropicMessages, Profile: "claude-code", Endpoint: "https://api.anthropic.com", Lead: 10 * time.Minute, Login: n.anthropicLogin, Refresh: n.anthropicRefresh},
-		{Provider: "openai", ID: "openai-chatgpt", API: providers.APIOpenAIResponses, Profile: "chatgpt", Endpoint: providers.OpenAIURL, Lead: 8 * time.Minute, Login: n.chatGPTLogin, Refresh: n.chatGPTRefresh, CheckAccess: n.checkChatGPTAccess},
+		{Provider: "openai", ID: "openai-chatgpt", API: providers.APIOpenAIResponses, Profile: "chatgpt", Endpoint: providers.OpenAIURL, Lead: 8 * time.Minute, Login: n.chatGPTLogin, Refresh: n.chatGPTRefresh, CheckAccess: n.checkChatGPTAccess, Forget: n.forgetAccess},
 		{Provider: "xai", ID: "xai-oauth", API: providers.APIOpenAIResponses, Profile: "xai", Endpoint: "https://api.x.ai/v1", Lead: 10 * time.Minute, Login: n.xaiLogin, Refresh: n.xaiRefresh},
 	}
 }
@@ -69,6 +78,10 @@ type tokenResponse struct {
 	Scope    *string         `json:"scope"`
 	Error    string          `json:"error"`
 	Interval *float64        `json:"interval"`
+	// Account is the optional account object of the Anthropic token answer.
+	Account *struct {
+		EmailAddress string `json:"email_address"`
+	} `json:"account"`
 }
 
 func (t *tokenResponse) UnmarshalJSON(b []byte) error {
@@ -107,7 +120,7 @@ func (n *native) read(req *http.Request, out any) (int, error) {
 		if ctx.Err() != nil {
 			return 0, ctx.Err()
 		}
-		return 0, errors.New("auth: HTTP exchange failed")
+		return 0, ErrHTTPExchange
 	}
 	defer func() { _ = resp.Body.Close() }()
 	b, err := io.ReadAll(io.LimitReader(resp.Body, 1<<20+1))

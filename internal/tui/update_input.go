@@ -28,6 +28,11 @@ func (s *sessionView) onKey(k tea.KeyPressMsg) tea.Cmd {
 	if k.String() == "ctrl+c" {
 		return s.onCtrlC()
 	}
+	if s.boxOpen() {
+		// A provider box or a login box owns every key. The editor and the
+		// shortcuts, ctrl+d included, see none of them.
+		return s.onBoxKey(k)
+	}
 	if s.sel != nil {
 		return s.onSelectorKey(k)
 	}
@@ -53,6 +58,9 @@ func (s *sessionView) onKey(k tea.KeyPressMsg) tea.Cmd {
 }
 
 func (s *sessionView) onPaste(msg tea.PasteMsg) tea.Cmd {
+	if s.boxOpen() {
+		return s.onBoxPaste(msg)
+	}
 	if s.sel != nil {
 		return nil
 	}
@@ -65,6 +73,8 @@ func (s *sessionView) onPaste(msg tea.PasteMsg) tea.Cmd {
 // quits. A press that only clears a draft never counts as the first one.
 func (s *sessionView) onCtrlC() tea.Cmd {
 	switch {
+	case s.boxOpen():
+		return s.onBoxCtrlC()
 	case s.sel != nil:
 		s.closeSelector()
 		return nil
@@ -102,6 +112,11 @@ func (s *sessionView) submit(sub Submit) tea.Cmd {
 		s.reconnect.hintUntil = s.now().Add(noticeFor)
 		return nil
 	case s.send != nil:
+		return nil
+	case s.noModel():
+		// Nothing is sent, not even a steer or a follow-up: the leader would
+		// refuse it too. The draft stays and the rail names the next step.
+		s.failure = &failureView{text: s.noModelRefusal(), rev: s.editor.Revision()}
 		return nil
 	case s.run.running:
 		return s.queueCmd(sub, sub.Alt)
@@ -178,6 +193,8 @@ func (s *sessionView) runCommand(name string) tea.Cmd {
 	switch name {
 	case "/model":
 		return s.openModelSelector()
+	case "/providers":
+		return s.openProviders()
 	case "/new":
 		return s.newSession()
 	case "/sessions":
@@ -292,11 +309,13 @@ func (s *sessionView) openModelSelector() tea.Cmd {
 	}
 	s.openingModel = true
 	c, gen := s.client, s.gen
+	s.fetchSeq++
+	token := s.fetchSeq
 	return func() tea.Msg {
 		ctx, cancel := callContext()
 		defer cancel()
 		res, err := c.Models(ctx)
-		return modelsMsg{gen: gen, res: res, err: err}
+		return modelsMsg{gen: gen, token: token, res: res, err: err}
 	}
 }
 
@@ -309,11 +328,41 @@ func (s *sessionView) onModels(msg modelsMsg) {
 		s.setNotice("Could not read the models: "+errText(msg.err), true)
 		return
 	}
-	s.models = msg.res.Models
+	if !s.applyModelList(msg.token, msg.res) {
+		msg.res = s.modelList
+	}
 	if s.modelID == "" {
 		s.modelID = msg.res.Current
 	}
-	s.openSelector(newModelSelector(s.models, s.modelID))
+	if s.modelID != "" {
+		s.hadModel = true
+	}
+	s.openSelector(newModelSelectorFor(msg.res, s.modelID))
+}
+
+// refreshOpenModelSelector rebuilds an open model list from a new answer. The
+// filter and the selected model stay; a model that is gone moves the selection
+// to the row at the same place.
+func (s *sessionView) refreshOpenModelSelector(res protocol.ACPModelsResult) {
+	sl := s.sel
+	if sl == nil || sl.kind != selectModel || sl.busy {
+		return
+	}
+	prev, hadPrev := sl.selected()
+	pos := sl.sel
+	next := newModelSelectorFor(res, s.modelID)
+	next.gen, next.filter, next.err, next.next = sl.gen, sl.filter, sl.err, sl.next
+	vis := next.visible()
+	next.sel = min(pos, max(0, len(vis)-1))
+	if hadPrev {
+		for k, idx := range vis {
+			if next.items[idx].id == prev.id {
+				next.sel = k
+				break
+			}
+		}
+	}
+	s.sel = next
 }
 
 func (s *sessionView) openSelector(sl *selector) {
@@ -367,7 +416,7 @@ func (s *sessionView) setModelCmd(id string) tea.Cmd {
 	return func() tea.Msg {
 		ctx, cancel := callContext()
 		defer cancel()
-		res, err := c.SetModel(ctx, id)
+		res, err := c.SetModel(ctx, id, true)
 		return setModelMsg{gen: gen, req: req, id: id, res: res, err: err}
 	}
 }
@@ -399,8 +448,18 @@ func (s *sessionView) onSetModel(msg setModelMsg) tea.Cmd {
 		return nil
 	}
 	s.modelID, s.thinking, s.thinkTry = msg.res.ModelID, msg.res.ThinkingLevel, ""
+	s.modelSeq++
 	if s.modelID == "" {
 		s.modelID = msg.id
+	}
+	s.hadModel = s.modelID != "" || s.hadModel
+	s.haveState = true
+	if msg.res.DefaultSaved {
+		pair, api := s.pairText(s.currentRef())
+		if api != "" {
+			pair += " (" + api + ")"
+		}
+		s.setResult("Default model: " + pair)
 	}
 	if s.sel != nil && s.sel.kind == selectModel {
 		s.closeSelector()
@@ -414,7 +473,7 @@ func (s *sessionView) modelFailure(id string, err error) (text, next string) {
 	provider := row.Provider
 	var re *RequestError
 	if errors.As(err, &re) && re.Kind == string(protocol.ACPErrNoAPIKey) && provider != "" {
-		return provider + " is not ready: not signed in. Model not changed.", "Run in a shell: " + loginCommand(provider)
+		return provider + " is not ready: no credential. Model not changed.", "Run in a shell: " + loginCommand(provider)
 	}
 	if errors.As(err, &re) && re.Kind == string(protocol.ACPErrModelAccess) && provider != "" {
 		return provider + ": this model is not available with your ChatGPT sign-in. Model not changed.", ""

@@ -100,6 +100,7 @@ func (a *askTerm) selectModel(filter, row, footerModel string) {
 	a.waitRow("│", row)
 	a.write("\r")
 	a.waitFor("the footer model", func(rows []string) bool { return hasRow(rows, "leader ", footerModel) })
+	a.waitFor("the editor after model selection", func(rows []string) bool { return !containsRow(rows, "Select model") })
 }
 
 func envPairs(m map[string]string) []string {
@@ -363,8 +364,10 @@ const sonnetFooter = "claude-sonnet-4-6"
 
 func TestInteractiveModelSwitch(t *testing.T) {
 	bin, home := newE2EHome(t)
-	// The key is a placeholder: it makes the provider ready, and no request is made.
-	a := startAskTerm(t, bin, home, askTermOptions{}, "ANTHROPIC_API_KEY=sk-ant-placeholder-for-readiness")
+	// The keys are placeholders: they make the providers usable, so /model lists
+	// them, and no request is made.
+	a := startAskTerm(t, bin, home, askTermOptions{}, "ANTHROPIC_API_KEY=sk-ant-placeholder-for-readiness",
+		"ALIBABA_TOKEN_PLAN_API_KEY=placeholder-for-the-model-list")
 	a.waitText("Ask anything")
 	requireLeaderFooter(t, a, bin, home)
 	// The model name arrives with the state answer, after the leader id.
@@ -376,16 +379,21 @@ func TestInteractiveModelSwitch(t *testing.T) {
 	a.waitText("your draft is kept")
 	require.False(t, hasRowPrefix(a.rows(), "│ ❯ keep this draft"), "the selector replaces the editor:\n%s", a.screen())
 	// One model that the catalog lists on two wire formats has two rows that
-	// the user can tell apart.
+	// the user can tell apart, under the header of its provider.
 	a.write("deepseek")
 	a.waitRow("│", "(anthropic-mess")
 	a.waitRow("│", "(openai-complet")
-	require.Equal(t, 2, countRows(a.rows(), "alibaba-token-plan/deepseek-v4.1-flash"), a.screen())
+	require.Equal(t, 2, countRows(a.rows(), "deepseek-v4.1-flash ("), a.screen())
+	require.Equal(t, 1, countRows(a.rows(), "● alibaba-token-plan"), a.screen())
 	a.write("\x15") // ctrl+u clears the filter
 	a.write("anthropic/" + sonnetFooter)
-	a.waitRow("│", "anthropic/"+sonnetFooter)
+	a.waitRow("│", "● anthropic")
+	a.waitRow("│", sonnetFooter+" ")
 	a.write("\r")
 	a.waitFor("the new model in the footer", func(rows []string) bool { return hasRow(rows, "leader ", sonnetFooter) })
+	// The change shows once in the transcript, with the model it replaced.
+	a.waitRow("  model  anthropic/"+sonnetFooter, "· was faux/faux-1")
+	require.Equal(t, 1, countRows(a.rows(), "· was faux/faux-1"), a.screen())
 	a.waitFor("the editor back with the draft", func(rows []string) bool { return hasRowPrefix(rows, "│ ❯ keep this draft") })
 	require.False(t, containsRow(a.rows(), "Select model"))
 	require.False(t, hasRow(a.rows(), "leader ", "faux-1"), "the old model left the footer:\n%s", a.screen())
@@ -724,6 +732,20 @@ func TestInteractiveSessionsAttach(t *testing.T) {
 	observer.write("\r")
 
 	observer.waitRow("── session " + short + " ──")
+	// The divider is followed by the model of the session that is watched.
+	observer.waitFor("the model line under the divider", func(rows []string) bool {
+		for i, r := range rows {
+			if !strings.Contains(r, "── session "+short+" ──") {
+				continue
+			}
+			for _, next := range rows[i+1:] {
+				if strings.HasPrefix(next, "  model  faux/faux-1") {
+					return true
+				}
+			}
+		}
+		return false
+	})
 	observer.waitRow("◉ observer " + short)
 	// The followed reply streams in the transcript of the observer.
 	observer.waitFor("the followed reply", func(rows []string) bool { return hasRowPrefix(rows, "  ◆ slow words") })

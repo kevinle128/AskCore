@@ -1,0 +1,22 @@
+◢◤ ask   v0.1.0 · leader 7c1e · ~/src/askcore
+  model  alibaba-token-plan/deepseek-v4.1-flash
+
+  ❯ why does TestLeaderStale fail on CI?                                 14:02
+
+  ◆ The test waits for the stale socket check, but CI runs it with a 1 s
+    deadline. The leader removes the stale socket after the lock probe, and the
+    probe can take 1.2 s.
+
+    go
+    deadline := 5 * time.Second
+    deepseek-v4.1-flash · 4.2s · ↑12.4k ↓1.8k · $0.004
+
+┊ ✗ Disconnected from the leader · reconnecting
+┊ draft kept · sending waits until the leader is back · nothing is resent
+╭─ ChatGPT Plus/Pro sign-in ───────────────────────────────────────────────────╮
+│  ✗ The sign-in stopped because the leader is gone.                           │
+│                                                                              │
+│  Nothing was saved. When the leader is back, start again with /providers.    │
+╰──────────────────────────────────────────────────────────────────────────────╯
+   esc close
+  ● leader lost   ⌂ ~/src/askcore      deepseek-v4.1-flash  ▰▱▱▱▱▱▱▱ 18%  $0.04

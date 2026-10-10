@@ -47,10 +47,14 @@ func (c *Client) commitFollow(sid string, raw json.RawMessage, mode followMode) 
 			Resumed: res.Resumed,
 		})
 	}
-	c.events.push(tui.SnapshotMsg{
+	snap := tui.SnapshotMsg{
 		SessionID: sid, Cursor: res.Cursor, Entries: decodeEntries(res.Entries), Stream: res.Stream,
 		Resumed: res.Resumed, Resync: res.Resync || mode == followResync,
-	})
+	}
+	if res.Head != nil {
+		snap.Head = *res.Head
+	}
+	c.events.push(snap)
 }
 
 // decodeEntries reads the rows of a snapshot. A row that cannot be read keeps
@@ -95,6 +99,12 @@ func (h *handler) Notification(method string, params json.RawMessage) {
 			return
 		}
 		c.onResync(h.conn, p)
+	case protocol.ACPProvidersChanged:
+		var p protocol.ACPProvidersChangedNotification
+		if json.Unmarshal(params, &p) != nil {
+			return
+		}
+		c.onProvidersChanged(h.instance, p)
 	}
 	// session/update repeats what the events say, and $/cancel_request closes a
 	// question that this client already refused.
@@ -109,6 +119,22 @@ func (h *handler) Request(id json.RawMessage, method string, _ json.RawMessage) 
 		return
 	}
 	_ = h.conn.RespondError(id, -32601, "not supported")
+}
+
+// onProvidersChanged delivers a providers-changed notice unless the generation
+// is not newer than the last one of the same leader instance. A restarted
+// leader counts from zero again, so a new instance resets the last value.
+func (c *Client) onProvidersChanged(instance string, p protocol.ACPProvidersChangedNotification) {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	if c.providersInstance != instance {
+		c.providersInstance, c.providersGen = instance, 0
+	}
+	if p.Generation <= c.providersGen {
+		return
+	}
+	c.providersGen = p.Generation
+	c.events.push(tui.ProvidersChangedMsg{Generation: p.Generation, Provider: p.ProviderID, Change: p.Change})
 }
 
 func (c *Client) onEvent(p protocol.ACPEventNotification) {

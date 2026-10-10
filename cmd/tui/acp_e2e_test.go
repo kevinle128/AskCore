@@ -20,6 +20,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"slices"
 	"strconv"
 	"strings"
 	"sync"
@@ -163,7 +164,7 @@ func startE2E(t *testing.T, o e2eOptions) *e2ePeer {
 		home = filepath.Join(root, "ask-home")
 		require.NoError(t, os.MkdirAll(home, 0o700))
 	}
-	env := []string{"PATH=" + os.Getenv("PATH"), "HOME=" + root, "ASK_HOME=" + home, "TZ=Asia/Saigon"}
+	env := []string{"PATH=" + os.Getenv("PATH"), "HOME=" + root, "ASK_HOME=" + home, "ASK_FAUX=1", "TZ=Asia/Saigon"}
 	for k, v := range o.env {
 		env = append(env, k+"="+v)
 	}
@@ -1458,6 +1459,13 @@ func TestACPE2EEOFDeliversUnterminatedRequest(t *testing.T) {
 	require.GreaterOrEqual(t, p.replyIndex(999), 0, "EOF lost a request without a trailing newline")
 }
 
+// fixtureHosts are the destinations that the provider fixture answers. The
+// certificate names them all, and the proxy refuses every other host.
+var fixtureHosts = []string{
+	"api.anthropic.com", "platform.claude.com", "api.openai.com", "auth.openai.com",
+	"api.x.ai", "auth.x.ai", "token-plan.ap-southeast-1.maas.aliyuncs.com",
+}
+
 // providerFixture is an external provider and OAuth service. The test process
 // serves HTTPS behind a CONNECT proxy. The production child uses its normal
 // HTTP clients and verifies the fixture certificate with a temporary CA file.
@@ -1472,6 +1480,10 @@ type providerFixture struct {
 	token func(grant map[string]string) (int, any)
 	// retryAfter is the Retry-After header of a 429 answer. Empty sends none.
 	retryAfter string
+	// route answers a destination that the switch below does not know: key
+	// probes, device authorization, a second token service. It runs with mu
+	// held. A route that returns ok false is an unexpected destination.
+	route func(r *http.Request, body []byte) (status int, contentType, out string, ok bool)
 
 	inferenceCalls int
 	tokenGrants    []map[string]string
@@ -1504,13 +1516,21 @@ func newProviderFixture(t *testing.T) *providerFixture {
 			status, v := f.token(grant)
 			oauthJSON(w, status, v)
 		default:
+			if f.route != nil {
+				if status, ct, out, ok := f.route(r, body); ok {
+					w.Header().Set("Content-Type", ct)
+					w.WriteHeader(status)
+					_, _ = io.WriteString(w, out)
+					return
+				}
+			}
 			f.t.Errorf("unexpected destination %q", r.Host+r.URL.Path)
 			http.Error(w, "bad", http.StatusBadRequest)
 		}
 	}))
 	pub, key, err := ed25519.GenerateKey(rand.Reader)
 	require.NoError(t, err)
-	cert := &x509.Certificate{SerialNumber: big.NewInt(1), Subject: pkix.Name{CommonName: "ACP fixture"}, DNSNames: []string{"api.anthropic.com", "platform.claude.com"}, NotBefore: time.Now().Add(-time.Hour), NotAfter: time.Now().Add(time.Hour), IsCA: true, BasicConstraintsValid: true, KeyUsage: x509.KeyUsageCertSign | x509.KeyUsageDigitalSignature, ExtKeyUsage: []x509.ExtKeyUsage{x509.ExtKeyUsageServerAuth}}
+	cert := &x509.Certificate{SerialNumber: big.NewInt(1), Subject: pkix.Name{CommonName: "ACP fixture"}, DNSNames: fixtureHosts, NotBefore: time.Now().Add(-time.Hour), NotAfter: time.Now().Add(time.Hour), IsCA: true, BasicConstraintsValid: true, KeyUsage: x509.KeyUsageCertSign | x509.KeyUsageDigitalSignature, ExtKeyUsage: []x509.ExtKeyUsage{x509.ExtKeyUsageServerAuth}}
 	der, err := x509.CreateCertificate(rand.Reader, cert, cert, pub, key)
 	require.NoError(t, err)
 	backend.TLS = &tls.Config{Certificates: []tls.Certificate{{Certificate: [][]byte{der}, PrivateKey: key}}, MinVersion: tls.VersionTLS12}
@@ -1519,7 +1539,7 @@ func newProviderFixture(t *testing.T) *providerFixture {
 	f.certFile = filepath.Join(t.TempDir(), "fixture-ca.pem")
 	require.NoError(t, os.WriteFile(f.certFile, pem.EncodeToMemory(&pem.Block{Type: "CERTIFICATE", Bytes: der}), 0o600))
 	f.server = httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		if r.Method != http.MethodConnect || (r.Host != "api.anthropic.com:443" && r.Host != "platform.claude.com:443") {
+		if r.Method != http.MethodConnect || !slices.Contains(fixtureHosts, strings.TrimSuffix(r.Host, ":443")) {
 			http.Error(w, "destination refused", http.StatusForbidden)
 			return
 		}

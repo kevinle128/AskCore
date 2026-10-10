@@ -23,8 +23,8 @@ func (s *sessionView) onRestored(v SessionRestoredMsg) tea.Cmd {
 	s.conn = connUp
 	s.reconnect = reconnectView{}
 	s.useSession(v.Session)
-	s.appendBlock(NewReconnectNote("Reconnected. Session " + ShortID(v.Session.ID) + " restored."))
-	return s.refreshCmd(false)
+	s.addStartSlot(startRestore, "Reconnected. Session "+ShortID(v.Session.ID)+" restored.")
+	return tea.Batch(s.refreshCmd(false), s.onBoxReconnected())
 }
 
 // onGone handles a session that the leader no longer has, for example after a
@@ -37,6 +37,7 @@ func (s *sessionView) onGone(v SessionGoneMsg) {
 	// Blocks of the lost run would hold the commit frontier for ever.
 	s.apply(s.trl.Event(&protocol.AgentSettled{}))
 	s.resetSessionState()
+	s.settleStarts()
 	s.sess = SessionInfo{Cwd: s.sess.Cwd}
 	s.send = nil
 	s.appendBlock(NewErrorBlock(

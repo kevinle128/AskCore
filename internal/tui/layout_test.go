@@ -95,8 +95,8 @@ func TestLayoutSlotPriority(t *testing.T) {
 		require.Equal(t, 3, allocate(24, demand{editor: 3}).editor)
 	})
 
-	t.Run("a modal slot is capped at twelve rows and keeps three", func(t *testing.T) {
-		require.Equal(t, 12, allocate(40, demand{editor: 30, modal: true}).editor)
+	t.Run("a modal slot is capped at fourteen rows and keeps three", func(t *testing.T) {
+		require.Equal(t, 14, allocate(40, demand{editor: 30, modal: true}).editor)
 		require.Equal(t, 10, allocate(24, demand{editor: 10, modal: true}).editor)
 		require.Equal(t, 5, allocate(5, demand{editor: 10, modal: true, status: 1}).editor, "a modal slot may use every row")
 		require.Equal(t, 3, allocate(3, demand{editor: 10, modal: true}).editor)

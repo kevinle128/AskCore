@@ -115,13 +115,58 @@ type Client interface {
 	FollowUp(ctx context.Context, text string) (inputID string, err error)
 	Remove(ctx context.Context, inputID string) (removed bool, err error)
 
+	// State reads the current session. ModelFallback names the saved default
+	// that the session did not start on, and why.
 	State(ctx context.Context) (protocol.ACPStateResult, error)
+	// Models lists the models of providers that can serve now. The result has
+	// UsableOnly true when the leader filtered the list; a leader that predates
+	// the flag sends every row and leaves it false. Default is the saved default.
 	Models(ctx context.Context) (protocol.ACPModelsResult, error)
 	// SetModel changes the model of an idle session. A readiness failure comes
-	// back as a *RequestError and the model stays as it was.
-	SetModel(ctx context.Context, modelID string) (protocol.ACPSetModelResult, error)
+	// back as a *RequestError and the model stays as it was. With saveDefault the
+	// leader also keeps the choice as the default of new sessions; the result's
+	// DefaultSaved tells whether it did.
+	SetModel(ctx context.Context, modelID string, saveDefault bool) (protocol.ACPSetModelResult, error)
 	SetThinking(ctx context.Context, level protocol.ThinkingLevel) (protocol.ThinkingLevel, error)
 	Usage(ctx context.Context) (protocol.ACPUsageResult, error)
+
+	// The provider calls need the shared leader. In process each of them returns
+	// ErrNeedsLeader and sends nothing. A secret (key, code or address) goes out
+	// once, in one call, and is not kept or put into any error. A leader that
+	// predates these calls answers with a *RequestError of Kind "unsupported".
+
+	// Providers lists the login options with their state, and the providers
+	// generation of the leader.
+	Providers(ctx context.Context) (protocol.ACPProvidersResult, error)
+	// SaveAPIKey checks and saves an API key under loginID, which the caller
+	// makes and keeps unique. It blocks until the leader answers, up to the
+	// check of the provider, so the caller gives it a context of its own and not
+	// the short call context. CancelLogin with the same id stops it before the
+	// key is stored; the answer then has status cancelled.
+	SaveAPIKey(ctx context.Context, loginID, provider, key string) (protocol.ACPLoginOutcome, error)
+	// StartLogin opens a browser, address or device sign-in. A second sign-in
+	// to a provider that one client already signs in to comes back as a
+	// *RequestError of Kind "provider_busy". A sign-in that cannot start for
+	// another reason has Kind "internal" and a fixed text.
+	StartLogin(ctx context.Context, provider, method string) (protocol.ACPLoginStartResult, error)
+	// SendLoginCode gives a pasted code or callback address to a sign-in. The
+	// answer says only that the leader took it; the result of a wrong value
+	// comes from WaitLogin as status failed, reason internal.
+	SendLoginCode(ctx context.Context, loginID, code string) error
+	// WaitLogin blocks until the sign-in ends or ctx ends. The caller cancels ctx
+	// to stop waiting; that does not cancel the sign-in. A link lost during the
+	// wait gives ErrOutcomeUnknown and the call is not sent again. A sign-in
+	// that another client's removal cancelled has status cancelled and reason
+	// removed.
+	WaitLogin(ctx context.Context, loginID string) (protocol.ACPLoginOutcome, error)
+	// CancelLogin stops a sign-in or a key check. cancelled is false when the
+	// credential was already saved. Close and Detach send it for every login
+	// that is still open.
+	CancelLogin(ctx context.Context, loginID string) (cancelled bool, err error)
+	// Logout removes the saved credential of one login option. When the client
+	// has a current session, the result names that session's model if the
+	// removal made it unusable.
+	Logout(ctx context.Context, provider, method string) (protocol.ACPLogoutResult, error)
 
 	// Close leaves the leader without stopping its runs, or stops the in-process
 	// agent and its run. It ends the reconnect loop and closes Events.
@@ -181,10 +226,15 @@ type SnapshotEntry struct {
 type SnapshotMsg struct {
 	SessionID string
 	Cursor    protocol.ACPCursor
-	Entries   []SnapshotEntry
-	Stream    *protocol.ACPStreamBaseline
-	Resumed   bool
-	Resync    bool
+	// Head is where the leader's log stood when it answered the follow. A
+	// resumed follow keeps the cursor of the client, so the events between the
+	// cursor and the head are a replay of what the client missed. The zero
+	// value means the leader did not say.
+	Head    protocol.ACPCursor
+	Entries []SnapshotEntry
+	Stream  *protocol.ACPStreamBaseline
+	Resumed bool
+	Resync  bool
 }
 
 // SessionEventMsg is one agent event of the followed session. The client
@@ -226,6 +276,16 @@ type PromptDoneMsg struct {
 	StopReason string
 }
 
+// ProvidersChangedMsg reports that the credentials of a provider changed on the
+// leader, by this client or by another. Generation grows by one for each change
+// of the leader instance, and the client drops a message that is not newer than
+// the last one of the same instance. The UI fetches the lists again.
+type ProvidersChangedMsg struct {
+	Generation uint64
+	Provider   string
+	Change     protocol.ACPProviderChange
+}
+
 // ClientErrorMsg reports a failure inside the client that no call can carry,
 // such as a panic of a client goroutine. Fatal is true when the client stopped.
 type ClientErrorMsg struct {
@@ -244,4 +304,5 @@ func (PromptAcceptedMsg) clientMessage()   {}
 func (PromptSendFailedMsg) clientMessage() {}
 func (PromptRunErrorMsg) clientMessage()   {}
 func (PromptDoneMsg) clientMessage()       {}
+func (ProvidersChangedMsg) clientMessage() {}
 func (ClientErrorMsg) clientMessage()      {}

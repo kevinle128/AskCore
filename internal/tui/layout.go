@@ -23,7 +23,7 @@ import (
 //     not fit, its last rows show
 //
 // Under 4 rows only the editor and the status remain. A modal slot (a
-// selector or a dialog) replaces the editor and may use up to 12 rows.
+// selector or a dialog) replaces the editor and may use up to 14 rows.
 //
 // Top to bottom the rows are drawn: tail, status, pending, menu, editor,
 // footer.
@@ -33,12 +33,14 @@ const (
 	statusMaxRows       = 2
 	pendingMaxRows      = 3
 	menuMaxRows         = 8
-	modalMaxRows        = 12
-	footerMinHeight     = 8
-	compactHeight       = 4
-	minBoxedEditorRows  = 3
-	minBoxedWidth       = 6
-	boxPadding          = 4 // "│ " on the left and " │" on the right
+	// modalMaxRows is the most rows that a selector or dialog takes. The
+	// provider box with an error under its seven rows needs 14.
+	modalMaxRows       = 14
+	footerMinHeight    = 8
+	compactHeight      = 4
+	minBoxedEditorRows = 3
+	minBoxedWidth      = 6
+	boxPadding         = 4 // "│ " on the left and " │" on the right
 )
 
 // BoxInnerWidth is the width that an editor row may use inside the box that

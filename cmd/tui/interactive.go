@@ -173,6 +173,9 @@ func runTerminal(c terminalConfig) (code int) {
 	m := tui.New(tui.Options{
 		Open: open, Cwd: c.cwd, Home: c.home, Version: c.version,
 		Profile: colorprofile.Detect(c.out, os.Environ()),
+		// Bubble Tea writes raw input to this file when it is set. The TUI
+		// warns about it where a key or a code is typed.
+		TraceFile: os.Getenv("TEA_TRACE"),
 	})
 	// Bubble Tea would end SIGTERM with exit code 0 and ignores SIGHUP, so ask
 	// handles the signals itself.

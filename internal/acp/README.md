@@ -9,6 +9,7 @@ The Agent Client Protocol adapter over the agent's Go API. It is the server side
 - The mapping from internal events to `session/update` notifications and the follow subscriptions (`updates.go`)
 - `_meta` fields for Ask-only data such as `seq`, `epoch` and `runId` (`meta.go`)
 - The `_ask/*` method handlers: state, models, controls, steer and follow-up, usage; compact, fork and tree answer "unsupported" (`ask_methods.go`)
+- The leader-only provider method handlers and the `ProviderSetup` interface (`provider_methods.go`)
 - The one error mapper (`errors.go`)
 - The stdio server for `ask acp` (`stdio.go`)
 - The route context of the shared leader link: parsing, the driver generation guard, `take` and the quiesce check (`route.go`, `host.go`)
@@ -29,7 +30,7 @@ The Agent Client Protocol adapter over the agent's Go API. It is the server side
 
 ## File names
 
-`agent.go`, `host.go`, `updates.go`, `meta.go`, `ask_methods.go`, `errors.go`, `stdio.go`, `wire.go`, `route.go`
+`agent.go`, `host.go`, `updates.go`, `meta.go`, `ask_methods.go`, `provider_methods.go`, `errors.go`, `stdio.go`, `wire.go`, `route.go`
 
 ## Imports
 
@@ -62,12 +63,26 @@ The conformance tests in `conformance_test.go` pin the SDK and its schema, and r
 - Repeating `_ask/session/unfollow` succeeds after the subscription has ended. A subscription of another session gives `unknown_subscription`.
 - A model request that fails gives a failure frame after its updates: `no_api_key` for an AUTH failure, `internal` with the failure code for any other.
 - Model names are `provider/id@api`. Two catalog rows can share provider and id, so a name without `@api` that matches both is refused.
-- An explicit follow keeps its own follower. The result holds the cut (snapshot, open stream baseline, cursor). Events above the cut leave only after the result is on the wire. A follower that falls behind, or meets an event over the ring size limit, ends with `_ask/session/resync`; the client follows again and nothing is sent twice.
+- An explicit follow keeps its own follower. The result holds the cut (snapshot, open stream baseline, cursor) and `head`, the last event that was published when the follow was answered. A resumed follow keeps the cursor of the client, so the events above the cursor up to `head` are a replay of what the client missed. Events above the cut leave only after the result is on the wire. A follower that falls behind, or meets an event over the ring size limit, ends with `_ask/session/resync`; the client follows again and nothing is sent twice.
 - Standard `session/update` frames are written by the session writer, so an explicit follow does not duplicate them.
 The writer waits for each active subscription to write through the same event sequence, or to end with detach/resync, before it advances the prompt barrier.
 - Usage rows come from the committed `AttemptSettled` entries of the session log. A row has the outcome and the usage, never the failure text.
 - Follow entries leave out request deltas and system snapshots.
 - A follower gets Agent events as the Agent publishes them. Those events, and the message entries of a snapshot, hold the cleaned failure text of a model request, as the headless JSON stream does. The adapter does not rewrite them. Any redaction for a wider audience belongs to the stdio and gateway composition.
+
+## Provider methods
+
+- `_ask/providers/list`, `api_key`, `login/start`, `login/input`, `login/wait`, `login/cancel`, `logout` and the router-only `release_client` are served only when the link has `RequireRoute` and `Config.ProviderSetup` is set. Only the leader composition sets both. Any other link, `ask acp` and the in-process link included, answers `unsupported` whatever `_meta` holds, so an editor can never reach a secret.
+- The route client id is the owner of a sign-in. The adapter imports no credential code: `ProviderSetup` is the seam, with `pkg/protocol` shapes and the sentinels `ErrProviderBusy`, `ErrLoginNotFound`, `ErrLoginState` and `ErrLoginMethod`. Every error reaches the wire as a fixed kind and text.
+- `login/wait` blocks on the request context. A cancel of the request ends the wait with `cancelled`; the sign-in itself goes on.
+- `Adapter.ProvidersChanged` is the change callback: for a removal it clears the model of each live session whose provider is no longer usable (a running session clears when its run ends), then sends `_ask/providers/changed`. `logout` with a `sessionId` reports `clearedModel` and `clearPending` for that session.
+
+## Models, no model and the default
+
+- A session can have no model. `_ask/session/state` has an empty `modelId` and `get_available_models` an empty `current`. A prompt, continue, steer or follow-up answers `no_model` before any run starts.
+- `get_available_models` takes `usableOnly`. A host with provider setup keeps rows of usable providers and echoes the flag; a host without provider setup gives the full list and no echo. It names the saved default in `default`.
+- `set_model` with `saveDefault` stores the choice through `Config.SaveDefault` and answers `defaultSaved`. A failed save never undoes the switch. A call without the flag saves nothing.
+- `_ask/session/state` carries `modelFallback` while a session still runs on the model that replaced an unusable saved default (`Config.StartFallback`).
 
 ## Leader link
 
@@ -82,7 +97,8 @@ The commit lock is released before the run or tool drain; Agent listeners never 
 `_ask/session/take` commits under the same lock and returns the new generation: with a live driver it needs an idle session (otherwise `busy`), without one it works at any time and the run goes on.
 - **New session.** With a route, `session/new` stores the capabilities of the creator and returns the generation in the result `_meta` for the router.
 - **Idle.** `Adapter.QuiesceIfIdle` closes admission of new sessions and new changes, only when no session is being built, no authentication check is active, no run is active, no input is queued and no change is in flight. It holds the admission lock while it looks for work, so no work is admitted during the check, and a false answer leaves the host exactly as it was. `ActiveRuns` counts the sessions that are not idle. `Adapter.Session` gives the composition a live session.
-- A client leaving the router never reaches `Adapter.Fail`, `Adapter.Close` or the host.
+- A client that leaves does not call `Adapter.Fail` or `Adapter.Close`.
+The router calls the provider host to release that client's pending sign-ins; see [Provider methods](#provider-methods).
 
 ## Stdio server
 

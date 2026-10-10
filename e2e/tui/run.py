@@ -41,6 +41,30 @@ def assert_editor(state, first):
     assert state['text'].count('editor>') == 1, f'stale editor rows: {state}'
 
 
+def hide_typed_secret(recording, secret=None):
+    """The recording also holds the input events, which are what the runner typed.
+
+    The fake key of the `ask-providers` case is replaced in those events only. An output
+    event is kept as it is, so a key that the product wrote still shows up in the scan.
+    """
+    secret = ASK_FAKE_KEY if secret is None else secret
+    lines = recording.splitlines()
+    if not lines:
+        return recording
+    out = [lines[0]]
+    for line in lines[1:]:
+        try:
+            event = json.loads(line)
+        except ValueError:
+            out.append(line)
+            continue
+        if isinstance(event, list) and len(event) > 2 and event[1] == 'i' and isinstance(event[2], str):
+            event[2] = event[2].replace(secret, '<secret>')
+            line = json.dumps(event, ensure_ascii=False)
+        out.append(line)
+    return '\n'.join(out) + ('\n' if recording.endswith('\n') else '')
+
+
 def output_bytes(recording):
     lines = recording.splitlines()
     header = json.loads(lines[0])
@@ -142,22 +166,30 @@ class Session:
                 self.identities[child] = self.identity(child)
         (self.artifacts / 'ownership.json').write_text(json.dumps(self.owner, indent=2) + '\n')
 
-    def call(self, *args, allow=(), timeout=8, env=None):
+    def call(self, *args, allow=(), timeout=8, env=None, secret=''):
+        """Run one CLI call. A fake secret that the call types is kept out of the records
+        of the call, so that the artifact scan can look for it in what the product wrote."""
         command = [self.cli, '--session', self.name, '--json', *args]
+
+        def hide(text):
+            return text.replace(secret, '<secret>') if secret else text
+
+        shown = [hide(part) for part in command]
         try:
             result = subprocess.run(command, capture_output=True, text=True, timeout=timeout, env=env)
-            entry = {'command': command, 'code': result.returncode, 'stdout': result.stdout, 'stderr': result.stderr}
+            recorded = hide_typed_secret(result.stdout) if args and args[0] == 'get-recording' else hide(result.stdout)
+            entry = {'command': shown, 'code': result.returncode, 'stdout': recorded, 'stderr': hide(result.stderr)}
             if env is not None:
                 # Names only: values can hold secrets that the inherited environment carries.
                 entry['environment_names'] = sorted(self.env_names)
         except subprocess.TimeoutExpired as error:
-            self.calls.append({'command': command, 'timeout': timeout})
+            self.calls.append({'command': shown, 'timeout': timeout})
             (self.artifacts / 'commands.json').write_text(json.dumps(self.calls, ensure_ascii=False, indent=2) + '\n')
-            raise RuntimeError(f'CLI timed out after {timeout}s: {args}') from error
+            raise RuntimeError(f'CLI timed out after {timeout}s: {[hide(str(a)) for a in args]}') from error
         self.calls.append(entry)
         (self.artifacts / 'commands.json').write_text(json.dumps(self.calls, ensure_ascii=False, indent=2) + '\n')
         if result.returncode not in (0, *allow):
-            raise RuntimeError(f'{args}: exit {result.returncode}: {result.stderr}{result.stdout}')
+            raise RuntimeError(hide(f'{args}: exit {result.returncode}: {result.stderr}{result.stdout}'))
         return result
 
     @staticmethod
@@ -205,8 +237,8 @@ class Session:
                 return False
         return self.wait(matches)
 
-    def write(self, text):
-        self.call('write', text)
+    def write(self, text, secret=''):
+        self.call('write', text, secret=secret)
 
     def key(self, *keys):
         self.call('key', 'press', *keys)
@@ -222,7 +254,7 @@ class Session:
 
     def recording(self):
         value = self.call('get-recording', self.name).stdout
-        (self.artifacts / 'output.cast').write_text(value)
+        (self.artifacts / 'output.cast').write_text(hide_typed_secret(value))
         return output_bytes(value)
 
     def capture(self, label):
@@ -503,10 +535,19 @@ def run_t0(args, cli, run_id, directory, artifacts, results):
 #
 # The driver starts the real `ask` with no arguments in an owned tui-test session.
 # The TUI starts its own leader in an isolated ASK_HOME. Model replies come from the
-# faux provider, which is the default provider of the binary. The runner passes the
-# paced reply speed and the home through the inherited environment only.
+# faux provider, which the leader lists only with ASK_FAUX=1. The runner sets that,
+# the paced reply speed and the home, and removes every credential variable from
+# the child environment, so no case can reach a billed provider.
 
-ASK_CASES = ['ask-idle', 'ask-selector', 'ask-resize']
+ASK_CASES = ['ask-idle', 'ask-selector', 'ask-resize', 'ask-providers']
+# A fake key that the `ask-providers` case pastes into the key box. It is new for each
+# run, it is never a real key, and the artifact scan looks for it in what the product
+# wrote: the screen, the scrollback, the recording and the cell dumps.
+ASK_FAKE_KEY = 'sk-fake-runner-' + uuid.uuid4().hex
+PROVIDER_NAMES = ['Alibaba Token Plan API key', 'Claude Pro/Max sign-in', 'Anthropic API key',
+                  'ChatGPT Plus/Pro sign-in', 'OpenAI API key', 'xAI Grok sign-in', 'xAI API key']
+PROVIDER_HINT = 'enter sign in  ·  esc close  ·  your draft is kept'
+PROVIDER_ROW = re.compile(r'^│ [❯ ] ● (.*?)\s*│$')
 STREAM_MARKERS = 100
 STREAM_PROMPT = ' '.join(f'm{i:03d}' for i in range(STREAM_MARKERS))
 LEADER_FOOTER = re.compile(r'● leader [0-9a-f]+')
@@ -559,8 +600,12 @@ def assert_selector_screen(state, columns):
     titles = [i for i, line in enumerate(lines) if line.startswith('╭─ Select model ')]
     assert len(titles) == 1, f'expected one selector: {state["text"]!r}'
     assert not any(line.startswith('│ ❯ draft') for line in lines), 'selector must replace the editor'
-    current = [line for line in lines if line.startswith('│ ❯ ● faux/faux-1') and re.search(r'current\s+│$', line)]
+    # The leader lists usable models grouped by provider: a header row for the
+    # provider and the model row under it.
+    current = [i for i, line in enumerate(lines)
+               if line.startswith('│ ❯   faux-1') and re.search(r'current\s+│$', line)]
     assert len(current) == 1, f'current model row differs: {lines!r}'
+    assert lines[current[0] - 1].startswith('│   ● faux'), f'provider header differs: {lines!r}'
     hint = [line for line in lines if line.strip() == 'enter select  ·  esc close  ·  your draft is kept']
     assert len(hint) == 1, f'selector hint differs: {lines!r}'
     row = titles[0]
@@ -568,6 +613,41 @@ def assert_selector_screen(state, columns):
         assert len(lines[row]) == columns, f'selector row {row} is {len(lines[row])} columns, expected {columns}'
         row += 1
     assert row < len(lines), 'selector has no bottom border'
+    assert any(LEADER_FOOTER.search(line) for line in lines), 'leader footer missing'
+
+
+def provider_box(lines):
+    """Return (title row, bottom row) of the provider box, or raise."""
+    titles = [i for i, line in enumerate(lines) if line.startswith('╭─ Providers ')]
+    assert len(titles) == 1, f'expected one provider box: {lines!r}'
+    bottom = next((i for i in range(titles[0], len(lines)) if lines[i].startswith('╰')), None)
+    assert bottom is not None, 'provider box has no bottom border'
+    return titles[0], bottom
+
+
+def provider_names(lines):
+    """Names of the provider rows in the box, without the status text at the right."""
+    top, bottom = provider_box(lines)
+    names = []
+    for line in lines[top + 1:bottom]:
+        match = PROVIDER_ROW.match(line)
+        if match:
+            text = match.group(1)
+            # The status text is separated from the name by two or more spaces.
+            names.append(re.split(r'\s{2,}', text)[0])
+    return names
+
+
+def assert_provider_box(state, columns, names=PROVIDER_NAMES):
+    """The box has the rows in order, the search row last, full-width rows and the hint."""
+    lines = state['text'].split('\n')
+    top, bottom = provider_box(lines)
+    for row in range(top, bottom + 1):
+        assert len(lines[row]) == columns, f'provider box row {row} is {len(lines[row])} columns, expected {columns}'
+    assert not any(line.startswith('│ ❯ Ask anything') for line in lines), 'the box must replace the editor'
+    assert provider_names(lines) == names, f'provider rows differ: {provider_names(lines)!r}'
+    assert '⌕' in lines[bottom - 1], f'the search row is not the last row: {lines[bottom - 1]!r}'
+    assert lines[bottom + 1].strip() == PROVIDER_HINT, f'hint differs: {lines[bottom + 1]!r}'
     assert any(LEADER_FOOTER.search(line) for line in lines), 'leader footer missing'
 
 
@@ -655,18 +735,26 @@ def scan_secrets(directory, secrets):
     return hits
 
 
-def ask_environment(home):
+def is_credential_name(name):
+    """True for a variable whose name looks like a credential, of any length."""
+    return bool(SECRET_NAME.search(name)) and not NOT_SECRET_NAME.search(name)
+
+
+def ask_environment(home, environ=None):
     """The process environment of one `ask` case.
 
     ASK_* settings of the caller are dropped so that a local configuration cannot
-    change the run. All other variables, including provider keys, are inherited.
+    change the run, and so are the variables that look like credentials, so that no
+    case can sign in to a real provider. The faux provider is enabled on purpose.
     """
-    env = {name: value for name, value in os.environ.items() if not name.startswith('ASK_')}
-    env.update(ASK_HOME=str(home), ASK_FAUX_TPS=str(STREAM_TPS), TERM='xterm-256color', LANG='en_US.UTF-8')
+    environ = os.environ if environ is None else environ
+    env = {name: value for name, value in environ.items()
+           if not name.startswith('ASK_') and not is_credential_name(name)}
+    env.update(ASK_HOME=str(home), ASK_FAUX='1', ASK_FAUX_TPS=str(STREAM_TPS), TERM='xterm-256color', LANG='en_US.UTF-8')
     return env
 
 
-ASK_ENV_NAMES = ('ASK_HOME', 'ASK_FAUX_TPS', 'TERM', 'LANG')
+ASK_ENV_NAMES = ('ASK_HOME', 'ASK_FAUX', 'ASK_FAUX_TPS', 'TERM', 'LANG')
 
 
 def process_table():
@@ -792,6 +880,49 @@ def ask_resize(session):
     return {'resize': '120x40 to 80x24 while streaming', 'draft_and_cursor_kept': True}
 
 
+def ask_providers(session):
+    """Open the provider box, filter it, open a key box, paste a fake key and go back."""
+    session.write('/providers')
+    session.key('enter')
+    state = session.wait(lambda s: 'Type to search' in s['text'] and
+                         all(name in s['text'] for name in PROVIDER_NAMES))
+    assert_provider_box(state, ASK_COLUMNS)
+    session.capture('providers')
+
+    # The filter keeps the rows with the typed text, and enter on a row with no
+    # saved credential opens its key box at once.
+    session.write('key')
+    state = session.wait(lambda s: '⌕ key' in s['text'])
+    assert provider_names(state['text'].split('\n')) == [n for n in PROVIDER_NAMES if 'key' in n], state['text']
+    session.key('ctrl+u')
+    session.wait(lambda s: 'Type to search' in s['text'])
+    session.write('openai api')
+    session.wait(lambda s: '⌕ openai api' in s['text'])
+    session.key('enter')
+    state = session.wait(lambda s: 'Paste your API key.' in s['text'])
+    lines = state['text'].split('\n')
+    assert any(line.startswith('│  key  paste or type the key; it stays hidden') for line in lines), state['text']
+    assert not any(line.startswith('│ ❯ Ask anything') for line in lines), 'the key box must replace the editor'
+
+    # The pasted key shows as (hidden) and is on no row of the screen or the scrollback.
+    session.write('\x1b[200~' + ASK_FAKE_KEY + '\x1b[201~', secret=ASK_FAKE_KEY)
+    state = session.wait(lambda s: any(line.startswith('│  key  (hidden)') for line in s['text'].split('\n')))
+    assert ASK_FAKE_KEY not in state['text'] and ASK_FAKE_KEY not in session.text(), 'the key is on the screen'
+    session.capture('key-box')
+
+    # esc cancels the key box and brings the editor back; the key is dropped.
+    session.key('escape')
+    session.wait(lambda s: 'Paste your API key.' not in s['text'] and
+                 any(line.startswith('│ ❯ Ask anything') for line in s['text'].split('\n')))
+    assert ASK_FAKE_KEY not in session.text()
+    raw = session.recording()
+    assert ASK_FAKE_KEY not in raw, 'the key was written to the terminal'
+    assert_no_alt_screen(raw)
+    session.capture('closed')
+    session.quit()
+    return {'screen': 'providers', 'rows': len(PROVIDER_NAMES), 'key_box': True, 'secret_on_screen': False}
+
+
 def compile_ask(base, artifacts):
     binary = base / 'ask'
     with (artifacts / 'go-compile.txt').open('w') as output:
@@ -810,12 +941,12 @@ def run_ask(args, cli, run_id, artifacts, results):
     base = Path(tempfile.mkdtemp(prefix='askl-', dir='/tmp')).resolve()
     secrets = secret_values(os.environ)
     environment = {'set_names': list(ASK_ENV_NAMES), 'dropped_prefix': 'ASK_',
-                   'inherited_credential_names': sorted(secrets)}
+                   'dropped_credential_names': sorted(name for name in os.environ if is_credential_name(name))}
     (artifacts / 'ask-environment.json').write_text(json.dumps(environment, indent=2) + '\n')
     try:
         binary = compile_ask(base, artifacts)
         cases = {'ask-idle': (ask_idle, ASK_COLUMNS, ASK_ROWS), 'ask-selector': (ask_selector, ASK_COLUMNS, ASK_ROWS),
-                 'ask-resize': (ask_resize, 120, 40)}
+                 'ask-resize': (ask_resize, 120, 40), 'ask-providers': (ask_providers, ASK_COLUMNS, ASK_ROWS)}
         for backend in args.backend or ['alacritty', 'ghostty']:
             for scenario in selected:
                 test, cols, rows = cases[scenario]
@@ -926,7 +1057,7 @@ def main():
         results['boundary_error'] = 'Protected archive or product files changed during the run'
     (artifacts / 'results.json').write_text(json.dumps(results, indent=2) + '\n')
     # Evidence is kept only when no credential value from the inherited environment is in it.
-    leaked = scan_secrets(artifacts, secret_values(os.environ))
+    leaked = scan_secrets(artifacts, {**secret_values(os.environ), 'ASK_FAKE_KEY': ASK_FAKE_KEY})
     if leaked:
         results = {'secret_error': 'credential values found in artifacts; the files were removed',
                    'files': sorted(leaked), 'variables': sorted({n for names in leaked.values() for n in names}),

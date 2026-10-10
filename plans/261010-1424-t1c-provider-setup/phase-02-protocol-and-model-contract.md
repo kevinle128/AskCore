@@ -1,7 +1,7 @@
 ---
 phase: 2
 title: "Protocol shapes, model event and no-model contract"
-status: pending
+status: completed
 priority: P1
 effort: "1d"
 dependencies: [1]
@@ -19,7 +19,7 @@ Add the wire types of the provider methods, the `model_update` event, the `no_mo
 
 - Method names and request types live in `pkg/protocol/acp.go:9-36` and `:52-231`. `ACPModelsResult` is `{current, models}` (`pkg/protocol/acp.go:191-194`); the models handler takes `ACPSessionRequest` (`internal/acp/ask_methods.go:127-142`).
 - Error kinds and codes: `pkg/protocol/acp.go:234-261`, `:265-277`, `ACPErrorCode` `:296-329`, `ACPErrorMessage` `:335-374`. Ask codes use -32010 to -32017; the next free codes are -32018 and -32019.
-- Agent events: `pkg/protocol/events.go:13` (type names), `:88-92` (`QueueUpdate`), `:205-224` (`EventType`). The codec of events is in `pkg/protocol/codec.go` and `codec_fast.go` [re-check the type registry before adding a type].
+- Agent events: `pkg/protocol/events.go:13` (type names), `:88-92` (`QueueUpdate`), `:205-224` (`EventType`). The codec of events is in `pkg/protocol/codec.go` and `codec_fast.go`. Resolved 2026-10-10: the registry is the two type switches of `EncodeEvent` and `DecodeEvent` in `codec.go` (`:22`, `:251`); `codec_fast.go` only holds the `message_update` delta fast path. An unregistered type decodes to `RawEvent`, so `ModelUpdate` needs both cases.
 - The agent posts idle events with `postLocked` (`internal/agent/emit.go:79-87`), for example the queue update (`agent.go:199,246,374`).
 - `SetModel` validates, checks readiness, then sets `a.cfg.Model` (`internal/agent/agent.go:282-329`). `New` accepts an empty `Config.Model` (`agent.go:121-141`). `State()` returns `a.cfg.Model` (`agent.go:398-408`).
 - A run copies `a.cfg.LoopConfig` by value at its start in `execute` (`agent.go:478-482`), **without** holding `a.mu`. `SetModel` is idle-only, so no write races with that read today. A model clear while busy would race with it (verified 2026-10-10), so a busy clear must be deferred.
@@ -141,7 +141,7 @@ All changes are additive. Revert the phase commit; no stored data changes.
 
 ## Todo
 
-- [ ] Scout: event codec registry (config copy in `execute` verified: deferred clear)
-- [ ] Protocol tests and shapes
-- [ ] Agent tests and changes
-- [ ] Regression set green
+- [x] Scout: event codec registry (config copy in `execute` verified: deferred clear)
+- [x] Protocol tests and shapes
+- [x] Agent tests and changes
+- [x] Regression set green

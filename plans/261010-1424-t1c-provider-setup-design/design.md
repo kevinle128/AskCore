@@ -31,6 +31,13 @@ Second round (user decision, 2026-10-10, after the second approval):
 |---|---|---|
 | Alibaba Token Plan key without a live check | P6b (new), P9a (new), P9b (new), states table rows P7 and P9a, criterion for P9b | The leader saves the key without a check, the key box says so, there is no `Checking…` step, and a bad key shows the auth error block at the first prompt |
 
+Third round (user decision, 2026-10-10, after the glossary review; the user chose the new labels and the removal wording by name):
+
+| Decision | Changed or new states | Change |
+|---|---|---|
+| Login option labels use `sign-in`, as the project glossary says | P5, P12 to P19, P21, P22 and the sketches of the provider box | `Claude Pro/Max sign-in`, `ChatGPT Plus/Pro sign-in`, `xAI Grok sign-in` replace `account` and `subscription`. The API key rows keep their names |
+| A removal leaves earlier model lines in scrollback | Model line rules, criterion for P22 | No new model line is added when the model becomes empty; a line that is already in scrollback stays, as the removal sketches show |
+
 Sources:
 [TUI architecture](../../docs/tui-architecture.md),
 [TUI style guide](../../docs/tui-style-guide.md) (direction B4),
@@ -104,7 +111,7 @@ A session names its provider and its model in scrollback, as plain transcript bl
 
 When the model exists on two wire formats under the same provider, the pair on the start line and the change line keeps the format, as the `/model` list does: `  model  alibaba-token-plan/deepseek-v4.1-flash (anthropic-messages)` (P28a). 
 
-When the session has no model (first run, or after the provider of the current model was removed), no model line shows. The `no model` footer and the notice stay (P1, P22).
+When the session has no model (first run, or after the provider of the current model was removed), no model line is added. A model line that is already in scrollback stays. The `no model` footer and the notice stay (P1, P22).
 
 Default model (user decision, 2026-10-10, as omp): choosing a model in `/model` switches the session and saves it as the default on the leader. A new session starts with the saved default if its provider is usable; else the default model of a usable provider (one default for each provider in the catalog); else the first usable model in catalog order; else no model. Adding a provider with `/providers` does not change the default. When the saved default is not usable, the start line names the model in use and one `muted` row under it, aligned with the pair, gives the reason: `Default model openai/gpt-5.5 is not usable (not signed in).` (P28c). It is in scrollback, not on the rail, so it stays next to the line it explains.
 
@@ -138,11 +145,11 @@ The rows below come from `cmd/tui/auth_args.go` (methods), `cmd/tui/auth.go` (fl
 | Row name | Provider and method | Flow on enter |
 |---|---|---|
 | `Alibaba Token Plan API key` | `alibaba-token-plan`, `api-key` | Key box |
-| `Claude Pro/Max account` | `anthropic`, `anthropic-oauth` | Browser box with a masked address input; a code box when the callback port is busy |
+| `Claude Pro/Max sign-in` | `anthropic`, `anthropic-oauth` | Browser box with a masked address input; a code box when the callback port is busy |
 | `Anthropic API key` | `anthropic`, `api-key` | Key box |
-| `ChatGPT Plus/Pro subscription` | `openai`, `openai-chatgpt` | Browser box (browser only) |
+| `ChatGPT Plus/Pro sign-in` | `openai`, `openai-chatgpt` | Browser box (browser only) |
 | `OpenAI API key` | `openai`, `api-key` | Key box |
-| `xAI Grok account` | `xai`, `xai-oauth` | Device-code box |
+| `xAI Grok sign-in` | `xai`, `xai-oauth` | Device-code box |
 | `xAI API key` | `xai`, `api-key` | Key box |
 
 Rows are ordered by provider id, with the account row before the API key row, so the provider dots keep the same role in `/providers` and in `/model`.
@@ -321,11 +328,11 @@ You typed /p. The command list opens above the editor, as for the other commands
 ```text
 ╭─ Providers ──────────────────────────────────────────────────────────────────╮
 │   ● Alibaba Token Plan API key                                       api key │
-│   ● Claude Pro/Max account                                                   │
+│   ● Claude Pro/Max sign-in                                                   │
 │   ● Anthropic API key                                  env ANTHROPIC_API_KEY │
-│   ● ChatGPT Plus/Pro subscription                                  signed in │
+│   ● ChatGPT Plus/Pro sign-in                                       signed in │
 │   ● OpenAI API key                                                           │
-│ ❯ ● xAI Grok account                                                         │
+│ ❯ ● xAI Grok sign-in                                                         │
 │   ● xAI API key                                                              │
 │  ⌕ ▌Type to search                                                           │
 ╰──────────────────────────────────────────────────────────────────────────────╯
@@ -351,9 +358,9 @@ The box shows a window of three rows and a row that says how many are hidden. Lo
 
 ```text
 ╭─ Providers ──────────────────────────╮
-│   ● Claude Pro/Max account           │
+│   ● Claude Pro/Max sign-in           │
 │   ● Anthropic… env ANTHROPIC_API_KEY │
-│ ❯ ● ChatGPT Plus/Pro subs… signed in │
+│ ❯ ● ChatGPT Plus/Pro sign… signed in │
 │   … 3 more                           │
 │  ⌕ ▌Type to search                   │
 ╰──────────────────────────────────────╯
@@ -389,7 +396,7 @@ A row that has a saved credential asks what to do: sign in again, or remove. Oth
 `-- live region starts --`
 
 ```text
-╭─ ChatGPT Plus/Pro subscription ──────────────────────────────────────────────╮
+╭─ ChatGPT Plus/Pro sign-in ───────────────────────────────────────────────────╮
 │  Signed in. What do you want to do?                                          │
 │                                                                              │
 │ ❯ Sign in again  Use another account or refresh this one                     │
@@ -694,7 +701,7 @@ The URL is shown in full, wrapped. ctrl+y copies it and the terminal can open it
 
 ```text
 ┊ ◌ Waiting for the browser… 12s · esc to cancel                                
-╭─ ChatGPT Plus/Pro subscription ──────────────────────────────────────────────╮
+╭─ ChatGPT Plus/Pro sign-in ───────────────────────────────────────────────────╮
 │  Open this URL in a browser and sign in to openai:                           │
 │                                                                              │
 │  https://auth.example.test/oauth/authorize?response_type=code&client_id=ask- │
@@ -723,7 +730,7 @@ The URL shows as many rows as fit, then a row that tells you ctrl+y copies the f
 
 ```text
 ┊ ◌ Waiting… 12s                        
-╭─ ChatGPT Plus/Pro subscription ──────╮
+╭─ ChatGPT Plus/Pro sign-in ───────────╮
 │  Open this URL and sign in:          │
 │  https://auth.example.test/oauth/aut │
 │  horize?response_type=code&client_id │
@@ -764,7 +771,7 @@ The browser flow ended with an error. The reason is shown, and you can try again
 `-- live region starts --`
 
 ```text
-╭─ ChatGPT Plus/Pro subscription ──────────────────────────────────────────────╮
+╭─ ChatGPT Plus/Pro sign-in ───────────────────────────────────────────────────╮
 │  ✗ Sign-in failed: the browser returned access_denied.                       │
 │                                                                              │
 │  Nothing was saved. You can try again.                                       │
@@ -802,7 +809,7 @@ The leader allows one sign-in for each provider at a time. The box says so and n
 `-- live region starts --`
 
 ```text
-╭─ ChatGPT Plus/Pro subscription ──────────────────────────────────────────────╮
+╭─ ChatGPT Plus/Pro sign-in ───────────────────────────────────────────────────╮
 │  ✗ Could not start: another client is signing in to openai.                  │
 │                                                                              │
 │  Try again in a moment.                                                      │
@@ -840,7 +847,7 @@ The connection dropped. The sign-in is not resumed; the dialog says what happene
 
 ```text
 ┊ ✗ Disconnected from the leader · reconnecting (attempt 1, next in 1s)         
-╭─ ChatGPT Plus/Pro subscription ──────────────────────────────────────────────╮
+╭─ ChatGPT Plus/Pro sign-in ───────────────────────────────────────────────────╮
 │  ✗ The sign-in stopped because the leader is gone.                           │
 │                                                                              │
 │  Nothing was saved. When the leader is back, start again with /providers.    │
@@ -878,7 +885,7 @@ Another client removed openai while this client was signing in. The removal wins
 `-- live region starts --`
 
 ```text
-╭─ ChatGPT Plus/Pro subscription ──────────────────────────────────────────────╮
+╭─ ChatGPT Plus/Pro sign-in ───────────────────────────────────────────────────╮
 │  ✗ Sign-in cancelled: another client removed openai.                         │
 │                                                                              │
 │  Nothing was saved. You can sign in again.                                   │
@@ -987,7 +994,7 @@ The leader starts the browser flow. If the browser runs on another machine, you 
 
 ```text
 ┊ ◌ Waiting for the browser or an address… 8s                                   
-╭─ Claude Pro/Max account ─────────────────────────────────────────────────────╮
+╭─ Claude Pro/Max sign-in ─────────────────────────────────────────────────────╮
 │  Open this URL and approve. The box closes by itself when you approve.       │
 │  If the browser runs on another machine, paste the address it opened.        │
 │                                                                              │
@@ -1025,7 +1032,7 @@ The leader could not open the callback port, so it started the copy-code flow. T
 
 ```text
 ┊ ◌ Waiting for a code… 3s                                                      
-╭─ Claude Pro/Max account ─────────────────────────────────────────────────────╮
+╭─ Claude Pro/Max sign-in ─────────────────────────────────────────────────────╮
 │  The callback port is busy, so this sign-in uses a code instead.             │
 │  Open this URL, approve, then paste the code that the page shows.            │
 │                                                                              │
@@ -1063,7 +1070,7 @@ The address went to the leader. The input is locked.
 
 ```text
 ┊ ◌ Checking the address with anthropic… 1s · esc to cancel                     
-╭─ Claude Pro/Max account ─────────────────────────────────────────────────────╮
+╭─ Claude Pro/Max sign-in ─────────────────────────────────────────────────────╮
 │  Open this URL and approve. The box closes by itself when you approve.       │
 │  If the browser runs on another machine, paste the address it opened.        │
 │                                                                              │
@@ -1102,7 +1109,7 @@ xai shows a short page address and a code. The TUI waits while the leader polls.
 
 ```text
 ┊ ◌ Waiting for approval… 24s · esc to cancel                                   
-╭─ xAI Grok account ───────────────────────────────────────────────────────────╮
+╭─ xAI Grok sign-in ───────────────────────────────────────────────────────────╮
 │  1. Open this page on any device:                                            │
 │     https://auth.example.test/device                                         │
 │                                                                              │
@@ -1144,7 +1151,7 @@ The code ran out of time. enter asks the leader for a new code.
 `-- live region starts --`
 
 ```text
-╭─ xAI Grok account ───────────────────────────────────────────────────────────╮
+╭─ xAI Grok sign-in ───────────────────────────────────────────────────────────╮
 │  ✗ The code expired. No sign-in happened.                                    │
 │                                                                              │
 │  Get a new code to try again.                                                │
@@ -1183,7 +1190,7 @@ delete on a row with a saved credential, or Remove in the row menu, asks before 
 `-- live region starts --`
 
 ```text
-╭─ Remove ChatGPT Plus/Pro subscription? ──────────────────────────────────────╮
+╭─ Remove ChatGPT Plus/Pro sign-in? ───────────────────────────────────────────╮
 │  This deletes the saved sign-in for openai from this leader.                 │
 │  Environment variables are not changed.                                      │
 ╰──────────────────────────────────────────────────────────────────────────────╯
@@ -1252,11 +1259,11 @@ delete on a row that only uses an environment variable changes nothing and says 
 ```text
 ╭─ Providers ──────────────────────────────────────────────────────────────────╮
 │   ● Alibaba Token Plan API key                                       api key │
-│   ● Claude Pro/Max account                                                   │
+│   ● Claude Pro/Max sign-in                                                   │
 │ ❯ ● Anthropic API key                                  env ANTHROPIC_API_KEY │
-│   ● ChatGPT Plus/Pro subscription                                  signed in │
+│   ● ChatGPT Plus/Pro sign-in                                       signed in │
 │   ● OpenAI API key                                                           │
-│   ● xAI Grok account                                                         │
+│   ● xAI Grok sign-in                                                         │
 │   ● xAI API key                                                              │
 │                                                                              │
 │  ✗ Nothing to remove: anthropic uses ANTHROPIC_API_KEY from the environment. │
@@ -1764,11 +1771,11 @@ The leader announced the change. This client shows a status line and updates the
 ┊ Providers changed in the leader: xai signed in · 1 model                      
 ╭─ Providers ──────────────────────────────────────────────────────────────────╮
 │   ● Alibaba Token Plan API key                                       api key │
-│   ● Claude Pro/Max account                                                   │
+│   ● Claude Pro/Max sign-in                                                   │
 │   ● Anthropic API key                                  env ANTHROPIC_API_KEY │
-│   ● ChatGPT Plus/Pro subscription                                  signed in │
+│   ● ChatGPT Plus/Pro sign-in                                       signed in │
 │   ● OpenAI API key                                                           │
-│ ❯ ● xAI Grok account                                               signed in │
+│ ❯ ● xAI Grok sign-in                                               signed in │
 │   ● xAI API key                                                              │
 │  ⌕ ▌Type to search                                                           │
 ╰──────────────────────────────────────────────────────────────────────────────╯
@@ -1823,7 +1830,7 @@ In this mode `/providers` never opens a box. The first-run notice keeps the deci
 | P15 Claude Pro/Max browser flow | The Claude Pro/Max row; the leader opened the callback port | The box shows the URL and a masked `address` input. The rail shows `◌ Waiting for the browser or an address…`. If the browser callback finishes, the result is P14. A pasted address and enter go to P16 |
 | P15a Claude Pro/Max code flow | The Claude Pro/Max row; the callback port is busy | The box says `The callback port is busy, so this sign-in uses a code instead.` and shows the URL and a masked `code` input. The rail shows `◌ Waiting for a code…`. A code and enter go to P16 |
 | P16 Address or code checking | enter in P15 or P15a | The address or the code is sent once. The input is locked. The rail shows `Checking the address with anthropic…` or `Checking the code with anthropic…`. P14, or P12 on refusal |
-| P17 Device code waiting | The xAI Grok account row | The box shows the page address and the user code. The leader polls. P14 on approval. P18 on expiry |
+| P17 Device code waiting | The xAI Grok sign-in row | The box shows the page address and the user code. The leader polls. P14 on approval. P18 on expiry |
 | P18 Code expired | The leader reports expiry | enter asks for a new code (a new login id). esc closes |
 
 After a success the TUI asks the leader for the model list again (the new list gets a new generation).
@@ -1861,7 +1868,7 @@ The TUI does not choose a model. On first run the footer keeps `no model`, and t
 | P28c Saved default not usable | A session starts and the provider of the saved default is not usable | The session uses the next choice (section 3). The start line names it; the row under it reads `Default model <pair> is not usable (<reason>).` in `muted` |
 | P30 Observer attach | enter on a session in `/sessions` | Divider, then the start line for that session, then the followed history |
 | P31 Restored session | Reconnected to the same leader and the session is live | The reconnect note, then the start line. If the model changed while the client was away, the line shows the current model without `· was` |
-| No model | First run, or the current model became unusable (P22) | No line. When a model is chosen later, a change line without `· was` is added |
+| No model | First run, or the current model became unusable (P22) | No line is added; a line already in scrollback stays. When a model is chosen later, a change line without `· was` is added |
 | Stale event | A model event with an old session generation | Ignored |
 
 ### Other clients and stale results
@@ -2039,10 +2046,10 @@ These are used in this design with existing roles and glyphs. The user must deci
 2. At 40×14, in the same state, the footer shows `no model` and the rail shows `Add a provider with /providers` without a second row (P1).
 3. At 80×24, after text and enter with no current model, the draft stays in the editor, nothing is added to scrollback, and the live rail shows `✗ Not sent: no model` and `Add a provider with /providers` (P2).
 4. At 80×24, after `/p`, the command list shows `/providers  Add or remove providers`; after `/PROVIDERS` and enter, the provider box opens (P2a).
-5. At 80×24, after `/providers` and enter, the provider box replaces the editor and shows seven rows: `Alibaba Token Plan API key  api key`, `Claude Pro/Max account`, `Anthropic API key  env ANTHROPIC_API_KEY`, `ChatGPT Plus/Pro subscription  signed in`, `OpenAI API key`, `xAI Grok account` and `xAI API key`. The row `⌕ Type to search` is the last row inside the box, and the hint row ends with `your draft is kept`. After esc the editor shows the same draft (P3).
+5. At 80×24, after `/providers` and enter, the provider box replaces the editor and shows seven rows: `Alibaba Token Plan API key  api key`, `Claude Pro/Max sign-in`, `Anthropic API key  env ANTHROPIC_API_KEY`, `ChatGPT Plus/Pro sign-in  signed in`, `OpenAI API key`, `xAI Grok sign-in` and `xAI API key`. The row `⌕ Type to search` is the last row inside the box, and the hint row ends with `your draft is kept`. After esc the editor shows the same draft (P3).
 6. At 80×24, after typing `key` in the provider box, only the rows with `key` in the name remain, the first one is selected, and the typed text shows in the search row (P3).
 7. At 40×14, after `/providers` and enter, the screen shows three provider rows, `… 3 more`, the search row, and a long name cut with `…` while its status suffix stays whole (P4).
-8. At 80×24, after enter on `ChatGPT Plus/Pro subscription` (signed in), the row menu shows `Sign in again` and `Remove`; after esc the provider box is back. After enter on `OpenAI API key` (no credential) the key box opens at once, with no second step (P5, P6).
+8. At 80×24, after enter on `ChatGPT Plus/Pro sign-in` (signed in), the row menu shows `Sign in again` and `Remove`; after esc the provider box is back. After enter on `OpenAI API key` (no credential) the key box opens at once, with no second step (P5, P6).
 9. At 80×24, after a bracketed paste of a key in the key box, the box shows `(hidden)` and the pasted text is not in any row of the screen (P6).
 10. At 80×24, after enter with a key, the rail shows `Checking the key with openai…` and the box input shows `(hidden)` and ignores typing (P7).
 11. At 80×24, when the leader refuses the key, the box shows `openai refused the key: invalid_api_key (HTTP 401). Nothing was saved.`, the input is empty, and no row contains the key (P8).
@@ -2055,7 +2062,7 @@ These are used in this design with existing roles and glyphs. The user must deci
 18. At 80×24, after esc in a login box, the box closes, scrollback shows `⊘ Sign-in to openai cancelled. Nothing was saved.`, and the draft is back. A later success event for that login id changes nothing on screen (P13).
 19. At 80×24, after ctrl+c in a login box, the same happens as after esc, and a second ctrl+c does not quit the TUI (P13).
 20. At 80×24, when the leader returns the account name, scrollback shows `✓ openai: signed in as dev@example.com. 2 models ready.` (P14).
-21. At 80×24, after enter on `Claude Pro/Max account`, the box shows the URL and `address  ` with the placeholder `paste the address; it stays hidden`, and the rail shows `Waiting for the browser or an address…`; a bracketed paste shows `(hidden)`, enter shows `Checking the address with anthropic…`, and the address is on no row (P15, P16).
+21. At 80×24, after enter on `Claude Pro/Max sign-in`, the box shows the URL and `address  ` with the placeholder `paste the address; it stays hidden`, and the rail shows `Waiting for the browser or an address…`; a bracketed paste shows `(hidden)`, enter shows `Checking the address with anthropic…`, and the address is on no row (P15, P16).
 22. At 80×24, when the callback port is busy, the box shows `The callback port is busy, so this sign-in uses a code instead.` and a `code` input; a pasted code shows `(hidden)` and is on no row (P15a).
 23. At 80×24, when another client removes openai during this client's ChatGPT sign-in, the box shows `✗ Sign-in cancelled: another client removed openai.`; after esc scrollback shows `⊘ Sign-in to openai cancelled: another client removed openai.` (P12c).
 24. At 80×24, in the device-code box, the screen shows the page address, `WDJB-MJHT` and `The code expires in`; after expiry the box shows `The code expired. No sign-in happened.` and `enter get a new code` (P17, P18).
@@ -2092,7 +2099,7 @@ Exception (user decision, 2026-10-10): the checks hold when `TEA_TRACE` is not s
 48. At 80×24, after `/model` and enter on `gpt-5.5` of `openai`, the transcript shows `  model  openai/gpt-5.5 · was alibaba-token-plan/deepseek-v4.1-flash` as a new row and the footer shows `gpt-5.5` (P29).
 49. At 80×24, after `/sessions` and enter on a session, the transcript shows `── session 8d07 ──`, then `  model  alibaba-token-plan/deepseek-v4.1-flash`, then the followed history (P30).
 50. At 80×24, after a reconnect to the same leader, the screen shows `↻ Reconnected. Session 3f2a restored.` and on the next row the model line (P31).
-51. At 80×24, with no model (first run, or after the removal in P22), the screen shows no `model` line, the footer shows `no model`, and the notice stays (P1, P22).
+51. At 80×24, with no model (first run, or after the removal in P22), no new `model` line is added and a line already in scrollback stays, the footer shows `no model`, and the notice stays (P1, P22).
 52. At 80×24, a model event with an old session generation adds no row.
 53. At 80×24, after `/model` and enter on `gpt-5.5`, the rail shows `✓ Default model: openai/gpt-5.5`; after `/new` the start line shows `  model  openai/gpt-5.5` (P29, P28).
 54. At 80×24, when the saved default is `openai/gpt-5.5` and openai is not signed in, a new session shows `  model  alibaba-token-plan/deepseek-v4.1-flash` and under it `Default model openai/gpt-5.5 is not usable (not signed in).`; at 40×14 the reason wraps under the pair with a two-column indent (P28c).

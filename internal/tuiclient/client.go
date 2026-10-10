@@ -116,8 +116,15 @@ type Client struct {
 	sess       sessionState
 	prompt     *promptState
 	nextPrompt tui.PromptID
-	closeOnce  sync.Once
-	closeErr   error
+	// logins holds the ids of sign-ins and key saves that are still open on the
+	// current link.
+	logins map[string]struct{}
+	// providersInstance and providersGen are the last providers-changed
+	// generation seen, and the leader instance that sent it.
+	providersInstance string
+	providersGen      uint64
+	closeOnce         sync.Once
+	closeErr          error
 }
 
 var _ tui.Client = (*Client)(nil)
@@ -187,12 +194,14 @@ func (c *Client) goSafe(where string, fatal bool, fn func()) {
 type handler struct {
 	c    *Client
 	conn *rpc.Conn
+	// instance is the leader id of the link, known before the first frame.
+	instance string
 }
 
 // establish makes a dialed link the current connection: it starts the reader and
 // runs initialize. It closes the link when initialize fails.
 func (c *Client) establish(ctx context.Context, link Link) error {
-	h := &handler{c: c}
+	h := &handler{c: c, instance: link.Info.InstanceID}
 	conn := rpc.NewConn(link.Transport, h)
 	h.conn = conn
 	c.mu.Lock()
@@ -221,6 +230,8 @@ func (c *Client) establish(ctx context.Context, link Link) error {
 	}
 	c.mu.Lock()
 	c.conn, c.info, c.connected = conn, link.Info, true
+	// The leader dropped the open logins of the old link.
+	c.logins = nil
 	c.mu.Unlock()
 	c.events.push(tui.ConnectedMsg{Info: link.Info})
 	return nil
@@ -500,6 +511,7 @@ func (c *Client) Detach(ctx context.Context) error {
 	if err != nil {
 		return err
 	}
+	c.releaseLogins()
 	if err := c.request(ctx, conn, protocol.ACPDetach, map[string]any{"sessionId": sid}, nil); err != nil {
 		return err
 	}
@@ -601,25 +613,28 @@ func (c *Client) State(ctx context.Context) (protocol.ACPStateResult, error) {
 	return out, err
 }
 
-// Models lists the model catalog and the current model.
+// Models lists the models of the usable providers and the current model. A
+// leader that does not know the flag sends every row and leaves UsableOnly
+// false in the answer.
 func (c *Client) Models(ctx context.Context) (protocol.ACPModelsResult, error) {
 	var out protocol.ACPModelsResult
 	conn, sid, err := c.withSession()
 	if err != nil {
 		return out, err
 	}
-	err = c.request(ctx, conn, protocol.ACPModels, protocol.ACPSessionRequest{SessionID: sid}, &out)
+	err = c.request(ctx, conn, protocol.ACPModels, protocol.ACPModelsRequest{SessionID: sid, UsableOnly: true}, &out)
 	return out, err
 }
 
-// SetModel changes the model of an idle session.
-func (c *Client) SetModel(ctx context.Context, modelID string) (protocol.ACPSetModelResult, error) {
+// SetModel changes the model of an idle session. With saveDefault the leader
+// also keeps the choice as the default of new sessions.
+func (c *Client) SetModel(ctx context.Context, modelID string, saveDefault bool) (protocol.ACPSetModelResult, error) {
 	var out protocol.ACPSetModelResult
 	conn, sid, err := c.withSession()
 	if err != nil {
 		return out, err
 	}
-	err = c.request(ctx, conn, protocol.ACPSetModel, protocol.ACPModelRequest{SessionID: sid, ModelID: modelID}, &out)
+	err = c.request(ctx, conn, protocol.ACPSetModel, protocol.ACPModelRequest{SessionID: sid, ModelID: modelID, SaveDefault: saveDefault}, &out)
 	return out, err
 }
 
@@ -649,6 +664,7 @@ func (c *Client) Usage(ctx context.Context) (protocol.ACPUsageResult, error) {
 // in-process agent stops through OnClose.
 func (c *Client) Close() error {
 	c.closeOnce.Do(func() {
+		c.releaseLogins() // before the link is shut, while calls still go out
 		c.mu.Lock()
 		c.closed = true
 		conn := c.conn
