@@ -41,3 +41,15 @@ Plan: `plans/261006-0933-lifecycle-event-pipeline-redesign/plan.md` (12 phases, 
 - [x] Phase 09: tool coordinator, abort outcomes, repair, and AfterTool context; independent review approved 10/10; final agent/pipeline tests and race, full lint, build, and Matrix09 passed; all 34 assertions reviewed
 - [x] Phase 10: end-to-end, write-failure, and signal fixtures; independent review approved 10/10; full tests, full race, CLI checks, N8 race count 200, final lint, build, and Matrix all passed; all 197 assertions reviewed
 - [x] Phase 11: roadmap, architecture, and package documentation complete; independent review approved 10/10; all nine steps accepted, 199 local links valid, stale API scan and whitespace checks passed
+
+## T1c provider setup (2026-10-10)
+
+Plan: `plans/261010-1424-t1c-provider-setup/plan.md` (8 phases; cook `--auto --tdd`; phase 1 design approved).
+- [x] Phase 1 TUI design
+- [ ] Phase 2 protocol shapes, model event, no-model contract (parallel with 3)
+- [ ] Phase 3 auth broker, key check, status, default-model store (parallel with 2)
+- [ ] Phase 4 leader host and router
+- [ ] Phase 5 TUI client contract and tuiclient
+- [ ] Phase 6 TUI screens and design amendments
+- [ ] Phase 7 E2E and security acceptance
+- [ ] Phase 8 real-provider acceptance and docs
