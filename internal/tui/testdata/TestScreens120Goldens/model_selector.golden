@@ -1,0 +1,22 @@
+◢◤ ask   v0.1.0 · leader 7c1e · ~/src/askcore
+
+  ❯ why does TestLeaderStale fail on CI?                                                                        14:02
+
+  ◆ The test waits for the stale socket check, but CI runs it with a 1 s deadline. The leader removes the stale socket
+    after the lock probe, and the probe can take 1.2 s.
+
+    go
+    deadline := 5 * time.Second
+    deepseek-v4.1-flash · 4.2s · ↑12.4k ↓1.8k · $0.004
+
+╭─ Select model ───────────────────────────────────────────────────────────────────────────────────────────────────────╮
+│  ⌕ type to filter                                                                                                    │
+│ ❯ ● alibaba/deepseek-v4.1-flash                                                                     128k  current    │
+│   ● alibaba/qwen4-coder-plus                                                                        256k             │
+│   ● anthropic/claude-opus-5-5                                                                         1M  reasoning  │
+│   ● anthropic/claude-sonnet-5-5                                                                       1M  reasoning  │
+│   ● openai/gpt-5.5-codex                                                                            400k  reasoning  │
+│   ● xai/grok-5-code                                                                                 256k  reasoning  │
+╰──────────────────────────────────────────────────────────────────────────────────────────────────────────────────────╯
+   enter select  ·  esc close  ·  your draft is kept
+  ● leader 7c1e   ⌂ ~/src/askcore                                              deepseek-v4.1-flash  ▰▱▱▱▱▱▱▱ 18%  $0.04

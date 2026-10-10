@@ -55,16 +55,33 @@ func TestFollowKeepsEventsImmediatelyAfterResult(t *testing.T) {
 	defer runtime.GOMAXPROCS(previous)
 	wrote := make(chan struct{})
 	var out bytes.Buffer
-	c := newLineClient(&leader.Client{Registered: &leader.Registered{Writer: leader.NewFrameWriter(oneFrameSink{wrote}, protocol.LeaderMaxFrame)}}, &out)
+	// The reader of the client is fed by hand through a pipe, so both frames are
+	// there before the command waiter gets time to install its subscription.
+	pr, pw := io.Pipe()
+	defer func() { _ = pw.Close() }()
+	c := newLineClient(&leader.Client{Registered: &leader.Registered{
+		Writer: leader.NewFrameWriter(oneFrameSink{wrote}, protocol.LeaderMaxFrame),
+		Reader: leader.NewFrameReader(pr, protocol.LeaderMaxFrame),
+	}}, &out)
 	c.setView("s1")
+	readerDone := make(chan struct{})
+	go func() { c.readLoop(); close(readerDone) }()
 	done := make(chan struct{})
 	go func() { c.follow(nil); close(done) }()
 	<-wrote
-	// These two frames arrive back to back on the socket reader before the
-	// command waiter gets time to install its subscription.
-	c.handle(rpcBody(map[string]any{"id": 1, "result": map[string]any{"subscriptionId": "sub1", "cursor": map[string]any{"epoch": "e1", "seq": "1"}}}))
-	c.handle(rpcBody(map[string]any{"method": protocol.ACPEvent, "params": map[string]any{"subscriptionId": "sub1", "sessionId": "s1", "epoch": "e1", "seq": "2", "event": map[string]any{"type": "agent_settled"}}}))
+	var burst bytes.Buffer
+	w := leader.NewFrameWriter(&burst, protocol.LeaderMaxFrame)
+	for _, body := range []json.RawMessage{
+		rpcBody(map[string]any{"id": 1, "result": map[string]any{"subscriptionId": "sub1", "cursor": map[string]any{"epoch": "e1", "seq": "1"}}}),
+		rpcBody(map[string]any{"method": protocol.ACPEvent, "params": map[string]any{"subscriptionId": "sub1", "sessionId": "s1", "epoch": "e1", "seq": "2", "event": map[string]any{"type": "agent_settled"}}}),
+	} {
+		require.NoError(t, w.Write(protocol.LeaderFrame{Type: protocol.LeaderFrameACP, Payload: body}))
+	}
+	_, err := pw.Write(burst.Bytes())
+	require.NoError(t, err)
 	<-done
+	require.NoError(t, pw.Close())
+	<-readerDone
 	require.Contains(t, out.String(), "event session=s1 seq=2", "the first live event after a Follow result was discarded")
 }
 

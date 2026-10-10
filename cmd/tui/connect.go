@@ -14,6 +14,7 @@ import (
 	"sync"
 
 	"AskCore/internal/leader"
+	"AskCore/internal/tuiclient/rpc"
 	"AskCore/pkg/protocol"
 )
 
@@ -164,30 +165,16 @@ type fault struct {
 	Message string
 }
 
-type reply struct {
-	result json.RawMessage
-	err    *fault
-}
-
-type pendingCall struct {
-	reply         chan reply
-	followSession string
-}
-
 type lineClient struct {
-	cl  *leader.Client
-	out *lockedWriter
-
-	wmu sync.Mutex // one writer: complete frames never interleave
+	conn *rpc.Conn
+	out  *lockedWriter
 
 	mu        sync.Mutex
-	nextID    int64
-	pending   map[int64]pendingCall
 	view      string
 	subs      map[string]string // subscription id -> session
 	questions map[string]string // raw id of a question -> session
 	inflight  sync.WaitGroup
-	done      chan struct{} // closed when the reader ended
+	done      <-chan struct{} // closed when the reader ended
 	once      sync.Once
 }
 
@@ -203,26 +190,13 @@ func (l *lockedWriter) printf(format string, a ...any) {
 }
 
 func newLineClient(cl *leader.Client, out io.Writer) *lineClient {
-	return &lineClient{
-		cl: cl, out: &lockedWriter{w: out}, pending: map[int64]pendingCall{},
-		subs: map[string]string{}, questions: map[string]string{}, done: make(chan struct{}),
+	c := &lineClient{
+		out:  &lockedWriter{w: out},
+		subs: map[string]string{}, questions: map[string]string{},
 	}
-}
-
-func (c *lineClient) write(f protocol.LeaderFrame) error {
-	c.wmu.Lock()
-	defer c.wmu.Unlock()
-	return c.cl.Writer.Write(f)
-}
-
-func (c *lineClient) send(raw json.RawMessage) error {
-	return c.write(protocol.LeaderFrame{Type: protocol.LeaderFrameACP, Payload: raw})
-}
-
-func rpcBody(fields map[string]any) json.RawMessage {
-	fields["jsonrpc"] = "2.0"
-	b, _ := json.Marshal(fields)
-	return b
+	c.conn = rpc.NewConn(rpc.NewLeaderTransport(cl), c)
+	c.done = c.conn.Done()
+	return c
 }
 
 // call sends a request and waits for its answer.
@@ -230,135 +204,64 @@ func (c *lineClient) call(method string, params any) (json.RawMessage, *fault) {
 	return c.callForSession(method, params, "")
 }
 
+// callForSession is call for a follow request: the new subscription is known
+// on the reader before it reads the next event or resync.
 func (c *lineClient) callForSession(method string, params any, followSession string) (json.RawMessage, *fault) {
-	c.mu.Lock()
-	c.nextID++
-	id := c.nextID
-	ch := make(chan reply, 1)
-	c.pending[id] = pendingCall{reply: ch, followSession: followSession}
-	c.mu.Unlock()
-	if err := c.send(rpcBody(map[string]any{"id": id, "method": method, "params": params})); err != nil {
-		return nil, &fault{Kind: "connection_lost", Message: err.Error()}
+	var commit func(json.RawMessage)
+	if followSession != "" {
+		commit = func(result json.RawMessage) {
+			var out protocol.ACPFollowResult
+			if json.Unmarshal(result, &out) == nil && out.SubscriptionID != "" {
+				c.mu.Lock()
+				c.subs[out.SubscriptionID] = followSession
+				c.mu.Unlock()
+			}
+		}
 	}
-	select {
-	case r := <-ch:
-		return r.result, r.err
-	case <-c.done:
-		return nil, &fault{Kind: "connection_lost", Message: "the leader closed the connection"}
+	res, err := c.conn.CallCommit(context.Background(), method, params, commit)
+	if err == nil {
+		return res, nil
 	}
-}
-
-func (c *lineClient) notify(method string, params any) error {
-	return c.send(rpcBody(map[string]any{"method": method, "params": params}))
+	var f *rpc.Fault
+	if errors.As(err, &f) {
+		return nil, &fault{Code: f.Code, Kind: f.Kind, Message: f.Message}
+	}
+	return nil, &fault{Kind: "connection_lost", Message: "the leader closed the connection"}
 }
 
 func (c *lineClient) close() {
-	c.once.Do(func() {
-		// The disconnect frame is written like any frame: not while a prompt goroutine writes.
-		c.wmu.Lock()
-		defer c.wmu.Unlock()
-		_ = c.cl.Close()
-	})
+	c.once.Do(func() { _ = c.conn.Close() })
 }
 
 // readLoop is the only reader of the socket. It splits answers from the
 // notifications and requests of the leader.
 func (c *lineClient) readLoop() {
-	defer close(c.done)
-	for {
-		f, err := c.cl.Reader.Next()
-		if err != nil {
-			return
-		}
-		switch f.Type {
-		case protocol.LeaderFramePing:
-			_ = c.write(protocol.LeaderFrame{Type: protocol.LeaderFramePong})
-		case protocol.LeaderFrameError:
-			var e protocol.LeaderError
-			_ = json.Unmarshal(f.Payload, &e)
-			c.out.printf("error leader=%s", e.Kind)
-			return
-		case protocol.LeaderFrameACP:
-			c.handle(f.Payload)
-		}
+	c.conn.Run()
+	var le *rpc.LeaderError
+	if errors.As(c.conn.Err(), &le) {
+		c.out.printf("error leader=%s", le.Kind)
 	}
 }
 
-type incoming struct {
-	ID     json.RawMessage `json:"id"`
-	Method string          `json:"method"`
-	Params json.RawMessage `json:"params"`
-	Result json.RawMessage `json:"result"`
-	Error  json.RawMessage `json:"error"`
-}
-
-func (c *lineClient) handle(raw json.RawMessage) {
-	var m incoming
-	if json.Unmarshal(raw, &m) != nil {
-		return
-	}
-	switch {
-	case m.Method == "" && len(m.ID) > 0:
-		c.answer(m)
-	case m.Method != "" && len(m.ID) > 0:
-		c.request(m)
-	case m.Method != "":
-		c.notification(m)
-	}
-}
-
-func (c *lineClient) answer(m incoming) {
-	id, err := strconv.ParseInt(string(m.ID), 10, 64)
-	if err != nil {
-		return
-	}
-	r := reply{result: m.Result}
-	if len(m.Error) > 0 {
-		var e struct {
-			Code    int    `json:"code"`
-			Message string `json:"message"`
-			Data    struct {
-				Kind string `json:"kind"`
-			} `json:"data"`
-		}
-		_ = json.Unmarshal(m.Error, &e)
-		r.err = &fault{Code: e.Code, Kind: e.Data.Kind, Message: e.Message}
-	}
-	c.mu.Lock()
-	pending := c.pending[id]
-	// Commit Follow on the sole reader before it reads the next event or resync.
-	if pending.followSession != "" && r.err == nil {
-		var out protocol.ACPFollowResult
-		if json.Unmarshal(r.result, &out) == nil && out.SubscriptionID != "" {
-			c.subs[out.SubscriptionID] = pending.followSession
-		}
-	}
-	delete(c.pending, id)
-	c.mu.Unlock()
-	if pending.reply != nil {
-		pending.reply <- r
-	}
-}
-
-// request handles a call of the agent. The client has no file or terminal
+// Request handles a call of the agent. The client has no file or terminal
 // capability, so the only request it takes is a question.
-func (c *lineClient) request(m incoming) {
-	if m.Method != "session/request_permission" {
-		_ = c.send(rpcBody(map[string]any{"id": m.ID, "error": map[string]any{"code": -32601, "message": "not supported"}}))
+func (c *lineClient) Request(id json.RawMessage, method string, params json.RawMessage) {
+	if method != "session/request_permission" {
+		_ = c.conn.RespondError(id, -32601, "not supported")
 		return
 	}
 	var p struct {
 		SessionID string `json:"sessionId"`
 	}
-	_ = json.Unmarshal(m.Params, &p)
+	_ = json.Unmarshal(params, &p)
 	c.mu.Lock()
-	c.questions[string(m.ID)] = p.SessionID
+	c.questions[string(id)] = p.SessionID
 	c.mu.Unlock()
-	c.out.printf("question id=%s session=%s", string(m.ID), p.SessionID)
+	c.out.printf("question id=%s session=%s", string(id), p.SessionID)
 }
 
-func (c *lineClient) notification(m incoming) {
-	switch m.Method {
+func (c *lineClient) Notification(method string, params json.RawMessage) {
+	switch method {
 	case "session/update":
 		var p struct {
 			SessionID string `json:"sessionId"`
@@ -369,7 +272,7 @@ func (c *lineClient) notification(m incoming) {
 				} `json:"content"`
 			} `json:"update"`
 		}
-		if json.Unmarshal(m.Params, &p) == nil {
+		if json.Unmarshal(params, &p) == nil {
 			c.out.printf("update session=%s kind=%s text=%s", p.SessionID, p.Update.Kind, strconv.Quote(p.Update.Content.Text))
 		}
 	case protocol.ACPEvent:
@@ -377,14 +280,14 @@ func (c *lineClient) notification(m incoming) {
 		var ev struct {
 			Type string `json:"type"`
 		}
-		if json.Unmarshal(m.Params, &p) != nil || !c.following(p.SubscriptionID) {
+		if json.Unmarshal(params, &p) != nil || !c.following(p.SubscriptionID) {
 			return // an ended subscription has no reader
 		}
 		_ = json.Unmarshal(p.Event, &ev)
 		c.out.printf("event session=%s seq=%d type=%s", p.SessionID, p.Seq, ev.Type)
 	case protocol.ACPResync:
 		var p protocol.ACPResyncNotification
-		if json.Unmarshal(m.Params, &p) != nil || !c.following(p.SubscriptionID) {
+		if json.Unmarshal(params, &p) != nil || !c.following(p.SubscriptionID) {
 			return
 		}
 		c.out.printf("resync session=%s reason=%s epoch=%s seq=%d", p.SessionID, p.Reason, p.Cursor.Epoch, p.Cursor.Seq)
@@ -392,7 +295,7 @@ func (c *lineClient) notification(m incoming) {
 		var p struct {
 			RequestID json.RawMessage `json:"requestId"`
 		}
-		if json.Unmarshal(m.Params, &p) != nil {
+		if json.Unmarshal(params, &p) != nil {
 			return
 		}
 		c.mu.Lock()
@@ -533,7 +436,7 @@ func (c *lineClient) cancel() {
 		c.out.printf("error op=cancel kind=no_current_session")
 		return
 	}
-	if err := c.notify("session/cancel", map[string]any{"sessionId": sid}); err != nil {
+	if err := c.conn.Notify("session/cancel", map[string]any{"sessionId": sid}); err != nil {
 		c.out.printf("error op=cancel kind=connection_lost")
 		return
 	}
@@ -597,11 +500,8 @@ func (c *lineClient) answerQuestion(id, option string) {
 		c.out.printf("error op=answer kind=no_such_question")
 		return
 	}
-	body := rpcBody(map[string]any{
-		"id":     json.RawMessage(id),
-		"result": map[string]any{"outcome": map[string]any{"outcome": "selected", "optionId": option}},
-	})
-	if err := c.send(body); err != nil {
+	result := map[string]any{"outcome": map[string]any{"outcome": "selected", "optionId": option}}
+	if err := c.conn.Respond(json.RawMessage(id), result); err != nil {
 		c.out.printf("error op=answer kind=connection_lost")
 		return
 	}

@@ -1,0 +1,13 @@
+◢◤ ask   v0.1.0 · leader 7c1e · ~/src/askcore
+
+╭─ Select model ───────────────────────────────────────────────────────────────╮
+│  ⌕ type to filter                                                            │
+│ ❯ ● alibaba/deepseek-v4.1-flash                             128k  current    │
+│   ● alibaba/qwen4-coder-plus                                256k             │
+│   ● anthropic/claude-opus-5-5                                 1M  reasoning  │
+│   ● anthropic/claude-sonnet-5-5                               1M  reasoning  │
+│   ● openai/gpt-5.5-codex                                    400k  reasoning  │
+│   ● xai/grok-5-code                                         256k  reasoning  │
+╰──────────────────────────────────────────────────────────────────────────────╯
+   enter select  ·  esc close  ·  your draft is kept
+  ● leader 7c1e   ⌂ ~/src/askcore       deepseek-v4.1-flash  ▱▱▱▱▱▱▱▱ 0%  $0.04

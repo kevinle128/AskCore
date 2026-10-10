@@ -1,0 +1,16 @@
+  ❯ why does TestLeaderStale fail on CI?                                14:02
+
+  ◆ The test waits for the stale socket check.
+
+  ❯ show me the probe code                                              14:03
+
+  ∴ Thinking...
+
+  ◆ The probe lives in internal/leader/client.go. It dials the socket, then
+    sends an initialize frame and waits.
+    claude-opus-5-5 · 7.9s · ↑14.1k ↓2.6k · $0.031
+
+╭──────────────────────────────────────────────────────────────────────────────╮
+│ ❯ Ask anything  ·  / commands  ·  ctrl+l model                               │
+╰──────────────────────────────────────────────────────────────────────────────╯
+  ● leader 7c1e   ⌂ ~/src/askcore      deepseek-v4.1-flash  ▰▱▱▱▱▱▱▱ 18%  $0.04
