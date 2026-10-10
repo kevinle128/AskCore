@@ -1,5 +1,7 @@
 # Headless TUI checks
 
+The runner has two drivers. The `t0` driver runs the archived T0 gate scenarios. The `ask` driver runs the compiled `ask` (see [Built `ask` driver](#built-ask-driver)). The default run uses both.
+
 Run from the repository root:
 
 ```sh
@@ -13,6 +15,7 @@ Do not use Python `-O` or `PYTHONOPTIMIZE`; these options disable assertions.
 The runner creates unique named sessions under `~/.tui-test` and closes only those sessions.
 
 The default run uses Alacritty and Ghostty.
+Use `--driver t0` or `--driver ask` to select one driver. A `--case` value selects its driver too.
 Use `--backend alacritty`, `--backend ghostty`, or `--backend rio` to select an engine.
 Use `--case g3` for the normal resize check, `--case g3-draft` for draft and cursor checks, or `--case g3-pending` for resize during a held transcript write.
 Use `--target /absolute/path/to/t0` to test an existing binary with the archived T0 command contract.
@@ -71,3 +74,41 @@ They do not certify real iTerm2 rendering, physical Unicode placement, or every 
 The user reported Terminal.app/iTerm2 acceptance and D14 is closed in the [decision record](../../plans/reports/pm-261007-1312-d14-tui-decision.md).
 That statement is user-reported acceptance, not evidence captured by this runner.
 Exact manual terminal versions and physical recordings were not supplied; historical result files retain their original headless-only and D14-false values.
+
+## Built `ask` driver
+
+Run `python3 e2e/tui/run.py --driver ask` (or `--case ask-idle`, `--case ask-selector`, `--case ask-resize`).
+The driver compiles `./cmd/tui` into a temporary directory under `/tmp`, so the leader socket path stays short, and starts `ask` with no arguments in an owned tui-test session.
+It is a separate driver, not a setting of the T0 path: it has its own cases, its own checks and its own process environment.
+The T0 scenarios and their assertions are unchanged.
+
+| Case | Size | What it checks |
+|---|---|---|
+| `ask-idle` | 80×24 | One startup header, a full-width editor box with the placeholder, the cursor in the editor, a `leader <id>` footer. |
+| `ask-selector` | 80×24 | `ctrl+l` replaces the editor with the model selector, the draft is kept, `esc` brings the draft back with its cursor. |
+| `ask-resize` | 120×40 to 80×24 | A reply streams, a draft is in the editor, the size changes. The draft and cursor stay, one purge and rebuild follows, and after the run the header, the prompt and the reply each appear once, in order. |
+
+These checks use structure, not exact sketch text: the sketches show `~/src/askcore` and a real model, while the run shows a temporary directory and the `faux-1` model.
+The golden tests in `internal/tui` own the exact rows.
+
+Each case has its own `ASK_HOME` and its own leader, which the TUI starts.
+A case that shows `in-process` in the footer fails to start, so the fallback cannot pass for a leader test.
+`ask` quits with `ctrl+c` to clear the draft and `ctrl+d` to detach; then the runner runs `ask leader stop` for that home and checks the process table for leaders of its own binary path.
+A leader of that path that ignores the stop is signaled after its command line is checked again; no other process is touched.
+A leader or tui-test process from outside the run is never signaled.
+
+### Environment and secrets
+
+The runner passes `ASK_HOME`, `ASK_FAUX_TPS`, `TERM` and `LANG` to the session through the environment of the `tui-test run` call. It drops other `ASK_*` variables of the caller. Every other variable, including provider keys, is inherited.
+Keys never appear in a command argument or in `--env`.
+`commands.json` records `environment_names` (names only), and `ask-environment.json` lists the names that were set and the credential-like names that were inherited.
+At the end the runner scans every artifact file for the values of credential-like variables (`*API_KEY*`, `*TOKEN*`, `*SECRET*`, `*PASSWORD*`, `*CREDENTIAL*`, `*AUTH*`, value of 8 or more characters).
+A file with a value is removed, only the variable names are reported, and the run fails.
+The tui-test daemon log is not enabled for this driver, because it records all terminal input and output.
+
+The cases use the faux provider, so no key is needed. Real-provider acceptance is a separate manual record.
+Run `python3 e2e/tui/test-assertions.py` for the controls of these assertions and of the secret scan.
+
+### Real-provider driver
+
+`real_provider.py` and `real_provider_scenarios.py` run the built `ask` against real providers for acceptance runs by hand (they are not part of `run.py`). They need the Python package `pyte` (`pip install pyte`, for example into a virtual environment outside the repository). Keys reach `ask` only through the inherited environment. Copy an OAuth `ASK_HOME` to a short path under `/private/tmp` first, because a token refresh rewrites its credential file.

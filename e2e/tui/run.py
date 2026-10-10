@@ -1,6 +1,7 @@
 #!/usr/bin/env python3
-"""Run the archived T0 binary through owned tui-test sessions."""
+"""Run the archived T0 binary and the built `ask` through owned tui-test sessions."""
 import argparse
+from collections import Counter
 import hashlib
 import json
 import os
@@ -75,9 +76,14 @@ def wait_replay(session, previous, count=2000):
 
 
 class Session:
-    def __init__(self, cli, name, backend, target, directory, artifacts, scenario):
+    def __init__(self, cli, name, backend, target, directory, artifacts, scenario, *, cols=40, rows=12,
+                 env=None, env_names=(), verbose=True, ready=None, ready_timeout=8):
+        # The defaults are the T0 contract. The `ask` driver passes its own size, a
+        # process environment, no scenario and its own ready check.
         self.cli, self.name, self.backend = cli, name, backend
         self.artifacts = artifacts
+        self.size = (cols, rows)
+        self.env_names = tuple(env_names)
         artifacts.mkdir(parents=True)
         self.calls = []
         self.started = False
@@ -88,15 +94,21 @@ class Session:
         status = self.call('daemon', 'status', allow=(3,))
         assert status.returncode == 3, 'refusing to reuse an existing daemon'
         try:
-            result = self.call('--verbose', 'run', '--backend', backend, '--cols', '40', '--rows', '12',
+            if scenario is None:
+                tail = []
+                term = []
+            else:
+                tail = ['--scenario', scenario, '--draft-report', str(self.report)]
+                term = ['--env', 'TERM=xterm-256color']
+            result = self.call(*(['--verbose'] if verbose else []), 'run', '--backend', backend,
+                               '--cols', str(cols), '--rows', str(rows),
                                '--config', str(HERE / 'tui-test.toml'),
-                               '--cwd', str(directory), '--env', 'TERM=xterm-256color', str(target),
-                               '--scenario', scenario, '--draft-report', str(self.report))
+                               '--cwd', str(directory), *term, str(target), *tail, env=env)
             self.started = True
             self.owner = json.loads(result.stdout)['data']
             self.identities = {pid: self.identity(pid) for pid in (self.owner['pid'], self.owner['shell_pid'])}
             (artifacts / 'ownership.json').write_text(json.dumps(self.owner, indent=2) + '\n')
-            self.wait(lambda s: 'editor>' in s['text'])
+            self.wait(ready or (lambda s: 'editor>' in s['text']), timeout=ready_timeout)
         except BaseException as original:
             self.discover_owner()
             if self.started:
@@ -130,11 +142,14 @@ class Session:
                 self.identities[child] = self.identity(child)
         (self.artifacts / 'ownership.json').write_text(json.dumps(self.owner, indent=2) + '\n')
 
-    def call(self, *args, allow=(), timeout=8):
+    def call(self, *args, allow=(), timeout=8, env=None):
         command = [self.cli, '--session', self.name, '--json', *args]
         try:
-            result = subprocess.run(command, capture_output=True, text=True, timeout=timeout)
+            result = subprocess.run(command, capture_output=True, text=True, timeout=timeout, env=env)
             entry = {'command': command, 'code': result.returncode, 'stdout': result.stdout, 'stderr': result.stderr}
+            if env is not None:
+                # Names only: values can hold secrets that the inherited environment carries.
+                entry['environment_names'] = sorted(self.env_names)
         except subprocess.TimeoutExpired as error:
             self.calls.append({'command': command, 'timeout': timeout})
             (self.artifacts / 'commands.json').write_text(json.dumps(self.calls, ensure_ascii=False, indent=2) + '\n')
@@ -212,7 +227,7 @@ class Session:
 
     def capture(self, label):
         for args, name in [(('state',), 'state.json'), (('text', '--full'), 'history.json'),
-                           (('cells', '0', '0', '40', '12'), 'cells.json')]:
+                           (('cells', '0', '0', *map(str, self.size)), 'cells.json')]:
             try:
                 value = self.call(*args, timeout=2).stdout
                 (self.artifacts / f'{label}-{name}').write_text(value)
@@ -400,7 +415,12 @@ def file_hashes(directory):
 def product_hashes():
     paths = [ROOT / 'go.mod', ROOT / 'go.sum']
     for directory in ('cmd', 'internal', 'pkg', 'proto', 'migrations'):
-        paths.extend(path for path in (ROOT / directory).rglob('*') if path.is_file())
+        # Tests, testdata and docs never change the binary under test, and
+        # developers edit them while a long run is in progress.
+        paths.extend(path for path in (ROOT / directory).rglob('*')
+                     if path.is_file() and path.suffix != '.md'
+                     and not path.name.endswith('_test.go')
+                     and 'testdata' not in path.parts)
     return {str(path.relative_to(ROOT)): hashlib.sha256(path.read_bytes()).hexdigest()
             for path in sorted(paths)}
 
@@ -429,14 +449,436 @@ def build_target(directory, artifacts):
     return directory / 't0'
 
 
+def run_t0(args, cli, run_id, directory, artifacts, results):
+    """Run the archived T0 gate scenarios; these scenarios and their assertions are frozen."""
+    built = build_target(directory, artifacts)
+    target = args.target.resolve() if args.target else built
+    for backend in args.backend or ['alacritty', 'ghostty']:
+        cases = [('g1', g1), ('g2', g2), ('g3', g3), ('g6', g6)]
+        for label, draft, left in [('middle', 'abc界😀Z', 3),
+                                   ('hard-lines', 'abc界😀Z\r\nsecond界😀Z', 2),
+                                   ('long', 'abcdefghijklmnopqrstuvwxyz012345界😀Z', 0),
+                                   ('trailing-space', 'abcdefghijklmnopqrstuvwxyz01234 界😀Z', 0)]:
+            cases.append((f'g3-draft-{label}', lambda s, text=draft, offset=left: draft_resize(s, text, offset)))
+        cases.append(('g3-pending', None))
+        if args.case and 'g3-capacity' in args.case:
+            cases.append(('g3-capacity', None))
+        if args.extreme_probe:
+            cases.append(('g3-extreme', extreme_size))
+        for scenario, test in cases:
+            group = 'g3-draft' if scenario.startswith('g3-draft-') else scenario if scenario in ('g3-pending', 'g3-capacity') else scenario.split('-')[0]
+            if args.case and group not in args.case:
+                continue
+            name = f'askcore-e2e-{run_id}-{backend}-{scenario}'
+            record = {'backend': backend, 'scenario': scenario, 'session': name, 'result': 'fail'}
+            if group in ('g3-pending', 'g3-capacity'):
+                record.pop('session')
+            session = None
+            try:
+                if group in ('g3-pending', 'g3-capacity'):
+                    pending = runpy.run_path(str(HERE / 'pending-resize.py'))['pending_resize']
+                    detail = pending(cli, backend, target, directory, artifacts / backend / scenario,
+                                     capacity_probe=group == 'g3-capacity')
+                else:
+                    fixture = 'g6' if group == 'g3-draft' else scenario.split('-')[0]
+                    session = Session(cli, name, backend, target, directory, artifacts / backend / scenario, fixture)
+                    detail = test(session)
+                record.update(result='pass', detail=detail)
+            except Exception as error:
+                record['error'] = str(error)
+                if session:
+                    session.capture('failure')
+            finally:
+                if session:
+                    try:
+                        session.close()
+                    except Exception as error:
+                        record.update(result='fail', cleanup_error=str(error))
+                results['cases'].append(record)
+                (artifacts / 'results.json').write_text(json.dumps(results, indent=2) + '\n')
+            print(f'{backend}/{scenario}: {record["result"]}', flush=True)
+
+
+# Built `ask` driver
+#
+# The driver starts the real `ask` with no arguments in an owned tui-test session.
+# The TUI starts its own leader in an isolated ASK_HOME. Model replies come from the
+# faux provider, which is the default provider of the binary. The runner passes the
+# paced reply speed and the home through the inherited environment only.
+
+ASK_CASES = ['ask-idle', 'ask-selector', 'ask-resize']
+STREAM_MARKERS = 100
+STREAM_PROMPT = ' '.join(f'm{i:03d}' for i in range(STREAM_MARKERS))
+LEADER_FOOTER = re.compile(r'● leader [0-9a-f]+')
+USAGE_ROW = re.compile(r'^\s+faux-1 · [\d.]+s · ↑\d+ ↓\d+$', re.M)
+PURGE = '\x1b[2J\x1b[3J\x1b[H'
+ALT_SCREEN = ('\x1b[?47h', '\x1b[?1047h', '\x1b[?1049h')
+SECRET_NAME = re.compile(r'API[_-]?KEY|TOKEN|SECRET|PASSWORD|CREDENTIAL|PRIVATE[_-]?KEY|AUTH', re.I)
+NOT_SECRET_NAME = re.compile(r'(_URL|_SOCK|_PATH|_DIR|_FILE|_HOST)$', re.I)
+ASK_COLUMNS = 80
+ASK_ROWS = 24
+STREAM_TPS = 20
+
+
+def ask_ready(state):
+    """The leader footer is shown and the in-process fallback is not."""
+    text = state['text']
+    return '❯ Ask anything' in text and LEADER_FOOTER.search(text) is not None and 'in-process' not in text
+
+
+def editor_rows(text):
+    return [i for i, line in enumerate(text.split('\n')) if line.startswith('│ ❯ ')]
+
+
+def assert_frame(state, columns):
+    """One startup header, one editor box with full-width borders, a leader footer."""
+    lines = state['text'].split('\n')
+    assert sum(line.startswith('◢◤ ask') for line in lines) == 1, f'header count differs: {state["text"]!r}'
+    tops = [i for i, line in enumerate(lines) if line.startswith('╭')]
+    bottoms = [i for i, line in enumerate(lines) if line.startswith('╰')]
+    assert len(tops) == 1 and len(bottoms) == 1, f'expected one editor box, got tops={tops} bottoms={bottoms}'
+    assert bottoms[0] > tops[0], 'editor box is upside down'
+    for row in range(tops[0], bottoms[0] + 1):
+        assert len(lines[row]) == columns, f'editor box row {row} is {len(lines[row])} columns, expected {columns}'
+    footer = lines[bottoms[0] + 1]
+    assert LEADER_FOOTER.search(footer), f'leader id missing in footer: {footer!r}'
+    assert 'faux-1' in footer and 'in-process' not in state['text'], f'unexpected footer: {footer!r}'
+    return tops[0], bottoms[0]
+
+
+def assert_idle_screen(state, columns):
+    top, bottom = assert_frame(state, columns)
+    assert bottom == top + 2, 'idle editor must be one row'
+    row = state['text'].split('\n')[top + 1]
+    assert row.startswith('│ ❯ Ask anything  ·  / commands  ·  ctrl+l model'), f'placeholder differs: {row!r}'
+    assert state['cursor'] == {'x': 4, 'y': top + 1}, f'cursor={state["cursor"]}'
+
+
+def assert_selector_screen(state, columns):
+    lines = state['text'].split('\n')
+    titles = [i for i, line in enumerate(lines) if line.startswith('╭─ Select model ')]
+    assert len(titles) == 1, f'expected one selector: {state["text"]!r}'
+    assert not any(line.startswith('│ ❯ draft') for line in lines), 'selector must replace the editor'
+    current = [line for line in lines if line.startswith('│ ❯ ● faux/faux-1') and re.search(r'current\s+│$', line)]
+    assert len(current) == 1, f'current model row differs: {lines!r}'
+    hint = [line for line in lines if line.strip() == 'enter select  ·  esc close  ·  your draft is kept']
+    assert len(hint) == 1, f'selector hint differs: {lines!r}'
+    row = titles[0]
+    while row < len(lines) and not lines[row].startswith('╰'):
+        assert len(lines[row]) == columns, f'selector row {row} is {len(lines[row])} columns, expected {columns}'
+        row += 1
+    assert row < len(lines), 'selector has no bottom border'
+    assert any(LEADER_FOOTER.search(line) for line in lines), 'leader footer missing'
+
+
+def assert_stream_text(text, columns, markers=STREAM_MARKERS, complete=True):
+    """The full text holds the prompt once and the reply once, each word in order.
+
+    While the reply streams (complete is false) the reply may stop at any word.
+    """
+    lines = text.split('\n')
+    assert sum(line.startswith('◢◤ ask') for line in lines) == 1, 'startup header is missing or drawn twice'
+    assert sum(line.startswith('  ❯ m000') for line in lines) == 1, 'prompt band is missing or drawn twice'
+    assert sum(line.startswith('  ◆ m000') for line in lines) == 1, 'reply start is missing or drawn twice'
+    found = re.findall(r'\bm\d{3}\b', text)
+    expected = [f'm{i:03d}' for i in range(markers)]
+    if complete:
+        assert found == expected * 2, f'ordered prompt and reply differ: total={len(found)}, first words={found[:3]}'
+    else:
+        assert found[:markers] == expected and found[markers:] == expected[:len(found) - markers], \
+            f'ordered prompt and partial reply differ: total={len(found)}'
+    too_wide = [line for line in lines if len(line) > columns]
+    assert not too_wide, f'rows wider than {columns} columns survived: {too_wide[:2]!r}'
+
+
+def assert_rebuild_once(raw, markers=STREAM_MARKERS):
+    """One purge and rebuild for the resize, and the rebuilt prompt starts in order after it."""
+    parts = raw.split(PURGE)
+    assert len(parts) == 2, f'expected one rebuild after the resize, got {len(parts) - 1}'
+    plain = re.sub(r'\x1b\[[0-9;?]*[A-Za-z]', '', parts[1])
+    found = re.findall(r'\bm\d{3}\b', plain)
+    assert found[:markers] == [f'm{i:03d}' for i in range(markers)], 'rebuilt prompt is incomplete or out of order'
+    assert plain.count('◢◤ ask') == 1, 'startup header missing or drawn twice in the rebuild'
+
+
+def assert_one_draft(state, draft):
+    """The draft is in the editor once and the cursor sits after its last character."""
+    rows = [i for i, line in enumerate(state['text'].split('\n')) if line.startswith(f'│ ❯ {draft}')]
+    assert len(rows) == 1, f'expected one editor row with the draft: {state["text"]!r}'
+    assert state['text'].count(draft) == 1, 'draft text is drawn more than once'
+    expected = {'x': 4 + len(draft), 'y': rows[0]}
+    assert state['cursor'] == expected, f'cursor={state["cursor"]}, expected={expected}'
+
+
+def wait_one_draft(session, draft):
+    """Wait for the draft and cursor to settle; a repaint in progress can show a moved cursor."""
+    def settled(state):
+        try:
+            assert_one_draft(state, draft)
+            return True
+        except AssertionError:
+            return False
+    try:
+        return session.wait(settled)
+    except AssertionError:
+        assert_one_draft(session.state(), draft)
+        raise
+
+
+def assert_no_alt_screen(raw):
+    for sequence in ALT_SCREEN:
+        assert sequence not in raw, f'alternate screen entered: {sequence!r}'
+
+
+def secret_values(environ, minimum=8):
+    """Variable name to value for names that look like credentials."""
+    return {name: value for name, value in environ.items()
+            if SECRET_NAME.search(name) and not NOT_SECRET_NAME.search(name) and len(value) >= minimum}
+
+
+def scan_secrets(directory, secrets):
+    """Return {relative path: [variable names]} for files that hold a secret value.
+
+    A matching file is removed, so the evidence that is kept never holds a value.
+    Only the variable names leave this function.
+    """
+    needles = {name: value.encode() for name, value in secrets.items()}
+    hits = {}
+    for path in sorted(Path(directory).rglob('*')):
+        if not path.is_file():
+            continue
+        data = path.read_bytes()
+        names = [name for name, needle in needles.items() if needle in data]
+        if names:
+            hits[str(path.relative_to(directory))] = names
+            path.unlink()
+    return hits
+
+
+def ask_environment(home):
+    """The process environment of one `ask` case.
+
+    ASK_* settings of the caller are dropped so that a local configuration cannot
+    change the run. All other variables, including provider keys, are inherited.
+    """
+    env = {name: value for name, value in os.environ.items() if not name.startswith('ASK_')}
+    env.update(ASK_HOME=str(home), ASK_FAUX_TPS=str(STREAM_TPS), TERM='xterm-256color', LANG='en_US.UTF-8')
+    return env
+
+
+ASK_ENV_NAMES = ('ASK_HOME', 'ASK_FAUX_TPS', 'TERM', 'LANG')
+
+
+def process_table():
+    result = subprocess.run(['ps', '-axo', 'pid=,command='], capture_output=True, text=True, timeout=5)
+    rows = []
+    for line in result.stdout.splitlines():
+        fields = line.strip().split(None, 1)
+        if len(fields) == 2 and fields[0].isdigit():
+            rows.append((int(fields[0]), fields[1]))
+    return rows
+
+
+def leader_processes(binary):
+    """Leaders of this run. The binary path is unique to the run, so no other leader matches."""
+    return [(pid, command) for pid, command in process_table() if command.startswith(f'{binary} leader')]
+
+
+def stop_leader(binary, home, env, artifacts):
+    """Stop the leader that the TUI started in this home, then check that none is left."""
+    errors = []
+    try:
+        result = subprocess.run([str(binary), 'leader', 'stop'], env=env, capture_output=True, text=True, timeout=20)
+        (artifacts / 'leader-stop.txt').write_text(result.stdout + result.stderr)
+    except Exception as error:
+        errors.append(f'leader stop failed: {error}')
+    deadline = time.monotonic() + 5
+    while leader_processes(binary) and time.monotonic() < deadline:
+        time.sleep(0.05)
+    for pid, command in leader_processes(binary):
+        # Only a process that runs the binary of this run is signaled, and the command is
+        # checked again before each signal so that a reused PID is never hit.
+        errors.append(f'leader {pid} ignored leader stop')
+        for sig in (signal.SIGTERM, signal.SIGKILL):
+            if (pid, command) not in leader_processes(binary):
+                break
+            os.kill(pid, sig)
+            time.sleep(0.5)
+    left = leader_processes(binary)
+    if left:
+        errors.append(f'leader processes left: {left}')
+    log = Path(home) / 'leader.log'
+    if log.is_file():
+        shutil.copy2(log, artifacts / 'leader.log')
+    if errors:
+        raise RuntimeError('; '.join(errors))
+
+
+class AskSession(Session):
+    """A session of the built `ask`; the terminal size is tracked for the cell dumps."""
+
+    def resize(self, cols, rows):
+        super().resize(cols, rows)
+        self.size = (cols, rows)
+
+    def quit(self):
+        # ctrl+d quits only on an empty draft; with a draft it deletes a character.
+        # ctrl+c clears a draft first.
+        if not any(line.startswith('│ ❯ Ask anything') for line in self.state()['text'].split('\n')):
+            self.key('ctrl+c')
+            self.wait(lambda s: any(line.startswith('│ ❯ Ask anything') for line in s['text'].split('\n')))
+        self.key('ctrl+d')
+        self.call('wait', 'exit', '--timeout', '10000', timeout=15)
+        self.capture('final')
+
+
+def ask_idle(session):
+    # The header is committed after the first frame and the model name comes
+    # with the state answer, so wait until the idle screen is complete.
+    def idle(state):
+        try:
+            assert_idle_screen(state, ASK_COLUMNS)
+            return True
+        except AssertionError:
+            return False
+    session.wait(idle)
+    state = session.state()
+    assert_idle_screen(state, ASK_COLUMNS)
+    assert_no_alt_screen(session.recording())
+    session.capture('idle')
+    session.quit()
+    return {'screen': 'idle', 'columns': ASK_COLUMNS, 'rows': ASK_ROWS}
+
+
+def ask_selector(session):
+    session.write('draft')
+    session.wait(lambda s: any(line.startswith('│ ❯ draft') for line in s['text'].split('\n')))
+    session.key('ctrl+l')
+    state = session.wait(lambda s: 'Select model' in s['text'])
+    assert_selector_screen(state, ASK_COLUMNS)
+    session.capture('selector')
+    session.key('escape')
+    session.wait(lambda s: 'Select model' not in s['text'])
+    wait_one_draft(session, 'draft')
+    assert_no_alt_screen(session.recording())
+    session.quit()
+    return {'screen': 'selector', 'draft_kept': True}
+
+
+def ask_resize(session):
+    """Resize from 120x40 to 80x24 while a reply streams, with a draft in the editor."""
+    session.write(STREAM_PROMPT)
+    session.key('enter')
+    session.wait(lambda s: '◆ m000' in s['text'] and 'Working…' in s['text'], timeout=20)
+    session.write('draft')
+    session.wait(lambda s: any(line.startswith('│ ❯ draft') for line in s['text'].split('\n')))
+    assert 'Working…' in session.state()['text'], 'the reply ended before the resize'
+    session.resize(ASK_COLUMNS, ASK_ROWS)
+    assert not USAGE_ROW.search(session.state()['text']), 'the reply ended before the resize settled'
+    wait_one_draft(session, 'draft')
+    # The renderer rebuilds the scrollback 120 ms after the size stopped changing.
+    session.wait(lambda s: session.recording().count(PURGE) == 1)
+    state = wait_one_draft(session, 'draft')
+    assert 'Working…' in state['text'], 'the reply ended before the rebuild was checked'
+    assert_stream_text(session.text(), ASK_COLUMNS, complete=False)
+    session.wait(lambda s: USAGE_ROW.search(s['text']) is not None, timeout=40)
+    wait_one_draft(session, 'draft')
+    assert_stream_text(session.text(), ASK_COLUMNS)
+    raw = session.recording()
+    assert_no_alt_screen(raw)
+    assert_rebuild_once(raw)
+    session.capture('resized')
+    session.quit()
+    return {'resize': '120x40 to 80x24 while streaming', 'draft_and_cursor_kept': True}
+
+
+def compile_ask(base, artifacts):
+    binary = base / 'ask'
+    with (artifacts / 'go-compile.txt').open('w') as output:
+        result = subprocess.run(['go', 'build', '-o', str(binary), './cmd/tui'], cwd=ROOT,
+                                env=dict(os.environ, GOWORK='off'), stdout=output, stderr=subprocess.STDOUT, timeout=600)
+    assert result.returncode == 0, 'go build of ./cmd/tui failed; see go-compile.txt'
+    return binary
+
+
+def run_ask(args, cli, run_id, artifacts, results):
+    """Run the `ask` scenarios; each case has its own ASK_HOME and its own leader."""
+    selected = [name for name in ASK_CASES if not args.case or name in args.case]
+    if not selected:
+        return
+    # A Unix socket path is short-limited, so the base is under /tmp and not the user temp dir.
+    base = Path(tempfile.mkdtemp(prefix='askl-', dir='/tmp')).resolve()
+    secrets = secret_values(os.environ)
+    environment = {'set_names': list(ASK_ENV_NAMES), 'dropped_prefix': 'ASK_',
+                   'inherited_credential_names': sorted(secrets)}
+    (artifacts / 'ask-environment.json').write_text(json.dumps(environment, indent=2) + '\n')
+    try:
+        binary = compile_ask(base, artifacts)
+        cases = {'ask-idle': (ask_idle, ASK_COLUMNS, ASK_ROWS), 'ask-selector': (ask_selector, ASK_COLUMNS, ASK_ROWS),
+                 'ask-resize': (ask_resize, 120, 40)}
+        for backend in args.backend or ['alacritty', 'ghostty']:
+            for scenario in selected:
+                test, cols, rows = cases[scenario]
+                name = f'askcore-e2e-{run_id}-ask-{backend}-{scenario}'
+                record = {'driver': 'ask', 'backend': backend, 'scenario': scenario, 'session': name, 'result': 'fail'}
+                home = base / f'{backend}-{scenario}'
+                work = base / f'work-{backend}-{scenario}'
+                work.mkdir()
+                env = ask_environment(home)
+                case_dir = artifacts / 'ask' / backend / scenario
+                session = None
+                try:
+                    session = AskSession(cli, name, backend, binary, work, case_dir, None, cols=cols, rows=rows, env=env,
+                                         env_names=ASK_ENV_NAMES, verbose=False, ready=ask_ready, ready_timeout=30)
+                    detail = test(session)
+                    record.update(result='pass', detail=detail)
+                except Exception as error:
+                    record['error'] = str(error)
+                    if session:
+                        session.capture('failure')
+                finally:
+                    if session:
+                        try:
+                            session.close()
+                        except Exception as error:
+                            record.update(result='fail', cleanup_error=str(error))
+                    try:
+                        stop_leader(binary, home, env, case_dir)
+                    except Exception as error:
+                        record.update(result='fail', leader_cleanup_error=str(error))
+                    results['cases'].append(record)
+                    (artifacts / 'results.json').write_text(json.dumps(results, indent=2) + '\n')
+                print(f'ask/{backend}/{scenario}: {record["result"]}', flush=True)
+        left = leader_processes(binary)
+        assert not left, f'leader processes left after the run: {left}'
+    finally:
+        shutil.rmtree(base, ignore_errors=True)
+
+
+def select_drivers(parser, args):
+    t0_cases = {'g1', 'g2', 'g3', 'g3-draft', 'g3-pending', 'g3-capacity', 'g6'}
+    if args.driver:
+        chosen = list(dict.fromkeys(args.driver))
+    elif args.case:
+        chosen = [d for d, cases in (('t0', t0_cases), ('ask', set(ASK_CASES))) if cases & set(args.case)]
+    else:
+        chosen = ['t0', 'ask']
+    for case in args.case or []:
+        if case in ASK_CASES and 'ask' not in chosen or case not in ASK_CASES and 't0' not in chosen:
+            parser.error(f'case {case} does not belong to the selected driver')
+    return chosen
+
+
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument('--extreme-probe', action='store_true', help='Also run the known 1/2-column engine-limit probe')
     parser.add_argument('--target', type=Path, help='Existing T0-compatible binary; archived Go checks still run')
     parser.add_argument('--backend', action='append', choices=['alacritty', 'ghostty', 'rio'])
     parser.add_argument('--artifacts', type=Path)
-    parser.add_argument('--case', action='append', choices=['g1', 'g2', 'g3', 'g3-draft', 'g3-pending', 'g3-capacity', 'g6'], help='Select focused cases; g3-capacity is an opt-in engine-limit probe')
+    parser.add_argument('--driver', action='append', choices=['t0', 'ask'], help='t0: archived T0 gate scenarios; ask: the built ask. Default: both, or the driver that owns the selected cases')
+    parser.add_argument('--case', action='append', choices=['g1', 'g2', 'g3', 'g3-draft', 'g3-pending', 'g3-capacity', 'g6', *ASK_CASES], help='Select focused cases; g3-capacity is an opt-in engine-limit probe; ask-* cases use the ask driver')
     args = parser.parse_args()
+    drivers = select_drivers(parser, args)
     if not __debug__:
         parser.error('Run without -O/PYTHONOPTIMIZE; terminal assertions must stay enabled')
     cli = shutil.which('tui-test')
@@ -463,52 +905,15 @@ def main():
     try:
         with tempfile.TemporaryDirectory(prefix='askcore-tui-e2e-') as temporary:
             directory = Path(temporary)
-            built = build_target(directory, artifacts)
-            target = args.target.resolve() if args.target else built
-            for backend in args.backend or ['alacritty', 'ghostty']:
-                cases = [('g1', g1), ('g2', g2), ('g3', g3), ('g6', g6)]
-                for label, draft, left in [('middle', 'abc界😀Z', 3),
-                                           ('hard-lines', 'abc界😀Z\r\nsecond界😀Z', 2),
-                                           ('long', 'abcdefghijklmnopqrstuvwxyz012345界😀Z', 0),
-                                           ('trailing-space', 'abcdefghijklmnopqrstuvwxyz01234 界😀Z', 0)]:
-                    cases.append((f'g3-draft-{label}', lambda s, text=draft, offset=left: draft_resize(s, text, offset)))
-                cases.append(('g3-pending', None))
-                if args.case and 'g3-capacity' in args.case:
-                    cases.append(('g3-capacity', None))
-                if args.extreme_probe:
-                    cases.append(('g3-extreme', extreme_size))
-                for scenario, test in cases:
-                    group = 'g3-draft' if scenario.startswith('g3-draft-') else scenario if scenario in ('g3-pending', 'g3-capacity') else scenario.split('-')[0]
-                    if args.case and group not in args.case:
-                        continue
-                    name = f'askcore-e2e-{run_id}-{backend}-{scenario}'
-                    record = {'backend': backend, 'scenario': scenario, 'session': name, 'result': 'fail'}
-                    if group in ('g3-pending', 'g3-capacity'):
-                        record.pop('session')
-                    session = None
-                    try:
-                        if group in ('g3-pending', 'g3-capacity'):
-                            pending = runpy.run_path(str(HERE / 'pending-resize.py'))['pending_resize']
-                            detail = pending(cli, backend, target, directory, artifacts / backend / scenario,
-                                             capacity_probe=group == 'g3-capacity')
-                        else:
-                            fixture = 'g6' if group == 'g3-draft' else scenario.split('-')[0]
-                            session = Session(cli, name, backend, target, directory, artifacts / backend / scenario, fixture)
-                            detail = test(session)
-                        record.update(result='pass', detail=detail)
-                    except Exception as error:
-                        record['error'] = str(error)
-                        if session:
-                            session.capture('failure')
-                    finally:
-                        if session:
-                            try:
-                                session.close()
-                            except Exception as error:
-                                record.update(result='fail', cleanup_error=str(error))
-                        results['cases'].append(record)
-                        (artifacts / 'results.json').write_text(json.dumps(results, indent=2) + '\n')
-                    print(f'{backend}/{scenario}: {record["result"]}', flush=True)
+            for driver, run in (('t0', lambda: run_t0(args, cli, run_id, directory, artifacts, results)),
+                                ('ask', lambda: run_ask(args, cli, run_id, artifacts, results))):
+                if driver not in drivers:
+                    continue
+                try:
+                    run()
+                except Exception as error:
+                    results.setdefault('driver_errors', {})[driver] = str(error)
+                    results['error'] = results.get('error', '') + f'{driver}: {error}\n'
     except Exception as error:
         results['error'] = str(error)
     archive_after, product_after = file_hashes(ARCHIVE), product_hashes()
@@ -520,8 +925,16 @@ def main():
     if archive_after != archive_before or baseline_after != baseline_before or product_after != product_before:
         results['boundary_error'] = 'Protected archive or product files changed during the run'
     (artifacts / 'results.json').write_text(json.dumps(results, indent=2) + '\n')
+    # Evidence is kept only when no credential value from the inherited environment is in it.
+    leaked = scan_secrets(artifacts, secret_values(os.environ))
+    if leaked:
+        results = {'secret_error': 'credential values found in artifacts; the files were removed',
+                   'files': sorted(leaked), 'variables': sorted({n for names in leaked.values() for n in names}),
+                   'cases': [{'scenario': r['scenario'], 'result': 'fail'} for r in results['cases']]}
+        (artifacts / 'results.json').write_text(json.dumps(results, indent=2) + '\n')
+        print(f'Credential values found in {len(leaked)} artifact file(s); removed. Variables: {results["variables"]}', flush=True)
     print(f'Artifacts: {artifacts}', flush=True)
-    return 0 if results['cases'] and not results.get('error') and not results.get('boundary_error') and all(r['result'] == 'pass' for r in results['cases']) else 1
+    return 0 if not leaked and results['cases'] and not results.get('error') and not results.get('boundary_error') and all(r['result'] == 'pass' for r in results['cases']) else 1
 
 
 if __name__ == '__main__':

@@ -1,8 +1,13 @@
 """Independent hand-written controls for terminal assertions."""
 import json
+from pathlib import Path
+import tempfile
 import unittest
 
-from run import assert_editor, assert_cursor, assert_no_replay, assert_resize_replay, assert_transcript, output_bytes
+from run import (PURGE, assert_editor, assert_cursor, assert_frame, assert_idle_screen, assert_no_alt_screen,
+                 assert_no_replay, assert_one_draft, assert_rebuild_once, assert_resize_replay,
+                 assert_selector_screen, assert_stream_text, assert_transcript, ask_ready, output_bytes,
+                 scan_secrets, secret_values)
 
 
 class AssertionControls(unittest.TestCase):
@@ -50,6 +55,107 @@ class AssertionControls(unittest.TestCase):
         for erase in ['\x1b[2J', '\x1b[3J', '\x1b[?47h', '\x1b[?1047h', '\x1b[?1049h']:
             with self.subTest(erase=erase), self.assertRaises(AssertionError):
                 assert_no_replay(raw + erase, 2)
+
+
+WIDTH = 60
+
+
+def box_row(content, width=WIDTH):
+    return ('│ ' + content).ljust(width - 1) + '│'
+
+
+def screen(editor='❯ Ask anything  ·  / commands  ·  ctrl+l model', footer='  ● leader 1cb8   ⌂ ~   faux-1', width=WIDTH):
+    rows = ['◢◤ ask   v1 · leader 1cb8', '', '╭' + '─' * (width - 2) + '╮', box_row(editor, width),
+            '╰' + '─' * (width - 2) + '╯', footer]
+    return '\n'.join(rows)
+
+
+def selector(hint='enter select  ·  esc close  ·  your draft is kept', current='current', title='Select model'):
+    rows = ['◢◤ ask', '', ('╭─ ' + title + ' ').ljust(WIDTH - 1, '─') + '╮', box_row('⌕ type to filter'),
+            box_row('❯ ● faux/faux-1    128k  ' + current), '╰' + '─' * (WIDTH - 2) + '╯', '   ' + hint,
+            '  ● leader 1cb8   faux-1']
+    return '\n'.join(rows)
+
+
+class AskControls(unittest.TestCase):
+    def test_ready_needs_leader_footer(self):
+        assert ask_ready({'text': screen()})
+        for text in [screen(footer='  ○ in-process   ⌂ ~   faux-1'), screen(footer='  ◌ leader starting'),
+                     screen(editor='starting')]:
+            with self.subTest(text=text):
+                assert not ask_ready({'text': text})
+
+    def test_idle_screen(self):
+        state = {'text': screen(), 'cursor': {'x': 4, 'y': 3}}
+        assert_idle_screen(state, WIDTH)
+        for invalid in [dict(state, cursor={'x': 5, 'y': 3}), dict(state, text=state['text'] + '\n' + state['text']),
+                        dict(state, text=state['text'].replace('╮', '')), dict(state, text=screen(footer='  ○ in-process faux-1')),
+                        dict(state, text=screen(editor='typed text'))]:
+            with self.subTest(text=invalid['text']), self.assertRaises(AssertionError):
+                assert_idle_screen(invalid, WIDTH)
+        with self.assertRaises(AssertionError):
+            assert_idle_screen(state, WIDTH + 1)
+
+    def test_selector_screen(self):
+        text = selector()
+        assert_selector_screen({'text': text}, WIDTH)
+        for invalid in [selector(hint='gone'), selector(current='other'), selector(title='Pick'),
+                        text + '\n│ ❯ draft']:
+            with self.subTest(text=invalid), self.assertRaises(AssertionError):
+                assert_selector_screen({'text': invalid}, WIDTH)
+        with self.assertRaises(AssertionError):
+            assert_selector_screen({'text': text}, WIDTH + 1)
+
+    def test_stream_text(self):
+        words = [f'm{i:03d}' for i in range(3)]
+        text = '◢◤ ask\n  ❯ ' + ' '.join(words) + '\n  ◆ ' + ' '.join(words)
+        assert_stream_text(text, 40, 3)
+        assert_stream_text(text.rsplit(' ', 1)[0], 40, 3, complete=False)
+        for invalid in [text + '\n  ◆ m000', text.replace('m002', 'm001', 1), text.rsplit(' ', 1)[0],
+                        text.replace('◢◤ ask', '◢◤ ask\n◢◤ ask'), text + ' ' * 40]:
+            with self.subTest(text=invalid), self.assertRaises(AssertionError):
+                assert_stream_text(invalid, 40, 3)
+        with self.assertRaises(AssertionError):
+            assert_stream_text(text.replace('m001', 'm002'), 40, 3, complete=False)
+
+    def test_one_draft(self):
+        state = {'text': '╭──╮\n│ ❯ draft  │\n╰──╯', 'cursor': {'x': 9, 'y': 1}}
+        assert_one_draft(state, 'draft')
+        for invalid in [dict(state, cursor={'x': 8, 'y': 1}), dict(state, cursor={'x': 9, 'y': 0}),
+                        dict(state, text=state['text'] + '\ndraft'), dict(state, text='╭──╮\n│ ❯ draf  │')]:
+            with self.subTest(state=invalid), self.assertRaises(AssertionError):
+                assert_one_draft(invalid, 'draft')
+
+    def test_rebuild_once(self):
+        words = ' '.join(f'm{i:03d}' for i in range(3))
+        head = '\x1b[1;38;5;253;48;5;235m' + words + '\x1b[m'
+        raw = 'old ' + words + PURGE + '◢◤ ask ' + head
+        assert_rebuild_once(raw, 3)
+        for invalid in ['old ' + words, raw + PURGE + '◢◤ ask ' + head, raw.replace('m001', 'm002'),
+                        raw.replace('◢◤ ask', 'x')]:
+            with self.subTest(raw=invalid), self.assertRaises(AssertionError):
+                assert_rebuild_once(invalid, 3)
+
+    def test_alt_screen(self):
+        assert_no_alt_screen('plain')
+        for sequence in ['\x1b[?47h', '\x1b[?1047h', '\x1b[?1049h']:
+            with self.subTest(sequence=sequence), self.assertRaises(AssertionError):
+                assert_no_alt_screen('a' + sequence)
+
+    def test_secret_scan(self):
+        # The values are made up for this control; no real credential is read.
+        environ = {'EXAMPLE_API_KEY': 'sk-control-value-1', 'EXAMPLE_TOKEN': 'short', 'EXAMPLE_TOKEN_URL': 'https://example.test/x',
+                   'SSH_AUTH_SOCK': '/tmp/agent.sock-long', 'PATH': '/usr/bin:/bin'}
+        secrets = secret_values(environ)
+        assert secrets == {'EXAMPLE_API_KEY': 'sk-control-value-1'}
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            (root / 'sub').mkdir()
+            (root / 'clean.json').write_text('{"environment_names": ["EXAMPLE_API_KEY"]}')
+            (root / 'sub' / 'leak.cast').write_text('x sk-control-value-1 y')
+            assert scan_secrets(root, secrets) == {'sub/leak.cast': ['EXAMPLE_API_KEY']}
+            assert not (root / 'sub' / 'leak.cast').exists() and (root / 'clean.json').exists()
+            assert scan_secrets(root, secrets) == {}
 
 
 if __name__ == '__main__':
