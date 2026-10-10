@@ -1,0 +1,48 @@
+Ask copy of charm.land/bubbletea/v2
+
+Upstream:   https://github.com/charmbracelet/bubbletea (module charm.land/bubbletea/v2)
+Version:    v2.0.10
+Module sum: h1:oolvo20VBpI0PfqE7iFjkZ1bx0WpmXGfnKz5Yldjq5o= (upstream v2.0.10; Ask go.sum had no entry before this copy)
+License:    MIT (file LICENSE, unchanged)
+Used by:    internal/tui and cmd/tui, through the replace line in the go.mod of the repository
+
+What is here
+  All non-test Go files of the module, go.mod, go.sum, LICENSE and one test file,
+  replay_test.go, which guards the patch. The other upstream tests and the testdata
+  folder are not copied. This folder is its own module: "go test ./..." from the
+  repository root does not run it. Run: go -C third_party/bubbletea test ./...
+
+The changes
+  Four upstream files are changed and two files are new.
+  tea.go            Program counts window size events (field resizeGeneration), puts the
+                    count in the size message, and answers a replay request in the event
+                    loop. A request for an old generation or an old size gets Stale.
+  input.go          The size message is built from Width and Height only, because the
+                    message has a new field.
+  screen.go         WindowSizeMsg has a new field, Generation.
+  cursed_renderer.go  New method replayInline: one synchronized write that clears the screen
+                    and the scrollback, draws the startup text and the committed lines again,
+                    and draws the live view. It does not acknowledge a commit.
+  inline_replay.go  New. Public API: ReplayInlineTranscript and InlineReplayResult.
+  replay_test.go    New. Renderer test of the repair write.
+
+Why
+  After a resize, an inline program cannot repair lines that the terminal reflowed in its
+  scrollback. The program needs a way to redraw its committed lines in one atomic write.
+  Upstream v2.0.10 has no such call.
+
+Guard
+  internal/tui: TestInlineReplayPatchPresent uses the public API and reads the output
+  through a terminal emulator. TestDependencyPins fails when the replace line or the
+  Ultraviolet pin moves. replay_test.go tests the renderer inside the module.
+
+How to update
+  1. Download the new upstream tag (go mod download charm.land/bubbletea/v2@TAG) and copy
+     its non-test Go files, go.mod, go.sum and LICENSE into this folder.
+  2. Apply the changes above again. The patches (diffs against v2.0.10) are in
+     the patches folder of this copy, one for each of tea.go, input.go, screen.go
+     and cursed_renderer.go. inline_replay.go and replay_test.go are copied as they are.
+  3. Keep Ultraviolet at the pin of the root go.mod, or test the new commit with the
+     resize scenarios first.
+  4. Run: go -C third_party/bubbletea test ./... and go test ./internal/tui/... ./cmd/tui/...
+  5. Drop this copy and the replace line when upstream has an inline replay call.
