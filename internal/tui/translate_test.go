@@ -104,7 +104,25 @@ type tx struct {
 }
 
 func newTx(t *testing.T) *tx {
-	return &tx{t: t, tr: NewTranscript(), rc: RenderContext{Width: 79, Theme: NewTheme(0)}, trl: NewTranslator(TranslatorOptions{Location: time.UTC})}
+	return &tx{t: t, tr: NewTranscript(), rc: RenderContext{Width: 80, Theme: NewTheme(0)}, trl: NewTranslator(TranslatorOptions{Location: time.UTC})}
+}
+
+func TestDetachCommitsLastObservedContent(t *testing.T) {
+	x := newTx(t)
+	x.feed(&protocol.AgentStart{}, assistantStart("faux-1", 0),
+		update(protocol.TextStartEvent{ContentIndex: 0}),
+		update(protocol.TextDeltaEvent{ContentIndex: 0, Delta: "partial reply"}),
+		&protocol.ToolExecutionStart{ToolCallID: "t1", ToolName: "echo"})
+	require.Less(t, x.tr.Frontier(), x.tr.Len())
+	x.apply(x.trl.Detach())
+	require.Equal(t, x.tr.Len(), x.tr.Committed())
+	text := ansi.Strip(strings.Join(x.committed, "\n"))
+	require.Contains(t, text, "partial reply")
+	require.Contains(t, text, "running")
+	require.NotContains(t, text, "interrupted")
+	require.NotContains(t, text, "Cancelled")
+	x.feed(userEvents("next session prompt", 500)...)
+	require.Equal(t, x.tr.Len(), x.tr.Committed(), "the old tail must not block the next session")
 }
 
 // feed applies events the way the model does: one message at a time, and a
@@ -150,7 +168,7 @@ func promptRow(text, clock string) string {
 	if clock == "" {
 		return left
 	}
-	return left + strings.Repeat(" ", 79-2-displayWidth(left)-displayWidth(clock)) + clock
+	return left + strings.Repeat(" ", 80-2-displayWidth(left)-displayWidth(clock)) + clock
 }
 
 const promptClock = "08:53" // baseMs in UTC
@@ -213,7 +231,7 @@ func TestTranslateLongReplyLeavesTheTailParagraphByParagraph(t *testing.T) {
 	require.Equal(t, x.tr.Len(), x.tr.Committed())
 }
 
-func x0() *tx { return &tx{rc: RenderContext{Width: 79, Theme: NewTheme(0)}} }
+func x0() *tx { return &tx{rc: RenderContext{Width: 80, Theme: NewTheme(0)}} }
 
 func TestTranslateLongThinkingLeavesTheTailAndKeepsTheShortForm(t *testing.T) {
 	text := "First thought.\n\nSecond thought\nwith two lines.\n\nThird thought."
@@ -286,7 +304,7 @@ func TestTranslateToolLineRunningThenDone(t *testing.T) {
 	require.Len(t, running, 1)
 	require.True(t, strings.HasPrefix(running[0], "  ◇ echo  probe code request"), running[0])
 	require.True(t, strings.HasSuffix(running[0], "running ⠋"), running[0])
-	require.Equal(t, 79, displayWidth(ansi.Strip(x.tr.TailLines(x.rc)[0])), "the line fills the width; the status sits at the right edge")
+	require.Equal(t, 80, displayWidth(ansi.Strip(x.tr.TailLines(x.rc)[0])), "the line fills the width; the status sits at the right edge")
 
 	x.feed(toolEnd("c1", "echo", false, "ok", 100))
 	done := x.rows()

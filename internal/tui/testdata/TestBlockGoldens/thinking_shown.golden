@@ -1,8 +1,8 @@
-  ❯ why does TestLeaderStale fail on CI?                                14:02
+  ❯ why does TestLeaderStale fail on CI?                                 14:02
 
   ◆ The test waits for the stale socket check.
 
-  ❯ show me the probe code                                              14:03
+  ❯ show me the probe code                                               14:03
 
   ∴ The stale check runs before the deadline starts, so the deadline is too
     short only when the probe is slow. I should look at the probe timing first.

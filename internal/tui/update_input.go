@@ -114,9 +114,9 @@ func (s *sessionView) submit(sub Submit) tea.Cmd {
 // promptCmd sends a prompt. After a lost session it first creates a new one;
 // the earlier prompt is never sent again.
 func (s *sessionView) promptCmd(sub Submit) tea.Cmd {
-	c, cwd, fresh := s.client, s.cwd, s.needNew
+	c, cwd, fresh, gen := s.client, s.cwd, s.needNew, s.gen
 	return func() tea.Msg {
-		out := promptCalledMsg{sub: sub}
+		out := promptCalledMsg{gen: gen, sub: sub}
 		if fresh {
 			ctx, cancel := callContext()
 			info, err := c.NewSession(ctx, cwd)
@@ -157,17 +157,20 @@ func (s *sessionView) cancelRun() tea.Cmd {
 		return nil
 	}
 	s.run.cancelling = true
-	c := s.client
+	c, gen, runSeq := s.client, s.gen, s.run.seq
 	return func() tea.Msg {
 		if err := c.Cancel(); err != nil {
-			return cancelFailedMsg{err: err}
+			return cancelFailedMsg{gen: gen, runSeq: runSeq, err: err}
 		}
 		return nil
 	}
 }
 
 // cancelFailedMsg reports that the cancel request was not sent.
-type cancelFailedMsg struct{ err error }
+type cancelFailedMsg struct {
+	gen, runSeq uint64
+	err         error
+}
 
 // ---- slash commands ----
 
@@ -274,6 +277,9 @@ func (s *sessionView) onTake(msg takeMsg) tea.Cmd {
 }
 
 func (s *sessionView) onCancelFailed(msg cancelFailedMsg) {
+	if msg.gen != s.gen || msg.runSeq != s.run.seq {
+		return
+	}
 	s.run.cancelling = false
 	s.setNotice("Could not cancel: "+errText(msg.err), true)
 }
@@ -372,7 +378,7 @@ func (s *sessionView) onSetModel(msg setModelMsg) tea.Cmd {
 	if msg.gen != s.gen {
 		// The link or the session changed while the request was in flight. The
 		// selector would wait for an answer that no longer applies.
-		if s.sel != nil && s.sel.kind == selectModel {
+		if s.sel != nil && s.sel.kind == selectModel && s.sel.gen == msg.gen {
 			s.closeSelector()
 		}
 		return nil
@@ -490,7 +496,7 @@ func (s *sessionView) attachCmd(id string) tea.Cmd {
 }
 
 func (s *sessionView) onAttach(msg attachMsg) tea.Cmd {
-	if s.sel != nil && s.sel.kind == selectSession {
+	if s.sel != nil && s.sel.kind == selectSession && s.sel.gen == msg.gen {
 		s.closeSelector()
 	}
 	if msg.gen != s.gen {

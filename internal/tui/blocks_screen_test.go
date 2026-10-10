@@ -153,7 +153,7 @@ func TestBlockGoldens(t *testing.T) {
 		requireRows(t, r.h.text(), append(append([]string{}, firstTurnRows...),
 			promptRow("show me the probe code", "14:03"),
 			"",
-			"  ◇ echo  probe code request"+strings.Repeat(" ", 79-2-displayWidth("◇ echo  probe code request")-displayWidth("running ⠋")-1)+"running ⠋",
+			"  ◇ echo  probe code request"+strings.Repeat(" ", 80-2-displayWidth("◇ echo  probe code request")-displayWidth("running ⠋")-1)+"running ⠋",
 			"  ◆ The probe lives in internal/leader/client.go. It dials the socket, then",
 			"    sends an initialize frame and waits",
 		))
@@ -175,7 +175,7 @@ func TestBlockGoldens(t *testing.T) {
 		requireRows(t, r.h.text(), append(append([]string{}, firstTurnRows...),
 			promptRow("show me the probe code", "14:03"),
 			"",
-			"  ● echo  probe code request"+strings.Repeat(" ", 79-2-displayWidth("● echo  probe code request")-displayWidth("✓ 0.1s")-1)+"✓ 0.1s",
+			"  ● echo  probe code request"+strings.Repeat(" ", 80-2-displayWidth("● echo  probe code request")-displayWidth("✓ 0.1s")-1)+"✓ 0.1s",
 			"",
 			"  ◆ The probe lives in internal/leader/client.go. It dials the socket, then",
 			"    sends an initialize frame and waits",

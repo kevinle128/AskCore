@@ -41,6 +41,7 @@ type newSessionMsg struct {
 // promptCalledMsg is the result of the Prompt call. session is set when the
 // command created a new session before it sent the prompt.
 type promptCalledMsg struct {
+	gen     uint64
 	sub     Submit
 	session *SessionInfo
 	id      PromptID
@@ -225,6 +226,9 @@ func ignorableDetach(err error) bool {
 }
 
 func (s *sessionView) onNewSession(msg newSessionMsg) tea.Cmd {
+	if msg.gen != s.gen {
+		return nil
+	}
 	if msg.err != nil {
 		s.needNew = true
 		s.appendBlock(NewErrorBlock(ErrorHeadline("session", sentence("Could not start a session: "+errText(msg.err))),
@@ -329,6 +333,14 @@ func (s *sessionView) onSnapshot(v SnapshotMsg) tea.Cmd {
 	switch {
 	case v.SessionID != s.followed:
 		if s.followed != "" {
+			// The old run continues. Freeze only the content we stopped following.
+			s.apply(s.trl.Detach())
+			// A replacement session can publish its snapshot before the prompt
+			// command returns. Keep that submission for its acceptance message.
+			if s.sess.ID != v.SessionID && (!s.needNew || s.send == nil) {
+				s.send, s.accepted = nil, nil
+				s.promptID, s.promptSession = 0, ""
+			}
 			s.appendBlock(NewDividerBlock("session " + ShortID(v.SessionID)))
 		}
 		s.trl.Reset()
@@ -412,6 +424,7 @@ func (s *sessionView) onSessionEvent(v SessionEventMsg) tea.Cmd {
 }
 
 func (s *sessionView) endRun() {
+	s.promptID, s.promptSession = 0, ""
 	s.run.running, s.run.cancelling, s.run.retry = false, false, nil
 	s.run.seq++
 }
@@ -429,26 +442,43 @@ func retryReason(msg string) string {
 // ---- prompt messages ----
 
 func (s *sessionView) onPromptMessage(msg Message) {
-	if _, done := msg.(PromptDoneMsg); done {
-		// The run is over when the call returns. The settle event normally comes
-		// first; this covers a follow stream that is not on this link.
-		if s.run.running {
-			s.apply(s.trl.Event(&protocol.AgentSettled{}))
-			s.endRun()
-		}
+	if s.send != nil && s.send.calling {
+		s.send.early = append(s.send.early, msg)
 		return
+	}
+	if done, ok := msg.(PromptDoneMsg); ok {
+		if s.accepted != nil && done.ID == s.accepted.id {
+			s.accepted = nil
+		}
+		if done.ID != s.promptID || s.promptSession != s.followed {
+			return
+		}
+		// The followed lifecycle and resync state own run completion. A queued
+		// run can already have started when this request's answer arrives.
+		return
+	}
+	// A start event can belong to another client's run. The correlated refusal
+	// is authoritative; retain the submission until its request has an answer.
+	if failed, ok := msg.(PromptSendFailedMsg); ok && s.accepted != nil && failed.ID == s.accepted.id {
+		if s.accepted.cleared && s.editor.Text() != s.accepted.sub.display {
+			s.editor.RestoreQueued([]string{s.accepted.sub.Text})
+		}
+		s.accepted = nil
+		s.promptID, s.promptSession = 0, ""
+		s.failure = &failureView{text: failureText(failed.Err, failed.OutcomeUnknown), rev: s.editor.Revision()}
+		return
+	}
+	if failed, ok := msg.(PromptRunErrorMsg); ok && s.accepted != nil && failed.ID == s.accepted.id {
+		s.accepted = nil
 	}
 	if s.send == nil {
-		return
-	}
-	if s.send.calling {
-		s.send.early = append(s.send.early, msg)
 		return
 	}
 	switch v := msg.(type) {
 	case PromptAcceptedMsg:
 		if v.ID == s.send.id {
-			s.editor.Accept(s.send.sub)
+			s.send.cleared = s.editor.Accept(s.send.sub)
+			s.accepted = s.send
 			s.send, s.failure = nil, nil
 		}
 	case PromptSendFailedMsg:
@@ -465,13 +495,13 @@ func (s *sessionView) onPromptMessage(msg Message) {
 }
 
 func (s *sessionView) onPromptCalled(msg promptCalledMsg) tea.Cmd {
+	if s.send == nil || s.send.sub.Revision != msg.sub.Revision {
+		return nil
+	}
 	var cmd tea.Cmd
-	if msg.session != nil {
+	if msg.session != nil && msg.gen == s.gen {
 		s.useSession(*msg.session)
 		cmd = s.refreshCmd(true)
-	}
-	if s.send == nil {
-		return cmd
 	}
 	s.send.calling = false
 	if msg.err != nil {
@@ -483,6 +513,7 @@ func (s *sessionView) onPromptCalled(msg promptCalledMsg) tea.Cmd {
 		return cmd
 	}
 	s.send.id = msg.id
+	s.promptID, s.promptSession = msg.id, s.sess.ID
 	early := s.send.early
 	s.send.early = nil
 	for _, m := range early {
@@ -583,6 +614,9 @@ func (s *sessionView) queueItems() []queueItem {
 }
 
 func (s *sessionView) onQueued(msg queuedMsg) {
+	if msg.gen != s.gen {
+		return
+	}
 	if msg.err != nil {
 		s.setNotice("Not queued: "+errText(msg.err)+" · draft kept", true)
 		return
@@ -632,6 +666,9 @@ func (s *sessionView) dequeueCmd() tea.Cmd {
 }
 
 func (s *sessionView) onDequeued(msg dequeuedMsg) {
+	if msg.gen != s.gen {
+		return
+	}
 	s.editor.RestoreQueued(msg.restored)
 	switch {
 	case msg.err != nil:

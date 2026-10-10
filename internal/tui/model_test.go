@@ -334,17 +334,36 @@ func TestScreenGoldens(t *testing.T) {
 	})
 }
 
-// A committed row that is as wide as the content width keeps its last
-// character. The renderer erases to the end of the line after each committed
-// row, so a row that fills the terminal would lose its last column.
+// A committed row that fills every column keeps its last character. The
+// renderer does not erase to the end of the line after such a row.
 func TestCommittedRowKeepsLastCharacter(t *testing.T) {
 	h := startScreen(t, newTestModel(fakeSource{placeholder: true}), 40, 12)
-	row := strings.Repeat("ab", ContentWidth(40)/2) + "Z"
-	require.Equal(t, ContentWidth(40), displayWidth(row))
-	appendBlock(h, "wide", textBlock{row}, true)
+	row := strings.Repeat("ab", 19) + "XZ"
+	require.Equal(t, 40, displayWidth(row))
+	appendBlock(h, "wide", rawBlock{row}, true)
 	appendBlock(h, "after", textBlock{"after"}, true)
 	h.waitText("after")
-	require.Equal(t, 1, h.count(row), "the whole row is on the screen:\n%s", strings.Join(h.text(), "\n"))
+	h.requireEachOnce(row, "after")
+}
+
+// After a commit the cursor is back on the draft, also when the frame did not
+// change. The renderer leaves it at the top of the frame otherwise.
+func TestCursorReturnsToDraftAfterCommit(t *testing.T) {
+	src := fakeSource{draft: "draft", cursorCol: 3}
+	h := startScreen(t, newTestModel(src), 40, 12)
+	appendBlock(h, "one", textBlock{"first committed row"}, true)
+	appendBlock(h, "two", textBlock{"second committed row"}, true)
+	h.requireEachOnce("first committed row", "second committed row")
+	editor := -1
+	for i, row := range h.grid() {
+		if strings.Contains(row, "draft") {
+			editor = i
+		}
+	}
+	require.GreaterOrEqual(t, editor, 0)
+	cur := h.emu.CursorPosition()
+	require.Equal(t, editor, cur.Y, "cursor is on the draft row")
+	require.Equal(t, 2+displayWidth("❯ dra"), cur.X)
 }
 
 // A row from a block that is wider than the terminal is wrapped, not cut and

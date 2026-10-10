@@ -109,8 +109,8 @@ Each design section 10 criterion has an owning test. "Go E2E" tests run the buil
 
 | Risk | Mitigation |
 |---|---|
-| Prompt acceptance is not a separate ACP signal: `session/prompt` returns at settle; only steer and follow-up return an input id | Phase 2 proves which event marks acceptance (run start or the user message event) with a test before the S5a state is built |
-| A prompt error is the same request error whether the leader refused the prompt or accepted it and the run failed (`internal/acp/agent.go:345-358`) | The client decides by the acceptance event: an error before acceptance is a send failure (S5b); after acceptance it is a run error (S9) |
+| Prompt acceptance is not a separate ACP signal: `session/prompt` returns at settle; only steer and follow-up return an input id | Run start supplies provisional acceptance without request identity; correlated admission refusal restores the draft; exact early acceptance remains unproven under concurrent clients |
+| A prompt error is the same request error whether the leader refused the prompt or accepted it and the run failed (`internal/acp/agent.go:345-358`) | Admission errors are send failures even after provisional acceptance; other errors after acceptance are run errors |
 | Bubble Tea handles SIGINT/SIGTERM itself and SIGTERM would exit 0; SIGHUP has no handler | `tea.WithoutSignalHandler()`; `ask` handles the three signals and restores the terminal (phase 7) |
 | The renderer patch was verified headless only; Ghostty 52×15 keeps 1,096 of 2,000 lines | Keep the patch guard test; record the limit; manual terminal check in phase 8 |
 | A later `go get` raises lipgloss or Ultraviolet | Pin test in phase 1 fails when the versions in the build differ from the pins |
@@ -132,4 +132,8 @@ The [red-team report](reports/red-team-261009-t1a-plan.md) raised two questions:
 ## Unresolved questions
 
 1. Manual Terminal.app or iTerm2 run of S3, S6, S7, S11 and resize is not done (needs a person at a terminal). Record date, terminal and result in [phase 8](phase-08-e2e-acceptance.md).
-2. Right-margin renderer patch (see above) waits for that run.
+2. The right-margin renderer patch is present in the current workspace and still needs that native terminal run.
+3. Continuous draft retention under concurrent clients is not proven: the early `AgentStart` has no request identity.
+   Correlated refusals restore drafts, but brief premature clearing remains possible.
+
+The [origin-purpose audit](../reports/audit-261010-1334-t1a-origin-purpose.md) records the repaired session races and fresh verification.

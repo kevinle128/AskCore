@@ -29,7 +29,7 @@
 
 ◢◤ ask   v0.1.0 · leader 7c1e · ~/src/askcore
 
-  ❯ why does TestLeaderStale fail on CI?                                                                        14:02
+  ❯ why does TestLeaderStale fail on CI?                                                                         14:02
 
   ◆ The test waits for the stale socket check, but CI runs it with a 1 s deadline. The leader removes the stale socket
     after the lock probe, and the probe can take 1.2 s.

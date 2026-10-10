@@ -34,20 +34,9 @@ import (
 // into the scrollback. One row per write does not depend on the frame.
 const commitRows = 1
 
-// rightMargin is the number of columns that transcript rows leave free at the
-// right edge. The renderer writes a committed row, then erases to the end of
-// the line. After a row that fills every column the cursor still sits on the
-// last column, so the erase would remove its last character. One free column
-// avoids that. The same width is used for the live tail and for rebuilds, so a
-// block looks the same before and after it is committed.
-const rightMargin = 1
-
-// ContentWidth is the width that transcript blocks may use for a terminal width.
-func ContentWidth(terminalWidth int) int { return max(1, terminalWidth-rightMargin) }
-
 // renderContext returns the context for blocks at the current size.
 func (m *Model) renderContext() RenderContext {
-	return RenderContext{Width: ContentWidth(m.width), Theme: m.theme}
+	return RenderContext{Width: m.width, Theme: m.theme}
 }
 
 // outputBusy reports whether a scheduled output has not finished.

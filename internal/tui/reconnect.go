@@ -30,6 +30,8 @@ func (s *sessionView) onRestored(v SessionRestoredMsg) tea.Cmd {
 // onGone handles a session that the leader no longer has, for example after a
 // restart. The transcript stays as history; the next prompt starts a session.
 func (s *sessionView) onGone(v SessionGoneMsg) {
+	s.promptID, s.promptSession = 0, ""
+	s.accepted = nil
 	s.gen++
 	s.needNew = true
 	// Blocks of the lost run would hold the commit frontier for ever.

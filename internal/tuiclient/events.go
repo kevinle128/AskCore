@@ -126,8 +126,8 @@ func (c *Client) onEvent(p protocol.ACPEventNotification) {
 		c.events.push(tui.ClientErrorMsg{Err: fmt.Errorf("tuiclient: event %d of %s: %w", p.Seq, p.SessionID, err)})
 		return
 	}
-	// A run that starts after the prompt was sent is the signal that the agent
-	// accepted it. A refused prompt never starts a run.
+	// A run start gives an early acceptance signal without request identity.
+	// The correlated admission error can still refuse this prompt.
 	if _, ok := ev.(*protocol.AgentStart); ok && c.prompt != nil && !c.prompt.accepted {
 		c.prompt.accepted = true
 		c.events.push(tui.PromptAcceptedMsg{ID: c.prompt.id})

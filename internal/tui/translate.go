@@ -86,6 +86,18 @@ func (t *Translator) Reset() {
 	t.run = runState{}
 }
 
+// Detach freezes the last observed content before the view follows another
+// session. It does not report a tool outcome, cancellation, or a settled run.
+func (t *Translator) Detach() []tea.Msg {
+	var out []tea.Msg
+	t.closeReply(&out)
+	for _, st := range t.tools {
+		emitFinish(&out, st.id)
+	}
+	t.Reset()
+	return out
+}
+
 // partState is one text or thinking block of an assistant message. A long
 // part is shown by several transcript blocks: the closed paragraphs are
 // finished one by one while the rest streams. frozen is the number of bytes of

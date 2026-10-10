@@ -20,16 +20,30 @@ The changes
   input.go          The size message is built from Width and Height only, because the
                     message has a new field.
   screen.go         WindowSizeMsg has a new field, Generation.
-  cursed_renderer.go  New method replayInline: one synchronized write that clears the screen
+  cursed_renderer.go  Two changes in insertAbove (the code behind tea.Println), and one new method.
+                    (1) A row that fills every column is not followed by erase-to-end-of-line.
+                    After such a row the cursor sits on the last column with a wrap pending, and
+                    the erase removed the last character. The line is blank after the insert, so
+                    the erase is not needed there. Rows that end inside a line keep the erase.
+                    (2) insertAbove sets the field cursorMoved. A commit leaves the terminal
+                    cursor at the top of the frame, and a frame that did not change made the next
+                    flush write nothing, so the cursor stayed there. flushLocked does not take the
+                    "no changes" exit while cursorMoved is set; it then writes only the cursor
+                    move (about 17 bytes with the show and hide sequences), not the frame.
+                    New method replayInline: one synchronized write that clears the screen
                     and the scrollback, draws the startup text and the committed lines again,
                     and draws the live view. It does not acknowledge a commit.
   inline_replay.go  New. Public API: ReplayInlineTranscript and InlineReplayResult.
-  replay_test.go    New. Renderer test of the repair write.
+  replay_test.go    New. Renderer tests: the repair write, a full-width committed row keeps its last
+                    character, and the cursor is placed again after a commit.
 
 Why
   After a resize, an inline program cannot repair lines that the terminal reflowed in its
   scrollback. The program needs a way to redraw its committed lines in one atomic write.
   Upstream v2.0.10 has no such call.
+  The two insertAbove changes let an inline program commit rows at the full terminal width and
+  keep the cursor in its editor after a commit. Upstream v2.0.10 drops the last column of a
+  full-width committed row and leaves the cursor at the top of the frame.
 
 Guard
   internal/tui: TestInlineReplayPatchPresent uses the public API and reads the output

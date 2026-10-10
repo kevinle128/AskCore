@@ -27,9 +27,9 @@ func plain(rows []string) []string {
 
 func TestStartupHeaderBlock(t *testing.T) {
 	b := NewStartupHeader("0.1.0", "leader 7c1e", "~/src/askcore")
-	require.Equal(t, []string{"◢◤ ask   v0.1.0 · leader 7c1e · ~/src/askcore", ""}, plain(linesOf(b, 79, noColor())))
+	require.Equal(t, []string{"◢◤ ask   v0.1.0 · leader 7c1e · ~/src/askcore", ""}, plain(linesOf(b, 80, noColor())))
 	require.Equal(t, []string{"◢◤ ask   v0.1.0 · in-process agent · ~/src/askcore", ""},
-		plain(linesOf(NewStartupHeader("0.1.0", "in-process agent", "~/src/askcore"), 79, noColor())))
+		plain(linesOf(NewStartupHeader("0.1.0", "in-process agent", "~/src/askcore"), 80, noColor())))
 	short := plain(linesOf(b, 30, noColor()))
 	require.LessOrEqual(t, displayWidth(short[0]), 30)
 	require.True(t, strings.HasSuffix(short[0], "…"), "a header that does not fit ends with the cut marker: %q", short[0])
@@ -40,7 +40,7 @@ func TestUserPromptBlockLayout(t *testing.T) {
 
 	t.Run("sketch row", func(t *testing.T) {
 		b := NewUserPromptBlock("why does TestLeaderStale fail on CI?", "14:02")
-		require.Equal(t, []string{promptRow("why does TestLeaderStale fail on CI?", "14:02"), ""}, plain(linesOf(b, 79, th)))
+		require.Equal(t, []string{promptRow("why does TestLeaderStale fail on CI?", "14:02"), ""}, plain(linesOf(b, 80, th)))
 	})
 
 	t.Run("a long prompt wraps and keeps the time on the first row", func(t *testing.T) {
@@ -95,7 +95,7 @@ func TestAssistantTextBlockLayout(t *testing.T) {
 		"    deadline. The leader removes the stale socket after the lock probe, and the",
 		"    probe can take 1.2 s.",
 	}, plain(linesOf(NewAssistantTextBlock(text), 75+4, th)))
-	require.Equal(t, []string{"  ◆"}, plain(linesOf(NewAssistantTextBlock(""), 79, th)), "an empty reply shows its mark")
+	require.Equal(t, []string{"  ◆"}, plain(linesOf(NewAssistantTextBlock(""), 80, th)), "an empty reply shows its mark")
 }
 
 func TestAssistantTextBlockWithCode(t *testing.T) {
@@ -105,7 +105,7 @@ func TestAssistantTextBlockWithCode(t *testing.T) {
 		"",
 		"    go",
 		"    deadline := 5 * time.Second",
-	}, plain(linesOf(NewAssistantTextBlock(text), 79, noColor())))
+	}, plain(linesOf(NewAssistantTextBlock(text), 80, noColor())))
 
 	t.Run("the code panel fills the row including the indent", func(t *testing.T) {
 		rows := linesOf(NewAssistantTextBlock(text), 60, NewTheme(colorprofile.TrueColor))
@@ -116,7 +116,7 @@ func TestAssistantTextBlockWithCode(t *testing.T) {
 	})
 
 	t.Run("a reply that starts with code keeps its mark on its own row", func(t *testing.T) {
-		rows := plain(linesOf(NewAssistantTextBlock("```\ncode\n```"), 79, noColor()))
+		rows := plain(linesOf(NewAssistantTextBlock("```\ncode\n```"), 80, noColor()))
 		require.Equal(t, []string{"  ◆", "    code"}, rows)
 	})
 }
@@ -129,14 +129,14 @@ func TestThinkingBlockForms(t *testing.T) {
 		"  ∴ The stale check runs before the deadline starts, so the deadline is too",
 		"    short only when the probe is slow.",
 		"",
-	}, plain(linesOf(b, 79, th)))
+	}, plain(linesOf(b, 80, th)))
 
 	view.SetThinkingHidden(true)
-	require.Equal(t, []string{"  ∴ Thinking...", ""}, plain(linesOf(b, 79, th)), "the same block draws the short form")
+	require.Equal(t, []string{"  ∴ Thinking...", ""}, plain(linesOf(b, 80, th)), "the same block draws the short form")
 
 	view.SetThinkingHidden(false)
-	require.Equal(t, []string{"  ∴ Thinking...", ""}, plain(linesOf(NewThinkingBlock("  ", view), 79, th)), "an empty block has no text to show")
-	require.NotPanics(t, func() { linesOf(NewThinkingBlock("text", nil), 79, th) }, "a block without a view shows its text")
+	require.Equal(t, []string{"  ∴ Thinking...", ""}, plain(linesOf(NewThinkingBlock("  ", view), 80, th)), "an empty block has no text to show")
+	require.NotPanics(t, func() { linesOf(NewThinkingBlock("text", nil), 80, th) }, "a block without a view shows its text")
 }
 
 func TestThinkingBlockUsesItalicRole(t *testing.T) {
@@ -150,10 +150,10 @@ func TestToolLineBlockForms(t *testing.T) {
 	view := NewTranscriptView()
 
 	t.Run("running", func(t *testing.T) {
-		rows := linesOf(NewToolLineBlock("echo", "probe code request", ToolRunning, "", "", view), 79, th)
+		rows := linesOf(NewToolLineBlock("echo", "probe code request", ToolRunning, "", "", view), 80, th)
 		require.Len(t, rows, 1, "a running line has no empty row below it")
-		require.Equal(t, "  ◇ echo  probe code request"+strings.Repeat(" ", 79-2-displayWidth("◇ echo  probe code request")-displayWidth("running ⠋")-1)+"running ⠋", plain(rows)[0])
-		require.Equal(t, 79, displayWidth(rows[0]))
+		require.Equal(t, "  ◇ echo  probe code request"+strings.Repeat(" ", 80-2-displayWidth("◇ echo  probe code request")-displayWidth("running ⠋")-1)+"running ⠋", plain(rows)[0])
+		require.Equal(t, 80, displayWidth(rows[0]))
 	})
 
 	t.Run("the spinner frame comes from the view", func(t *testing.T) {
@@ -164,9 +164,9 @@ func TestToolLineBlockForms(t *testing.T) {
 	})
 
 	t.Run("succeeded", func(t *testing.T) {
-		rows := linesOf(NewToolLineBlock("echo", "probe code request", ToolSucceeded, "0.1s", "", view), 79, th)
+		rows := linesOf(NewToolLineBlock("echo", "probe code request", ToolSucceeded, "0.1s", "", view), 80, th)
 		require.Equal(t, "", rows[1], "one empty row follows a finished line")
-		require.Equal(t, "  ● echo  probe code request"+strings.Repeat(" ", 79-2-displayWidth("● echo  probe code request")-displayWidth("✓ 0.1s")-1)+"✓ 0.1s", plain(rows)[0])
+		require.Equal(t, "  ● echo  probe code request"+strings.Repeat(" ", 80-2-displayWidth("● echo  probe code request")-displayWidth("✓ 0.1s")-1)+"✓ 0.1s", plain(rows)[0])
 	})
 
 	t.Run("failed", func(t *testing.T) {
@@ -192,7 +192,7 @@ func TestToolLineBlockForms(t *testing.T) {
 	})
 
 	t.Run("one row, whatever the arguments hold", func(t *testing.T) {
-		rows := linesOf(NewToolLineBlock("echo", "line one\nline two\ttab", ToolSucceeded, "1s", "", view), 79, th)
+		rows := linesOf(NewToolLineBlock("echo", "line one\nline two\ttab", ToolSucceeded, "1s", "", view), 80, th)
 		require.Len(t, rows, 2)
 		require.Contains(t, plain(rows)[0], "line one line two tab")
 	})
@@ -201,26 +201,26 @@ func TestToolLineBlockForms(t *testing.T) {
 func TestNoteBlocks(t *testing.T) {
 	th := noColor()
 	require.Equal(t, []string{"  ↻ Attempt 1 failed: rate limit (HTTP 429). Retry 1 of 3 scheduled.", ""},
-		plain(linesOf(NewRetryNote("Attempt 1 failed: rate limit (HTTP 429). Retry 1 of 3 scheduled."), 79, th)))
+		plain(linesOf(NewRetryNote("Attempt 1 failed: rate limit (HTTP 429). Retry 1 of 3 scheduled."), 80, th)))
 	require.Equal(t, []string{"  ↻ Reconnected. Session 3f2a restored.", ""},
-		plain(linesOf(NewReconnectNote("Reconnected. Session 3f2a restored."), 79, th)))
+		plain(linesOf(NewReconnectNote("Reconnected. Session 3f2a restored."), 80, th)))
 	require.Equal(t, []string{
 		"  ✗ Error (auth): anthropic token expired and refresh failed.",
 		"    Run in a shell: ask auth login --provider anthropic. Then send again.",
 		"",
-	}, plain(linesOf(NewErrorBlock(ErrorHeadline("auth", "anthropic token expired and refresh failed."), "Run in a shell: ask auth login --provider anthropic. Then send again."), 79, th)))
+	}, plain(linesOf(NewErrorBlock(ErrorHeadline("auth", "anthropic token expired and refresh failed."), "Run in a shell: ask auth login --provider anthropic. Then send again."), 80, th)))
 	require.Equal(t, []string{
 		"  ✗ Session 3f2a is gone: the leader restarted.",
 		"    The transcript above is kept. Your next prompt starts a new session.",
 		"",
-	}, plain(linesOf(NewErrorBlock("Session 3f2a is gone: the leader restarted.", "The transcript above is kept. Your next prompt starts a new session."), 79, th)))
+	}, plain(linesOf(NewErrorBlock("Session 3f2a is gone: the leader restarted.", "The transcript above is kept. Your next prompt starts a new session."), 80, th)))
 	require.Equal(t, []string{"  ⊘ Cancelled by you. Partial reply kept above.", ""},
-		plain(linesOf(NewCancelMarker("Cancelled by you. Partial reply kept above."), 79, th)))
+		plain(linesOf(NewCancelMarker("Cancelled by you. Partial reply kept above."), 80, th)))
 	require.Equal(t, []string{
 		"  ⏏ Detached from session 3f2a. The run continues in leader 7c1e.",
 		"    Run ask in this directory to see it again.",
 		"",
-	}, plain(linesOf(NewDetachNote("Detached from session 3f2a. The run continues in leader 7c1e.", "Run ask in this directory to see it again."), 79, th)))
+	}, plain(linesOf(NewDetachNote("Detached from session 3f2a. The run continues in leader 7c1e.", "Run ask in this directory to see it again."), 80, th)))
 	require.Equal(t, "Error (error): x", ErrorHeadline("", "x"))
 }
 
@@ -237,11 +237,11 @@ func TestNoteBlockWrapsWithIndent(t *testing.T) {
 func TestMetaLineDividerSpacer(t *testing.T) {
 	th := noColor()
 	require.Equal(t, []string{"    claude-opus-5-5 · 7.9s · ↑14.1k ↓2.6k · $0.031", ""},
-		plain(linesOf(NewMetaLineBlock("claude-opus-5-5 · 7.9s · ↑14.1k ↓2.6k · $0.031"), 79, th)))
+		plain(linesOf(NewMetaLineBlock("claude-opus-5-5 · 7.9s · ↑14.1k ↓2.6k · $0.031"), 80, th)))
 	cut := plain(linesOf(NewMetaLineBlock(strings.Repeat("meta ", 20)), 30, th))
 	require.LessOrEqual(t, displayWidth(cut[0]), 30)
-	require.Equal(t, []string{"  ── session 8d07 ──", ""}, plain(linesOf(NewDividerBlock("session 8d07"), 79, th)))
-	require.Equal(t, []string{""}, linesOf(NewSpacerBlock(), 79, th))
+	require.Equal(t, []string{"  ── session 8d07 ──", ""}, plain(linesOf(NewDividerBlock("session 8d07"), 80, th)))
+	require.Equal(t, []string{""}, linesOf(NewSpacerBlock(), 80, th))
 }
 
 func TestRoleStylesAreApplied(t *testing.T) {

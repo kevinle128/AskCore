@@ -386,6 +386,109 @@ func TestModelSelectorOnlyWhileIdle(t *testing.T) {
 	require.Zero(t, r.h.count("Select model"))
 }
 
+func TestStaleResultsKeepCurrentSelector(t *testing.T) {
+	for _, kind := range []string{"model", "session"} {
+		t.Run(kind, func(t *testing.T) {
+			r := startView(t, 80, 24)
+			r.fc.push(DisconnectedMsg{}, SessionRestoredMsg{Session: SessionInfo{ID: r.fc.sessionID, Role: protocol.ACPRoleDriver}})
+			r.h.waitText("Reconnected.")
+			if kind == "model" {
+				r.key("ctrl+l")
+				r.h.waitText("Select model")
+				r.h.send(setModelMsg{gen: 1, req: 1})
+			} else {
+				r.typeText("/sessions")
+				r.key("enter")
+				r.h.waitText("Live sessions")
+				r.h.send(attachMsg{gen: 1})
+			}
+			r.h.settle()
+			title := "Select model"
+			if kind == "session" {
+				title = "Live sessions"
+			}
+			require.Greater(t, r.h.count(title), 0, "an old result must not close the new selector")
+		})
+	}
+}
+
+func TestRefusalAfterUnrelatedAcceptanceRestoresDraft(t *testing.T) {
+	for _, edited := range []bool{false, true} {
+		t.Run(fmt.Sprintf("edited=%v", edited), func(t *testing.T) {
+			r := startView(t, 80, 24)
+			r.typeText("keep this draft")
+			r.key("enter")
+			r.waitCall("prompt:keep this draft")
+			r.event(&protocol.AgentStart{})
+			r.fc.push(PromptAcceptedMsg{ID: 1})
+			r.h.waitText("Ask anything")
+			if edited {
+				r.typeText("new edits")
+			}
+			r.fc.push(SnapshotMsg{SessionID: r.fc.sessionID, Resync: true})
+			r.fc.push(PromptSendFailedMsg{ID: 1, Err: &RequestError{Kind: string(protocol.ACPErrNotDriver)}})
+			r.h.waitText("Not sent: not_driver")
+			m := r.stopped()
+			want := "keep this draft"
+			if edited {
+				want += "\nnew edits"
+			}
+			require.Equal(t, want, m.sv.editor.Text())
+		})
+	}
+}
+
+func TestEarlyPromptDoneDoesNotSettleNextRun(t *testing.T) {
+	m := New(Options{Client: newFakeClient()})
+	s := m.sv
+	s.sess = SessionInfo{ID: "session", Role: protocol.ACPRoleDriver}
+	s.followed = "session"
+	s.editor.Handle(tea.PasteMsg{Content: "first"})
+	sub := Submit{Text: "first", display: "first", Revision: s.editor.Revision()}
+	called := s.submit(sub)().(promptCalledMsg)
+	event := func(ev protocol.Event) { s.onSessionEvent(SessionEventMsg{SessionID: "session", Event: ev}) }
+	event(&protocol.AgentStart{})
+	s.onPromptMessage(PromptAcceptedMsg{ID: called.id})
+	event(&protocol.AgentSettled{})
+	event(&protocol.AgentStart{})
+	s.onPromptMessage(PromptDoneMsg{ID: called.id})
+	s.onPromptCalled(called)
+	require.True(t, s.run.running, "the previous prompt must not settle the queued run")
+}
+
+func TestPendingPromptSurvivesConnectionAndSessionUpdates(t *testing.T) {
+	for _, fresh := range []bool{false, true} {
+		t.Run(fmt.Sprintf("fresh=%v", fresh), func(t *testing.T) {
+			fc := newFakeClient()
+			m := New(Options{Client: fc})
+			s := m.sv
+			s.sess = SessionInfo{ID: "old", Role: protocol.ACPRoleDriver}
+			s.followed, s.gen, s.needNew = "old", 1, fresh
+			s.editor.Handle(tea.PasteMsg{Content: "keep this prompt"})
+			sub := Submit{Text: s.editor.Text(), display: s.editor.Text(), Revision: s.editor.Revision()}
+			cmd := s.submit(sub)
+			called := cmd().(promptCalledMsg)
+			if fresh {
+				s.onSnapshot(SnapshotMsg{SessionID: called.session.ID})
+			} else {
+				s.onClient(DisconnectedMsg{})
+			}
+			s.onPromptCalled(called)
+			if fresh {
+				s.onPromptMessage(PromptAcceptedMsg{ID: called.id})
+				require.Empty(t, s.editor.Text(), "the replacement prompt clears after acceptance")
+				require.Equal(t, called.session.ID, s.promptSession)
+			} else {
+				s.onPromptMessage(PromptSendFailedMsg{ID: called.id, Err: ErrOutcomeUnknown, OutcomeUnknown: true})
+				s.onRestored(SessionRestoredMsg{Session: SessionInfo{ID: "old", Role: protocol.ACPRoleDriver}})
+				require.Nil(t, s.send, "a stale command must not leave Sending blocked")
+				require.Equal(t, "keep this prompt", s.editor.Text())
+				require.NotNil(t, s.submit(sub), "the user can send again; nothing is resent automatically")
+			}
+		})
+	}
+}
+
 func TestModelCommandOpensSelector(t *testing.T) {
 	r := startView(t, 80, 24)
 	r.typeText("/model")
@@ -860,7 +963,7 @@ func TestScreens120Goldens(t *testing.T) {
 		r.clock.advance(4 * time.Second)
 		r.event(&protocol.QueueUpdate{})
 		r.h.waitText("Working… 4s")
-		running := "  ◇ echo  probe code request" + strings.Repeat(" ", w-2-displayWidth("◇ echo  probe code request")-displayWidth("running ⠋")-2) + "running ⠋"
+		running := "  ◇ echo  probe code request" + strings.Repeat(" ", w-2-displayWidth("◇ echo  probe code request")-displayWidth("running ⠋")-1) + "running ⠋"
 		requireRows(t, r.h.grid(), append([]string{
 			running,
 			"  ◆ The probe lives in internal/leader/client.go. It dials the socket, then sends an initialize frame and waits",

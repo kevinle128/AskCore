@@ -73,7 +73,7 @@ Core packages must not import this package.
 ## Render core contract
 
 - Components give rows to the live region through `SlotSource.Slots(width)`. Layout gives rows in the order of the design (editor, status, footer, pending, menu, tail) and draws the editor box. See [layout.go](layout.go).
-- Session code changes the transcript with `AppendBlockMsg`, `ReplaceBlockMsg` and `FinishBlockMsg`. Blocks draw themselves for a `RenderContext` and use `ContentWidth(terminalWidth)` as their width.
+- Session code changes the transcript with `AppendBlockMsg`, `ReplaceBlockMsg` and `FinishBlockMsg`. Blocks draw themselves for a `RenderContext` and use `RenderContext.Width`, which is the full terminal width.
 - Only stable blocks at the front of the transcript reach the scrollback, one row per write, through `tea.Println`. The live frame never uses the last screen row, so the row that a write scrolls off is always history.
 - `RebuildMsg` and `Model.Rebuild` redraw all committed rows with `tea.ReplayInlineTranscript`. A settled resize does the same after 120 ms.
 - Tests render the model in a real Bubble Tea program, feed the output to an `x/vt` emulator and compare the plain grid with `testdata/*.golden`. Refresh with `go test ./internal/tui -run TestScreenGoldens -update` and review the diff.

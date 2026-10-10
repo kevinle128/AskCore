@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"io"
 	"sync"
 	"testing"
@@ -14,6 +15,7 @@ import (
 
 	"AskCore/internal/tui"
 	"AskCore/internal/tuiclient/rpc"
+	"AskCore/pkg/protocol"
 )
 
 func TestMain(m *testing.M) { goleak.VerifyTestMain(m) }
@@ -28,6 +30,7 @@ type scriptedLink struct {
 	closed   chan struct{}
 	once     sync.Once
 	onNext   func() (json.RawMessage, error)
+	onSend   func(json.RawMessage) error
 }
 
 func newScriptedLink(onNext func() (json.RawMessage, error)) *scriptedLink {
@@ -41,8 +44,54 @@ func (l *scriptedLink) Send(raw json.RawMessage) error {
 	}
 	if json.Unmarshal(raw, &m) == nil && m.Method == "initialize" {
 		l.replies <- json.RawMessage(`{"jsonrpc":"2.0","id":` + string(m.ID) + `,"result":{"protocolVersion":1}}`)
+	} else if l.onSend != nil {
+		return l.onSend(raw)
 	}
 	return nil
+}
+
+func TestPromptRefusalOverridesUnrelatedRunStart(t *testing.T) {
+	for _, kind := range []protocol.ACPErrorKind{protocol.ACPErrNotDriver, protocol.ACPErrBusy, protocol.ACPErrNoAPIKey} {
+		t.Run(string(kind), func(t *testing.T) {
+			link := newScriptedLink(nil)
+			link.onSend = func(raw json.RawMessage) error {
+				var req struct {
+					ID     json.RawMessage `json:"id"`
+					Method string          `json:"method"`
+				}
+				if err := json.Unmarshal(raw, &req); err != nil {
+					return err
+				}
+				if req.Method == "session/prompt" {
+					link.replies <- json.RawMessage(`{"jsonrpc":"2.0","method":"_ask/session/event","params":{"subscriptionId":"sub","sessionId":"s","epoch":"e","seq":"1","event":{"type":"agent_start","seq":1}}}`)
+					link.replies <- json.RawMessage(fmt.Sprintf(`{"jsonrpc":"2.0","id":%s,"error":{"code":%d,"message":"refused","data":{"kind":%q}}}`, req.ID, protocol.ACPErrorCode(kind), kind))
+				}
+				return nil
+			}
+			c, err := Open(context.Background(), Config{NoReconnect: true, Dial: func(context.Context) (Link, error) { return Link{Transport: link}, nil }})
+			require.NoError(t, err)
+			defer func() { require.NoError(t, c.Close()) }()
+			c.mu.Lock()
+			c.sess = sessionState{has: true, id: "s", sub: "sub", epoch: "e"}
+			c.mu.Unlock()
+			id, err := c.Prompt("keep this draft")
+			require.NoError(t, err)
+			msgs := drain(t, c, func(m tui.Message) bool {
+				switch m.(type) {
+				case tui.PromptSendFailedMsg, tui.PromptRunErrorMsg:
+					return true
+				}
+				return false
+			})
+			if kind == protocol.ACPErrNoAPIKey {
+				require.IsType(t, tui.PromptRunErrorMsg{}, msgs[len(msgs)-1], "an inference error still belongs to the accepted run")
+			} else {
+				failed, ok := msgs[len(msgs)-1].(tui.PromptSendFailedMsg)
+				require.True(t, ok, "a refusal is authoritative: %v", msgs)
+				require.Equal(t, id, failed.ID)
+			}
+		})
+	}
 }
 
 func (l *scriptedLink) Next() (json.RawMessage, error) {

@@ -9,7 +9,8 @@ dependencies: [7]
 
 # Phase 8: E2E acceptance and docs
 
-Outline. Run a scout pass and expand this file before cooking.
+Automated acceptance and the real-provider run are recorded below.
+Native terminal acceptance remains open.
 
 ## Goal
 
@@ -41,7 +42,8 @@ Terminal-runner and docs part, done 2026-10-10. The Go end-to-end tests, the rea
 - **Secrets.** Keys reach `ask` only through the inherited environment. `commands.json` records `environment_names`; no `--env` is used for the `ask` driver. The artifact scan was proven with a made-up variable (the run failed, the files were removed, only the variable name was printed). Controls: `python3 e2e/tui/test-assertions.py` (13 tests pass).
 - **Cleanup.** Each case stops its own leader with `ask leader stop` and checks the process table for leaders of the run's own binary path. None were left. Leader 94970 and the other leaders from before the run were not touched.
 - **Docs.** `CLAUDE.md` (commands), `internal/tui/README.md` (status and owners), `docs/tui-architecture.md` (validation), `e2e/tui/README.md`, and `.claude/skills/ask-tui-design/SKILL.md` (gallery and golden steps). The roadmap T1b list now records T-LAY-09, T-MD-10 and T-CMD-08; the T1a roadmap row and the E2E automation plan already linked to this plan. `docs/testing-llm-cassettes.md` is unchanged because no TUI cassette was added.
-- **Observation for the Go owner.** The model selector lists `alibaba-token-plan/deepseek-v4.1-flash` twice. `CLAUDE.md` still says that the only provider is `faux` (`ask -p` line); `ask --help` lists four more providers.
+- **Resolved observations.** Duplicate model rows are handled by `selector.go` and `selector_labels_test.go`.
+  The headless guidance now names the configured providers and keeps `faux` as the default.
 
 ## Scout result (Go E2E part)
 
@@ -94,10 +96,15 @@ Report: [real-provider-acceptance](../reports/real-provider-acceptance-261010-t1
 Defects from that run:
 - Error block printed the raw provider body (including masked key text): fixed; the block shows one sentence with the HTTP status (`internal/tui/error_text_test.go`).
 - Empty `∴ Thinking...` row for an empty reasoning summary: fixed (`translate_test.go`).
-- `openai/gpt-5.5` is listed under a ChatGPT sign-in and then rejected with "not signed in": cause is the per-model access check of the ChatGPT method (`internal/auth/discovery.go:80-82`); the message is misleading. Open (see decisions below).
+- `openai/gpt-5.5` is listed under a ChatGPT sign-in and then rejected with "not signed in": cause is the per-model access check of the ChatGPT method (`internal/auth/discovery.go:80-82`); the misleading message is fixed with `ACPErrModelAccess` and `TestSelectorModelAccessFailureKeepsModel`.
 - Demo `echo` tool is offered to real models (`cmd/tui/headless.go:211`) and the Anthropic reply meta line has no cost (`metaText` prints cost only when above zero). Left for the tools and usage work.
 
 ## Open items at the end of this phase
 
 - Manual Terminal.app or iTerm2 run of S3, S6, S7, S11 and resize: not done (needs a person at a terminal); record date, terminal, result here.
-- User decisions: `leader_not_driver` (design S5b, criterion 4) versus the `not_driver` kind the leader sends; retry sketch `(1/3)` versus retry policy of 5; error kind and wording for a model the ChatGPT sign-in cannot use; right-margin renderer patch.
+- The wire kind `not_driver`, retry count `(1/5)`, and model-access wording are decided in design section 11.
+- The right-margin renderer patch is present in the current workspace; native terminal acceptance of it remains open.
+- Early prompt acceptance uses an uncorrelated `AgentStart`.
+  A correlated refusal now restores the draft, including subsequent edits, but the draft can disappear briefly before that refusal arrives.
+  This does not prove the strict continuous draft-retention contract under concurrent clients.
+- Follow-up audit and regression evidence: [origin-purpose audit](../reports/audit-261010-1334-t1a-origin-purpose.md).

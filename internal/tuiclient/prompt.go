@@ -7,6 +7,7 @@ import (
 
 	"AskCore/internal/tui"
 	"AskCore/internal/tuiclient/rpc"
+	"AskCore/pkg/protocol"
 )
 
 // rpcCaller is the part of rpc.Conn that follow needs.
@@ -40,8 +41,8 @@ func (c *Client) Prompt(text string) (tui.PromptID, error) {
 
 // runPrompt waits for the answer of the prompt call. The answer is the same
 // error for a prompt that the agent refused and for a prompt whose run failed, so
-// the acceptance event tells them apart: an error before acceptance is a failure
-// to send, an error after it is a failure of the run.
+// admission errors take precedence over the early acceptance event. Other
+// errors after acceptance are run failures.
 func (c *Client) runPrompt(conn *rpc.Conn, sid string, id tui.PromptID, text string) {
 	res, err := conn.Call(context.Background(), "session/prompt", map[string]any{
 		"sessionId": sid,
@@ -56,7 +57,7 @@ func (c *Client) runPrompt(conn *rpc.Conn, sid string, id tui.PromptID, text str
 	if err != nil {
 		unknown := rpcLost(err)
 		switch {
-		case accepted:
+		case accepted && !promptRefused(err):
 			c.events.push(tui.PromptRunErrorMsg{ID: id, Err: translate(err), OutcomeUnknown: unknown})
 		default:
 			c.events.push(tui.PromptSendFailedMsg{ID: id, Err: translate(err), OutcomeUnknown: unknown})
@@ -76,3 +77,18 @@ func (c *Client) runPrompt(conn *rpc.Conn, sid string, id tui.PromptID, text str
 }
 
 func rpcLost(err error) bool { return errors.Is(err, rpc.ErrConnectionLost) }
+
+// Admission errors are send failures even if a sibling run started while
+// this request was pending. A followed AgentStart has no request identity.
+func promptRefused(err error) bool {
+	var fault *rpc.Fault
+	if !errors.As(err, &fault) {
+		return false
+	}
+	switch protocol.ACPErrorKind(fault.Kind) {
+	case protocol.ACPErrNotDriver, protocol.ACPErrBusy, protocol.ACPErrUnknownSession,
+		protocol.ACPErrNotInitialized, protocol.ACPErrInvalidContent, protocol.ACPErrInvalidParams:
+		return true
+	}
+	return false
+}

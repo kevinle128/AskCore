@@ -234,6 +234,40 @@ func TestInteractiveRefusedPromptKeepsDraft(t *testing.T) {
 	a.quitDetached()
 }
 
+func TestInteractiveRefusedPromptDuringAnotherRun(t *testing.T) {
+	bin, home := newE2EHome(t)
+	a := startAskTerm(t, bin, home, askTermOptions{}, pacedEnv(8)...)
+	a.waitText("Ask anything")
+	other, col := openLeaderClient(t, bin, home)
+	ctx, cancel := context.WithTimeout(context.Background(), clientWait)
+	defer cancel()
+	var live []protocol.ACPLiveSession
+	require.Eventually(t, func() bool {
+		live, _ = other.ListSessions(ctx)
+		return len(live) == 1
+	}, exitWait, 50*time.Millisecond)
+	_, err := other.Attach(ctx, live[0].SessionID)
+	require.NoError(t, err)
+	_, err = other.Take(ctx)
+	require.NoError(t, err)
+	resume := pauseLeader(t, bin, home)
+	id, err := other.Prompt(strings.Repeat("other reply words ", 40))
+	require.NoError(t, err)
+	// The new driver writes first while the old driver still believes it owns
+	// the session. Its start event must not accept the old driver's submission.
+	time.Sleep(100 * time.Millisecond)
+	a.write("keep this refused draft\r")
+	a.waitText("Sending…")
+	resume()
+	col.waitFor("driver prompt accepted", func(m tui.Message) bool { p, ok := m.(tui.PromptAcceptedMsg); return ok && p.ID == id })
+	a.waitRow("✗ Not sent: not_driver", "draft kept")
+	a.waitRow("│ ❯ keep this refused draft")
+	require.NoError(t, other.Cancel())
+	a.write(keyCtrlC)
+	a.waitText("Ask anything")
+	a.quitDetached()
+}
+
 func TestInteractiveEchoToolLine(t *testing.T) {
 	bin, home := newE2EHome(t)
 	a := startAskTerm(t, bin, home, askTermOptions{})
@@ -698,4 +732,63 @@ func TestInteractiveSessionsAttach(t *testing.T) {
 	observer.waitReplyMeta("faux-1")
 	observer.quitDetached()
 	driver.quitDetached()
+}
+
+func TestInteractiveSwitchFromRunningSession(t *testing.T) {
+	bin, home := newE2EHome(t)
+	a := startAskTerm(t, bin, home, askTermOptions{}, pacedEnv(8)...)
+	a.waitText("Ask anything")
+	var ids []string
+	require.Eventually(t, func() bool {
+		ids = liveSessionIDs(t, bin, home)
+		return len(ids) == 1
+	}, exitWait, 50*time.Millisecond)
+	old, _ := openLeaderClient(t, bin, home)
+	ctx, cancel := context.WithTimeout(context.Background(), exitWait)
+	defer cancel()
+	_, err := old.Attach(ctx, ids[0])
+	require.NoError(t, err)
+	a.write(strings.Repeat("old reply words ", 16) + "\r")
+	a.waitText("Working…")
+	a.waitFor("the old reply streaming", func(rows []string) bool { return hasRowPrefix(rows, "  ◆ old reply") })
+
+	b := startAskTerm(t, bin, home, askTermOptions{})
+	b.waitText("Ask anything")
+	require.Eventually(t, func() bool { return len(liveSessionIDs(t, bin, home)) == 2 }, exitWait, 50*time.Millisecond)
+	b.write(strings.Repeat("new reply words ", 80) + "\r")
+	b.waitText("Working…")
+	live := liveSessionIDs(t, bin, home)
+	var target string
+	for _, id := range live {
+		if id != ids[0] {
+			target = id
+		}
+	}
+	require.NotEmpty(t, target)
+	a.write("/sessions\r")
+	a.waitText("Live sessions")
+	a.write(tui.ShortID(target))
+	a.waitRow("│", tui.ShortID(target), "driver busy")
+	a.write("\r")
+	a.waitRow("◉ observer " + tui.ShortID(target))
+	a.waitRow("Working…", "another client drives this session")
+	require.Eventually(t, func() bool {
+		state, err := old.State(ctx)
+		return err == nil && !state.Running
+	}, exitWait, 50*time.Millisecond, "the old run settled")
+	// Let the old prompt response and another frame of the watched run arrive.
+	time.Sleep(300 * time.Millisecond)
+	require.True(t, containsRow(a.rows(), "Working…"), "the old prompt must not settle the watched run:\n%s", a.screen())
+
+	b.write(keyEsc)
+	b.waitText("Cancelled by you")
+	a.waitText("Cancelled by you")
+	a.waitFor("the watched run settled", func(rows []string) bool { return !containsRow(rows, "Working…") })
+	// A frozen old tail must not keep both sessions in the live region forever.
+	a.write("/take\r")
+	a.waitText("You drive the session now.")
+	a.write("latest reply\r")
+	a.waitFor("the latest reply", func(rows []string) bool { return hasRowPrefix(rows, "  ◆ latest reply") })
+	a.quitDetached()
+	b.quitDetached()
 }

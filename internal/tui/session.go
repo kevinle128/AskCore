@@ -62,9 +62,10 @@ type retryView struct {
 
 // sendState is a prompt that the leader has not accepted yet.
 type sendState struct {
-	text string
-	sub  Submit
-	id   PromptID
+	text    string
+	cleared bool
+	sub     Submit
+	id      PromptID
 	// calling is true until the Prompt call has returned its id.
 	calling bool
 	// early holds messages about the prompt that arrived before its id was
@@ -136,11 +137,14 @@ type sessionView struct {
 
 	gen uint64
 
-	run     runView
-	send    *sendState
-	failure *failureView
-	queue   queueView
-	notice  noticeView
+	run           runView
+	send          *sendState
+	accepted      *sendState
+	promptID      PromptID
+	promptSession string
+	failure       *failureView
+	queue         queueView
+	notice        noticeView
 
 	models    []protocol.ACPModel
 	modelID   string
