@@ -1470,6 +1470,8 @@ type providerFixture struct {
 	inference func(n int, r *http.Request, body []byte) (status int, contentType, body2 string)
 	// token answers the OAuth token endpoint.
 	token func(grant map[string]string) (int, any)
+	// retryAfter is the Retry-After header of a 429 answer. Empty sends none.
+	retryAfter string
 
 	inferenceCalls int
 	tokenGrants    []map[string]string
@@ -1490,6 +1492,9 @@ func newProviderFixture(t *testing.T) *providerFixture {
 			f.authHeaders = append(f.authHeaders, r.Header.Get("Authorization")+"|"+r.Header.Get("X-Api-Key"))
 			status, ct, out := f.inference(n, r, body)
 			w.Header().Set("Content-Type", ct)
+			if status == http.StatusTooManyRequests && f.retryAfter != "" {
+				w.Header().Set("Retry-After", f.retryAfter)
+			}
 			w.WriteHeader(status)
 			_, _ = io.WriteString(w, out)
 		case "https://platform.claude.com/v1/oauth/token":
