@@ -181,10 +181,17 @@ Widgets and editor-slot dialogs must fit a bounded live region and preserve curs
 
 The [T0 gate](../plans/260930-2254-pi-feature-inventory-go-roadmap/roadmap.md#t0-inline-prototype-gate-next-priority) was evaluated in a separate scratch Go module.
 D14 selects Bubble Tea v2.0.10 with the tested minimal local renderer patch and exact unmodified upstream Ultraviolet.
-Go 1.27.0 remains; T1 owns root dependency migration and reproducible product packaging.
-The [decision record](../plans/reports/pm-261007-1312-d14-tui-decision.md) separates independent automated evidence from user-reported Terminal.app/iTerm2 acceptance.
+The root module uses that Bubble Tea v2.0.10 through the patched copy in `third_party/bubbletea` (see its `PATCH.txt`); `internal/tui/renderer_patch_test.go` guards the patch and `internal/tui/deps_pin_test.go` guards the pinned versions.
 The selected experiment uses inline reconstruction after resize, based on the [Grok source review](../plans/reports/researcher-261007-1222-grok-inline-resize.md).
-The [resize plan](../plans/261007-1156-inline-resize-fix/plan.md) owns acceptance evidence and dependency corrections; the production scaffold does not implement this renderer yet.
+The [resize plan](../plans/261007-1156-inline-resize-fix/plan.md) owns the acceptance evidence for the renderer.
+
+The implemented TUI is checked at three levels, and each level uses the real code path:
+
+1. **Golden screens.** [screen_test.go](../internal/tui/screen_test.go) runs a model in a real Bubble Tea program and feeds the renderer output into an `x/vt` terminal emulator. A test compares the plain grid with a file under `internal/tui/testdata`. Refresh the files with `go test ./internal/tui -run <TestName> -update` and review the diff.
+2. **Go end-to-end.** [interactive_test.go](../cmd/tui/interactive_test.go) starts the compiled `ask` on a pseudo terminal with an isolated `ASK_HOME`, so the TUI starts a real leader and talks over the real Unix socket. An `x/vt` emulator reads the screen, and the tests read the terminal state before and after the run. The faux provider replaces only the model service.
+3. **tui-test.** [e2e/tui/run.py](../e2e/tui/run.py) drives the compiled `ask` in native terminal engines (Alacritty and Ghostty) through the pinned `tui-test` CLI. It covers what needs a real engine: the idle and selector screens, and a resize from 120×40 to 80×24 while a reply streams, with the draft and cursor kept and the transcript drawn once. The same runner keeps the T0 gate scenarios. See [e2e/tui/README.md](../e2e/tui/README.md).
+
+Headless engines do not certify Terminal.app or iTerm2 rendering; a manual run on a real terminal stays a separate record.
 The extension contract stays in the X1 track and full UI rendering stays in T2 unless the roadmap is explicitly changed.
 
 Before publishing the custom component SDK, test a live widget, selector, tool renderer, and custom editor with local subprocesses.

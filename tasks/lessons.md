@@ -19,3 +19,9 @@
 
 - **What went wrong:** I accepted red-team finding #15 ("bound the abort drain, then outcome unknown"). The planner turned it into a 5 s bound that abandons a running tool body. D19 (revised by the user the same day) requires started bodies to drain before the Step closes, as DeepSeek does (`tool-calls.ts:233`, `Promise.allSettled`). I did not trace the fix to D19, so a hardening suggestion silently reversed a user decision. A later source audit found it.
 - **Rule:** before accepting any red-team fix, grep the roadmap decisions (D-rows) and the plan's fixed constraints for the behavior it changes. If it touches a user decision, present it as a question, not as an accepted finding. Never write "Remaining contradictions: none" without a second pass that compares each phase task against each decision row.
+
+## 2026-10-10: When the user's test contradicts your code reading, find the path you missed
+
+- **What went wrong:** the user asked how Pi and Grok CLI treat slash command case. I read one lookup (`text === "/settings"`, an exact-case `HashMap`) and said both are case-sensitive. The user ran `/MEMORY` and `/MODEL` and both worked; I was corrected three times. The missing paths: Pi applies the highlighted completion on Enter before it submits; Grok passes an unknown command to the agent shell, which lowercases it (`slash_key`). I also gave a wrong mechanism for Grok before checking its smart-case menu.
+- **Rule:** a report of observed behavior beats a code reading. Trace the whole path from key press to execution (menu, accept, pass-through, fallback) before stating a conclusion, say which parts were read and which were run, and when the user contradicts you, find the missing path first instead of restating or defending the first answer.
+

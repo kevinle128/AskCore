@@ -13,6 +13,10 @@ Run the real T0 binary with Microsoft tui-test through a single test command.
 Use the installed CLI version as the initial verified pin, not the untested current upstream API.
 Keep dependencies and test artifacts outside the production Go module.
 
+## Related plans
+
+- [T1a local TUI](../261009-2239-t1a-local-tui/plan.md) reuses this runner in its phase 8 and retargets it from the T0 archive to the built `ask`. The T0 gate scenarios and the open items of this plan stay here.
+
 ## Scope and constraints
 
 Use Python standard-library tests to drive the pinned CLI.

@@ -686,10 +686,10 @@ Rules behind this order:
 
 - **Waits on:** T0, H13a, H13b, D14, D15, D8 for T1a.
   T1b waits on each feature's owning phase, not the whole H13 gateway.
-- **T1a: test the completed harness through the local TUI.**
+- **T1a: test the completed harness through the local TUI.** Plan: [`261009-2239-t1a-local-tui`](../261009-2239-t1a-local-tui/plan.md), with the approved [design](../261009-2239-t1a-local-tui/design.md). T-LAY-09, T-MD-10 and T-CMD-08 move to T1b with H5 (user, 2026-10-09).
   - Build the inline editor, transcript, live markdown stream, status, provider/model selector, error display and terminal restoration.
   - Connect through `ConnectOrSpawn`: TUI → Leader Unix socket → ACP adapter → agent.
-    On this acceptance path, a connection failure is visible and must not trigger a silent direct fallback.
+    If the leader connect fails at startup, the TUI falls back to an in-process agent and shows `in-process` in its footer, as Grok does (user, 2026-10-10; replaces the earlier no-fallback rule). Acceptance tests assert the leader path by its footer, so a fallback cannot hide a leader failure.
   - Use H7a credentials and profiles on the inference host, including refresh and readiness errors.
     Keep full TUI login dialogs in M2; use the completed headless auth commands for login.
   - Expose current model switching, input queues, input removal, cancellation, retry, usage and follow updates through ACP.
@@ -705,6 +705,7 @@ Rules behind this order:
 - **T1b: complete the remaining M1 TUI scope.**
   - Connect H5 builtin tools, H6 settings/trust, H7 catalog, H8 durable resume, H9 remaining overflow/usage, H10 compaction, H11 extensions and H12 observability as each phase completes.
   - Connect H14 session tree, H15 commands/resources and X1 extension tools within their M1 scope.
+  - Moved from T1a with H5 builtin tools (user, 2026-10-09): T-LAY-09 tool output expand, T-MD-10 tool output truncation display, T-CMD-08 `/copy`. T1a draws a tool call as one line with its result status only.
   - Each phase exit includes its real TUI → Leader ACP flow.
 - **Build (T1a and T1b together):** the P0 rows of `inventory-tui.md`:
   - the scrollback committer and the live area;
@@ -716,7 +717,7 @@ Rules behind this order:
   - themes;
   - width and Unicode handling.
 - **Harness rows that T1 commands need:** H-SESS-18 (H13), H-SESS-20 (H14) and the H-SESS-10 picker (built in T1), H7/H7a model/auth readiness. `/session` and `/resume` are enabled when their phase is done. Full TUI `/login` remains M2 (H17 transport, T2 dialogs); M1 can use H7a headless login on the inference host or environment API keys. Show provider, model, auth method and readiness without assuming entitlement.
-- **Constraint:** the TUI uses one `AgentClient` interface: `remote` (ACP to the leader, or to a remote agent) and `direct` (in-process Go API, the fallback when no leader is reachable). Headless mode uses `direct` (D5).
+- **Constraint:** the TUI uses one `AgentClient` interface: `remote` (ACP to the leader, or to a remote agent) and `direct` (in-process agent, the fallback when the leader connect fails at startup; never after a successful start, where the TUI reconnects). Headless mode uses `direct` (D5). User decision 2026-10-10.
 - **Tests:** E§24#23 to #27.
 - **Exit (T1a):** the completed H4, H7a and lifecycle behavior works from the terminal through Leader ACP.
 - **Exit (full T1):** a full session in the terminal works: prompt, stream, steer, abort, compact, and resume.

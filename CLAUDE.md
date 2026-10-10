@@ -65,11 +65,13 @@ AskCore/
 - `ASK_RECORD=1 go test -run '^TestX$' ./cmd/tui` - Re-record the LLM cassette of one test. `ASK_CAPTURE=<dir> ask -p ...` records a real run to a cassette. See `docs/testing-llm-cassettes.md`
 - `go run github.com/golangci/golangci-lint/v2/cmd/golangci-lint run ./...` - Lint, including the depguard import rules
 - `go fmt ./...` - Format code
+- `go run ./cmd/tui` - `ask` with no arguments on a terminal opens the inline TUI. It connects to the local leader (and starts one when none runs). Only when that connect fails at startup does it run an agent in process, and the footer shows `in-process` instead of `leader <id>`; a leader lost later is reconnected, never replaced. See `internal/tui/README.md`
+- `python3 e2e/tui/run.py` - tui-test checks on real terminal engines: the T0 gate scenarios and the built `ask` (idle, model selector, resize while streaming). `--driver t0|ask` selects one. See `e2e/tui/README.md`
 - `go run ./cmd/tui acp` - `ask acp`: serve ACP v1 over stdin/stdout (one Agent per session, no listener, no database; sign in first with `ask auth login`). See `internal/acp/README.md`
 - `go run ./cmd/tui leader` - `ask leader`: the local router that holds one agent for all local clients (Unix socket `<ASK_HOME>/leader.sock`, owner only). `ask leader status|list|stop` manage it and never start one. Clients start it on demand. See `internal/leader/README.md`
 - `go run ./cmd/tui connect` - `ask connect`: line-oriented client of the leader (starts it when none runs, no direct-agent fallback). `ask connect --help` lists the commands
 - `go run ./cmd/tui version --json` - Build and protocol versions on one line; a client reads it before it starts a leader from that binary
-- `go run ./cmd/tui -p "hello"` - Headless print mode: runs one prompt in process and prints the reply. `--mode json` writes every agent event as one JSON line instead. Until H3 the only provider is `faux`, a scripted demo: `echo <text>` calls the echo tool, `fail <text>` ends in an assistant error, anything else is said back. `ASK_FAUX_TPS` paces it in tokens per second. Exit codes: 0 done, 1 error (print mode also on an assistant error), 130 SIGINT, 143 SIGTERM, 129 SIGHUP
+- `go run ./cmd/tui -p "hello"` - Headless print mode: runs one prompt in process and prints the reply. `--mode json` writes every agent event as one JSON line instead. The default provider is `faux`, a scripted demo: `echo <text>` calls the echo tool, `fail <text>` ends in an assistant error, anything else is said back. `--provider` also takes `alibaba-token-plan`, `anthropic`, `openai` and `xai`; keys and sign-in come from `ask auth login` or the environment. `ASK_FAUX_TPS` paces it in tokens per second. Exit codes: 0 done, 1 error (print mode also on an assistant error), 130 SIGINT, 143 SIGTERM, 129 SIGHUP
 
 ## Better Fullstack project context
 
