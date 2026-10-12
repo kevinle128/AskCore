@@ -1,28 +1,24 @@
-◢◤ ask   v0.1.0 · leader 7c1e · ~/src/askcore
-  model  alibaba-token-plan/deepseek-v4.1-flash
+◢◤ ask  ● leader 7c1e  ⌂ ~/src/askcore deepseek-v4.1-flash  ▰▱▱▱▱▱▱▱ 18%  $0.04
+────────────────────────────────────────────────────────────────────────────────
+  The leader removes the stale socket after the lock probe, and the probe can
+  take 1.2 s.
 
-  ❯ why does TestLeaderStale fail on CI?                                 14:02
+  go
+  deadline := 5 * time.Second
+  deepseek-v4.1-flash · 4.2s · ↑12.4k ↓1.8k · $0.004
 
-  ◆ The test waits for the stale socket check, but CI runs it with a 1 s
-    deadline. The leader removes the stale socket after the lock probe, and the
-    probe can take 1.2 s.
-
-    go
-    deadline := 5 * time.Second
-    deepseek-v4.1-flash · 4.2s · ↑12.4k ↓1.8k · $0.004
-
+────────────────────────────────────────────────────────────────────────────────
 ╭─ Providers ──────────────────────────────────────────────────────────────────╮
 │   ● Alibaba Token Plan API key                                       api key │
 │   ● Claude Pro/Max sign-in                                                   │
 │ ❯ ● Anthropic API key                                  env ANTHROPIC_API_KEY │
 │   ● ChatGPT Plus/Pro sign-in                                       signed in │
-│   ● OpenAI API key                                                           │
-│   ● xAI Grok sign-in                                                         │
-│   ● xAI API key                                                              │
+│   … 3 more                                                                   │
 │                                                                              │
 │  ✗ Nothing to remove: anthropic uses ANTHROPIC_API_KEY from the environment. │
 │    Unset the variable in your shell to stop using it.                        │
 │  ⌕ Type to search                                                            │
 ╰──────────────────────────────────────────────────────────────────────────────╯
    enter sign in  ·  esc close  ·  your draft is kept
-  ● leader 7c1e   ⌂ ~/src/askcore      deepseek-v4.1-flash  ▰▱▱▱▱▱▱▱ 18%  $0.04
+────────────────────────────────────────────────────────────────────────────────
+ Tab blocks · ctrl+t thinking · ctrl+l model · / commands

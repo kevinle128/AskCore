@@ -14,9 +14,10 @@ import (
 // Input handling.
 //
 // Input order follows the architecture: host exit and cancel handling first,
-// then the active selector, then the editor with its completion list, then the
-// application shortcuts. The editor reports the keys it does not own as
-// unhandled, and the shortcuts below take them.
+// then the viewer, the active box or selector, then the focused component (the
+// block list, or the editor with its completion list), then the application
+// shortcuts. The editor reports the keys it does not own as unhandled, and the
+// shortcuts take them.
 
 const (
 	needsLeaderText = "Needs the leader; this session runs in process."
@@ -25,8 +26,17 @@ const (
 )
 
 func (s *sessionView) onKey(k tea.KeyPressMsg) tea.Cmd {
+	// A key ends the selection that a drag left on the screen.
+	s.m.mouse.rng = textRange{}
 	if k.String() == "ctrl+c" {
+		// The viewer closes first; then the quit rule runs.
+		s.m.closeViewer()
 		return s.onCtrlC()
+	}
+	if s.m.viewerOpen() {
+		// The viewer takes every key: none reaches the editor or a shortcut.
+		s.m.onViewerKey(k)
+		return nil
 	}
 	if s.boxOpen() {
 		// A provider box or a login box owns every key. The editor and the
@@ -36,6 +46,9 @@ func (s *sessionView) onKey(k tea.KeyPressMsg) tea.Cmd {
 	if s.sel != nil {
 		return s.onSelectorKey(k)
 	}
+	if s.m.focus == FocusBlocks {
+		return s.onListKey(k)
+	}
 	res := s.editor.Handle(k)
 	if res.Handled {
 		return s.onEditorResult(res)
@@ -43,26 +56,31 @@ func (s *sessionView) onKey(k tea.KeyPressMsg) tea.Cmd {
 	switch k.String() {
 	case "esc":
 		return s.cancelRun()
-	case "ctrl+d":
-		return s.requestQuit()
-	case "alt+up":
-		return s.dequeueCmd()
-	case "ctrl+l":
-		return s.openModelSelector()
-	case "ctrl+t":
-		return s.toggleThinking()
-	case "shift+tab":
-		return s.cycleThinking()
+	case "tab":
+		// The command list outranks the block list: it is drawn above the
+		// prompt and would stay while the keys drove the blocks.
+		if len(s.editor.MenuRows(max(1, s.m.width), s.m.theme)) == 0 {
+			s.m.enterBlockList()
+		}
+		return nil
 	}
-	return nil
+	cmd, _ := s.onShortcut(k)
+	return cmd
 }
 
 func (s *sessionView) onPaste(msg tea.PasteMsg) tea.Cmd {
+	if s.m.viewerOpen() {
+		return nil
+	}
 	if s.boxOpen() {
 		return s.onBoxPaste(msg)
 	}
 	if s.sel != nil {
 		return nil
+	}
+	if s.m.focus == FocusBlocks {
+		// A paste belongs to the draft, as a typed key does.
+		s.m.leaveBlockList()
 	}
 	s.editor.Handle(msg)
 	return nil
@@ -201,6 +219,8 @@ func (s *sessionView) runCommand(name string) tea.Cmd {
 		return s.listSessions()
 	case "/take":
 		return s.take()
+	case "/copy":
+		return s.copyReply()
 	case "/quit":
 		return s.requestQuit()
 	}
@@ -529,12 +549,14 @@ func (s *sessionView) onThinking(msg thinkingMsg) {
 	}
 }
 
-// toggleThinking hides or shows all thinking blocks. The committed blocks are
-// drawn again by a rebuild of the scrollback.
+// toggleThinking expands all thinking blocks, or collapses them all when none
+// is collapsed. The pane draws the changed blocks again, and the selected block
+// stays in view when the block list has focus.
 func (s *sessionView) toggleThinking() tea.Cmd {
-	hidden := s.trl.ToggleThinking()
-	s.setNotice(ThinkingNotice(hidden), false)
-	return s.m.Rebuild()
+	expanded := s.m.pane.ToggleAllThinking()
+	s.setNotice(ThinkingNotice(expanded), false)
+	s.m.revealSelected()
+	return nil
 }
 
 // ---- attach ----

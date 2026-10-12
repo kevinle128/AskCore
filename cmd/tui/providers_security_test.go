@@ -150,9 +150,16 @@ func TestInteractiveSecretNotInTranscript(t *testing.T) {
 		return countRows(rows, "◢◤ ask") >= 1 && countRows(rows, "✓ openai: API key saved.") >= 1
 	})
 	a.resize(100, 30)
-	a.waitFor("the screen drawn again", func(rows []string) bool { return hasRow(rows, "╰", "╯") })
+	a.waitFor("the screen drawn again at the new width", func(rows []string) bool {
+		return containsExactRow(rows, strings.Repeat("─", 100))
+	})
+	a.requireNoSecret(key)
 	a.resize(termCols, termRows)
-	time.Sleep(400 * time.Millisecond) // the renderer rebuilds 120 ms after the size settles
+	// The emulator cuts the old rows at the new width, so only a header row that
+	// the program drew at 80 columns ends with the cost.
+	a.waitFor("the screen drawn again at the old width", func(rows []string) bool {
+		return hasRowPrefix(rows, "◢◤ ask") && hasRow(rows, "◢◤ ask", "$0.00") && containsExactRow(rows, strings.Repeat("─", termCols))
+	})
 	a.requireNoSecret(key)
 
 	// The history that the editor keeps does not hold it: up recalls nothing.
@@ -186,7 +193,7 @@ func TestInteractiveSecretNotInLogsOrEvents(t *testing.T) {
 
 	a := startAskTerm(t, g.bin, proxyHome, askTermOptions{})
 	a.waitText("Ask anything")
-	a.waitNoModelFooter()
+	a.waitNoModelHeader()
 	ids := liveSessionIDs(t, g.bin, g.home)
 	require.Len(t, ids, 1)
 
@@ -260,7 +267,7 @@ func TestInteractiveCopyCodeNotInLogsOrEvents(t *testing.T) {
 	require.NoError(t, os.Mkdir(proxyHome, 0o700))
 	lp := newLinkProxy(t, filepath.Join(proxyHome, "leader.sock"), paths.Socket)
 	a := startAskTerm(t, g.bin, proxyHome, askTermOptions{})
-	a.waitNoModelFooter()
+	a.waitNoModelHeader()
 	ids := liveSessionIDs(t, g.bin, g.home)
 	require.Len(t, ids, 1)
 	watcher := startConnect(t, g.bin, g.home, noProviderEnv(), "--attach", ids[0])

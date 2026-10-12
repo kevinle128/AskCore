@@ -13,7 +13,7 @@ import (
 // and the Ultraviolet commit it was tested with. A newer Ultraviolet or
 // lipgloss changes cell and escape sequence behavior that the renderer patch
 // and the golden tests rely on, so a moved pin must fail here and not in a
-// terminal.
+// terminal. The copy is its own module, so its guard tests run from here.
 const (
 	pinBubbleTea   = "v2.0.10"
 	pinUltraviolet = "v0.0.0-20260703014108-f5a850f9c2b7"
@@ -53,6 +53,10 @@ func TestDependencyPins(t *testing.T) {
 		require.Equal(t, []string{pinLipgloss}, got["charm.land/lipgloss/v2"])
 		require.Equal(t, []string{pinGlamour}, got["charm.land/glamour/v2"])
 		require.Equal(t, []string{pinChroma}, got["github.com/alecthomas/chroma/v2"])
+	})
+
+	t.Run("patched Bubble Tea copy passes its own tests", func(t *testing.T) {
+		goOutput(t, "-C", "third_party/bubbletea", "test", "-count=1", "./...")
 	})
 
 	t.Run("no v1 terminal libraries in Ask packages", func(t *testing.T) {

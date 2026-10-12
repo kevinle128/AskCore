@@ -51,7 +51,7 @@ The 64 MiB requirement also needs a reviewed SDK parser patch; Phase 1 must reco
 
 ### Non-goals
 
-H13c gateway, token, Origin policy and daemon conversion; durable `session/load`, compaction (H8, H10); a direct-agent fallback in the client; T1a rendering; zombie eviction, acquire-slot guard, relay, auto-update relaunch; a leader cluster or registry; a monitoring subsystem; session TTL, GC or dispose; protocol compatibility beyond the hard gate.
+H13c gateway, token, Origin policy and daemon conversion; durable `session/load`, compaction (H8, H10); a direct-agent fallback in the client; T1a rendering; zombie eviction (brought in for Linux by the [leader connect-or-spawn plan](../261011-2304-leader-connect-or-spawn-port/plan.md)), acquire-slot guard, relay, auto-update relaunch; a leader cluster or registry; a monitoring subsystem; session TTL, GC or dispose; protocol compatibility beyond the hard gate.
 
 ## Decisions
 
@@ -62,7 +62,7 @@ H13c gateway, token, Origin policy and daemon conversion; durable `session/load`
 | Other-UID evidence | How do we prove that a peer with another UID is rejected? | **A.** Real-socket test on macOS and Linux runs the real peer-credential syscall with the expected owner UID injected through typed config as a different value; plus a documented manual root check. Disclosed gap: no automated literal second-user connection. |
 | Driver loss | May another client take a running session after its driver disconnects? | **B.** Explicit take is allowed whenever the session has no live driver, also when busy. Take is rejected while another live client drives a busy session. Take of an idle session with a live driver is allowed. No automatic promotion. |
 | Write order | What does a prompt result guarantee on the leader socket? | **A, revised to B (user, 2026-10-08): as Grok.** Per-client FIFO with one ordered writer per socket and an **unbounded** queue, as Grok `server.rs:1564`. A client that receives a prompt result has received its preceding updates. A slow client is never closed for slowness; dead clients are found by `ping` and socket errors. Editor stdio keeps its physical-write barrier unchanged. |
-| Version gate | Does a different build count as a mismatch? | **A.** Hard gate on the outer leader protocol integer only. Build identity shows in `ask leader status` and a one-line stderr hint. Automatic replacement only on protocol mismatch. |
+| Version gate | Does a different build count as a mismatch? | **A.** Hard gate on the outer leader protocol integer only. Build identity shows in `ask leader status` and a one-line stderr hint. Automatic replacement only on protocol mismatch. **Superseded in part (user, 2026-10-11, choice C):** for the same protocol, a client whose binary is newer (later commit time, or for builds without a VCS stamp another hash and a later file time) replaces a leader that a client started, also when it is busy. The protocol-mismatch path stays as decided here (see N2 of the [leader connect-or-spawn plan](../261011-2304-leader-connect-or-spawn-port/plan.md)). |
 | Stub command | Which command runs the client stub? | **A.** New subcommand `ask connect`: a line-oriented client. Bare `ask` stays the demo menu until T1a. |
 
 ### Recommendations verified from source (the maintainer can veto at plan review)

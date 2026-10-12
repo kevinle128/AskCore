@@ -25,7 +25,7 @@ Tool contracts follow Pi (H5 contract of 2026-10-06), with omp and Grok improvem
 - Seven Pi tools: `read`, `write`, `edit`, `bash`, `grep`, `find`, `ls`; Pi limits of 2000 lines or 50 KB; Claude Code names where semantics match.
 - `edit` keeps Pi's `edits[{oldText,newText}]` (Q1). Matching ladder: exact, then rstrip, trim and Unicode normalization, then a scored fuzzy line match; a unique match is required; the replacement is re-indented; errors name the closest match with its similarity and line; no-op edits are rejected, with a hard error after three identical ones; CRLF and BOM are preserved; overlapping edits are rejected (omp, Grok, Codex).
 - New over both sources: an edit is rejected when the file changed since this session last read it (mtime and size, or a hash); writes are atomic (temporary file and rename).
-- `read`: numbers on every line, binary detection, long lines capped only in the model view, a past-end hint, `Use offset=N to continue`.
+- `read`: numbers on every line, binary detection, long lines capped only in the model view, a past-end hint, `Use offset=N to continue`; images exactly like Pi (user, 2026-10-11): jpeg, png, gif, webp, bmp by magic bytes, BMP converted to PNG, EXIF orientation, auto-resize to 2000x2000 and 4.5 MiB base64, a note for a model without image input. This pulls H-TOOL-20 into H5; it uses `golang.org/x/image` (pure Go, not a native library).
 - `write`: refuses to overwrite generated files; sets the executable bit for a shebang.
 - `grep` uses `rg` per Pi with per-file caps and early stop; `find` uses `fd` when present, else `rg --files`, else a Go walk that respects `.gitignore`.
 - Paths: `@`, `~`, `file://`, macOS screenshot name variants.
@@ -44,7 +44,7 @@ Tool contracts follow Pi (H5 contract of 2026-10-06), with omp and Grok improvem
 - Every `bash` call is a job. It waits up to `timeout` (default 120 s, cap 600 s); a job done in time returns a normal result and is removed; otherwise the call returns the job id with a "moved to background" text and the job keeps running; `run_in_background` starts in the background at once; a cancelled call kills the job (Q4 as revised by Q9). No background time limit.
 - At most 10 active jobs per session (Q8); the error tells the model to use `job_kill`.
 - Tools: `job_output(job_id, wait?, timeout_ms?)` returns output since the last read and a status line; `job_kill(job_id, reason?)`; `job_list()`; `monitor` (Q10).
-- `monitor`: lines that match a pattern become events; a flood guard of about 10 events refilled 1 every 2 s, with a "[N events suppressed]" note; on sustained overload the process is killed, not only the reader.
+- `monitor` (superseded 2026-10-11, N3: the earlier text "lines that match a pattern become events" no longer applies): `monitor(command, description, timeout_ms?, persistent?)` exactly as Grok; each stdout line of the command is an event and its exit ends the watch; filtering is the command's job; `timeout_ms` default and max 10 h, `persistent` means no timeout (unlike `bash` jobs, which have no background time limit); lines cut at 500 chars, 200 ms batching, batches cut at 3,000 chars; a flood guard of 10 events refilled 1 every 2 s, with a "[N events suppressed]" note; after 30 s of continuous overload the process group is killed, not only the reader.
 - Notices (Q11, Q14): a finished job sends one notice through the Agent's `FollowUp`, skipped when the model already saw the end through a wait or its own kill, or when the session is closing; monitor events go through `Steer`, coalesced per delivery. A notice is a `user`-role message wrapped in `<system-reminder>…</system-reminder>`, hidden from the conversation view, and kept in the session log.
 - Cleanup: closing the session kills and waits for all its jobs; leader shutdown closes every session. A leader crash can leave children running; this is accepted, as DeepSeek does (Q8).
 
@@ -58,7 +58,7 @@ Tool contracts follow Pi (H5 contract of 2026-10-06), with omp and Grok improvem
 
 ### Data model
 
-Session 1 — 1 job table; job table 1 — 0..10 active jobs; job 1 — 0..1 monitor; job 1 — 0..1 spill file. All in memory; nothing persists across a leader restart.
+Session 1 — 1 job table; job table 1 — 0..10 active jobs (a monitor is a job of kind `monitor` with its own process); job 1 — 0..1 spill file. All in memory; nothing persists across a leader restart.
 
 ### Other
 

@@ -140,7 +140,7 @@ func TestKeySavedOnFirstRunPointsToModel(t *testing.T) {
 	k.r.h.waitText("Choose a model with /model.")
 	k.r.h.waitText("┊ ✓ openai key saved · 2 models · choose one with /model")
 	requireContentGolden(t, k.r.h)
-	require.True(t, strings.HasSuffix(k.r.footerOf(), "no model"), "the footer keeps no model")
+	require.True(t, strings.HasSuffix(k.r.headerOf(), "no model"), "the footer keeps no model")
 }
 
 func TestKeyBoxIgnoresHistoryKeepsDraft(t *testing.T) {
@@ -194,7 +194,7 @@ func TestSecretNeverOnScreenGrid(t *testing.T) {
 	k.r.h.waitText("✓ openai: API key saved.")
 	k.requireNoSecret(fakeKey)
 	// The screen was resized while a key was in the buffer in another run; here
-	// it is a rebuild of the scrollback with the note.
+	// the screen is drawn again with the note.
 	k.r.h.resize(60, 20)
 	k.r.h.settle()
 	k.requireNoSecret(fakeKey)
@@ -225,8 +225,8 @@ func TestSecretNotInTranscriptBlocks(t *testing.T) {
 	s := stoppedFlow(t)
 	rc := s.m.renderContext()
 	var all []string
-	all = append(all, s.m.transcript.CommittedLines(rc)...)
-	all = append(all, s.m.transcript.TailLines(rc)...)
+	all = append(all, finalRows(s.m.transcript, rc)...)
+	all = append(all, liveRows(s.m.transcript, rc)...)
 	all = append(all, s.notice.text, s.notice.text)
 	if s.failure != nil {
 		all = append(all, s.failure.text)

@@ -141,10 +141,15 @@ func (r *viewRig) rows() []string {
 	return out
 }
 
-// content returns the settled rows without the blank rows above and below.
+// content returns the settled rows without the rule under the header and
+// without blank rows above and below: the header row comes first, then the
+// rows of the pane.
 func (r *viewRig) content() []string {
 	r.t.Helper()
 	rows := r.rows()
+	if len(rows) > 1 {
+		rows = append(rows[:1:1], rows[2:]...)
+	}
 	for len(rows) > 0 && rows[0] == "" {
 		rows = rows[1:]
 	}
@@ -152,6 +157,22 @@ func (r *viewRig) content() []string {
 		rows = rows[:len(rows)-1]
 	}
 	return rows
+}
+
+// railRows returns the n rows above the prompt pane: the queue and the status.
+func (r *viewRig) railRows(n int) []string {
+	r.t.Helper()
+	rows := r.content()
+	// The prompt pane is a rule, the prompt rows and a rule above the bar.
+	top := -1
+	for i := len(rows) - 3; i >= 0; i-- {
+		if rows[i] != "" && strings.Trim(rows[i], "─") == "" {
+			top = i
+			break
+		}
+	}
+	require.GreaterOrEqual(r.t, top, n, "the prompt pane has a rule above it")
+	return rows[top-n : top]
 }
 
 // screen returns the settled screen as one text.

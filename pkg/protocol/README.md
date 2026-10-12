@@ -11,7 +11,7 @@ JSON compatibility is deliberate: the public headless event projection remains P
 | Planned UI extension wire contracts | [TUI architecture](../../docs/tui-architecture.md); public author API belongs in [askui](../askui/README.md) |
 | Provider account methods (`_ask/providers/*`), login shapes, fixed reason tokens | [acp_providers.go](acp_providers.go), tests in [acp_providers_test.go](acp_providers_test.go) |
 | ACP method names, `_ask/*` DTOs, error kinds and codes, event identity | [acp.go](acp.go), tests in [acp_test.go](acp_test.go); SDK and schema pins in [conformance report](../../plans/reports/conformance-261007-h13a-sdk.md); roadmap: [H13](../../plans/260930-2254-pi-feature-inventory-go-roadmap/roadmap.md) |
-| Leader socket frames, control and status payloads, protocol and frame limits, the `ask version --json` payload | [leader.go](leader.go), tests in [leader_test.go](leader_test.go); behavior in [internal/leader](../../internal/leader/README.md) |
+| Leader socket frames, control and status payloads, protocol and frame limits (the optional `commitTime` and `devStamp` build stamps in register, registered, status and `ask version --json`), the `ask version --json` payload | [leader.go](leader.go), tests in [leader_test.go](leader_test.go); behavior in [internal/leader](../../internal/leader/README.md) |
 | Messages, content, usage, and tool declarations | [message.go](message.go), [content.go](content.go), [usage.go](usage.go), [tool.go](tool.go) |
 | Agent event types and sequencing envelope (`model_update` carries the model of an Agent; all fields empty means no model) | [events.go](events.go) |
 | Provider stream events and message reconstruction | [stream_events.go](stream_events.go), [builder.go](builder.go) |

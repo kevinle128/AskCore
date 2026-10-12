@@ -23,15 +23,9 @@ func TestModelLineGoldens(t *testing.T) {
 		rows := r.content()
 		require.Equal(t, "  model  alibaba-token-plan/deepseek-v4.1-flash", rows[1])
 		require.Equal(t, "", rows[2])
-		footer := r.h.settle()
-		var last string
-		for _, row := range footer {
-			if row != "" {
-				last = row
-			}
-		}
-		require.Contains(t, last, "deepseek-v4.1-flash")
-		require.NotContains(t, last, "alibaba-token-plan")
+		header := r.headerOf()
+		require.Contains(t, header, "deepseek-v4.1-flash")
+		require.NotContains(t, header, "alibaba-token-plan")
 	})
 	t.Run("start_120x40", func(t *testing.T) {
 		r := startView(t, 120, 40, withFake(providerFake()))
@@ -70,16 +64,10 @@ func TestModelChangeLine(t *testing.T) {
 	r.h.waitText("model  openai/gpt-5.5 · was alibaba-token-plan/deepseek-v4.1-flash")
 	r.waitGone("Select model")
 	requireContentGolden(t, r.h)
-	rows := r.rows()
-	// The footer keeps the bare model id.
-	var footer string
-	for _, row := range rows {
-		if row != "" {
-			footer = row
-		}
-	}
-	require.Contains(t, footer, "gpt-5.5")
-	require.NotContains(t, footer, "openai/")
+	// The header keeps the bare model id.
+	header := r.headerOf()
+	require.Contains(t, header, "gpt-5.5")
+	require.NotContains(t, header, "openai/")
 }
 
 func TestChangeLineDropsWasWhenNarrow(t *testing.T) {
@@ -181,11 +169,11 @@ func TestLiveModelClearKeepsRemovalNoticeWithoutLine(t *testing.T) {
 	r.h.waitText("┊ No model. Choose one with /model")
 	require.Equal(t, before, r.h.count("  model  "))
 	require.Zero(t, r.h.count("· was"))
-	require.True(t, strings.HasSuffix(r.footerOf(), "no model"))
+	require.True(t, strings.HasSuffix(r.headerOf(), "no model"))
 	r.h.resize(40, 14)
 	r.h.settle()
 	r.requireOnScreen("┊ No model. Choose one with /model")
-	require.True(t, strings.HasSuffix(r.footerOf(), "no model"))
+	require.True(t, strings.HasSuffix(r.headerOf(), "no model"))
 	r.h.resize(80, 24)
 	r.typeText("hello")
 	r.h.waitText("┊ No model. Choose one with /model")

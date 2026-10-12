@@ -8,7 +8,7 @@ import (
 
 // Dialog composition.
 //
-// A dialog is a rounded box in the editor slot. It replaces the editor and
+// A dialog is a rounded box in the prompt pane slot. It replaces the editor and
 // keeps the draft. The provider box, its row menu, the key and login boxes and
 // the removal box share the box drawing below. A box holds text rows, at most
 // one input row, and a hint row under it. The row helpers measure visible

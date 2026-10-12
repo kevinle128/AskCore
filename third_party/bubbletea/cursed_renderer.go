@@ -16,27 +16,29 @@ import (
 )
 
 type cursedRenderer struct {
+	w             io.Writer
+	buf           bytes.Buffer // updates buffer to be flushed to [w]
+	scr           *uv.TerminalRenderer
+	cellbuf       uv.ScreenBuffer
+	lastView      *View
+	env           []string
+	term          string // the terminal type $TERM
+	width, height int
+	mu            sync.Mutex
+	profile       colorprofile.Profile
+	logger        uv.Logger
+	view          View
+	hardTabs      bool // whether to use hard tabs to optimize cursor movements
+	backspace     bool // whether to use backspace to optimize cursor movements
+	mapnl         bool
+	syncdUpdates  bool // whether to use synchronized output mode for updates
+	starting      bool // indicates whether the renderer is starting after being stopped
+	pendingErase  bool // an scr.Erase() is pending and hasn't been drained by flush yet
+	noInput       bool // whether input is disabled, in which case keyboard enhancement queries are pointless
+
+	// awaitingSizedView is set by resize and cleared by render. While it is
+	// set, flush draws nothing, so the old view is never drawn at the new size.
 	awaitingSizedView bool
-	w                 io.Writer
-	buf               bytes.Buffer // updates buffer to be flushed to [w]
-	scr               *uv.TerminalRenderer
-	cellbuf           uv.ScreenBuffer
-	lastView          *View
-	env               []string
-	term              string // the terminal type $TERM
-	width, height     int
-	mu                sync.Mutex
-	profile           colorprofile.Profile
-	logger            uv.Logger
-	view              View
-	hardTabs          bool // whether to use hard tabs to optimize cursor movements
-	backspace         bool // whether to use backspace to optimize cursor movements
-	mapnl             bool
-	syncdUpdates      bool // whether to use synchronized output mode for updates
-	starting          bool // indicates whether the renderer is starting after being stopped
-	pendingErase      bool // an scr.Erase() is pending and hasn't been drained by flush yet
-	noInput           bool // whether input is disabled, in which case keyboard enhancement queries are pointless
-	cursorMoved       bool // a commit moved the terminal cursor; the next flush must place it again
 }
 
 var _ renderer = &cursedRenderer{}
@@ -292,9 +294,7 @@ func (s *cursedRenderer) writeString(str string) (int, error) {
 func (s *cursedRenderer) flush(closing bool) error {
 	s.mu.Lock()
 	defer s.mu.Unlock()
-	return s.flushLocked(closing)
-}
-func (s *cursedRenderer) flushLocked(closing bool) error {
+
 	if s.awaitingSizedView && !closing {
 		return nil
 	}
@@ -325,11 +325,10 @@ func (s *cursedRenderer) flushLocked(closing bool) error {
 		_, _ = s.scr.WriteString(ansi.SetTabEvery8Columns)
 	}
 
-	if !s.starting && !closing && !s.pendingErase && !s.cursorMoved && s.lastView != nil && viewEquals(s.lastView, &view) && frameArea == s.cellbuf.Bounds() {
+	if !s.starting && !closing && !s.pendingErase && s.lastView != nil && viewEquals(s.lastView, &view) && frameArea == s.cellbuf.Bounds() {
 		// No changes, nothing to do.
 		return nil
 	}
-	s.cursorMoved = false
 
 	// We're no longer starting.
 	s.starting = false
@@ -805,21 +804,11 @@ func (s *cursedRenderer) insertAbove(str string) error {
 	sb.WriteString(ansi.InsertLine(offset))
 	for _, line := range lines {
 		sb.WriteString(line)
-		// A row that fills every column leaves the cursor on the last column
-		// with a wrap pending. An erase to the end of the line would remove
-		// that last column, and the row needs no erase because the line was
-		// blank when it was inserted.
-		if width := ansi.StringWidth(line); w <= 0 || width == 0 || width%w != 0 {
-			sb.WriteString(ansi.EraseLineRight)
-		}
+		sb.WriteString(ansi.EraseLineRight)
 		sb.WriteString("\r\n")
 	}
 
 	s.scr.SetPosition(0, 0)
-	// The cursor is at the top of the frame now. If the frame does not change,
-	// the next flush must still move the cursor back to the place the view
-	// asks for.
-	s.cursorMoved = true
 
 	if s.logger != nil {
 		s.logger.Printf("insert above: %q", sb.String())
@@ -928,45 +917,4 @@ func keyboardEnhancementsFlags(ke KeyboardEnhancements) int {
 		flags |= ansi.KittyReportAssociatedKeys
 	}
 	return flags
-}
-
-// replayInline constructs one repair generation under the renderer lock.
-func (s *cursedRenderer) replayInline(entries []string) error {
-	s.mu.Lock()
-	defer s.mu.Unlock()
-	if s.view.AltScreen {
-		return fmt.Errorf("inline replay is forbidden in alternate screen")
-	}
-	var output bytes.Buffer
-	if s.syncdUpdates {
-		output.WriteString(ansi.SetModeSynchronizedOutput)
-	}
-	output.WriteString("\x1b[2J\x1b[3J\x1b[H")
-	output.WriteString("\x1b[0m")
-	for _, entry := range entries {
-		output.WriteString(entry)
-		output.WriteString("\r\n")
-	}
-	writer := s.w
-	s.w = &output
-	reset(s)
-	s.cellbuf = uv.NewScreenBuffer(s.width, s.height)
-	s.awaitingSizedView = false
-	s.pendingErase = true
-	s.scr.Erase()
-	syncd := s.syncdUpdates
-	s.syncdUpdates = false
-	err := s.flushLocked(false)
-	s.syncdUpdates = syncd
-	s.w = writer
-	if err != nil {
-		return err
-	}
-	if s.syncdUpdates {
-		output.WriteString(ansi.ResetModeSynchronizedOutput)
-	}
-	if _, err := io.Copy(writer, &output); err != nil {
-		return fmt.Errorf("bubbletea: inline replay write: %w", err)
-	}
-	return nil
 }

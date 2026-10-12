@@ -111,6 +111,8 @@ func acpParams(deps runDependencies) (app.ACPParams, error) {
 		o.transport = deps.inferenceHTTP.Transport
 	}
 	o.wait = deps.wait
+	o.environ = deps.environ
+	o.onJobError = deps.onJobError
 	// The faux demo provider is listed, usable and the first choice only with
 	// ASK_FAUX=1. Without it a session starts on a catalog model, or on none.
 	var demoStream providers.StreamFn
@@ -131,7 +133,9 @@ func acpParams(deps runDependencies) (app.ACPParams, error) {
 		Initial:  initial,
 		Info:     sdk.Implementation{Name: "ask", Version: buildIdentity()},
 		NewAgent: func(service *auth.Service, sessionID, cwd string, start providers.Model) (*agent.Agent, error) {
-			return newNativeAgentOn(o, deps.getenv, service, sessionID, cwd, demoStream, start)
+			// The job table closes through the Config.Release of the Agent.
+			ag, _, err := newNativeAgentOn(o, deps.getenv, service, sessionID, cwd, demoStream, start)
+			return ag, err
 		},
 	}, nil
 }

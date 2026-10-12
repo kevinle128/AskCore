@@ -1,16 +1,40 @@
-◢◤ ask   v0.1.0 · leader 7c1e · ~/src/askcore
+◢◤ ask  ● leader 7c1e  ⌂ ~/src/askcore                                         deepseek-v4.1-flash  ▰▱▱▱▱▱▱▱ 18%  $0.04
+────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
   model  alibaba/deepseek-v4.1-flash
 
   ❯ why does TestLeaderStale fail on CI?                                                                         14:02
 
-  ◆ The test waits for the stale socket check, but CI runs it with a 1 s deadline. The leader removes the stale socket
-    after the lock probe, and the probe can take 1.2 s.
+  The test waits for the stale socket check, but CI runs it with a 1 s deadline. The leader removes the stale socket
+  after the lock probe, and the probe can take 1.2 s.
 
-    go
-    deadline := 5 * time.Second
-    deepseek-v4.1-flash · 4.2s · ↑12.4k ↓1.8k · $0.004
+  go
+  deadline := 5 * time.Second
+  deepseek-v4.1-flash · 4.2s · ↑12.4k ↓1.8k · $0.004
 
-╭──────────────────────────────────────────────────────────────────────────────────────────────────────────────────────╮
-│ ❯ Ask anything  ·  / commands  ·  ctrl+l model                                                                       │
-╰──────────────────────────────────────────────────────────────────────────────────────────────────────────────────────╯
-  ● leader 7c1e   ⌂ ~/src/askcore                                              deepseek-v4.1-flash  ▰▱▱▱▱▱▱▱ 18%  $0.04
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+ ❯ Ask anything  ·  / commands  ·  ctrl+l model
+────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+ Tab blocks · ctrl+t thinking · ctrl+l model · / commands · shift/option+drag select

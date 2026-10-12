@@ -1,6 +1,8 @@
 package tui
 
 import (
+	"fmt"
+	"strconv"
 	"strings"
 	"testing"
 	"time"
@@ -73,7 +75,7 @@ func TestBrowserBoxGoldens(t *testing.T) {
 				urlRows = append(urlRows, strings.TrimSpace(strings.Trim(row, "│")))
 			}
 		}
-		require.Len(t, urlRows, 4, "four URL rows")
+		require.Len(t, urlRows, 3, "three URL rows in the half screen slot")
 		require.Equal(t, fakeURL[:35], urlRows[0])
 		r.requireOnScreen("… ctrl+y copies the full URL", "ctrl+y copy URL · esc cancel")
 		fc.releaseLogin(protocol.ACPLoginOutcome{Status: protocol.ACPLoginStatusCancelled})
@@ -81,21 +83,86 @@ func TestBrowserBoxGoldens(t *testing.T) {
 }
 
 func TestURLRowsAreOneHyperlink(t *testing.T) {
-	fc := browserFake()
-	r := startView(t, 80, 24, withFake(fc),
-		withOptions(func(o *Options) { o.Profile = colorprofile.TrueColor }),
-		withProgram(tea.WithColorProfile(colorprofile.TrueColor)))
-	r.openChatGPT()
-	r.h.waitText("This box closes by itself when you approve.")
-	r.h.settle()
-	raw := r.h.out.all()
-	link := "\x1b]8;;" + fakeURL
 	// The URL is 215 columns wide and each row holds 75, so three rows carry it.
-	require.GreaterOrEqual(t, strings.Count(raw, link), 3, "each URL row carries the full URL as its link target")
+	// Each row is drawn by the dialog with the full URL as its link target.
+	d := &loginDialog{url: fakeURL}
+	var c boxContent
+	d.urlRows(&c, NewTheme(colorprofile.TrueColor), 76, 20)
+	require.Len(t, c.rows, 3)
+	ids := map[string]bool{}
+	for i, row := range c.rows {
+		id := "id=ask-url-" + strconv.Itoa(i)
+		require.Contains(t, row, "\x1b]8;"+id+";"+fakeURL+"\a", "each URL row carries the full URL as its link target")
+		ids[id] = true
+	}
+	require.Len(t, ids, len(c.rows), "each row has its own link id")
 	rows, capped := urlRows(fakeURL, 75, 20)
 	require.False(t, capped)
 	require.Equal(t, fakeURL, strings.Join(rows, ""), "no character is lost between rows")
-	fc.releaseLogin(protocol.ACPLoginOutcome{Status: protocol.ACPLoginStatusCancelled})
+}
+
+// startLinkView starts the view in a program that keeps hyperlink sequences.
+// The default rig writes through a profile that removes them.
+func startLinkView(t *testing.T, width, height int, fc *fakeClient) *viewRig {
+	t.Helper()
+	clock := newTestClock()
+	m := New(Options{
+		Client:       fc,
+		Profile:      colorprofile.TrueColor,
+		Cwd:          "/home/u/src/askcore",
+		Home:         "/home/u",
+		Version:      "0.1.0",
+		Location:     time.UTC,
+		Now:          clock.Now,
+		TickInterval: -1,
+	})
+	r := &viewRig{t: t, fc: fc, m: m, clock: clock}
+	r.h = startScreen(t, m, width, height, tea.WithColorProfile(colorprofile.TrueColor))
+	t.Cleanup(func() { close(fc.events) })
+	r.h.waitText("Ask anything")
+	r.waitCall("usage")
+	r.h.settle()
+	return r
+}
+
+// TestURLLinkCoversEveryRowOnScreen runs the box through the real renderer and
+// reads the link of each cell from the virtual terminal. The renderer skips a
+// link that equals the link of the row before, so the test fails when two rows
+// carry the same link sequence. The narrow screen shows only a part of the URL
+// with a note, so there the linked cells must be the prefix that is shown.
+func TestURLLinkCoversEveryRowOnScreen(t *testing.T) {
+	for _, size := range []struct {
+		w, h   int
+		capped bool
+	}{{80, 24, false}, {40, 14, true}} {
+		t.Run(fmt.Sprintf("%dx%d", size.w, size.h), func(t *testing.T) {
+			fc := browserFake()
+			r := startLinkView(t, size.w, size.h, fc)
+			r.openChatGPT()
+			r.h.waitText("ctrl+y")
+			r.rows()
+			var linked strings.Builder
+			linkedRows := 0
+			for y := 0; y < size.h; y++ {
+				before := linked.Len()
+				for x := 0; x < size.w; x++ {
+					cell := r.h.emu.CellAt(x, y)
+					if cell != nil && cell.Link.URL == fakeURL {
+						linked.WriteString(cell.Content)
+					}
+				}
+				if linked.Len() > before {
+					linkedRows++
+				}
+			}
+			require.GreaterOrEqual(t, linkedRows, 3, "the URL takes at least three rows")
+			require.Equal(t, fakeURL[:linked.Len()], linked.String(), "linked cells hold the URL in order")
+			if !size.capped {
+				require.Len(t, linked.String(), len(fakeURL), "every URL character is linked")
+			}
+			fc.releaseLogin(protocol.ACPLoginOutcome{Status: protocol.ACPLoginStatusCancelled})
+		})
+	}
 }
 
 func TestLinkIsOnlyForPlainURLs(t *testing.T) {
@@ -490,7 +557,7 @@ func TestNarrowAddressTraceWarningKeepsInputAndCancel(t *testing.T) {
 	r.h.waitText("address  ")
 	r.h.resize(40, 14)
 	r.h.settle()
-	r.requireOnScreen("TEA_TRACE is on:", "/tmp/ask-trace.log.", "address  ", "esc cancel", "╰")
+	r.requireOnScreen("TEA_TRACE is on:", "/tmp/ask-trace.log.", "address  ", "esc cancel")
 	fc.releaseLogin(protocol.ACPLoginOutcome{Status: protocol.ACPLoginStatusCancelled})
 }
 
@@ -512,7 +579,8 @@ func TestShortKeyBoxTitleKeepsCancel(t *testing.T) {
 	k.open()
 	k.r.h.resize(80, 5)
 	k.r.h.settle()
-	k.r.requireOnScreen("Sign in to openai · esc cancel", "╰")
+	// The slot is half of 5 rows: the title row and the input row stay.
+	k.r.requireOnScreen("Sign in to openai · esc cancel", "key  paste")
 }
 
 func TestLoginBoxTitleCarriesCancelWhenLow(t *testing.T) {

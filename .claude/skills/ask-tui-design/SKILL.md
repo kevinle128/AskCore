@@ -24,18 +24,19 @@ This applies to `internal/tui`, `internal/tuiext`, `cmd/tui` interactive mode, a
 
 ## Read first
 
-1. [docs/tui-architecture.md](../../../docs/tui-architecture.md), especially "Inline component composition", "Component state and input", and "Inline transcript".
+1. [docs/tui-architecture.md](../../../docs/tui-architecture.md), especially "Screen composition", "Component state and input", and "Transcript and block pane".
 2. [internal/tui/README.md](../../../internal/tui/README.md) for component owners.
 3. Any existing design files under `plans/*/design.md` for the same area.
 4. [docs/tui-style-guide.md](../../../docs/tui-style-guide.md): the visual authority (roles, palette, glyphs, block patterns). Sketches and previews must use its patterns; a new color or glyph needs a style guide change first.
 
-Ask is an inline TUI, not a fullscreen app.
-Committed transcript blocks go to native terminal scrollback.
-The live region at the bottom holds the transcript tail, pending inputs, run status, widgets above the editor, completion, the editor slot, widgets below the editor, and the footer.
-A selector or dialog replaces the editor slot and keeps the draft.
-Empty slots use no rows.
-Your sketches must show this model.
-Do not draw a fullscreen frame around the whole terminal.
+Ask is a full-screen TUI on the alternate screen.
+It has no terminal scrollback of its own: the application transcript is the only history, and the block pane draws it.
+Top to bottom the screen is the header row, a rule, the block pane, queue rows, the status row, a rule, the prompt pane, a rule and the shortcut bar.
+A block pane block is one row by default and has three fold modes (Collapsed, Truncated, Expanded). The viewer shows one block on the whole screen.
+A selector or dialog takes the prompt pane slot (up to half of the screen) and keeps the draft.
+Empty parts use no rows. The header, the bar and one prompt row always stay.
+Your sketches must show this model: every sketch is a whole screen with the exact width and height.
+Do not draw a box around the whole screen; the rules are the only frame.
 
 ## Step 1: create the design file
 
@@ -57,7 +58,7 @@ Sections, in this order:
 
 1. **Outcome**: what the user can see and do after this change, in two to four sentences.
 2. **Non-goals**: what this design does not cover.
-3. **Placement**: which live-region slot or scrollback block the feature uses, what it replaces, and what moves.
+3. **Placement**: which screen part (header row, block pane, status row, queue rows, prompt pane slot, shortcut bar or viewer) or which block the feature uses, what it replaces, and what moves.
 4. **Sketches**: one sketch for each state at 80×24.
    Add 120×40 for a state only when its layout changes at that width; state the width rules for the other states in section 7.
    Add a narrow case (for example 40 columns) when truncation or wrapping matters.
@@ -77,43 +78,50 @@ Sections, in this order:
 ## Step 2: sketch rules
 
 - Draw inside a fenced `text` block.
-- Each sketch line has the exact terminal width.
+- Each sketch has the exact terminal size: every line is the full width, and the line count is the terminal height.
   Pad with spaces.
   Count columns, not characters: CJK and most emoji use two columns.
-- Mark the boundary between scrollback and the live region with a comment line outside the sketch, for example `-- live region starts --`.
-- Label each region with its owner name from `internal/tui/README.md` (transcript, editor, footer, status, dialog, selector, completion, widget).
+- Draw the rules (`─`) and the shortcut bar as they are on the screen. Do not add comment lines inside the sketch.
+- Label each region outside the sketch with its owner name from `internal/tui/README.md` (header, block pane, status, queue, prompt pane, bar, viewer, dialog, selector, completion, widget).
+- Show the selection state of a block when it matters: the shaded row or the `┃` rail, and the `›` or `⌄` indicator.
 - Show the cursor with `▌` and say in text where it is.
 - Show real example text, not `lorem ipsum`.
 - If you use box-drawing characters, they are part of the design.
   The implementation must match them.
 
-Example, an editor-slot permission dialog at 60 columns:
+Example, a permission dialog in the prompt pane slot at 60 columns and 15 rows (header row, block pane, status row, dialog, bar):
 
 ```text
-> run the build                                             
-● bash  go vet ./...                                running…
--- live region starts --
-┌ Allow tool? ─────────────────────────────────────────────┐
+◢◤ ask  ● leader 7c1e  ⌂ ~/src/askcore     faux ▰▱▱▱▱▱▱▱ 9% 
+────────────────────────────────────────────────────────────
+  ❯ run the build                                           
+                                                            
+  ◆ Running go vet ./...                               ⠋ 3s 
+                                                            
+                                                            
+┊ ◌ Waiting for approval                                    
+────────────────────────────────────────────────────────────
+╭─ Allow tool? ────────────────────────────────────────────╮
 │ bash: rm -rf build/                                      │
-│                                                          │
 │ [y] Allow   [n] Deny   [a] Always for this session       │
-└──────────────────────────────────────────────────────────┘
-faux · session 3f2a · waiting for approval       ctrl+c quit
+╰──────────────────────────────────────────────────────────╯
+────────────────────────────────────────────────────────────
+ y allow · n deny · a always                                
 ```
 
 ## Step 2b: render a visual preview
 
 Raw sketches in markdown are hard to review.
-Render every sketch as a terminal window in one HTML page, with colors for the style roles, a caption for each state, and the scrollback and live region boundary shown outside the terminal text.
+Render every sketch as a terminal window in one HTML page, with colors for the style roles, a caption for each state, and the name of each screen part shown outside the terminal text.
 Generate the sketches and the page from one script, so that `design.md` and the page cannot disagree.
-Reference implementation: `plans/261009-2239-t1a-local-tui/artifacts/` (`sketch-gen.py`, `preview-gen.py`, `build-design.py`, `verify-widths.py`).
+Reference implementation: `plans/261009-2239-t1a-local-tui/artifacts/` (`sketch-gen.py`, `preview-gen.py`, `build-design.py`, `verify-widths.py`). Its sketches show the earlier inline layout; use it for the tooling, and use `plans/261012-1337-t1b-grok-style-altscreen/design.md` for the screen model.
 Check the page with a headless browser screenshot before you send it.
 
 ## Step 3: self-check before review
 
 - [ ] Every state in the table has an 80×24 sketch; 120×40 exists where the layout changes.
-- [ ] Every sketch line is the stated width (check with a script if unsure).
-- [ ] The sketches follow the inline model; nothing is drawn as fullscreen.
+- [ ] Every sketch has the stated width and height (check with a script if unsure).
+- [ ] The sketches follow the alternate screen model: header row, rules, block pane, prompt pane, bar; the state of the selection and the fold mode of each block is clear.
 - [ ] Each key has one receiver, and the order agrees with the architecture doc.
 - [ ] Limited-space behaviour is explicit; no region is assumed to always fit.
 - [ ] Each acceptance criterion is observable on screen at a stated size.

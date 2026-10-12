@@ -7,6 +7,8 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"slices"
+	"strings"
 	"sync"
 	"sync/atomic"
 	"time"
@@ -295,7 +297,8 @@ func (h *Host) NewSession(ctx context.Context, cwd string) (*Session, error) {
 	return s, nil
 }
 
-// Close disposes every session. It is safe to call more than once.
+// Close disposes every session in parallel and joins their errors in the
+// order of the session IDs. It is safe to call more than once.
 func (h *Host) Close() error {
 	h.closing.Do(func() {
 		h.mu.Lock()
@@ -305,10 +308,19 @@ func (h *Host) Close() error {
 			list = append(list, s)
 		}
 		h.mu.Unlock()
-		var errs []error
-		for _, s := range list {
-			errs = append(errs, s.Close())
+		// Each Close can wait for the background jobs of its tools, so the
+		// sessions close at the same time and share one wait.
+		slices.SortFunc(list, func(a, b *Session) int { return strings.Compare(a.ID, b.ID) })
+		errs := make([]error, len(list))
+		var wg sync.WaitGroup
+		for i, s := range list {
+			wg.Add(1)
+			go func() {
+				defer wg.Done()
+				errs[i] = s.Close()
+			}()
 		}
+		wg.Wait()
 		h.cancel()
 		h.closeErr = errors.Join(errs...)
 	})
@@ -377,9 +389,6 @@ type Session struct {
 	held []protocol.Event
 	// inputs counts the queue calls that passed admission and are not done.
 	inputs sync.WaitGroup
-	// steering and followUp are the texts of the last queue_update.
-	steering []string
-	followUp []string
 	// fallback is the saved default that the session could not start on. It
 	// holds until the model of the session changes.
 	fallback *protocol.ACPModelFallback
@@ -493,7 +502,7 @@ func (s *Session) Take(route protocol.ACPRouteMeta) (uint64, error) {
 	defer s.commit.Unlock()
 	// Read under commit so an admitted input cannot start a run after an idle
 	// snapshot but before take. State must stay outside mu for listeners.
-	status := s.agent.State().Status
+	st := s.agent.State()
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	if s.closed {
@@ -502,8 +511,8 @@ func (s *Session) Take(route protocol.ACPRouteMeta) (uint64, error) {
 	if s.host.quiesced.Load() {
 		return 0, ErrHostClosed
 	}
-	if route.LiveDriver && (status != agent.Idle || s.binding != nil || s.resetting || s.muts > 0 ||
-		len(s.steering) > 0 || len(s.followUp) > 0) {
+	if route.LiveDriver && (st.Status != agent.Idle || s.binding != nil || s.resetting || s.muts > 0 ||
+		len(st.Steering) > 0 || len(st.FollowUp) > 0) {
 		return 0, agent.ErrBusy
 	}
 	s.gen++
@@ -514,11 +523,11 @@ func (s *Session) Take(route protocol.ACPRouteMeta) (uint64, error) {
 // idle tells whether the session has no work: no run, no input in the queue,
 // no change in flight.
 func (s *Session) idle() bool {
-	status := s.agent.State().Status
+	st := s.agent.State()
 	s.mu.Lock()
 	defer s.mu.Unlock()
-	return status == agent.Idle && s.binding == nil && !s.resetting && s.muts == 0 &&
-		len(s.steering) == 0 && len(s.followUp) == 0
+	return st.Status == agent.Idle && s.binding == nil && !s.resetting && s.muts == 0 &&
+		len(st.Steering) == 0 && len(st.FollowUp) == 0
 }
 
 // observe is the synchronous Agent listener. It never blocks on output and
@@ -547,7 +556,7 @@ func (s *Session) observe(ev protocol.Event) error {
 		s.mu.Unlock()
 		return nil
 	}
-	s.noteQueueLocked(ev)
+	s.noteModelLocked(ev)
 	epoch := s.epoch
 	s.mu.Unlock()
 	s.enqueue(ev, epoch)
@@ -558,14 +567,9 @@ func (s *Session) observe(ev protocol.Event) error {
 	return nil
 }
 
-// noteQueueLocked keeps the queue texts of a queue_update and drops the start
-// fallback when the model changes. mu must be held.
-func (s *Session) noteQueueLocked(ev protocol.Event) {
-	switch e := ev.(type) {
-	case *protocol.QueueUpdate:
-		s.steering = append([]string{}, e.Steering...)
-		s.followUp = append([]string{}, e.FollowUp...)
-	case *protocol.ModelUpdate:
+// noteModelLocked drops the start fallback when the model changes. mu must be held.
+func (s *Session) noteModelLocked(ev protocol.Event) {
+	if _, ok := ev.(*protocol.ModelUpdate); ok {
 		s.fallback = nil
 	}
 }
@@ -660,12 +664,12 @@ func (s *Session) input(call func() (string, error)) (string, error) {
 	return call()
 }
 
-// Queues returns copies of the steering and follow-up texts that the last
-// queue_update named.
+// Queues returns the steering and follow-up texts of the Agent queue. They are
+// read from the queue itself, so an input that a call just queued or removed
+// shows at once, before its queue_update reaches the followers.
 func (s *Session) Queues() (steering, followUp []string) {
-	s.mu.Lock()
-	defer s.mu.Unlock()
-	return append([]string{}, s.steering...), append([]string{}, s.followUp...)
+	st := s.agent.State()
+	return st.Steering, st.FollowUp
 }
 
 // Epoch returns the epoch of the conversation that new events belong to.
@@ -861,7 +865,6 @@ func (s *Session) releaseHeld(cut Cut, resetErr error) {
 	oldEpoch := s.epoch
 	if resetErr == nil {
 		s.epoch = cut.Cursor.Epoch
-		s.steering, s.followUp = []string{}, []string{}
 	}
 	s.mu.Unlock()
 	// Admission stays closed until the queue holds every held event. Events that
@@ -887,7 +890,7 @@ func (s *Session) releaseHeld(cut Cut, resetErr error) {
 				epoch = cut.Cursor.Epoch
 			}
 			if epoch == s.epoch {
-				s.noteQueueLocked(ev)
+				s.noteModelLocked(ev)
 			}
 			items = append(items, item{ev, epoch})
 		}

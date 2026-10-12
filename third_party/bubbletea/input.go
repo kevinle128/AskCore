@@ -40,7 +40,7 @@ func (p *Program) translateInputEvent(e uv.Event) Msg {
 	case uv.PasteEndEvent:
 		return PasteEndMsg(e)
 	case uv.WindowSizeEvent:
-		return WindowSizeMsg{Width: e.Width, Height: e.Height}
+		return WindowSizeMsg(e)
 	case uv.CapabilityEvent:
 		return CapabilityMsg(e)
 	case uv.TerminalVersionEvent:

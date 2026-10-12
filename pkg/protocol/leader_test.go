@@ -79,3 +79,43 @@ func TestLeaderRoutingTypes(t *testing.T) {
 	require.NoError(t, err)
 	require.JSONEq(t, `{"sessions":[{"sessionId":"s1","cwd":"/w","role":"driver","hasDriver":true,"subscribers":2}]}`, string(raw))
 }
+
+func TestLeaderFramesCarryBuildStamps(t *testing.T) {
+	const commit = "2026-10-11T09:30:00Z"
+	const dev = "2026-10-11T16:42:48.797541Z sha256:0a5d6eb66d7d1eb39b83a8a08b39799336e96861d52fb5dbae03a633d4107e49"
+
+	raw, err := json.Marshal(LeaderRegister{ClientKind: "tui", ProtocolVersion: 1, Build: "b", CommitTime: commit})
+	require.NoError(t, err)
+	require.JSONEq(t, `{"clientKind":"tui","protocolVersion":1,"build":"b","commitTime":"`+commit+`"}`, string(raw))
+
+	raw, err = json.Marshal(VersionInfo{Name: "ask", Build: "b", LeaderProtocol: 1, ACPVersion: 1, DevStamp: dev})
+	require.NoError(t, err)
+	require.JSONEq(t, `{"name":"ask","build":"b","leaderProtocol":1,"acpVersion":1,"devStamp":"`+dev+`"}`, string(raw))
+
+	raw, err = json.Marshal(LeaderRegistered{ClientID: "c", InstanceID: "i", Build: "b", ProtocolVersion: 1, CommitTime: commit})
+	require.NoError(t, err)
+	require.Contains(t, string(raw), `"commitTime":"`+commit+`"`)
+
+	raw, err = json.Marshal(LeaderStatus{InstanceID: "i", Build: "b", ProtocolVersion: 1, DevStamp: dev})
+	require.NoError(t, err)
+	require.Contains(t, string(raw), `"devStamp":"`+dev+`"`)
+
+	// Without a stamp the fields are not written.
+	raw, err = json.Marshal(LeaderStatus{InstanceID: "i"})
+	require.NoError(t, err)
+	require.NotContains(t, string(raw), "commitTime")
+	require.NotContains(t, string(raw), "devStamp")
+}
+
+// A peer from before the stamps sends no field and ignores the ones it gets.
+func TestOlderPeerIgnoresBuildStamps(t *testing.T) {
+	var reg LeaderRegister
+	require.NoError(t, json.Unmarshal([]byte(`{"clientKind":"tui","protocolVersion":1,"build":"b","commitTime":"t","devStamp":"d","future":1}`), &reg))
+	require.Equal(t, "t", reg.CommitTime)
+	require.Equal(t, "d", reg.DevStamp)
+
+	var old LeaderRegistered
+	require.NoError(t, json.Unmarshal([]byte(`{"clientId":"c","instanceId":"i","build":"b","protocolVersion":1,"ready":true}`), &old))
+	require.Empty(t, old.CommitTime)
+	require.Empty(t, old.DevStamp)
+}

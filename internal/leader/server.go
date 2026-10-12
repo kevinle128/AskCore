@@ -45,6 +45,9 @@ type Config struct {
 	QuiesceIfIdle func() bool
 	// LinkTimeout bounds the initialize call on the agent link. Zero means 10 seconds.
 	LinkTimeout time.Duration
+	// Stopping runs once when Close begins, before the listeners close. It may be
+	// nil. It must return quickly.
+	Stopping func()
 }
 
 // Server is the leader: it routes many clients to one agent stream.
@@ -390,6 +393,9 @@ func (s *Server) controlFrame(ctl protocol.LeaderControl, management bool) proto
 // last frames for a short time, closes them and closes the agent stream.
 func (s *Server) Close() error {
 	s.once.Do(func() {
+		if s.cfg.Stopping != nil {
+			s.cfg.Stopping()
+		}
 		s.mu.Lock()
 		close(s.closed)
 		lns := s.lns

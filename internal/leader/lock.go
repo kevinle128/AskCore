@@ -34,6 +34,8 @@ type Lock struct {
 	file  *os.File
 	dir   *os.File
 	root  *os.Root
+	// owner is the last record that WriteOwner stored; zero before the first one.
+	owner Owner
 }
 
 // Acquire takes the lifetime lock without waiting.
@@ -75,21 +77,62 @@ type Owner struct {
 	Start int64
 	// Instance is the instance id that the leader reports in its status.
 	Instance string
+	// Exe is the absolute path that the leader process runs from. It identifies
+	// a leader that a binary with another name than ask started, such as the
+	// temporary binary of `go run`. Empty when the path is not known.
+	Exe string
+	// State tells whether the leader serves or stops. It is empty in a record
+	// from a leader that does not write it; such a record is never evicted.
+	State string
 }
+
+const (
+	// OwnerServing is the state of a leader that listens and serves.
+	OwnerServing = "serving"
+	// OwnerStopping is the state of a leader that began to stop: its socket may
+	// refuse connections while the leader drains and still holds the lock.
+	OwnerStopping = "stopping"
+)
 
 // WriteOwner stores the owner metadata in the lock file.
 func (l *Lock) WriteOwner(o Owner) error {
 	l.mu.Lock()
 	defer l.mu.Unlock()
+	return l.writeOwnerLocked(o)
+}
+
+func (l *Lock) writeOwnerLocked(o Owner) error {
 	if l.file == nil {
 		return ErrLockReleased
 	}
 	if err := l.file.Truncate(0); err != nil {
 		return err
 	}
-	text := strconv.Itoa(o.PID) + "\n" + strconv.FormatInt(o.Start, 10) + "\n" + o.Instance + "\n"
+	text := strconv.Itoa(o.PID) + "\n" + strconv.FormatInt(o.Start, 10) + "\n" + o.Instance + "\n" + o.Exe + "\n"
+	if o.State != "" {
+		text += o.State + "\n"
+	}
 	_, err := l.file.WriteAt([]byte(text), 0)
+	if err == nil {
+		l.owner = o
+	}
 	return err
+}
+
+// MarkStopping rewrites the last owner record with the state stopping. A lock
+// that wrote no record stays as it is.
+func (l *Lock) MarkStopping() error {
+	l.mu.Lock()
+	defer l.mu.Unlock()
+	if l.file == nil {
+		return ErrLockReleased
+	}
+	if l.owner.PID == 0 {
+		return nil
+	}
+	o := l.owner
+	o.State = OwnerStopping
+	return l.writeOwnerLocked(o)
 }
 
 // WritePID stores only the PID of the holder.
@@ -125,7 +168,7 @@ func ReadOwner(p Paths) (Owner, error) {
 		return Owner{}, err
 	}
 	defer func() { _ = f.Close() }()
-	data, err := io.ReadAll(io.LimitReader(f, 512))
+	data, err := io.ReadAll(io.LimitReader(f, 4096))
 	if err != nil {
 		return Owner{}, err
 	}
@@ -141,6 +184,12 @@ func ReadOwner(p Paths) (Owner, error) {
 	}
 	if len(lines) > 2 {
 		o.Instance = strings.TrimSpace(lines[2])
+	}
+	if len(lines) > 3 {
+		o.Exe = strings.TrimSpace(lines[3])
+	}
+	if len(lines) > 4 {
+		o.State = strings.TrimSpace(lines[4])
 	}
 	return o, nil
 }

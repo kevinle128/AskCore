@@ -1,6 +1,8 @@
 package tui
 
 import (
+	"strings"
+
 	tea "charm.land/bubbletea/v2"
 
 	"AskCore/pkg/protocol"
@@ -9,12 +11,12 @@ import (
 // Snapshot translates the history of a session into final blocks, in order,
 // and opens the message that streamed at the cut. A SnapshotMsg arrives after
 // a new follow and after a resync. A snapshot with Resync set replaces what
-// the view holds; the transcript cannot remove committed blocks, so the
-// session view decides how to show that (for example a divider).
+// the view holds; the session view decides how to show that (for example a
+// divider or a new transcript).
 //
 // A tool call that has no result in the snapshot shows "✗ no result": the
 // snapshot cannot tell a tool that is still running from one that never
-// ended, and a block that stays open would hold the commit frontier.
+// ended, and a block that stays open would hold the frontier.
 func (t *Translator) Snapshot(s SnapshotMsg) []tea.Msg {
 	var out []tea.Msg
 	results := map[string]protocol.ToolResultMessage{}
@@ -42,6 +44,7 @@ func (t *Translator) Snapshot(s SnapshotMsg) []tea.Msg {
 }
 
 func (t *Translator) historyAssistant(am protocol.AssistantMessage, results map[string]protocol.ToolResultMessage, out *[]tea.Msg) {
+	t.noteReply(am)
 	visible, lastIsText := false, false
 	for _, blk := range am.Content {
 		switch b := blk.(type) {
@@ -56,13 +59,15 @@ func (t *Translator) historyAssistant(am protocol.AssistantMessage, results map[
 			visible, lastIsText = true, false
 		case protocol.ToolCall:
 			res, ok := results[b.ID]
+			call := toolCall{name: b.Name, args: shortArgs(b.Arguments), raw: b.Arguments}
 			var block Block
 			switch {
 			case !ok:
-				block = NewToolLineBlock(b.Name, shortArgs(b.Arguments), ToolFailed, "", "no result", t.view)
+				block = newToolCallBlock(call, ToolFailed, "", "no result", toolOutput{}, t.view)
 			default:
-				block = toolOutcome(b.Name, shortArgs(b.Arguments), res.IsError, "", firstLine(blocksText(res.Content)), t.view)
+				block = toolOutcome(call, res.IsError, "", firstLine(blocksText(res.Content)), toolOutputOf(res.Content, res.Details), t.view)
 			}
+			t.afterStep = true
 			emitAppend(out, t.nextID("h"), block, true)
 			lastIsText = false
 		}
@@ -74,14 +79,18 @@ func (t *Translator) historyAssistant(am protocol.AssistantMessage, results map[
 			msg = *am.ErrorMessage
 		}
 		if lastIsText {
+			t.afterStep = false
 			emitAppend(out, t.nextID("h"), NewSpacerBlock(), true)
 		}
+		t.afterStep = false
 		emitAppend(out, t.nextID("h"), NewErrorBlock(ErrorHeadline("", sentence(msg)), ""), true)
 	case protocol.StopAborted:
+		t.afterStep = false
 		emitAppend(out, t.nextID("h"), NewCancelMarker(cancelText("", visible)), true)
 	default:
 		if visible {
 			if text := metaText(am, 0, 0); text != "" {
+				t.afterStep = false
 				emitAppend(out, t.nextID("h"), NewMetaLineBlock(text), true)
 			}
 		}
@@ -92,20 +101,22 @@ func (t *Translator) historyAssistant(am protocol.AssistantMessage, results map[
 // markdown, so that a long reply does not become one tall block.
 func (t *Translator) historyText(text string, out *[]tea.Msg) {
 	clean := sanitizeMarkdown(text)
+	lead := t.afterStep
+	t.afterStep = false
 	for i, c := range splitMarkdown(clean) {
-		emitAppend(out, t.nextID("h"), newAssistantTextBlock(clean[c.start:c.end], newMarkdownStream(), i == 0), true)
+		emitAppend(out, t.nextID("h"), newAssistantTextBlock(clean[c.start:c.end], newMarkdownStream(), i == 0, lead), true)
 	}
 }
 
-// historyThinking adds a final thinking text as one block for each paragraph.
+// historyThinking adds a final thinking text as one block. A snapshot has no
+// event times, so the block shows no duration.
 func (t *Translator) historyThinking(text string, out *[]tea.Msg) {
-	paras := splitParagraphs(sanitizeMarkdown(text))
-	if len(paras) == 0 {
-		paras = []string{""}
+	text = sanitizeMarkdown(text)
+	if strings.TrimSpace(text) == "" {
+		text = ""
 	}
-	for i, para := range paras {
-		emitAppend(out, t.nextID("h"), newThinkingPart(para, t.view, i == 0, i == len(paras)-1), true)
-	}
+	t.afterStep = true
+	emitAppend(out, t.nextID("h"), newThinkingBlock(text, t.view, false, 0, 0, false), true)
 }
 
 // resumeStream shows the assistant message that was open at the cut. Blocks

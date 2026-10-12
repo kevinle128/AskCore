@@ -1,6 +1,7 @@
 package tui
 
 import (
+	"fmt"
 	"strings"
 	"sync/atomic"
 
@@ -10,7 +11,7 @@ import (
 
 // Transcript blocks.
 //
-// Every committed format of the style guide is a Block here. A block holds
+// Every block format of the style guide is a Block here. A block holds
 // content only. It draws itself for a width and a theme when asked, so a resize
 // or a color change draws the same block again. Rows start at column 0 of the
 // transcript: the two-column indent and the glyph column are part of each
@@ -18,9 +19,14 @@ import (
 
 const (
 	// glyphIndent is the indent before a glyph, and textIndent is where the
-	// text of a block starts: indent, glyph and one space.
+	// text of a block starts: indent, glyph and one space. Column 0 of every
+	// row is the gutter: it is blank here, and the pane may draw a selection
+	// mark in it without any row changing its width.
 	glyphIndent = 2
 	textIndent  = 4
+	// replyIndent is where the text of an assistant reply starts. A reply has
+	// no glyph: the step glyph marks tools and thinking.
+	replyIndent = 2
 )
 
 // SpinnerFrames are the frames of a running tool mark and of the status
@@ -33,41 +39,27 @@ func SpinnerFrame(i int) string {
 	return SpinnerFrames[((i%n)+n)%n]
 }
 
-// TranscriptView is display state that blocks read each time they draw. Blocks
-// in the scrollback cannot be replaced, so a setting that changes how they
-// look lives here and a rebuild draws them again.
-//
-// The thinking toggle changes only this state. After a toggle, send RebuildMsg
-// (or call Model.Rebuild) so that committed thinking blocks are drawn in their
-// new form.
+// TranscriptView is display state that blocks read each time they draw. A
+// block that depends on it reports the value in drawState, so the block pane
+// draws the block again when the value changes.
 type TranscriptView struct {
-	thinkingHidden atomic.Bool
-	spinner        atomic.Uint32
+	spinner atomic.Uint32
+	// nowMs is the time in Unix milliseconds that running blocks measure their
+	// elapsed time against. Zero means the clock is not set.
+	nowMs atomic.Int64
 }
 
-// NewTranscriptView returns a view with thinking shown.
+// NewTranscriptView returns a view with no clock.
 func NewTranscriptView() *TranscriptView { return &TranscriptView{} }
 
-// ThinkingHidden reports whether thinking blocks show the short form.
-func (v *TranscriptView) ThinkingHidden() bool { return v != nil && v.thinkingHidden.Load() }
-
-// SetThinkingHidden sets the form of all thinking blocks.
-func (v *TranscriptView) SetThinkingHidden(hidden bool) { v.thinkingHidden.Store(hidden) }
-
-// ToggleThinking switches between the full and the short form of thinking
-// blocks and returns the new state.
-func (v *TranscriptView) ToggleThinking() (hidden bool) {
-	for {
-		old := v.thinkingHidden.Load()
-		if v.thinkingHidden.CompareAndSwap(old, !old) {
-			return !old
-		}
-	}
-}
-
-// SetSpinnerFrame sets the frame that running tool lines show. Live tool lines
-// are in the tail, which the next frame draws again; no rebuild is needed.
+// SetSpinnerFrame sets the frame that running blocks show. A running block
+// reports the frame in drawState, so the pane draws it again at the next
+// frame.
 func (v *TranscriptView) SetSpinnerFrame(i int) { v.spinner.Store(uint32(max(i, 0))) }
+
+// SetClock sets the time in Unix milliseconds. Running blocks show the whole
+// seconds since their start event.
+func (v *TranscriptView) SetClock(unixMs int64) { v.nowMs.Store(unixMs) }
 
 func (v *TranscriptView) frame() string {
 	if v == nil {
@@ -76,12 +68,36 @@ func (v *TranscriptView) frame() string {
 	return SpinnerFrame(int(v.spinner.Load()))
 }
 
-// ThinkingNotice is the text of the status notice after a toggle.
-func ThinkingNotice(hidden bool) string {
-	if hidden {
-		return "Thinking blocks: hidden · ctrl+t to show"
+// elapsedSeconds returns the whole seconds from startMs to the clock, or -1
+// when the start or the clock is not known.
+func (v *TranscriptView) elapsedSeconds(startMs int64) int {
+	if v == nil || startMs <= 0 {
+		return -1
 	}
-	return "Thinking blocks: visible · ctrl+t to hide"
+	now := v.nowMs.Load()
+	if now <= 0 {
+		return -1
+	}
+	return int(max(0, now-startMs) / 1000)
+}
+
+// runningState is the draw state of a running block: the spinner frame and the
+// whole seconds. It changes when the rows change.
+func (v *TranscriptView) runningState(startMs int64) uint64 {
+	if v == nil {
+		return 1
+	}
+	frame := uint64(v.spinner.Load())%uint64(len(SpinnerFrames)) + 1
+	return frame | uint64(max(v.elapsedSeconds(startMs), -1)+1)<<8
+}
+
+// ThinkingNotice is the text of the status notice after the thinking steps are
+// expanded or collapsed all at once.
+func ThinkingNotice(expanded bool) string {
+	if expanded {
+		return "Thinking blocks: expanded · ctrl+t to collapse"
+	}
+	return "Thinking blocks: collapsed · ctrl+t to expand"
 }
 
 // onBackground returns the style of a role with the background of another
@@ -126,36 +142,6 @@ func styleRows(th *Theme, role Role, rows []string) []string {
 	return out
 }
 
-// --- startup header ---
-
-type startupHeader struct {
-	version, where, cwd string
-	// start is the model line and the notes that follow the header row. The
-	// empty row of the header comes after them.
-	start modelLineBlock
-}
-
-// NewStartupHeader returns the one-line header at the top of the scrollback.
-// where is "leader <id>" or "in-process agent".
-func NewStartupHeader(version, where, cwd string) Block {
-	return startupHeader{version: version, where: where, cwd: cwd}
-}
-
-func (b startupHeader) Lines(rc RenderContext) []string {
-	rest := "   v" + b.version
-	if b.where != "" {
-		rest += " · " + b.where
-	}
-	if b.cwd != "" {
-		rest += " · " + b.cwd
-	}
-	logo := "◢◤ ask"
-	room := rc.Width - displayWidth(logo)
-	rows := []string{rc.Theme.RenderLogo(logo) + rc.Theme.Render(RoleMuted, truncateTo(rest, max(0, room)))}
-	rows = append(rows, b.start.rows(rc)...)
-	return append(rows, "")
-}
-
 // --- user prompt ---
 
 type userPromptBlock struct{ text, at string }
@@ -186,11 +172,14 @@ func wrapHanging(text string, first, rest int) []string {
 	return rows
 }
 
-func (b userPromptBlock) Lines(rc RenderContext) []string {
-	th := rc.Theme
+// promptEdge is the number of rows of a prompt that show before it folds.
+const promptEdge = 3
+
+// wrapped returns the rows of the text for a width. The first row is narrower
+// by the send time.
+func (b userPromptBlock) wrapped(width int) []string {
 	// Columns: indent, glyph and space on the left; two spaces at the right.
-	const rightPad = 2
-	avail := max(1, rc.Width-textIndent-rightPad)
+	avail := max(1, width-textIndent-promptRightPad)
 	first := avail
 	if b.at != "" {
 		first = max(1, avail-displayWidth(b.at)-1)
@@ -199,21 +188,45 @@ func (b userPromptBlock) Lines(rc RenderContext) []string {
 	if len(rows) == 0 {
 		rows = []string{""}
 	}
+	return rows
+}
+
+const promptRightPad = 2
+
+// A prompt of more than promptEdge rows folds. It has two forms, so its lowest
+// mode is Truncated: a Collapsed prompt would draw the same rows and a fold key
+// would seem to do nothing.
+func (b userPromptBlock) foldable(width int) bool {
+	return len(b.wrapped(width)) > promptEdge
+}
+func (b userPromptBlock) defaultFold() FoldMode  { return FoldTruncated }
+func (b userPromptBlock) collapseFold() FoldMode { return FoldTruncated }
+func (b userPromptBlock) foldGroup() foldGroup   { return groupNone }
+
+func (b userPromptBlock) Lines(rc RenderContext) []string {
+	th := rc.Theme
+	rows := b.wrapped(rc.Width)
+	hidden := 0
+	if rc.Fold != FoldExpanded && len(rows) > promptEdge {
+		hidden = len(rows) - promptEdge
+		rows = rows[:promptEdge]
+	}
 
 	band := th.Style(RolePanel)
 	text := th.onBackground(RoleFg, RolePanel).Bold(true)
 	glyph := th.onBackground(RoleAccent, RolePanel).Bold(true)
 	dim := th.onBackground(RoleDim, RolePanel)
+	muted := th.onBackground(RoleMuted, RolePanel)
 	fill := func(n int) string { return band.Render(strings.Repeat(" ", max(0, n))) }
 
-	out := make([]string, 0, len(rows)+1)
+	out := make([]string, 0, len(rows)+2)
 	for i, row := range rows {
 		var line string
 		used := textIndent + displayWidth(row)
 		if i == 0 {
 			line = fill(glyphIndent) + glyph.Render(GlyphUser) + fill(1) + text.Render(row)
-			if b.at != "" && rc.Width-rightPad-used-displayWidth(b.at) >= 1 {
-				gap := rc.Width - rightPad - used - displayWidth(b.at)
+			if b.at != "" && rc.Width-promptRightPad-used-displayWidth(b.at) >= 1 {
+				gap := rc.Width - promptRightPad - used - displayWidth(b.at)
 				line += fill(gap) + dim.Render(b.at)
 				used += gap + displayWidth(b.at)
 			}
@@ -222,59 +235,61 @@ func (b userPromptBlock) Lines(rc RenderContext) []string {
 		}
 		out = append(out, line+fill(rc.Width-used))
 	}
+	if hidden > 0 {
+		word := "lines"
+		if hidden == 1 {
+			word = "line"
+		}
+		hint := truncateTo(fmt.Sprintf("… +%d %s · e to expand", hidden, word), max(1, rc.Width-textIndent))
+		out = append(out, fill(textIndent)+muted.Render(hint)+fill(rc.Width-textIndent-displayWidth(hint)))
+	}
 	return append(out, "")
 }
 
 // --- assistant text ---
 
-// A long reply is shown by several blocks, one after the other, so that the
-// parts that are final can leave the live tail while the rest still streams.
-// The first block has the reply mark. A later block continues the reply: it
-// starts with an empty row and has no mark. Together the rows are the rows of
-// one block that holds the whole text.
+// A long reply is shown by several blocks, one after the other, so that a block
+// that is final stops changing while the rest still streams. A block that
+// continues a reply starts with an empty row. The first block of a reply starts
+// with an empty row only when a step comes right before it. Together the rows
+// are the rows of one block that holds the whole text.
 
 type assistantTextBlock struct {
 	text  string
 	md    *markdownStream
 	first bool
+	// lead is true when the first block follows a step and needs an empty row
+	// above it.
+	lead bool
 }
 
 // NewAssistantTextBlock returns a reply block that draws its text as markdown.
 func NewAssistantTextBlock(text string) Block {
-	return newAssistantTextBlock(text, newMarkdownStream(), true)
+	return newAssistantTextBlock(text, newMarkdownStream(), true, false)
 }
 
 // newAssistantTextBlock returns a block for a part of a reply. Blocks that
 // stand for the same part while it streams share one stream, which caches the
 // parts of the text that are drawn.
-func newAssistantTextBlock(text string, stream *markdownStream, first bool) Block {
-	return assistantTextBlock{text: text, md: stream, first: first}
+func newAssistantTextBlock(text string, stream *markdownStream, first, lead bool) Block {
+	return assistantTextBlock{text: text, md: stream, first: first, lead: lead}
 }
 
 func (b assistantTextBlock) Lines(rc RenderContext) []string {
 	th := rc.Theme
-	glyph := th.Render(RoleAssistant, GlyphAssistant)
-	rows, _ := b.md.render(b.text, bodyWidth(rc), th)
+	rows, _ := b.md.render(b.text, max(1, rc.Width-replyIndent), th)
 	if len(rows) == 0 {
-		if b.first {
-			return leadRows(glyph, nil)
-		}
 		return nil
 	}
 	var out []string
-	pad := strings.Repeat(" ", textIndent)
-	if !b.first {
+	if !b.first || b.lead {
 		out = append(out, "")
-	} else if rows[0].panel {
-		// A reply that starts with code keeps its mark on a row of its own.
-		out = append(out, leadRows(glyph, nil)...)
 	}
-	for i, row := range rows {
+	pad := strings.Repeat(" ", replyIndent)
+	for _, row := range rows {
 		switch {
 		case row.panel:
-			out = append(out, panelPad(th, textIndent)+row.text)
-		case i == 0 && b.first:
-			out = append(out, leadRows(glyph, []string{row.text})...)
+			out = append(out, " "+panelPad(th, replyIndent-1)+row.text)
 		case row.text == "":
 			out = append(out, "")
 		default:
@@ -291,145 +306,6 @@ func panelPad(th *Theme, n int) string {
 		return strings.Repeat(" ", n)
 	}
 	return bg + strings.Repeat(" ", n) + "\x1b[0m"
-}
-
-// --- thinking ---
-
-type thinkingBlock struct {
-	text        string
-	view        *TranscriptView
-	first, last bool
-}
-
-// NewThinkingBlock returns a thinking block. It reads the form (full text or
-// "Thinking...") from the view each time it draws.
-func NewThinkingBlock(text string, view *TranscriptView) Block {
-	return thinkingBlock{text: text, view: view, first: true, last: true}
-}
-
-// newThinkingPart returns a block for a part of a thinking text. The first
-// part has the mark and the last part has the empty row below it; a part
-// between them has neither. In the short form only the first part shows a row,
-// so the short form of a split text is the same two rows as for one block.
-func newThinkingPart(text string, view *TranscriptView, first, last bool) Block {
-	return thinkingBlock{text: text, view: view, first: first, last: last}
-}
-
-const thinkingHiddenText = "Thinking..."
-
-func (b thinkingBlock) Lines(rc RenderContext) []string {
-	th := rc.Theme
-	glyph := th.Render(RoleThinking, GlyphThinking)
-	text := strings.TrimSpace(b.text)
-	var out []string
-	switch {
-	case b.view.ThinkingHidden() || (text == "" && b.first && b.last):
-		if b.first {
-			out = leadRows(glyph, []string{th.Render(RoleThinking, thinkingHiddenText)})
-		}
-	case text == "":
-		// An empty part of a split text has nothing to show.
-	default:
-		rows := styleRows(th, RoleThinking, wrapUntrusted(text, bodyWidth(rc)))
-		if b.first {
-			out = leadRows(glyph, rows)
-		} else {
-			pad := strings.Repeat(" ", textIndent)
-			out = append(out, "")
-			for _, r := range rows {
-				out = append(out, pad+r)
-			}
-		}
-	}
-	if b.last {
-		out = append(out, "")
-	}
-	return out
-}
-
-// --- tool line ---
-
-// ToolState is the stage of a tool line.
-type ToolState int
-
-// Tool line stages.
-const (
-	ToolRunning ToolState = iota
-	ToolSucceeded
-	ToolFailed
-)
-
-type toolLineBlock struct {
-	name, args string
-	state      ToolState
-	duration   string // "0.1s", set when the tool finished
-	reason     string // set when the tool failed
-	view       *TranscriptView
-}
-
-// NewToolLineBlock returns a tool line. A running line shows "running" and the
-// spinner frame of the view; a finished line shows the duration or the reason
-// of the failure at the right.
-func NewToolLineBlock(name, args string, state ToolState, duration, reason string, view *TranscriptView) Block {
-	return toolLineBlock{name: name, args: args, state: state, duration: duration, reason: reason, view: view}
-}
-
-func (b toolLineBlock) Lines(rc RenderContext) []string {
-	th := rc.Theme
-	var mark, status string
-	var statusRole Role
-	switch b.state {
-	case ToolRunning:
-		mark, statusRole = GlyphToolRun, RoleWarning
-		status = "running " + b.view.frame()
-	case ToolSucceeded:
-		mark, statusRole = GlyphToolDone, RoleSuccess
-		status = GlyphOK
-		if b.duration != "" {
-			status += " " + b.duration
-		}
-	default:
-		mark, statusRole = GlyphToolDone, RoleError
-		reason := oneLine(b.reason)
-		if reason == "" {
-			reason = "failed"
-		}
-		status = GlyphFail + " " + reason
-	}
-	const rightPad = 1
-	left := strings.Repeat(" ", glyphIndent) + th.Render(RoleTool, mark) + " "
-	leftW := glyphIndent + 2
-
-	// Keep the status whole when it fits. A long failure reason is cut first,
-	// then the arguments, then the name.
-	statusW := displayWidth(status)
-	if limit := rc.Width - leftW - 2 - rightPad - displayWidth(b.name); statusW > limit && b.state == ToolFailed {
-		status = truncateTo(status, max(3, limit))
-		statusW = displayWidth(status)
-	}
-	room := rc.Width - leftW - statusW - rightPad - 2
-	name := truncateTo(oneLine(b.name), max(1, room))
-	body := th.Style(RoleTool).Bold(true).Render(name)
-	used := leftW + displayWidth(name)
-	if args := oneLine(b.args); args != "" {
-		if avail := rc.Width - used - 2 - statusW - rightPad - 2; avail >= 2 {
-			args = truncateTo(args, avail)
-			body += "  " + th.Render(RoleMuted, args)
-			used += 2 + displayWidth(args)
-		}
-	}
-	gap := rc.Width - used - statusW - rightPad
-	line := left + body
-	if gap >= 1 {
-		line += strings.Repeat(" ", gap)
-	} else {
-		line += " "
-	}
-	line += th.Render(statusRole, status) + strings.Repeat(" ", rightPad)
-	if b.state == ToolRunning {
-		return []string{line}
-	}
-	return []string{line, ""}
 }
 
 // --- notes ---
@@ -522,8 +398,8 @@ type metaLineBlock struct{ text string }
 func NewMetaLineBlock(text string) Block { return metaLineBlock{text: text} }
 
 func (b metaLineBlock) Lines(rc RenderContext) []string {
-	pad := strings.Repeat(" ", textIndent)
-	return []string{pad + rc.Theme.Render(RoleDim, truncateTo(oneLine(b.text), bodyWidth(rc))), ""}
+	pad := strings.Repeat(" ", replyIndent)
+	return []string{pad + rc.Theme.Render(RoleDim, truncateTo(oneLine(b.text), max(1, rc.Width-replyIndent))), ""}
 }
 
 type dividerBlock struct{ text string }

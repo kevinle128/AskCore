@@ -85,7 +85,7 @@ Go has no classes. A "class" is a struct with methods. The rule is **one package
 | `internal/leader` | local router on a Unix socket, `ConnectOrSpawn` client | |
 | `internal/pipeline` | typed control contracts, around middleware, decisions, and scoped handler registries | `internal/pipeline` |
 | `internal/providers` | Api, Provider and Model types, compat record, LLM vendors, registry; `acp/` for subprocess agents | `internal/providers` |
-| `internal/tools` | tool registry, every builtin tool (no built-in approval policy) | `internal/tools` |
+| `internal/tools` | tool registry, every builtin tool (`file_*`, `search_*`, `shell_*`; no built-in approval policy) | `internal/tools` |
 | `internal/mcp` | MCP client bridge | `internal/mcp` |
 | `internal/skills` | SKILL.md metadata discovery, explicit reload | `internal/skills` |
 | `internal/bootstrap` | `AGENTS.md` discovery and loading; `templates/` is a data folder for embedded `.md` templates (not a Go package) | `internal/bootstrap` |
@@ -95,8 +95,9 @@ Go has no classes. A "class" is a struct with methods. The rule is **one package
 | `internal/bus` | bounded replay ring and followers; publication belongs to agent | `internal/bus` |
 | `internal/hooks` | sync and notify event dispatch; `handlers/` for command and HTTP handlers | `internal/hooks` |
 | `internal/permissions` | RBAC for gateway and HTTP callers | `internal/permissions` |
-| `internal/sandbox` | isolated command execution | `internal/sandbox` |
-| `internal/workspace` | session cwd, project root, project trust store | `internal/workspace` |
+| `internal/sandbox` | process runner: process group, filtered environment, bounded output, group kill (standard library only) | `internal/sandbox` |
+| `internal/jobs` | per-session job table of the `bash` and `monitor` tools: states, completion notices, monitor events, cleanup; imports `sandbox` and `pkg/protocol` only | |
+| `internal/workspace` | path resolution for tools today; session cwd, project root and project trust store planned | `internal/workspace` |
 | `internal/cron` | scheduled agent runs | `internal/cron` |
 | `internal/crypto` | AES-256-GCM helpers, parked for credentials | `internal/crypto` |
 | `internal/channels` | channel manager, `BaseChannel`; one subfolder for each platform, added when needed | `internal/channels` |
@@ -121,7 +122,7 @@ Ask has no `thirdparty/` folder. A vendor goes to the package of the capability 
 | LLM API | `internal/providers/<api>/`, one adapter for each wire API; a vendor is data (provider and model records) | `anthropic/`, `openai/`, `acp/`; shared fantasy plumbing in `fantasykit/` |
 | Chat platform | `internal/channels/<vendor>/` | `channels/telegram/` |
 | Backend of one tool | `internal/tools/<tool>_<vendor>.go` | `web_search_brave.go`, `web_search_tavily.go` |
-| Infrastructure client | its own package | `cache/` (Redis), `messaging/` (asynq), `sandbox/` (Docker) |
+| Infrastructure client | its own package | `cache/` (Redis), `messaging/` (asynq) |
 
 ### 3.2 Logging
 
@@ -131,7 +132,7 @@ Ask has no `thirdparty/` folder. A vendor goes to the package of the capability 
 
 ## 4. Where interfaces live
 
-1. **A main interface is in the package that owns the concept**, usually in `types.go`: `tools.Tool`, `providers.Provider`, `agent.Agent`, `pipeline.Around`, `channels.Channel`, `hooks.Handler`, `sandbox.Sandbox`, `tracing.SpanExporter`.
+1. **A main interface is in the package that owns the concept**, usually in `types.go`: `tools.Tool`, `providers.Provider`, `agent.Agent`, `pipeline.Around`, `channels.Channel`, `hooks.Handler`, `sandbox.Clock`, `tracing.SpanExporter`.
 2. **Storage interfaces are in `internal/store`**, one file for each entity (`<entity>_store.go`). The implementation is in `store/gormstore`. `store.Stores` collects all store interfaces. A large interface is made from small ones (dewee `AgentStore` at `internal/store/agent_store.go:912-973`), and a consumer asks for the smallest one that it needs.
 3. **A small private interface is at the consumer**, lower-case, in the file that uses it (dewee `humanHandoffAgentStore` at `internal/tools/human_handoff.go:27`).
 
@@ -294,7 +295,11 @@ Graceful shutdown joins native auth cleanup and Agent drain in parallel.
 A second signal reports incomplete cleanup and bypasses that join so the command can exit.
 See [runtime stop](../internal/app/module_leader.go) and [command lifecycle](../cmd/tui/leader.go).
 
-Ask does **not** copy these Grok parts: zombie-leader eviction, the acquire-slot guard, the grok.com relay and auto-update relaunch.
+- A start that ends with an error before it serves is retried, at most three starts in a call.
+- On Linux, a lock holder with a `serving` owner record, older than 30 s, that has no connectable socket is stopped: SIGTERM through a verified pidfd, then SIGKILL after 8 s through the same pidfd. A `stopping` record is never signalled, and macOS refuses (no stable process handle).
+- A client of a newer build replaces an older leader that a client started, also when it is busy, once per call and never as a downgrade (see the version rule below).
+
+Ask does **not** copy these Grok parts: the acquire-slot guard, the grok.com relay and auto-update relaunch.
 
 **Security of the local socket.** Ask adds these rules. Grok does not have them: its leader code has no peer-credential check and no explicit socket permissions.
 
@@ -303,7 +308,7 @@ Ask does **not** copy these Grok parts: zombie-leader eviction, the acquire-slot
   Socket cleanup checks the owned inode while the flock is held; automatic listener unlink is disabled.
   See [private paths](../internal/leader/paths.go), [lock ownership](../internal/leader/lock.go) and [listener setup](../cmd/tui/leader.go).
 - The leader rejects a peer whose UID is not the owner (`SO_PEERCRED` on Linux, `LOCAL_PEERCRED` on macOS).
-- The leader rejects a client whose protocol version is different. The error tells which side must upgrade. Only the outer leader protocol number counts; a different build only prints a hint and shows in `ask leader status`. A leader started by a client is replaced by a newer client only when it reports idle and agrees to stop in one step; a busy, supervised or newer leader stays. The refused connection can send only `status` and the conditional `shutdown`, never ACP. Grok only warns.
+- The leader rejects a client whose protocol version is different. The error tells which side must upgrade. Only the outer leader protocol number refuses a client; a different build prints a hint and shows in `ask leader status`. After a protocol mismatch, a leader started by a client is replaced by a newer client only when it reports idle and agrees to stop in one step. For the same protocol, a client whose build is newer replaces an older leader that a client started even when it is busy (its sessions end and their jobs are killed): a later commit time between VCS builds, or, between builds without a VCS stamp, another SHA-256 with a later file modification time. A leader that a supervisor or the user started, a newer leader and an unknown stamp stay. The refused connection can send only `status` and the conditional `shutdown`, never ACP. Grok only warns.
 - The local socket needs no token. The token, the loopback bind and the Origin check apply to the daemon's network gateway (roadmap H13).
 
 **Fallback.** When the TUI cannot connect to the leader, it may build its own agent in process, as headless mode does. Grok does this (`PG/app/mod.rs:1107-1113`). The H13b client `ask connect` has no fallback: it reports why the leader cannot be reached. The TUI uses one `AgentClient` interface with two implementations: `remote` (ACP over the leader socket, or over WebSocket to a remote agent) and `direct` (the in-process Go API). The UI code is the same for both.
@@ -355,12 +360,12 @@ See the [operating guide](../README.md#native-auth-and-headless-prompts) for met
 
 | Package | Must not import |
 |---|---|
-| `tools`, `pipeline`, `providers`, `store` | `agent` |
+| `tools`, `sandbox`, `jobs`, `workspace`, `pipeline`, `providers`, `store` | `agent` |
 | `store` | `store/gormstore` |
 | `providers` | `tools` |
-| `agent`, `pipeline`, `tools`, `providers`, `store` | `gateway`, `http`, `channels/<vendor>` |
+| `agent`, `pipeline`, `tools`, `sandbox`, `jobs`, `workspace`, `providers`, `store` | `gateway`, `http`, `channels/<vendor>` |
 
-Allowed: `tools` imports `providers`.
+Allowed: `tools` imports `providers`, `sandbox`, `jobs` and `workspace`. `jobs` imports `sandbox`. The Agent reaches `jobs` only through the `Notifier` that the composition root sets, and `jobs` reaches the Agent only through it.
 
 ### 8.2 Rules added by Ask
 
@@ -368,7 +373,7 @@ Allowed: `tools` imports `providers`.
 |---|---|
 | Handlers call store interfaces only | `http`, `gateway`, `gateway/methods` must not import `store/gormstore`, `gorm.io`, `database/sql` |
 | One composition root | Only `internal/app` and `cmd/server` import `store/gormstore` |
-| Core does not import adapters | `agent`, `pipeline`, `tools`, `providers`, `store`, `sessions`, `hooks`, `bus` must not import `acp`, `leader` |
+| Core does not import adapters | `agent`, `pipeline`, `tools`, `sandbox`, `jobs`, `workspace`, `providers`, `store`, `sessions`, `hooks`, `bus` must not import `acp`, `leader` |
 | Config through constructors | Only `internal/app` and `cmd/*` import `internal/config`. Runtime settings and credentials are files that `internal/settings` owns |
 | Providers receive resolved credentials | Providers must not import `internal/auth` or `internal/settings` |
 | Settings uses standard library only | `internal/settings` must not import other internal packages or dependencies |
@@ -379,11 +384,12 @@ Allowed: `tools` imports `providers`.
 
 | You are adding | Put it in | Implement or do |
 |---|---|---|
-| A new builtin tool | `internal/tools/<family>_*.go` | `tools.Tool`; add it to the `tools` fx group |
+| A new builtin tool | `internal/tools/<family>_*.go` | `tools.Tool`; add it to `sessionTools` in `cmd/tui/headless.go` (the one place all entry points share) |
 | A new backend of a tool | `internal/tools/<tool>_<vendor>.go` | the tool's backend interface (for example `SearchProvider`) |
 | A new LLM vendor | its provider and model records (data); a new adapter `internal/providers/<api>/` only for a new wire API | `providers.Provider` for a new adapter |
 | A new chat platform | `internal/channels/<vendor>/` | `channels.Channel`, embed `BaseChannel` |
-| A new control handler | `internal/pipeline/<name>.go` | Register a typed handler with `pipeline.Registry`; stages stay private to agent |
+| A new control handler | `internal/pipeline/<name>.go` | Register a typed handler with `pipeline.Registry`; stages stay private to agent. Example: `command-guard` (`CommandGuard`, a `BeforeTool` handler) is registered on a per-agent registry only when `ASK_COMMAND_GUARD=1`; the handler never reads the environment |
+| A new job or process rule | `internal/jobs/` or `internal/sandbox/` | Jobs reach the Agent through `jobs.Notifier`. Resources that a session owns close through `agent.Config.Release`, which `Agent.Dispose` calls once after the run and its started tools drained and before the log closes (the job table closes there) |
 | A new session entry type | `internal/sessions/entry.go` | |
 | A new event type | `pkg/protocol` | Agent publishes lifecycle events; bus owns replay and follow; hooks owns the planned extension adapter |
 | A new user setting or credential | `internal/settings/` | |

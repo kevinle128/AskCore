@@ -12,9 +12,8 @@ import (
 // own rendered lines: a block draws itself for a width when asked, so a
 // resize or a theme change can draw the same content again.
 //
-// The commit frontier is the count of leading blocks that are stable. Stable
-// blocks that sit behind an earlier mutable block stay in the live tail, so a
-// later block never reaches the scrollback before an earlier one.
+// A block is stable when its content is final. The frontier is the count of
+// leading stable blocks.
 
 // Block is one unit of transcript content: a prompt, a reply, a tool line or a
 // note. Lines returns terminal rows without line breaks. Rows should fit the
@@ -27,6 +26,13 @@ type Block interface {
 type RenderContext struct {
 	Width int
 	Theme *Theme
+	// Fold is the fold mode that the block pane keeps for the block. Blocks
+	// that cannot fold ignore it. The viewer of one block draws with
+	// FoldExpanded.
+	Fold FoldMode
+	// Pointed is true while the block is selected or under the mouse pointer. A
+	// foldable step then shows its expand indicator in place of its glyph.
+	Pointed bool
 }
 
 // Errors of transcript changes. A rejected change leaves the transcript as it
@@ -36,22 +42,19 @@ var (
 	ErrBlockContent   = errors.New("tui: block has no content")
 	ErrDuplicateBlock = errors.New("tui: block id already exists")
 	ErrUnknownBlock   = errors.New("tui: unknown block id")
-	ErrCommitted      = errors.New("tui: block is already in the scrollback")
 )
 
 type entry struct {
-	id        string
-	block     Block
-	version   uint64
-	stable    bool
-	committed bool
+	id      string
+	block   Block
+	version uint64
+	stable  bool
 }
 
 // Transcript holds the blocks of one session view.
 type Transcript struct {
-	entries   []*entry
-	index     map[string]int
-	committed int
+	entries []*entry
+	index   map[string]int
 }
 
 // NewTranscript returns an empty transcript.
@@ -75,7 +78,7 @@ func (t *Transcript) Append(id string, b Block, stable bool) error {
 	return nil
 }
 
-// Replace changes the content of a block that is not in the scrollback yet.
+// Replace changes the content of a block.
 func (t *Transcript) Replace(id string, b Block) error {
 	if b == nil {
 		return ErrBlockContent
@@ -84,16 +87,13 @@ func (t *Transcript) Replace(id string, b Block) error {
 	if err != nil {
 		return err
 	}
-	if e.committed {
-		return fmt.Errorf("%w: %q", ErrCommitted, id)
-	}
 	e.block = b
 	e.version++
 	return nil
 }
 
-// Finish marks a block stable. The block can then pass the frontier when
-// every earlier block is stable too.
+// Finish marks a block stable. The block counts for the frontier when every
+// earlier block is stable too.
 func (t *Transcript) Finish(id string) error {
 	e, err := t.find(id)
 	if err != nil {
@@ -123,11 +123,7 @@ func (t *Transcript) Version(id string) (uint64, bool) {
 // Len returns the number of blocks.
 func (t *Transcript) Len() int { return len(t.entries) }
 
-// Committed returns the number of blocks that were handed to the scrollback.
-func (t *Transcript) Committed() int { return t.committed }
-
-// Frontier returns the number of leading blocks that are stable. Blocks
-// before this index may be committed; later blocks stay in the live tail.
+// Frontier returns the number of leading blocks that are stable.
 func (t *Transcript) Frontier() int {
 	n := 0
 	for n < len(t.entries) && t.entries[n].stable {
@@ -136,42 +132,9 @@ func (t *Transcript) Frontier() int {
 	return n
 }
 
-// TakeStable returns the rows of the blocks between the committed count and
-// the frontier, and marks those blocks committed. A block is returned once.
-// The caller must write the rows to the scrollback in the order returned.
-func (t *Transcript) TakeStable(rc RenderContext) []string {
-	frontier := t.Frontier()
-	var rows []string
-	for ; t.committed < frontier; t.committed++ {
-		e := t.entries[t.committed]
-		e.committed = true
-		rows = append(rows, renderRows(e.block, rc)...)
-	}
-	return rows
-}
-
-// CommittedLines draws every committed block again, for a rebuild of the
-// scrollback after a resize. It does not move the frontier.
-func (t *Transcript) CommittedLines(rc RenderContext) []string {
-	var rows []string
-	for _, e := range t.entries[:t.committed] {
-		rows = append(rows, renderRows(e.block, rc)...)
-	}
-	return rows
-}
-
-// TailLines draws the blocks that are not committed yet.
-func (t *Transcript) TailLines(rc RenderContext) []string {
-	var rows []string
-	for _, e := range t.entries[t.committed:] {
-		rows = append(rows, renderRows(e.block, rc)...)
-	}
-	return rows
-}
-
 // renderRows draws a block and enforces the row contract: no row holds a line
 // break and no row is wider than the terminal, because the terminal would wrap
-// it and the row count of the live area would be wrong.
+// it and the row count of the pane would be wrong.
 func renderRows(b Block, rc RenderContext) []string {
 	var rows []string
 	for _, line := range b.Lines(rc) {

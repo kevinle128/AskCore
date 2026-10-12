@@ -150,21 +150,9 @@ func firstLine(s string) string {
 
 // --- split text ---
 
-var blankLineRun = regexp.MustCompile(`\n[ \t]*\n`)
-
-// closedCut returns the length of the text that cannot change any more: the
-// closed chunks of a markdown text, or the paragraphs of a thinking text that
-// are followed by more text. It is zero when nothing is closed.
-func closedCut(thinking bool, rest string) int {
-	if thinking {
-		cut := 0
-		for _, loc := range blankLineRun.FindAllStringIndex(rest, -1) {
-			if strings.TrimSpace(rest[loc[1]:]) != "" {
-				cut = loc[0]
-			}
-		}
-		return cut
-	}
+// closedCut returns the length of the markdown text that cannot change any
+// more: the closed chunks. It is zero when nothing is closed.
+func closedCut(rest string) int {
 	cut := 0
 	for _, c := range splitMarkdown(rest) {
 		if !c.closed {
@@ -175,13 +163,8 @@ func closedCut(thinking bool, rest string) int {
 	return cut
 }
 
-// leadingBlankBytes is the length of the empty lines at the start of s. For a
-// thinking text it is all white space, because the paragraphs are drawn again
-// with their own spacing.
-func leadingBlankBytes(s string, thinking bool) int {
-	if thinking {
-		return len(s) - len(strings.TrimLeft(s, " \t\r\n"))
-	}
+// leadingBlankBytes is the length of the empty lines at the start of s.
+func leadingBlankBytes(s string) int {
 	n := 0
 	for {
 		i := strings.IndexByte(s[n:], '\n')
@@ -190,15 +173,4 @@ func leadingBlankBytes(s string, thinking bool) int {
 		}
 		n += i + 1
 	}
-}
-
-// splitParagraphs cuts a thinking text at its empty lines.
-func splitParagraphs(s string) []string {
-	var out []string
-	for _, p := range blankLineRun.Split(strings.TrimSpace(s), -1) {
-		if strings.TrimSpace(p) != "" {
-			out = append(out, p)
-		}
-	}
-	return out
 }

@@ -17,28 +17,25 @@ func withTrace() rigOption {
 	return withOptions(func(o *Options) { o.TraceFile = traceFile })
 }
 
-// footerOf returns the last row of the content: the footer.
-func (r *viewRig) footerOf() string {
-	rows := r.content()
-	return rows[len(rows)-1]
+// headerOf returns the header row of the screen.
+func (r *viewRig) headerOf() string {
+	return r.content()[0]
 }
 
 func TestFirstRunGoldens(t *testing.T) {
 	t.Run("no_model_80x24", func(t *testing.T) {
 		r := startView(t, 80, 24, withFake(noModelFake()))
 		requireContentGolden(t, r.h)
-		rows := r.content()
-		require.Equal(t, "┊ Add a provider with /providers · then choose a model with /model", rows[2])
-		footer := rows[len(rows)-1]
-		require.True(t, strings.HasSuffix(footer, "no model"), footer)
-		require.NotContains(t, footer, "▱")
+		require.Equal(t, []string{"┊ Add a provider with /providers · then choose a model with /model"}, r.railRows(1))
+		header := r.headerOf()
+		require.True(t, strings.HasSuffix(header, "no model"), header)
+		require.NotContains(t, header, "▱")
 	})
 	t.Run("no_model_40x14", func(t *testing.T) {
 		r := startView(t, 40, 14, withFake(noModelFake()))
 		requireContentGolden(t, r.h)
-		rows := r.content()
-		require.Equal(t, "┊ Add a provider with /providers", rows[2])
-		require.True(t, strings.HasSuffix(r.footerOf(), "no model"))
+		require.Equal(t, []string{"┊ Add a provider with /providers"}, r.railRows(1))
+		require.True(t, strings.HasSuffix(r.headerOf(), "no model"))
 	})
 }
 
@@ -115,12 +112,13 @@ func TestProvidersNeedsLeaderInProcess(t *testing.T) {
 	r.typeText("/providers")
 	r.key("enter")
 	r.h.waitText("Sign in from a shell: ask auth login --provider <id> --method <id>")
-	rows := r.content()
-	require.Equal(t, "┊ Needs the leader; this session runs in process.", rows[2])
-	require.Equal(t, "┊ Sign in from a shell: ask auth login --provider <id> --method <id>", rows[3])
+	require.Equal(t, []string{
+		"┊ Needs the leader; this session runs in process.",
+		"┊ Sign in from a shell: ask auth login --provider <id> --method <id>",
+	}, r.railRows(2))
 	require.Empty(t, fc.callsWith("providers"), "nothing is sent in process")
 	r.requireNotOnScreen("Type to search")
-	require.True(t, strings.HasSuffix(r.footerOf(), "no model"))
+	require.True(t, strings.HasSuffix(r.headerOf(), "no model"))
 }
 
 func TestCurrentModelRemovedShowsNoModel(t *testing.T) {
@@ -141,7 +139,7 @@ func TestCurrentModelRemovedShowsNoModel(t *testing.T) {
 	r.h.waitText("✓ Removed the saved credential for openai.")
 	r.h.waitText("The current model gpt-5.5 is no longer available. Choose one with /model.")
 	r.h.waitText("┊ No model. Choose one with /model")
-	require.True(t, strings.HasSuffix(r.footerOf(), "no model"))
+	require.True(t, strings.HasSuffix(r.headerOf(), "no model"))
 	r.typeText("hello")
 	r.key("enter")
 	r.h.waitText("✗ Not sent: no model · draft kept · Choose one with /model")

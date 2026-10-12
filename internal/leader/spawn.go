@@ -302,23 +302,25 @@ func filterEnv(env []string, key string) []string {
 
 // ---- process identity ----
 
-// VerifyLeaderProcess checks that pid is an `ask leader` process of the current
-// user that started at the recorded time. A PID alone proves nothing, because
-// the system reuses PIDs. When the check cannot be done, it fails.
-func VerifyLeaderProcess(pid int, recordedStart int64) error {
-	if pid <= 1 || recordedStart <= 0 {
+// VerifyLeaderProcess checks that the owner PID is a leader process of the
+// current user that started at the recorded time. The command must be `ask
+// leader`, or `<Exe> leader` when the owner recorded its executable. A PID alone
+// proves nothing, because the system reuses PIDs. When the check cannot be done,
+// it fails.
+func VerifyLeaderProcess(o Owner) error {
+	if o.PID <= 1 || o.Start <= 0 {
 		return fmt.Errorf("%w: no recorded identity", ErrNotLeaderProcess)
 	}
-	uid, start, cmdline, err := processInfo(pid)
+	uid, start, cmdline, err := processInfo(o.PID)
 	if err != nil {
 		return fmt.Errorf("%w: %v", ErrNotLeaderProcess, err)
 	}
 	switch {
 	case uid != uint32(os.Geteuid()):
 		return fmt.Errorf("%w: another user", ErrNotLeaderProcess)
-	case !isLeaderCommandLine(cmdline):
+	case !isLeaderCommandLine(cmdline, o.Exe):
 		return fmt.Errorf("%w: command is not `ask leader`", ErrNotLeaderProcess)
-	case absDuration(time.Duration(start-recordedStart)*time.Second) > startTolerance:
+	case absDuration(time.Duration(start-o.Start)*time.Second) > startTolerance:
 		return fmt.Errorf("%w: the process started at another time than the leader record", ErrNotLeaderProcess)
 	}
 	return nil
@@ -332,8 +334,10 @@ func absDuration(d time.Duration) time.Duration {
 }
 
 // isLeaderCommandLine tells whether a command line is `ask leader ...`, also
-// when a shell started a script that is named ask.
-func isLeaderCommandLine(line string) bool {
+// when a shell started a script that is named ask. When exe is not empty, `<exe>
+// leader ...` is a leader too; exe is compared as a whole, because a path can
+// hold spaces.
+func isLeaderCommandLine(line, exe string) bool {
 	f := strings.Fields(line)
 	i := 0
 	if len(f) > 0 {
@@ -342,7 +346,17 @@ func isLeaderCommandLine(line string) bool {
 			i = 1
 		}
 	}
-	return len(f) > i+1 && filepath.Base(f[i]) == "ask" && f[i+1] == "leader"
+	if len(f) > i+1 && filepath.Base(f[i]) == "ask" && f[i+1] == "leader" {
+		return true
+	}
+	if exe == "" {
+		return false
+	}
+	rest := strings.TrimSpace(line)
+	if i == 1 {
+		rest = strings.TrimSpace(strings.TrimPrefix(rest, f[0]))
+	}
+	return rest == exe+" leader" || strings.HasPrefix(rest, exe+" leader ")
 }
 
 // verifySignalOwner checks that the lifetime owner did not change while a

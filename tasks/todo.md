@@ -68,3 +68,33 @@ Glossary: `docs/CONTEXT.md`. User decisions on 2026-10-10.
 - Full `go test ./...` passed twice; `-race` passed on protocol, auth, providers, app, acp, leader, tuiclient, tui; golangci-lint 0 issues.
 - Four goldens changed by one line each (rail and fallback text only).
 - Plans are historical records and keep the old names.
+
+## T1b tool output, transcript view and /copy (2026-10-12)
+
+Plan: `plans/261012-0226-t1b-tool-output/plan.md` (design approved by user 2026-10-12). Run with `/ak:cook --auto --tdd`.
+- [x] Step 0: alt-screen return spike (partial; fork renderer fixed with tests; Terminal.app, iTerm2, kitty hand check open)
+- [x] Steps 1-2: translator reads result details; collapsed previews, hint and truncation rows
+- [x] Step 5: `/copy` (open: OSC 52 write goes through renderer)
+- [x] Step 3: transcript view (held commits and resize rebuild)
+- [x] Step 4: terminal restore on ctrl+c and signals
+- [x] Step 6: E2E with the built ask (view, SIGTERM, /copy, in-process view)
+- [x] Step 7: docs
+- Note: uncommitted job-notice work (finished slice) is in the same TUI files; do not commit it with this slice by accident.
+
+## T1b Grok-style alternate-screen TUI (2026-10-12)
+
+Plan: `plans/261012-1337-t1b-grok-style-altscreen/plan.md` (design approved by user 2026-10-12, all 14 open questions accepted). Run with `/ak:cook --auto --tdd`. No commits: the worktree holds uncommitted work of earlier slices.
+- [x] Step 0: spike, 2000 blocks, frame budget (stop and re-plan when over budget)
+- [x] Steps 1-2: screen model, block list, fold modes, row text
+- [x] Steps 3-4: focus, keys, selection marks, indicators
+- [x] Steps 5-6: scroll and follow, bottom marker, mouse
+- [x] Steps 7-8: hook rows, exit line
+- [x] Steps 9-10: fork cleanup, screen tests for design section 10
+- [x] Step 11: E2E with the built `ask`
+- [x] Step 12: docs
+- [x] Hyperlink rows of the login box carry per-row OSC 8 ids (renderer bug at the pinned Ultraviolet version)
+
+### Review
+- Full `go test ./...`, fork tests, golangci-lint and `python3 e2e/tui/run.py` (24 of 24, two engines) passed. Independent review found three defects (marker count at a full window, settle after fold commands, lost mouse release); fixed with tests.
+- Open (not in this plan): optional `description` argument for `bash`; H11 hook event; H8 resume (exit line format); detach note above the exit line stays until the user decides.
+- Nothing is committed; rollback snapshot ref `refs/snapshots/t1b-altscreen-baseline`.

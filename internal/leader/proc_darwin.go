@@ -1,6 +1,7 @@
 package leader
 
 import (
+	"context"
 	"fmt"
 	"os"
 	"os/exec"
@@ -36,4 +37,9 @@ func processInfo(pid int) (uid uint32, start int64, cmdline string, err error) {
 // There is no stable process handle for this fallback on this platform.
 func signalLeaderProcess(Paths, Owner) error {
 	return fmt.Errorf("%w: stable process signaling is not available; use the socket shutdown control", ErrNotLeaderProcess)
+}
+
+// A leader without a socket is never signalled here: there is no stable process handle.
+func evictLeaderProcess(context.Context, Paths, Owner, time.Duration) (evictResult, error) {
+	return evictResult{}, fmt.Errorf("%w: stable process signaling is not available; use the socket shutdown control", ErrNotLeaderProcess)
 }

@@ -1,6 +1,15 @@
-◢◤ ask   v0.1.0 · leader 7c1e · ~/src/askcore
+◢◤ ask  ● leader 7c1e  ⌂ ~/src/askcore  deepseek-v4.1-flash  ▱▱▱▱▱▱▱▱ 0%  $0.04
+────────────────────────────────────────────────────────────────────────────────
   model  alibaba/deepseek-v4.1-flash
 
+
+
+
+
+
+
+
+────────────────────────────────────────────────────────────────────────────────
 ╭─ Select model ───────────────────────────────────────────────────────────────╮
 │  ⌕ type to filter                                                            │
 │ ❯ ● alibaba/deepseek-v4.1-flash                             128k  current    │
@@ -11,4 +20,5 @@
 │   ● xai/grok-5-code                                         256k  reasoning  │
 ╰──────────────────────────────────────────────────────────────────────────────╯
    enter select  ·  esc close  ·  your draft is kept
-  ● leader 7c1e   ⌂ ~/src/askcore       deepseek-v4.1-flash  ▱▱▱▱▱▱▱▱ 0%  $0.04
+────────────────────────────────────────────────────────────────────────────────
+ Tab blocks · ctrl+t thinking · ctrl+l model · / commands

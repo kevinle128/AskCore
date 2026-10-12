@@ -120,11 +120,10 @@ type sessionView struct {
 	editor *Editor
 	trl    *Translator
 
-	version string
-	cwd     string
-	home    string
-	now     func() time.Time
-	tick    time.Duration
+	cwd  string
+	home string
+	now  func() time.Time
+	tick time.Duration
 
 	conn      connState
 	info      ConnInfo
@@ -147,6 +146,9 @@ type sessionView struct {
 	failure       *failureView
 	queue         queueView
 	notice        noticeView
+	// clip is the machine of /copy. copySeq numbers its requests.
+	clip    ClipboardOptions
+	copySeq uint64
 
 	models  []protocol.ACPModel
 	modelID string
@@ -168,13 +170,12 @@ type sessionView struct {
 	// it is already part of the state.
 	baseline protocol.ACPCursor
 	// starts are the placeholders of start lines that wait for the state.
-	starts      []startSlot
-	headerBlock startupHeader
-	trace       string
-	thinking    protocol.ThinkingLevel
-	thinkTry    protocol.ThinkingLevel
-	ctxTokens   int64
-	costMicro   int64
+	starts    []startSlot
+	trace     string
+	thinking  protocol.ThinkingLevel
+	thinkTry  protocol.ThinkingLevel
+	ctxTokens int64
+	costMicro int64
 	// modelReq numbers the set-model requests. Only the answer to the latest
 	// request, in the generation it started in, changes the model.
 	modelReq uint64
@@ -203,8 +204,9 @@ type sessionView struct {
 	deferred []ProvidersChangedMsg
 
 	tickPending bool
-	headerShown bool
-	blockSeq    int
+	// startShown is true once the start line slot of the session was added.
+	startShown bool
+	blockSeq   int
 
 	opening  bool
 	startErr error
@@ -222,16 +224,16 @@ type sessionView struct {
 // newSessionView builds the view of a Model.
 func newSessionView(m *Model, o Options) *sessionView {
 	s := &sessionView{
-		m:       m,
-		client:  o.Client,
-		open:    o.Open,
-		editor:  NewEditor(DefaultCommands()),
-		version: o.Version,
-		trace:   o.TraceFile,
-		cwd:     o.Cwd,
-		home:    o.Home,
-		now:     o.Now,
-		tick:    o.TickInterval,
+		m:      m,
+		client: o.Client,
+		open:   o.Open,
+		editor: NewEditor(DefaultCommands()),
+		trace:  o.TraceFile,
+		cwd:    o.Cwd,
+		home:   o.Home,
+		now:    o.Now,
+		tick:   o.TickInterval,
+		clip:   o.Clipboard.resolved(),
 	}
 	if s.now == nil {
 		s.now = time.Now
@@ -351,29 +353,38 @@ func (s *sessionView) contextWindow() int64 {
 // isObserver reports whether another client drives the session.
 func (s *sessionView) isObserver() bool { return s.sess.Role == protocol.ACPRoleObserver }
 
-// ---- live region ----
+// ---- screen parts ----
+
+// modalHeight is the number of rows that a selector or box may use: the prompt
+// pane slot.
+func (s *sessionView) modalHeight() int { return promptSlotRows(s.m.height) }
 
 // Slots implements SlotSource. The root model calls it from View, so it reads
 // state and never waits.
 func (s *sessionView) Slots(width int) Slots {
 	th := s.m.theme
 	out := Slots{
+		Header:  s.headerText(width),
 		Status:  s.statusText(width),
-		Footer:  s.footerText(width),
+		Bar:     s.barRow(width),
 		Pending: s.pendingRows(width),
 	}
 	switch {
 	case s.dlg != nil:
-		out.Editor = s.dlg.slot(s, width, s.m.height)
+		out.Editor = s.dlg.slot(s, width, s.modalHeight())
 		return out
 	case s.pbox != nil:
-		out.Editor = s.pbox.slot(width, s.m.height, th)
+		out.Editor = s.pbox.slot(width, s.modalHeight(), th)
 		return out
 	case s.sel != nil:
-		out.Editor = s.sel.slot(width, s.m.height, th)
+		out.Editor = s.sel.slot(width, s.modalHeight(), th)
 		return out
 	}
 	out.Editor = s.editorSlot(width)
+	if s.listFocused() {
+		// The keys go to the block list, so the prompt shows no cursor.
+		out.Editor.Cursor = nil
+	}
 	out.Menu = s.editor.MenuRows(width, th)
 	return out
 }
@@ -383,7 +394,7 @@ func (s *sessionView) Slots(width int) Slots {
 func (s *sessionView) editorSlot(width int) EditorSlot {
 	th := s.m.theme
 	if s.isObserver() && s.editor.Text() == "" {
-		textW := max(1, BoxInnerWidth(width))
+		textW := max(1, PromptInnerWidth(width))
 		text := "Watching. Type /take to take control when the run ends."
 		if width < shortWidth {
 			text = "Watching. Type /take"

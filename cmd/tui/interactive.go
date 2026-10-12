@@ -44,8 +44,8 @@ type terminalConfig struct {
 }
 
 // runInteractive is the entry for `ask` on a terminal without a prompt. It
-// runs the inline TUI against the leader of the Ask home, or against an agent in
-// this process when the leader cannot be reached at startup.
+// runs the alternate-screen TUI against the leader of the Ask home, or against
+// an agent in this process when the leader cannot be reached at startup.
 func runInteractive(stdin io.Reader, stdout, stderr io.Writer, deps runDependencies, sigs <-chan os.Signal) int {
 	in, inOK := stdin.(*os.File)
 	out, outOK := stdout.(*os.File)
@@ -212,22 +212,63 @@ func runTerminal(c terminalConfig) (code int) {
 		// signal and the read failed, so it is an error exit.
 		runErr = fmt.Errorf("the terminal input closed: %w", *lost)
 	}
-	code = exitCode(c.stderr, m, sig, runErr)
 	bound := closeWait
 	if sig != nil {
 		bound = abortGrace
 	}
+	var closeErr error
 	if cl := slot.take(); cl != nil {
-		if err := closeWithin(cl, bound, c.sigs); err != nil {
-			report(c.stderr, "Error:", err)
-		}
+		closeErr = closeWithin(cl, bound, c.sigs)
 	}
+	// The terminal is restored here, so the output below stays in the history
+	// of the shell.
+	code = finishRun(c.out, c.stderr, m, sig, runErr)
+	if closeErr != nil {
+		report(c.stderr, "Error:", closeErr)
+	}
+	return code
+}
+
+// exitState is what the entry reads from the program after it ended.
+type exitState interface {
+	SessionID() string
+	StartError() error
+	ClientError() error
+	ExitNote() []string
+}
+
+// exitLine is the text that stays in the terminal history after ask ends. It
+// is plain text without color or escape codes, and it ends with a line break.
+// It is empty when no session was created. This is the one place that builds
+// the text.
+func exitLine(sessionID string) string {
+	if sessionID == "" {
+		return ""
+	}
+	return "ask: session " + sessionID + "\n"
+}
+
+// finishRun writes what the user sees after the program ended and returns the
+// exit code. The order is fixed: the quit note, then the exit line, then the
+// error text. The exit line is therefore the last line of a clean exit and the
+// line before the error text of a failed one. The line is written for every
+// end path, signals included, and only when a session exists.
+func finishRun(out, stderr io.Writer, m exitState, sig os.Signal, runErr error) int {
+	code, failure := exitCode(m, sig, runErr)
+	var text strings.Builder
 	if code == 0 {
 		if rows := m.ExitNote(); len(rows) > 0 {
-			if _, err := io.WriteString(c.out, strings.Join(rows, "\n")+"\n"); err != nil {
-				report(c.stderr, "Error:", err)
-			}
+			text.WriteString(strings.Join(rows, "\n") + "\n")
 		}
+	}
+	text.WriteString(exitLine(m.SessionID()))
+	if text.Len() > 0 {
+		if _, err := io.WriteString(out, text.String()); err != nil {
+			report(stderr, "Error:", err)
+		}
+	}
+	if failure != nil {
+		report(stderr, "Error:", failure)
 	}
 	return code
 }
@@ -258,25 +299,23 @@ func waitProgram(prog *tea.Program, done <-chan programResult, sigs <-chan os.Si
 	}
 }
 
-// exitCode reports the reason for a failed exit on stderr and returns the code.
-// The terminal is restored before this runs, so the text is readable.
-func exitCode(stderr io.Writer, m *tui.Model, sig os.Signal, runErr error) int {
+// exitCode returns the exit code and the error to report on stderr, or nil
+// when the end needs no error text. A signal gives its own code and no text.
+func exitCode(m exitState, sig os.Signal, runErr error) (int, error) {
 	switch {
 	case sig != nil:
 		if code, ok := signalExitCodes[sig]; ok {
-			return code
+			return code, nil
 		}
-		return 1
+		return 1, nil
 	case m.StartError() != nil:
-		report(stderr, "Error:", m.StartError())
+		return 1, m.StartError()
 	case m.ClientError() != nil:
-		report(stderr, "Error:", m.ClientError())
+		return 1, m.ClientError()
 	case runErr != nil:
-		report(stderr, "Error:", runErr)
-	default:
-		return 0
+		return 1, runErr
 	}
-	return 1
+	return 0, nil
 }
 
 // closeWithin closes the client and waits at most bound, or until a signal comes.

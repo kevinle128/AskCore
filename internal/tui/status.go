@@ -14,7 +14,7 @@ import (
 // stays on screen as "Cancelling…" until the agent reports that the run
 // settled; a stopped spinner is never taken as the end of a run.
 
-// shortWidth is the terminal width under which status, footer and placeholder
+// shortWidth is the terminal width under which status, header, bar and placeholder
 // use their short forms.
 const shortWidth = 60
 
@@ -108,12 +108,49 @@ func (s *sessionView) statusText(width int) string {
 		default:
 			tail += " · esc to interrupt"
 		}
+		if n := len(s.trl.RunningJobs()); n > 0 {
+			tail += " · " + jobCount(n, "job")
+		}
 		return s.statusRow(RoleAccent, GlyphWorking, "Working…", tail)
 	case s.noModel() && s.sel == nil:
 		// The model list says the same thing, so the notice waits while it is open.
 		return s.noticeRow(noticeView{text: s.noModelNotice(short)})
+	case len(s.trl.RunningJobs()) > 0:
+		return s.jobsRow(width, short)
 	}
 	return ""
+}
+
+// jobsRow is the lowest state of the rail: the background jobs that run while
+// nothing else uses the rail. It is muted, because the agent does not work.
+func (s *sessionView) jobsRow(width int, short bool) string {
+	th := s.m.theme
+	jobs := s.trl.RunningJobs()
+	head := th.Render(RoleDim, GlyphRailStatus) + " " + th.Render(RoleMuted, GlyphWorking+" ")
+	if short {
+		return head + th.Render(RoleMuted, jobCount(len(jobs), "job"))
+	}
+	word := jobCount(len(jobs), "background job")
+	var tail string
+	if len(jobs) == 1 {
+		tail = " · " + strings.TrimSpace(jobs[0].ID+" "+jobs[0].Label)
+	} else {
+		ids := make([]string, len(jobs))
+		for i, j := range jobs {
+			ids[i] = j.ID
+		}
+		tail = " · " + strings.Join(ids, ", ")
+	}
+	room := max(1, width-displayWidth(GlyphRailStatus+" "+GlyphWorking+" "+word))
+	return head + th.Render(RoleMuted, word) + th.Render(RoleDim, truncateTo(tail, room))
+}
+
+// jobCount writes "1 job" or "2 jobs".
+func jobCount(n int, noun string) string {
+	if n == 1 {
+		return "1 " + noun
+	}
+	return fmt.Sprintf("%d %ss", n, noun)
 }
 
 func (s *sessionView) retryRow(short bool) string {

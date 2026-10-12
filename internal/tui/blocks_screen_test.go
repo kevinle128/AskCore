@@ -1,6 +1,7 @@
 package tui
 
 import (
+	"fmt"
 	"strings"
 	"testing"
 	"time"
@@ -37,11 +38,6 @@ func (r *sessionRig) play(evs ...protocol.Event) {
 	r.h.settle()
 }
 
-func (r *sessionRig) header() {
-	r.h.send(AppendBlockMsg{ID: "header", Block: NewStartupHeader("0.1.0", "leader 7c1e", "~/src/askcore"), Stable: true})
-	r.h.settle()
-}
-
 func sketchTime(hour, minute int) time.Time {
 	return time.Date(2026, 10, 9, hour, minute, 0, 0, time.UTC)
 }
@@ -56,7 +52,6 @@ const sketchReply = "The test waits for the stale socket check, but CI runs it w
 // firstTurn is the history that the sketches share: one prompt and one reply
 // with a code block and a meta line.
 func (r *sessionRig) firstTurn() {
-	r.header()
 	usage := protocol.Usage{Input: 12_400, Output: 1_800, Cost: protocol.Cost{Total: 4_000}}
 	r.play(flat(
 		&protocol.AgentStart{},
@@ -69,17 +64,15 @@ func (r *sessionRig) firstTurn() {
 }
 
 var firstTurnRows = []string{
-	"◢◤ ask   v0.1.0 · leader 7c1e · ~/src/askcore",
-	"",
 	promptRow("why does TestLeaderStale fail on CI?", "14:02"),
 	"",
-	"  ◆ The test waits for the stale socket check, but CI runs it with a 1 s",
-	"    deadline. The leader removes the stale socket after the lock probe, and the",
-	"    probe can take 1.2 s.",
+	"  The test waits for the stale socket check, but CI runs it with a 1 s deadline.",
+	"  The leader removes the stale socket after the lock probe, and the probe can",
+	"  take 1.2 s.",
 	"",
-	"    go",
-	"    deadline := 5 * time.Second",
-	"    deepseek-v4.1-flash · 4.2s · ↑12.4k ↓1.8k · $0.004",
+	"  go",
+	"  deadline := 5 * time.Second",
+	"  deepseek-v4.1-flash · 4.2s · ↑12.4k ↓1.8k · $0.004",
 	"",
 }
 
@@ -126,8 +119,8 @@ func requireContentGolden(t *testing.T, h *screenHarness) {
 func sketchSource(status string) fakeSource {
 	return fakeSource{
 		placeholder: true, status: status,
-		footerL: "  ● leader 7c1e   ⌂ ~/src/askcore",
-		footerR: "deepseek-v4.1-flash  ▰▱▱▱▱▱▱▱ 18%  $0.04 ",
+		headerL: "◢◤ ask  ● leader 7c1e  ⌂ ~/src/askcore",
+		headerR: "deepseek-v4.1-flash  ▰▱▱▱▱▱▱▱ 18%  $0.04 ",
 	}
 }
 
@@ -153,9 +146,10 @@ func TestBlockGoldens(t *testing.T) {
 		requireRows(t, r.h.text(), append(append([]string{}, firstTurnRows...),
 			promptRow("show me the probe code", "14:03"),
 			"",
-			"  ◇ echo  probe code request"+strings.Repeat(" ", 80-2-displayWidth("◇ echo  probe code request")-displayWidth("running ⠋")-1)+"running ⠋",
-			"  ◆ The probe lives in internal/leader/client.go. It dials the socket, then",
-			"    sends an initialize frame and waits",
+			"  ◆ echo probe code request"+strings.Repeat(" ", 80-displayWidth("  ◆ echo probe code request")-2)+"⠋",
+			"",
+			"  The probe lives in internal/leader/client.go. It dials the socket, then sends",
+			"  an initialize frame and waits",
 		))
 		requireContentGolden(t, r.h)
 	})
@@ -175,10 +169,10 @@ func TestBlockGoldens(t *testing.T) {
 		requireRows(t, r.h.text(), append(append([]string{}, firstTurnRows...),
 			promptRow("show me the probe code", "14:03"),
 			"",
-			"  ● echo  probe code request"+strings.Repeat(" ", 80-2-displayWidth("● echo  probe code request")-displayWidth("✓ 0.1s")-1)+"✓ 0.1s",
+			"  ◆ echo probe code request",
 			"",
-			"  ◆ The probe lives in internal/leader/client.go. It dials the socket, then",
-			"    sends an initialize frame and waits",
+			"  The probe lives in internal/leader/client.go. It dials the socket, then sends",
+			"  an initialize frame and waits",
 		))
 		requireContentGolden(t, r.h)
 	})
@@ -215,8 +209,8 @@ func TestBlockGoldens(t *testing.T) {
 		requireRows(t, r.h.text(), append(append([]string{}, firstTurnRows...),
 			promptRow("show me the probe code", "14:03"),
 			"",
-			"  ◆ The probe lives in internal/leader/client.go. It dials the socket, then",
-			"    sends an initialize frame and waits.",
+			"  The probe lives in internal/leader/client.go. It dials the socket, then sends",
+			"  an initialize frame and waits.",
 			"",
 			"  ✗ Error (auth): anthropic token expired and refresh failed.",
 			"    Run in a shell: ask auth login --provider anthropic. Then send again.",
@@ -241,18 +235,18 @@ func TestBlockGoldens(t *testing.T) {
 		requireRows(t, r.h.text(), append(append([]string{}, firstTurnRows...),
 			promptRow("show me the probe code", "14:03"),
 			"",
-			"  ◆ The probe lives in internal/leader/client.go. It dials the socket, then",
-			"    sends an initialize frame and waits",
+			"  The probe lives in internal/leader/client.go. It dials the socket, then sends",
+			"  an initialize frame and waits",
 			"  ⊘ Cancelled by you. Partial reply kept above.",
 			"",
 		))
 		requireContentGolden(t, r.h)
 	})
 
-	t.Run("thinking_shown", func(t *testing.T) {
+	t.Run("thinking_collapsed", func(t *testing.T) {
 		r := startSession(t, 80, 40, sketchSource(""))
 		r.thinkingTurn()
-		requireRows(t, r.h.text(), thinkingShownRows)
+		requireRows(t, r.h.text(), thinkingCollapsedRows)
 		requireContentGolden(t, r.h)
 	})
 }
@@ -277,89 +271,51 @@ func (r *sessionRig) thinkingTurn() {
 	)...)
 }
 
-var thinkingShownRows = []string{
+var thinkingCollapsedRows = []string{
 	promptRow("show me the probe code", "14:03"),
 	"",
-	"  ∴ The stale check runs before the deadline starts, so the deadline is too",
-	"    short only when the probe is slow. I should look at the probe timing first.",
+	"  ◆ Thought",
 	"",
-	"  ◆ The probe lives in internal/leader/client.go. It dials the socket, then",
-	"    sends an initialize frame and waits.",
-	"    claude-opus-5-5 · 7.9s · ↑14.1k ↓2.6k · $0.031",
+	"  The probe lives in internal/leader/client.go. It dials the socket, then sends",
+	"  an initialize frame and waits.",
+	"  claude-opus-5-5 · 7.9s · ↑14.1k ↓2.6k · $0.031",
 	"",
 }
 
-func TestThinkingToggleRebuild(t *testing.T) {
+func TestStreamingThinkingShowsLastLinesThenFoldsToOneRow(t *testing.T) {
 	r := startSession(t, 80, 40, sketchSource(""))
-	r.thinkingTurn()
-	requireRows(t, r.h.text(), thinkingShownRows)
-	before := r.h.text()
-	require.Equal(t, 0, strings.Count(r.h.out.all(), purgeSequence), "no rebuild yet")
-
-	// ctrl+t: the view changes, then the committed blocks are drawn again.
-	require.True(t, r.trl.ToggleThinking())
-	r.h.send(RebuildMsg{})
-	r.h.waitFor("rebuild", func(h *screenHarness) bool { return strings.Count(h.out.all(), purgeSequence) == 1 })
-	r.h.waitText("Thinking...")
-	r.h.settle()
-	hidden := r.h.text()
-	requireRows(t, hidden, []string{
+	r.play(flat(
+		&protocol.AgentStart{},
+		userAt("show me the probe code", sketchTime(14, 3)),
+		assistantStart("m", 0),
+		updateAt(0, protocol.ThinkingStartEvent{ContentIndex: 0}),
+		updateAt(100, protocol.ThinkingDeltaEvent{ContentIndex: 0, Delta: "first line\nsecond line\nthird line"}),
+	)...)
+	r.h.waitText("third line")
+	requireRows(t, r.h.text(), []string{
 		promptRow("show me the probe code", "14:03"),
 		"",
-		"  ∴ Thinking...",
-		"",
-		"  ◆ The probe lives in internal/leader/client.go. It dials the socket, then",
-		"    sends an initialize frame and waits.",
-		"    claude-opus-5-5 · 7.9s · ↑14.1k ↓2.6k · $0.031",
-		"",
+		"  ◆ Thinking…" + strings.Repeat(" ", 80-displayWidth("  ◆ Thinking…")-2) + "⠋",
+		"  ┃ …",
+		"  ┃ second line",
+		"  ┃ third line",
 	})
-	require.Zero(t, r.h.count("stale check runs"), "the thinking text is gone")
-	require.Equal(t, 1, r.h.count("Thinking..."))
-	requireContentGolden(t, r.h)
+	require.Zero(t, r.h.count("first line"), "only the last two lines show while it streams")
+	require.Zero(t, r.h.count("Thought for"))
 
-	// The order of the committed blocks did not change.
-	order := func(rows []string) []int {
-		var at []int
-		for _, token := range []string{"why does TestLeaderStale", "show me the probe code", "∴", "◆ The probe lives", "claude-opus-5-5"} {
-			for i, row := range rows {
-				if strings.Contains(row, token) {
-					at = append(at, i)
-					break
-				}
-			}
-		}
-		return at
-	}
-	for _, rows := range [][]string{before, hidden} {
-		idx := order(rows)
-		require.Len(t, idx, 5)
-		for i := 1; i < len(idx); i++ {
-			require.Greater(t, idx[i], idx[i-1])
-		}
-	}
-
-	// ctrl+t again: the full text is back.
-	require.False(t, r.trl.ToggleThinking())
-	r.h.send(RebuildMsg{})
-	r.h.waitFor("second rebuild", func(h *screenHarness) bool { return strings.Count(h.out.all(), purgeSequence) == 2 })
-	r.h.waitText("short only when the probe is slow")
-	r.h.settle()
-	requireRows(t, r.h.text(), thinkingShownRows)
-	require.Zero(t, r.h.count("Thinking..."))
-
-	final := r.h.stop().(*Model)
-	require.NoError(t, final.Err())
-}
-
-func TestThinkingToggleAppliesToThinkingStillStreaming(t *testing.T) {
-	r := startSession(t, 80, 40, sketchSource(""))
-	r.play(flat(assistantStart("m", 0), update(protocol.ThinkingStartEvent{ContentIndex: 0}), update(protocol.ThinkingDeltaEvent{ContentIndex: 0, Delta: "still thinking"}))...)
-	r.h.waitText("still thinking")
-	require.True(t, r.trl.ToggleThinking())
-	// A live block draws from the view at the next frame; any message does it.
-	r.play(update(protocol.ThinkingDeltaEvent{ContentIndex: 0, Delta: " more"}))
-	r.h.waitText("Thinking...")
-	require.Zero(t, r.h.count("still thinking"))
+	r.play(flat(
+		updateAt(2000, protocol.ThinkingEndEvent{ContentIndex: 0, Content: "first line\nsecond line\nthird line"}),
+		assistantEndUsage("m", protocol.StopStop, 2100, protocol.Usage{}, protocol.Thinking{Thinking: "first line\nsecond line\nthird line"}),
+		&protocol.AgentEnd{}, &protocol.AgentSettled{},
+	)...)
+	r.h.waitText("Thought for")
+	requireRows(t, r.h.text(), []string{
+		promptRow("show me the probe code", "14:03"),
+		"",
+		"  ◆ Thought for 2.0s",
+		"  m · 2.1s",
+	})
+	require.Zero(t, r.h.count("second line"))
 }
 
 func TestCancelMarkerAtSettleOnly(t *testing.T) {
@@ -389,22 +345,21 @@ func TestCancelMarkerAtSettleOnly(t *testing.T) {
 	r.play(&protocol.AgentSettled{})
 	r.h.waitText("⊘ Cancelled by you. Partial reply kept above.")
 	requireRows(t, r.h.text(), []string{
-		"  ◆ The probe lives in internal/leader/client.go. It dials the socket, then",
+		"  The probe lives in internal/leader/client.go. It dials the socket, then",
 		"  ⊘ Cancelled by you. Partial reply kept above.",
 		"",
 	})
 	require.Equal(t, 1, r.h.count("Cancelled"))
 }
 
-// A reply that streams in many small pieces ends up on the screen exactly
-// once, and the commit path never rewrites a block that is in the scrollback.
-// The screen is small, so the reply is far taller than the live region: it can
-// only fit because closed paragraphs leave the tail while the reply streams.
-func TestStreamedReplyCommitsOnceThroughRenderer(t *testing.T) {
+// A reply that streams in many small pieces is far taller than the pane. The
+// pane follows the end: the newest paragraph shows and the first one has
+// scrolled out of the window.
+func TestStreamedReplyFollowsTheEnd(t *testing.T) {
 	r := startSession(t, 60, 14, sketchSource(""))
 	var paras []string
 	for i := 0; i < 30; i++ {
-		paras = append(paras, "alpha beta gamma delta epsilon "+strings.Repeat("filler ", 3))
+		paras = append(paras, fmt.Sprintf("alpha%02d beta gamma delta epsilon %s", i, strings.Repeat("filler ", 3)))
 	}
 	all := strings.Join(paras, "\n\n")
 	evs := flat(&protocol.AgentStart{}, userAt("go", sketchTime(14, 3)), assistantStart("m", 0), update(protocol.TextStartEvent{ContentIndex: 0}))
@@ -416,9 +371,9 @@ func TestStreamedReplyCommitsOnceThroughRenderer(t *testing.T) {
 	r.play(evs...)
 	r.h.waitText("m · 0.1s")
 	r.h.settle()
-	text := strings.Join(r.h.text(), " ")
-	require.Equal(t, 30, strings.Count(text, "alpha"), "every paragraph shows once:\n%s", strings.Join(r.h.text(), "\n"))
-	require.Equal(t, 1, r.h.count("◆"))
+	require.Equal(t, 1, r.h.count("alpha29"), "the newest paragraph shows:\n%s", strings.Join(r.h.text(), "\n"))
+	require.Zero(t, r.h.count("alpha00"), "the first paragraph is above the window")
 	final := r.h.stop().(*Model)
-	require.NoError(t, final.Err(), "no change hit a block that was already committed")
+	require.NoError(t, final.Err())
+	require.True(t, final.pane.Following())
 }

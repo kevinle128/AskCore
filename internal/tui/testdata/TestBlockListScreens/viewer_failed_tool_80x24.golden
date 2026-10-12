@@ -1,0 +1,24 @@
+ ← back  Ran go test ./...                                             ✗ exit 1
+────────────────────────────────────────────────────────────────────────────────
+    $ go test ./...
+
+    --- FAIL: TestCount (0.00s)
+        parser_test.go:12: want 2, got 3
+    === RUN   TestCountEmpty
+    --- PASS: TestCountEmpty (0.00s)
+    === RUN   TestCountOne
+    --- PASS: TestCountOne (0.00s)
+    FAIL
+    FAIL    example.com/p/parser    0.012s
+    FAIL
+
+
+
+
+
+
+
+
+
+────────────────────────────────────────────────────────────────────────────────
+ ↑↓ scroll · PgUp PgDn page · Home End · Esc back                    1–11 of 11

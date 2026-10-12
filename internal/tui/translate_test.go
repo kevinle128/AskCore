@@ -36,6 +36,11 @@ func update(ev protocol.BlockEvent) protocol.Event {
 	return &protocol.MessageUpdate{AssistantMessageEvent: ev}
 }
 
+// updateAt is an update event with a time.
+func updateAt(ms int64, ev protocol.BlockEvent) protocol.Event {
+	return &protocol.MessageUpdate{Envelope: at(ms), AssistantMessageEvent: ev}
+}
+
 func textParts(idx int, deltas ...string) []protocol.Event {
 	evs := []protocol.Event{update(protocol.TextStartEvent{ContentIndex: idx})}
 	var all string
@@ -96,18 +101,17 @@ func flat(parts ...any) []protocol.Event {
 // --- helpers that apply translator output to a real transcript ---
 
 type tx struct {
-	t         *testing.T
-	tr        *Transcript
-	rc        RenderContext
-	trl       *Translator
-	committed []string
+	t   *testing.T
+	tr  *Transcript
+	rc  RenderContext
+	trl *Translator
 }
 
 func newTx(t *testing.T) *tx {
 	return &tx{t: t, tr: NewTranscript(), rc: RenderContext{Width: 80, Theme: NewTheme(0)}, trl: NewTranslator(TranslatorOptions{Location: time.UTC})}
 }
 
-func TestDetachCommitsLastObservedContent(t *testing.T) {
+func TestDetachFinishesLastObservedContent(t *testing.T) {
 	x := newTx(t)
 	x.feed(&protocol.AgentStart{}, assistantStart("faux-1", 0),
 		update(protocol.TextStartEvent{ContentIndex: 0}),
@@ -115,19 +119,17 @@ func TestDetachCommitsLastObservedContent(t *testing.T) {
 		&protocol.ToolExecutionStart{ToolCallID: "t1", ToolName: "echo"})
 	require.Less(t, x.tr.Frontier(), x.tr.Len())
 	x.apply(x.trl.Detach())
-	require.Equal(t, x.tr.Len(), x.tr.Committed())
-	text := ansi.Strip(strings.Join(x.committed, "\n"))
+	require.Equal(t, x.tr.Len(), x.tr.Frontier())
+	text := ansi.Strip(strings.Join(finalRows(x.tr, x.rc), "\n"))
 	require.Contains(t, text, "partial reply")
-	require.Contains(t, text, "running")
+	require.Contains(t, text, "◆ echo")
 	require.NotContains(t, text, "interrupted")
 	require.NotContains(t, text, "Cancelled")
 	x.feed(userEvents("next session prompt", 500)...)
-	require.Equal(t, x.tr.Len(), x.tr.Committed(), "the old tail must not block the next session")
+	require.Equal(t, x.tr.Len(), x.tr.Frontier(), "the old tail must not block the next session")
 }
 
-// feed applies events the way the model does: one message at a time, and a
-// commit pass after each one, so a change to a block that is already in the
-// scrollback fails the test.
+// feed applies events the way the model does: one message at a time.
 func (x *tx) feed(evs ...protocol.Event) {
 	x.t.Helper()
 	for _, ev := range evs {
@@ -148,13 +150,12 @@ func (x *tx) apply(msgs []tea.Msg) {
 		default:
 			x.t.Fatalf("unexpected message %T", msg)
 		}
-		x.committed = append(x.committed, x.tr.TakeStable(x.rc)...)
 	}
 }
 
-// rows are all rows so far, committed and live, as plain text.
+// rows are all rows so far, final and live, as plain text.
 func (x *tx) rows() []string {
-	all := append(append([]string{}, x.committed...), x.tr.TailLines(x.rc)...)
+	all := allRows(x.tr, x.rc)
 	out := make([]string, len(all))
 	for i, r := range all {
 		out[i] = strings.TrimRight(ansi.Strip(r), " ")
@@ -182,27 +183,27 @@ func TestTranslateReplyStream(t *testing.T) {
 	require.Equal(t, []string{
 		promptRow("why does it fail?", promptClock),
 		"",
-		"  ◆ The test waits for the stale socket.",
-	}, x.rows(), "the reply is in the live tail while it streams")
-	require.Equal(t, 1, x.tr.Committed(), "only the prompt is final")
+		"  The test waits for the stale socket.",
+	}, x.rows(), "the reply streams in a block that is not final")
+	require.Equal(t, 1, x.tr.Frontier(), "only the prompt is final")
 
 	x.feed(update(protocol.TextEndEvent{ContentIndex: 0, Content: "The test waits for the stale socket."}))
-	require.Equal(t, 2, x.tr.Committed(), "the reply is final at its end event")
+	require.Equal(t, 2, x.tr.Frontier(), "the reply is final at its end event")
 	x.feed(assistantEnd("claude-opus-5-5", protocol.StopStop, 4300, protocol.Text{Text: "The test waits for the stale socket."}))
 	x.feed(&protocol.AgentEnd{}, &protocol.AgentSettled{})
 	require.Equal(t, []string{
 		promptRow("why does it fail?", promptClock),
 		"",
-		"  ◆ The test waits for the stale socket.",
-		"    claude-opus-5-5 · 4.2s · ↑12.4k ↓1.8k · $0.004",
+		"  The test waits for the stale socket.",
+		"  claude-opus-5-5 · 4.2s · ↑12.4k ↓1.8k · $0.004",
 		"",
 	}, x.rows())
-	require.Equal(t, x.tr.Len(), x.tr.Committed(), "every block is final after the run settles")
+	require.Equal(t, x.tr.Len(), x.tr.Frontier(), "every block is final after the run settles")
 }
 
-// A long reply leaves the live tail paragraph by paragraph. The rows are the
-// same as the rows of one block that holds the whole text, and no change ever
-// hits a block that is already in the scrollback (feed fails the test then).
+// A long reply becomes final paragraph by paragraph. The rows are the same as
+// the rows of one block that holds the whole text, and the final blocks never
+// shrink.
 func TestTranslateLongReplyLeavesTheTailParagraphByParagraph(t *testing.T) {
 	paras := []string{
 		"First paragraph with some words.",
@@ -216,45 +217,53 @@ func TestTranslateLongReplyLeavesTheTailParagraphByParagraph(t *testing.T) {
 
 	x := newTx(t)
 	x.feed(assistantStart("m", 0), update(protocol.TextStartEvent{ContentIndex: 0}))
-	maxTail, lastCommitted := 0, 0
+	maxTail, lastFinal := 0, 0
 	for i := 0; i < len(full); i += 5 {
 		x.feed(update(protocol.TextDeltaEvent{ContentIndex: 0, Delta: full[i:min(i+5, len(full))]}))
-		require.GreaterOrEqual(t, x.tr.Committed(), lastCommitted, "committed blocks never leave")
-		lastCommitted = x.tr.Committed()
-		maxTail = max(maxTail, len(x.tr.TailLines(x.rc)))
+		require.GreaterOrEqual(t, x.tr.Frontier(), lastFinal, "final blocks stay final")
+		lastFinal = x.tr.Frontier()
+		maxTail = max(maxTail, len(liveRows(x.tr, x.rc)))
 	}
-	require.Greater(t, x.tr.Committed(), 2, "closed paragraphs were committed while the reply streamed")
-	require.Less(t, maxTail, len(whole)-3, "the live tail never held the whole reply")
+	require.Greater(t, x.tr.Frontier(), 2, "closed paragraphs were final while the reply streamed")
+	require.Less(t, maxTail, len(whole)-3, "the live rows never held the whole reply")
 
 	x.feed(update(protocol.TextEndEvent{ContentIndex: 0, Content: full}))
 	require.Equal(t, whole, trimRight(x.rows()), "same rows as one block")
-	require.Equal(t, x.tr.Len(), x.tr.Committed())
+	require.Equal(t, x.tr.Len(), x.tr.Frontier())
 }
 
 func x0() *tx { return &tx{rc: RenderContext{Width: 80, Theme: NewTheme(0)}} }
 
-func TestTranslateLongThinkingLeavesTheTailAndKeepsTheShortForm(t *testing.T) {
+// A thinking text is one block however long it is, so that the user folds it
+// as a whole. It is final at its end event and then draws one row.
+func TestTranslateThinkingIsOneBlockAndFoldsWhenItEnds(t *testing.T) {
 	text := "First thought.\n\nSecond thought\nwith two lines.\n\nThird thought."
 	x := newTx(t)
 	x.feed(assistantStart("m", 0))
+	x.feed(updateAt(1000, protocol.ThinkingStartEvent{ContentIndex: 0}))
 	for i := 0; i < len(text); i += 4 {
-		x.feed(update(protocol.ThinkingDeltaEvent{ContentIndex: 0, Delta: text[i:min(i+4, len(text))]}))
+		x.feed(updateAt(1000+int64(i), protocol.ThinkingDeltaEvent{ContentIndex: 0, Delta: text[i:min(i+4, len(text))]}))
 	}
-	x.feed(update(protocol.ThinkingEndEvent{ContentIndex: 0, Content: text}))
-	require.Equal(t, []string{
-		"  ∴ First thought.",
-		"",
-		"    Second thought",
-		"    with two lines.",
-		"",
-		"    Third thought.",
-		"",
-	}, x.rows(), "paragraphs keep one empty row between them")
-	require.Greater(t, x.tr.Len(), 1, "split into blocks")
-	require.Equal(t, x.tr.Len(), x.tr.Committed())
+	require.Equal(t, 1, x.tr.Len(), "one block for the whole text")
+	require.Equal(t, 0, x.tr.Frontier(), "the block is open while it streams")
+	require.Equal(t, FoldTruncated, blockDefaultFold(x.tr.entries[0].block), "a streaming thinking is truncated")
 
-	x.trl.View().SetThinkingHidden(true)
-	require.Equal(t, []string{"  ∴ Thinking...", ""}, trimRight(plain(x.tr.CommittedLines(x.rc))), "the short form is two rows for the whole text")
+	x.feed(updateAt(3500, protocol.ThinkingEndEvent{ContentIndex: 0, Content: text}))
+	require.Equal(t, 1, x.tr.Len())
+	require.Equal(t, 1, x.tr.Frontier())
+	require.Equal(t, FoldCollapsed, blockDefaultFold(x.tr.entries[0].block), "it folds when it ends")
+	require.Equal(t, []string{"  ◆ Thought for 2.5s"}, x.rows())
+
+	x.rc.Fold = FoldExpanded
+	require.Equal(t, []string{
+		"  ◆ Thought for 2.5s",
+		"  ┃ First thought.",
+		"  ┃",
+		"  ┃ Second thought",
+		"  ┃ with two lines.",
+		"  ┃",
+		"  ┃ Third thought.",
+	}, x.rows(), "paragraphs keep one empty row between them")
 }
 
 func TestTranslateSnapshotSplitsLongReplyIntoBlocks(t *testing.T) {
@@ -270,13 +279,13 @@ func TestTranslateReplyWithoutMessageStartOrUpdates(t *testing.T) {
 	// A follower that joins late sees only the end of a message.
 	x := newTx(t)
 	x.feed(assistantEnd("m", protocol.StopStop, 0, protocol.Text{Text: "Only the end."}))
-	require.Equal(t, []string{"  ◆ Only the end.", "    m · ↑12.4k ↓1.8k · $0.004", ""}, x.rows())
+	require.Equal(t, []string{"  Only the end.", "  m · ↑12.4k ↓1.8k · $0.004", ""}, x.rows())
 }
 
 func TestTranslateUpdatesWithoutStartKeepWorking(t *testing.T) {
 	x := newTx(t)
 	x.feed(update(protocol.TextDeltaEvent{ContentIndex: 0, Delta: "late "}), update(protocol.TextDeltaEvent{ContentIndex: 0, Delta: "joiner"}))
-	require.Equal(t, []string{"  ◆ late joiner"}, x.rows())
+	require.Equal(t, []string{"  late joiner"}, x.rows())
 	x.feed(assistantEnd("m", protocol.StopStop, 0, protocol.Text{Text: "late joiner"}))
 	require.Equal(t, 2, x.tr.Len(), "reply and meta line, no extra reply block")
 }
@@ -289,12 +298,27 @@ func TestTranslateThinkingThenReply(t *testing.T) {
 	x.feed(assistantEnd("m", protocol.StopStop, 1000,
 		protocol.Thinking{Thinking: "The stale check runs first."}, protocol.Text{Text: "Look at the probe."}))
 	require.Equal(t, []string{
-		"  ∴ The stale check runs first.",
+		"  ◆ Thought",
 		"",
-		"  ◆ Look at the probe.",
-		"    m · 1.0s · ↑12.4k ↓1.8k · $0.004",
+		"  Look at the probe.",
+		"  m · 1.0s · ↑12.4k ↓1.8k · $0.004",
 		"",
-	}, x.rows())
+	}, x.rows(), "an empty row separates the step from the reply")
+}
+
+func TestTranslateReplyAfterToolStartsWithAnEmptyRow(t *testing.T) {
+	x := newTx(t)
+	x.feed(userEvents("go", 0)...)
+	x.feed(toolStart("c1", "bash", `{"command":"seq 1 40"}`, 0), toolEnd("c1", "bash", false, "1\n2", 100))
+	x.feed(assistantStart("m", 200))
+	x.feed(textParts(0, "Done.")...)
+	rows := x.rows()
+	require.Equal(t, []string{"  ◆ Ran seq 1 40", "", "  Done."}, rows[2:], "no output row in the collapsed form, one empty row before the reply")
+	x.feed(userEvents("again", 300)...)
+	x.feed(assistantStart("m", 400))
+	x.feed(textParts(0, "Second.")...)
+	rows = x.rows()
+	require.Equal(t, []string{"  Done.", promptRow("again", promptClock), "", "  Second."}, rows[len(rows)-4:], "a reply right after a prompt has no extra empty row")
 }
 
 func TestTranslateToolLineRunningThenDone(t *testing.T) {
@@ -302,44 +326,43 @@ func TestTranslateToolLineRunningThenDone(t *testing.T) {
 	x.feed(toolStart("c1", "echo", `{"text":"probe code request"}`, 0))
 	running := x.rows()
 	require.Len(t, running, 1)
-	require.True(t, strings.HasPrefix(running[0], "  ◇ echo  probe code request"), running[0])
-	require.True(t, strings.HasSuffix(running[0], "running ⠋"), running[0])
-	require.Equal(t, 80, displayWidth(ansi.Strip(x.tr.TailLines(x.rc)[0])), "the line fills the width; the status sits at the right edge")
+	require.True(t, strings.HasPrefix(running[0], "  ◆ echo probe code request"), running[0])
+	require.True(t, strings.HasSuffix(running[0], "⠋"), running[0])
+	require.Equal(t, 80, displayWidth(ansi.Strip(liveRows(x.tr, x.rc)[0])), "the spinner sits at the right edge, one column in")
 
 	x.feed(toolEnd("c1", "echo", false, "ok", 100))
-	done := x.rows()
-	require.Equal(t, 2, len(done))
-	require.True(t, strings.HasPrefix(done[0], "  ● echo  probe code request"), done[0])
-	require.True(t, strings.HasSuffix(done[0], "✓ 0.1s"), done[0])
-	require.Equal(t, "", done[1])
-	require.Equal(t, 1, x.tr.Committed(), "a finished tool line is final")
+	require.Equal(t, []string{"  ◆ echo probe code request"}, x.rows(), "a finished step is one row with nothing at the right")
+	require.Equal(t, 1, x.tr.Frontier(), "a finished tool line is final")
+
+	x.rc.Fold = FoldTruncated
+	require.Equal(t, []string{"  ◆ echo probe code request", "    ok"}, x.rows(), "the truncated form shows the output")
 }
 
 func TestTranslateToolLineFailure(t *testing.T) {
 	x := newTx(t)
 	x.feed(toolStart("c1", "bash", `{"command":"false"}`, 0), toolEnd("c1", "bash", true, "exit status 1\nmore output", 2500))
 	row := x.rows()[0]
-	require.True(t, strings.HasPrefix(row, "  ● bash  false"), row)
+	require.True(t, strings.HasPrefix(row, "  ◆ Ran false"), row)
 	require.True(t, strings.HasSuffix(row, "✗ exit status 1"), row)
 }
 
 func TestTranslateToolEndWithoutStart(t *testing.T) {
 	x := newTx(t)
 	x.feed(toolEnd("c9", "read", false, "x", 0))
-	rows := x.rows()
-	require.Equal(t, 2, len(rows))
-	require.True(t, strings.HasSuffix(rows[0], "✓"), "no duration is known: %q", rows[0])
+	require.Equal(t, []string{"  ◆ Read"}, x.rows(), "the call is unknown, so the row has the verb only")
+	x.rc.Fold = FoldTruncated
+	require.Equal(t, []string{"  ◆ Read", "    x"}, x.rows())
 }
 
 func TestTranslateParallelToolsFinishInAnyOrder(t *testing.T) {
 	x := newTx(t)
 	x.feed(toolStart("a", "one", `{}`, 0), toolStart("b", "two", `{}`, 0))
 	x.feed(toolEnd("b", "two", false, "", 100))
-	require.Zero(t, x.tr.Committed(), "the later tool cannot pass the running one")
+	require.Zero(t, x.tr.Frontier(), "the later tool cannot pass the running one")
 	x.feed(toolEnd("a", "one", false, "", 200))
-	require.Equal(t, 2, x.tr.Committed())
+	require.Equal(t, 2, x.tr.Frontier())
 	rows := x.rows()
-	require.True(t, strings.Contains(rows[0], "one") && strings.Contains(rows[2], "two"), "%q", rows)
+	require.True(t, strings.Contains(rows[0], "one") && strings.Contains(rows[1], "two"), "%q", rows)
 }
 
 func TestTranslateRetryNote(t *testing.T) {
@@ -418,11 +441,11 @@ func TestTranslateCancelMarkerAtSettleOnly(t *testing.T) {
 	x.feed(&protocol.AgentSettled{})
 	rows := x.rows()
 	require.Equal(t, []string{
-		"  ◆ The probe lives in client.go. It dials the socket, then",
+		"  The probe lives in client.go. It dials the socket, then",
 		"  ⊘ Cancelled by you. Partial reply kept above.",
 		"",
 	}, rows[len(rows)-3:])
-	require.Equal(t, x.tr.Len(), x.tr.Committed())
+	require.Equal(t, x.tr.Len(), x.tr.Frontier())
 
 	// The next run starts clean: no second marker.
 	x.feed(&protocol.AgentStart{}, &protocol.AgentSettled{})
@@ -454,11 +477,11 @@ func TestTranslateSettleClosesWhatIsStillOpen(t *testing.T) {
 	x.feed(assistantStart("m", 0))
 	x.feed(update(protocol.TextDeltaEvent{ContentIndex: 0, Delta: "half"}))
 	x.feed(toolStart("c1", "bash", `{"command":"sleep 99"}`, 0))
-	require.Zero(t, x.tr.Committed())
+	require.Zero(t, x.tr.Frontier())
 	x.feed(&protocol.AgentSettled{})
-	require.Equal(t, x.tr.Len(), x.tr.Committed(), "an open block would hold the commit frontier forever")
+	require.Equal(t, x.tr.Len(), x.tr.Frontier(), "an open block would hold the frontier forever")
 	rows := strings.Join(x.rows(), "\n")
-	require.Contains(t, rows, "◆ half")
+	require.Contains(t, rows, "  half\n")
 	require.Contains(t, rows, "✗ interrupted")
 }
 
@@ -492,14 +515,14 @@ func TestTranslateMidMessageSnapshotThenLiveEvents(t *testing.T) {
 		StopReason: protocol.StopPending,
 	}
 	x.apply(x.trl.Snapshot(SnapshotMsg{Stream: &protocol.ACPStreamBaseline{Message: partial, Open: map[int][]byte{1: []byte("partial rep")}}}))
-	require.Equal(t, []string{"  ∴ done thinking", "", "  ◆ partial rep"}, x.rows())
-	require.Equal(t, 1, x.tr.Committed(), "the closed thinking block is final; the open reply is live")
+	require.Equal(t, []string{"  ◆ Thought", "", "  partial rep"}, x.rows())
+	require.Equal(t, 1, x.tr.Frontier(), "the closed thinking block is final; the open reply is live")
 
 	x.feed(update(protocol.TextDeltaEvent{ContentIndex: 1, Delta: "ly"}))
-	require.Equal(t, "  ◆ partial reply", x.rows()[2])
+	require.Equal(t, "  partial reply", x.rows()[2])
 	x.feed(update(protocol.TextEndEvent{ContentIndex: 1, Content: "partial reply"}), assistantEnd("m", protocol.StopStop, 0, protocol.Thinking{Thinking: "done thinking"}, protocol.Text{Text: "partial reply"}))
-	require.Equal(t, "  ◆ partial reply", x.rows()[2])
-	require.Equal(t, x.tr.Len(), x.tr.Committed())
+	require.Equal(t, "  partial reply", x.rows()[2])
+	require.Equal(t, x.tr.Len(), x.tr.Frontier())
 	require.Equal(t, 1, strings.Count(strings.Join(x.rows(), "\n"), "◆"))
 }
 
@@ -526,10 +549,10 @@ func TestTranslateSnapshotHistory(t *testing.T) {
 	rows := x.rows()
 	require.Equal(t, promptRow("run echo", promptClock), rows[0])
 	joined := strings.Join(rows, "\n")
-	for _, want := range []string{"∴ plan", "◆ Running it.", "m · ↑1.0k ↓50 · $0.002", "● echo  hi", "✓", "◆ Done."} {
+	for _, want := range []string{"◆ Thought", "  Running it.", "m · ↑1.0k ↓50 · $0.002", "◆ echo hi", "  Done."} {
 		require.Contains(t, joined, want)
 	}
-	require.Equal(t, x.tr.Len(), x.tr.Committed(), "history is final")
+	require.Equal(t, x.tr.Len(), x.tr.Frontier(), "history is final")
 }
 
 func TestTranslateSnapshotUnresolvedToolCall(t *testing.T) {
@@ -561,14 +584,9 @@ func TestTranslatorBlockIDsAreUniqueAcrossSessions(t *testing.T) {
 	require.Equal(t, 3, x.tr.Len(), "a tool call id that repeats in a new session still gets a new block")
 }
 
-func TestThinkingToggleAPI(t *testing.T) {
-	trl := NewTranslator(TranslatorOptions{})
-	require.False(t, trl.View().ThinkingHidden(), "thinking is shown by default")
-	require.True(t, trl.ToggleThinking())
-	require.True(t, trl.View().ThinkingHidden())
-	require.False(t, trl.ToggleThinking())
-	require.Equal(t, "Thinking blocks: hidden · ctrl+t to show", ThinkingNotice(true))
-	require.Equal(t, "Thinking blocks: visible · ctrl+t to hide", ThinkingNotice(false))
+func TestThinkingNotice(t *testing.T) {
+	require.Equal(t, "Thinking blocks: expanded · ctrl+t to collapse", ThinkingNotice(true))
+	require.Equal(t, "Thinking blocks: collapsed · ctrl+t to expand", ThinkingNotice(false))
 }
 
 // A reply whose reasoning summary is empty gets no thinking block: there is
@@ -581,17 +599,30 @@ func TestTranslateEmptyThinkingMakesNoBlock(t *testing.T) {
 	x.feed(textParts(1, "ok")...)
 	x.feed(assistantEnd("m", protocol.StopStop, 1000, protocol.Thinking{Thinking: ""}, protocol.Text{Text: "ok"}))
 	require.Equal(t, []string{
-		"  ◆ ok",
-		"    m · 1.0s · ↑12.4k ↓1.8k · $0.004",
+		"  ok",
+		"  m · 1.0s · ↑12.4k ↓1.8k · $0.004",
 		"",
 	}, x.rows())
-	x.trl.View().SetThinkingHidden(true)
-	require.NotContains(t, strings.Join(plain(x.tr.CommittedLines(x.rc)), "\n"), "Thinking...")
+	require.NotContains(t, strings.Join(plain(finalRows(x.tr, x.rc)), "\n"), "Thought", "no thinking row for an empty summary")
 }
 
 func TestTranslateEmptyThinkingOnlyInEndEvent(t *testing.T) {
 	x := newTx(t)
 	x.feed(assistantStart("m", 0))
 	x.feed(assistantEnd("m", protocol.StopStop, 1000, protocol.Thinking{Thinking: " \n"}, protocol.Text{Text: "ok"}))
-	require.Equal(t, []string{"  ◆ ok", "    m · 1.0s · ↑12.4k ↓1.8k · $0.004", ""}, x.rows())
+	require.Equal(t, []string{"  ok", "  m · 1.0s · ↑12.4k ↓1.8k · $0.004", ""}, x.rows())
+}
+
+// A block that ends with an empty row already separates the reply from the
+// step before it, so the reply adds no second empty row.
+func TestTranslateReplyAfterANoteHasOneEmptyRow(t *testing.T) {
+	x := newTx(t)
+	x.feed(toolStart("c1", "bash", `{"command":"ls"}`, 0), toolEnd("c1", "bash", false, "", 100))
+	x.feed(&protocol.AutoRetryStart{Attempt: 1, MaxAttempts: 3, DelayMs: 1000, ErrorMessage: "rate limit"})
+	x.feed(assistantStart("m", 200))
+	x.feed(textParts(0, "Back.")...)
+	rows := x.rows()
+	require.Equal(t, "  ◆ Ran ls", rows[0])
+	require.Equal(t, []string{"", "  Back."}, rows[len(rows)-2:])
+	require.NotEqual(t, "", rows[len(rows)-3], "no second empty row")
 }

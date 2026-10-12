@@ -1,0 +1,173 @@
+<!doctype html>
+<html lang="vi">
+<head>
+<meta charset="utf-8">
+<title>Ask: ba kiểu mở rộng output tool</title>
+<style>
+  body { background:#1b1d23; color:#ddd; font-family: -apple-system, sans-serif; margin:24px; }
+  h1 { font-size:20px; } h2 { font-size:17px; margin:0 0 6px; }
+  .row { display:flex; gap:24px; flex-wrap:wrap; }
+  .col { flex:1; min-width:560px; max-width:640px; }
+  .note { color:#aab; font-size:14px; line-height:1.5; margin:6px 0 10px; }
+  .term { background:#0d0e12; border:1px solid #333; border-radius:8px; padding:12px 14px;
+          font:13px/1.45 "SF Mono", Menlo, monospace; white-space:pre; height:520px; overflow:auto;
+          outline:none; }
+  .term:focus { border-color:#6a8cff; }
+  .bar { background:#2a2d36; border-radius:8px 8px 0 0; padding:6px 10px; font-size:12px; color:#999; }
+  .btns { margin:8px 0; } button { background:#30344a; color:#ddd; border:1px solid #556; border-radius:6px;
+          padding:5px 10px; margin-right:6px; cursor:pointer; font-size:13px; }
+  button:hover { background:#3d4260; }
+  .u { color:#7fb3ff; } .ok { color:#5fd38d; } .bad { color:#ff6b6b; } .m { color:#777; }
+  .t { color:#e6c07b; font-weight:bold; } .add { color:#5fd38d; } .del { color:#ff6b6b; }
+  .hunk { color:#c678dd; } .cur { background:#26304d; } .rail { color:#e6c07b; }
+  .flash { color:#e6c07b; }
+  kbd { background:#333; border:1px solid #555; border-radius:4px; padding:1px 5px; font-size:12px; }
+  table { border-collapse:collapse; margin-top:16px; } td,th { border:1px solid #444; padding:6px 10px; font-size:14px; }
+</style>
+</head>
+<body>
+<h1>Ask: ba kiểu mở rộng output tool (mô phỏng)</h1>
+<div class="note">Nhấp chuột vào một khung terminal rồi bấm phím thật, hoặc dùng các nút bên dưới khung. Cả 2 khung có cùng một phiên: agent chạy <b>bash</b> (go test), <b>read</b> (đọc file), <b>edit</b> (sửa file).</div>
+
+<div class="row">
+  <div class="col">
+    <h2>Kiểu A: một phím mở hoặc gập tất cả (Pi)</h2>
+    <div class="note">Bấm <kbd>ctrl+o</kbd>: <b>cả 3 tool</b> cùng mở. Bấm lại thì cả 3 cùng gập.</div>
+    <div class="bar">ask · leader 7c1e · ~/src/p</div>
+    <div class="term" id="A" tabindex="0"></div>
+    <div class="btns"><button onclick="aToggle()">ctrl+o</button></div>
+  </div>
+  <div class="col">
+    <h2>Kiểu B: chọn từng tool để mở (Grok)</h2>
+    <div class="note">Bấm <kbd>ctrl+o</kbd> để vào chế độ chọn, <kbd>↑</kbd><kbd>↓</kbd> để chọn tool, <kbd>Enter</kbd> để mở hoặc gập <b>chỉ tool đó</b>, <kbd>Esc</kbd> để thoát.</div>
+    <div class="bar">ask · leader 7c1e · ~/src/p</div>
+    <div class="term" id="B" tabindex="0"></div>
+    <div class="btns">
+      <button onclick="bKey('ctrl+o')">ctrl+o</button><button onclick="bKey('up')">↑</button>
+      <button onclick="bKey('down')">↓</button><button onclick="bKey('enter')">Enter</button>
+      <button onclick="bKey('esc')">Esc</button>
+    </div>
+  </div>
+  <div class="col">
+    <h2>Kiểu C: màn hình transcript riêng (Claude Code)</h2>
+    <div class="note">Màn hình chính luôn gọn và <b>không bao giờ thay đổi</b>. Bấm <kbd>ctrl+o</kbd> để mở một màn hình riêng (alt-screen) hiện mọi output đầy đủ, cuộn bằng <kbd>↑</kbd><kbd>↓</kbd>. Bấm <kbd>ctrl+o</kbd> hoặc <kbd>Esc</kbd> để quay về đúng chỗ cũ.</div>
+    <div class="bar" id="Cbar">ask · leader 7c1e · ~/src/p</div>
+    <div class="term" id="C" tabindex="0"></div>
+    <div class="btns"><button onclick="cKey('ctrl+o')">ctrl+o</button><button onclick="cKey('esc')">Esc</button></div>
+  </div>
+</div>
+
+<table>
+<tr><th></th><th>A (Pi)</th><th>B (Grok)</th><th>C (Claude Code)</th></tr>
+<tr><td>Bấm một lần mở được</td><td>tất cả tool</td><td>chỉ tool đang chọn</td><td>không mở tại chỗ; xem tất cả ở màn hình riêng</td></tr>
+<tr><td>Số phím phải nhớ</td><td>1</td><td>5</td><td>2 (ctrl+o, Esc)</td></tr>
+<tr><td>Khi đang ở chế độ chọn</td><td>không có chế độ chọn</td><td>ô nhập bị khóa, không gõ prompt được</td><td>trong màn hình transcript thì không gõ prompt; quay về là gõ được</td></tr>
+<tr><td>Tool đã cuộn lên khỏi màn hình</td><td>vẫn mở hoặc gập bình thường</td><td>con trỏ ▶ nằm ngoài màn hình, phải tự cuộn terminal lên để tìm</td><td>tốt: màn hình transcript tự cuộn được</td></tr>
+<tr><td>Scrollback chính bị xóa và vẽ lại</td><td>có, mỗi lần bấm</td><td>có, mỗi lần mở/gập</td><td>không bao giờ</td></tr>
+<tr><td>Công sức làm</td><td>nhỏ (dùng lại cách ctrl+t đang làm)</td><td>lớn</td><td>vừa: thêm một màn hình alt-screen, nhưng không vẽ lại scrollback</td></tr>
+</table>
+
+<script>
+const esc = s => s.replace(/&/g,'&amp;').replace(/</g,'&lt;');
+const bashFull = [];
+for (let i=1;i<=41;i++) bashFull.push(`ok    example.com/pkg${String(i).padStart(2,'0')}  0.00${i%9+1}s`);
+bashFull.push('--- FAIL: TestParse (0.00s)','    parser_test.go:22: want 3, got 2','FAIL  example.com/p  0.012s','FAIL');
+const readFull = ['package parser','','import "strings"','','// Count returns the number of fields.','func Count(s string) int {','\tfields := strings.Split(s, ",")','\tn := 0'];
+for (let i=9;i<=40;i++) readFull.push(`\t// dòng ${i} của parser.go`);
+const diff = [['hunk','@@ -20,3 +20,5 @@'],['','   for _, f := range fields {'],['del','-      n++'],['add','+      if f != "" {'],['add','+          n++'],['add','+      }'],['','   }']];
+
+const tools = [
+  {name:'bash', arg:'go test ./...', st:'<span class="bad">✗ exit 1</span>'},
+  {name:'read', arg:'parser.go', st:'<span class="ok">✓ 0.0s</span>'},
+  {name:'edit', arg:'parser.go', st:'<span class="ok">✓ +2 -1 0.0s</span>'},
+];
+const pad = (l, r, w=74) => l + ' '.repeat(Math.max(1, w - l.replace(/<[^>]+>/g,'').length - r.replace(/<[^>]+>/g,'').length)) + r;
+
+function toolBody(i, open, hint) {
+  const o = [];
+  if (i===0) {
+    if (open) bashFull.forEach(l=>o.push('    '+esc(l)));
+    else { o.push(`    <span class="m">… 41 dòng trước (${hint})</span>`); bashFull.slice(-4).forEach(l=>o.push('    '+esc(l))); }
+  } else if (i===1) {
+    if (open) readFull.forEach(l=>o.push('    '+esc(l)));
+    else { readFull.slice(0,3).forEach(l=>o.push('    '+esc(l))); o.push(`    <span class="m">… ${readFull.length-3} dòng nữa (${hint})</span>`); }
+  } else {
+    if (open) diff.forEach(([c,l])=>o.push(`    <span class="${c}">${esc(l)}</span>`));
+    else o.push(`    <span class="m">… diff ${diff.length} dòng (${hint})</span>`);
+  }
+  return o;
+}
+
+function render(id, opens, cursor, rail, flash, aMode) {
+  const o = [];
+  o.push('<span class="t">◢◤ ask</span>   v0.1.0 · leader 7c1e · ~/src/p');
+  o.push('<span class="m">  model  anthropic/claude-sonnet-5-5</span>','');
+  o.push(pad('  <span class="u">❯ chạy test rồi sửa lỗi trong parser.go</span>','<span class="m">14:02</span>'),'');
+  tools.forEach((t,i)=>{
+    const mark = cursor===i ? '<span class="rail">▶</span> ' : '  ';
+    const line = pad(`${mark}<span class="ok">●</span> <b>${t.name}</b>  ${esc(t.arg)}`, t.st);
+    o.push(cursor===i ? `<span class="cur">${line}</span>` : line);
+    const hint = aMode ? (opens[i] ? 'ctrl+o để gập' : 'ctrl+o để mở') : (opens[i] ? 'Enter để gập' : 'Enter để mở');
+    o.push(...toolBody(i, opens[i], hint));
+    if (opens[i]) o.push(`    <span class="m">(${hint})</span>`);
+    o.push('');
+  });
+  o.push('  <span class="t">◆</span> Đã sửa lỗi đếm token trong parser.go.','<span class="m">    claude-sonnet-5-5 · 4.2s · ↑5.1k ↓210 · $0.004</span>','');
+  o.push('<span class="m">-- vùng live --</span>');
+  o.push(rail ? `<span class="rail">┊ ${rail}</span>` : (flash ? `<span class="flash">┊ ${flash}</span>` : ''));
+  o.push('╭' + '─'.repeat(72) + '╮');
+  o.push(rail ? '│ <span class="m">(ô nhập bị khóa khi đang chọn tool)</span>' + ' '.repeat(34) + '│'
+              : '│ ❯ ▌<span class="m">Ask anything  ·  / commands  ·  ctrl+l model</span>' + ' '.repeat(23) + '│');
+  o.push('╰' + '─'.repeat(72) + '╯');
+  const el = document.getElementById(id);
+  el.innerHTML = o.join('\n');
+  if (cursor!=null) { const c = el.querySelector('.cur'); if (c) c.scrollIntoView({block:'nearest'}); }
+  else el.scrollTop = el.scrollHeight;
+}
+
+// Kiểu A
+let aOpen = false, aFlash = '';
+function aToggle(){ aOpen=!aOpen; aFlash = 'tool output: ' + (aOpen?'mở tất cả':'gập tất cả'); drawA();
+  setTimeout(()=>{aFlash='';drawA();},2000); }
+function drawA(){ render('A',[aOpen,aOpen,aOpen],null,'',aFlash,true); }
+document.getElementById('A').addEventListener('keydown',e=>{ if(e.ctrlKey&&e.key==='o'){e.preventDefault();aToggle();} });
+
+// Kiểu B
+let bOpen=[false,false,false], bSel=null;
+function bKey(k){
+  if (k==='ctrl+o') bSel = bSel==null ? 2 : null;
+  else if (bSel!=null) {
+    if (k==='up') bSel=Math.max(0,bSel-1);
+    if (k==='down') bSel=Math.min(2,bSel+1);
+    if (k==='enter') bOpen[bSel]=!bOpen[bSel];
+    if (k==='esc') bSel=null;
+  }
+  drawB();
+}
+function drawB(){ render('B',bOpen,bSel, bSel!=null ? 'chọn tool · ↑↓ di chuyển · Enter mở/gập · Esc thoát' : '', '', false); }
+document.getElementById('B').addEventListener('keydown',e=>{
+  const m={ArrowUp:'up',ArrowDown:'down',Enter:'enter',Escape:'esc'};
+  if(e.ctrlKey&&e.key==='o'){e.preventDefault();bKey('ctrl+o');}
+  else if(m[e.key]){e.preventDefault();bKey(m[e.key]);}
+});
+// Kiểu C
+let cDetail=false;
+function cKey(k){ if(k==='ctrl+o') cDetail=!cDetail; if(k==='esc') cDetail=false; drawC(); }
+function drawC(){
+  const bar=document.getElementById('Cbar');
+  if(!cDetail){ bar.textContent='ask · leader 7c1e · ~/src/p'; render('C',[false,false,false],null,'','',true); return; }
+  bar.textContent='ask · transcript chi tiết (alt-screen)';
+  const o=['<span class="rail">  Showing detailed transcript · ctrl+o hoặc Esc để quay về · ↑↓ cuộn</span>',''];
+  o.push('  <span class="u">❯ chạy test rồi sửa lỗi trong parser.go</span>','');
+  tools.forEach((t,i)=>{ o.push(pad(`  <span class="ok">●</span> <b>${t.name}</b>  ${esc(t.arg)}`,t.st)); o.push(...toolBody(i,true,'')); o.push(''); });
+  o.push('  <span class="t">◆</span> Đã sửa lỗi đếm token trong parser.go.');
+  const el=document.getElementById('C'); el.innerHTML=o.join('\n'); el.scrollTop=0;
+}
+document.getElementById('C').addEventListener('keydown',e=>{
+  if(e.ctrlKey&&e.key==='o'){e.preventDefault();cKey('ctrl+o');}
+  else if(e.key==='Escape'){e.preventDefault();cKey('esc');}
+});
+drawA(); drawB(); drawC();
+</script>
+</body>
+</html>

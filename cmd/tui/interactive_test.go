@@ -237,18 +237,21 @@ func (a *askTerm) requireRestored() {
 	require.Equal(a.t, a.initial, now, "the terminal is restored")
 }
 
-// requireLeaderFooter checks the leader id in the footer against the id that
-// the leader of the home reports, so a fallback cannot pass.
-func requireLeaderFooter(t *testing.T, a *askTerm, bin, home string) string {
+// requireLeaderHeader checks the leader id in the header row against the id
+// that the leader of the home reports, so a fallback cannot pass.
+func requireLeaderHeader(t *testing.T, a *askTerm, bin, home string) string {
 	t.Helper()
-	// The editor shows while the leader starts; the header comes with the link.
-	a.waitText("ask   v")
+	// The header row is on the screen from the first frame; the link comes later.
+	a.waitText("◢◤ ask")
+	// The label "starting" turns into the leader id once the link is up, and the
+	// leader runs by then.
+	a.waitText("● leader")
 	ctx, cancel := context.WithTimeout(context.Background(), clientWait)
 	defer cancel()
 	st, err := leader.Status(ctx, e2eConnect(home, bin))
 	require.NoError(t, err)
 	short := tui.ShortID(st.InstanceID)
-	a.waitFor("the leader footer", func(rows []string) bool {
+	a.waitFor("the leader in the header row", func(rows []string) bool {
 		for _, r := range rows {
 			if strings.Contains(r, "⌂") && strings.Contains(r, "leader "+short) {
 				return true
@@ -264,16 +267,18 @@ func TestInteractiveStartsLeaderAndShowsEditor(t *testing.T) {
 	bin, home := newE2EHome(t)
 	a := startAskTerm(t, bin, home, askTermOptions{})
 	a.waitText("Ask anything")
-	a.waitText("ask   v")
-	require.Contains(t, a.rawOutput(), "Starting leader…", "the starting state shows before the editor")
+	a.waitText("◢◤ ask")
+	require.Contains(t, a.rawOutput(), "Starting leader…", "the starting state shows before the link is up")
 	a.waitFor("the starting state to go", func(rows []string) bool { return !containsRow(rows, "Starting leader") })
-	requireLeaderFooter(t, a, bin, home)
+	requireLeaderHeader(t, a, bin, home)
 	require.Len(t, leaderProcesses(bin), 1, "ask started one leader")
 	a.requireRaw()
+	id := onlySessionID(t, bin, home)
 
 	a.write("\x04") // ctrl+d on an empty draft
 	require.Equal(t, 0, a.waitExit(), a.stderr.String())
 	a.requireRestored()
+	a.requireMainScreenRestored(id)
 	a.waitText("Detached from session")
 	require.False(t, containsRow(a.rows(), "Ask anything"), "the editor is gone after the quit")
 	require.Empty(t, a.stderr.String())
@@ -285,9 +290,9 @@ func TestInteractiveFallsBackInProcess(t *testing.T) {
 	makeHomeUnsafe(t, home)
 	a := startAskTerm(t, bin, home, askTermOptions{})
 	a.waitText("○ in-process")
-	a.waitText("in-process agent")
 	a.write("hello there\r")
-	a.waitText("◆ hello there")
+	// A reply has no glyph; the text sits in the block pane under the prompt band.
+	a.waitFor("the reply", func(rows []string) bool { return hasRowPrefix(rows, "  hello there") })
 	require.Empty(t, leaderProcesses(bin), "no leader process is started")
 
 	// Quitting stops the run, and the screen says so.
@@ -297,6 +302,14 @@ func TestInteractiveFallsBackInProcess(t *testing.T) {
 	require.Equal(t, 0, a.waitExit(), a.stderr.String())
 	a.requireRestored()
 	a.waitText("Run stopped. Session ended.")
+	require.False(t, a.emu.IsAltScreen(), "the main screen is back")
+	var last string
+	for _, r := range a.rows() {
+		if r != "" {
+			last = r
+		}
+	}
+	require.True(t, strings.HasPrefix(last, "ask: session "), "the exit line ends the output: %q", last)
 }
 
 func TestInteractiveSignalsRestoreTerminal(t *testing.T) {
@@ -313,7 +326,7 @@ func TestInteractiveSignalsRestoreTerminal(t *testing.T) {
 			bin, home := newE2EHome(t)
 			a := startAskTerm(t, bin, home, askTermOptions{})
 			a.waitText("Ask anything")
-			requireLeaderFooter(t, a, bin, home)
+			requireLeaderHeader(t, a, bin, home)
 			a.requireRaw()
 			require.NoError(t, a.cmd.Process.Signal(tc.sig))
 			require.Equal(t, tc.code, a.waitExit(), a.stderr.String())
@@ -328,7 +341,7 @@ func TestInteractiveQuitDetachesRunContinues(t *testing.T) {
 	prompt := strings.Repeat("slow words ", 10)
 	a := startAskTerm(t, bin, home, askTermOptions{}, pacedEnv(8)...)
 	a.waitText("Ask anything")
-	instance := requireLeaderFooter(t, a, bin, home)
+	instance := requireLeaderHeader(t, a, bin, home)
 	a.write(prompt + "\r")
 	a.waitText("Working…")
 
@@ -380,7 +393,7 @@ func TestInteractiveEarlyInputKept(t *testing.T) {
 	a.waitFor("the early text in the editor", func(rows []string) bool {
 		return containsRow(rows, "❯ typed early")
 	})
-	requireLeaderFooter(t, a, bin, home)
+	requireLeaderHeader(t, a, bin, home)
 	// The text is a draft and nothing was sent.
 	require.False(t, containsRow(a.rows(), "Working"))
 	a.write("\x03") // clears the draft
@@ -395,7 +408,7 @@ func TestInteractiveEarlyInputKept(t *testing.T) {
 func TestInteractiveShiftEnterInsertsNewline(t *testing.T) {
 	bin, home := newE2EHome(t)
 	a := startAskTerm(t, bin, home, askTermOptions{})
-	requireLeaderFooter(t, a, bin, home)
+	requireLeaderHeader(t, a, bin, home)
 	// The program asks the terminal for key disambiguation, which is what
 	// makes shift+enter reach it as its own key.
 	require.Contains(t, a.rawOutput(), "\x1b[>1u")

@@ -8,7 +8,7 @@ import (
 )
 
 // Editor layout: where the draft wraps, where the cursor is, and the rows that
-// the layout draws inside the editor box.
+// the layout draws inside the prompt pane.
 //
 // Rows wrap at word boundaries; a word longer than a row breaks at the column
 // limit. Width is counted in terminal columns by grapheme, so a wide
@@ -174,10 +174,21 @@ func (e *Editor) moveVertical(dir int) bool {
 	return true
 }
 
+// MoveCursorTo puts the cursor at a cell of the draft. row counts the visual
+// rows of the draft from the first one, and col counts the columns of the text
+// area, after the prompt marker. A cell outside the draft goes to the nearest
+// cell inside it. The cursor never lands inside a paste marker.
+func (e *Editor) MoveCursorTo(row, col int) {
+	rows := layoutRows(e.text, e.textW)
+	row = min(max(row, 0), len(rows)-1)
+	e.endChains()
+	e.moveTo(e.snapToMarkerStart(offsetAt(e.text, rows[row], max(col, 0), e.textW)))
+}
+
 // Slot returns the editor rows and the cursor for the layout. Rows fit
-// BoxInnerWidth(width); the layout draws the box.
+// PromptInnerWidth(width); the layout adds the left pad.
 func (e *Editor) Slot(width int, th *Theme) EditorSlot {
-	textW := max(1, BoxInnerWidth(width)-promptWidth)
+	textW := max(1, PromptInnerWidth(width)-promptWidth)
 	prompt := th.Render(RoleAccent, GlyphUser) + " "
 	indent := strings.Repeat(" ", promptWidth)
 

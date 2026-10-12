@@ -1,0 +1,135 @@
+<!doctype html>
+<html lang="vi"><head><meta charset="utf-8"><title>Ask theo kiểu Grok (alt-screen) – mô phỏng</title>
+<style>
+body{background:#1b1d23;color:#ddd;font-family:-apple-system,sans-serif;margin:24px}
+h1{font-size:20px}.note{color:#aab;font-size:14px;line-height:1.6;max-width:1000px}
+.term{background:#0d0e12;border:1px solid #333;border-radius:8px;font:13px/1.45 "SF Mono",Menlo,monospace;
+ width:88ch;height:36em;overflow:hidden;outline:none;padding:6px 10px;position:relative;user-select:text}
+.term:focus{border-color:#6a8cff}
+.ln{white-space:pre;height:1.45em}
+.m{color:#777}.u{color:#7fb3ff}.ok{color:#5fd38d}.bad{color:#ff6b6b}.acc{color:#e6c07b}.th{color:#b9a3e3}.hook{color:#56c2c2}
+.sel{background:#1f2740}.band{background:#22252d}.add{color:#5fd38d}.del{color:#ff6b6b}.hk{color:#999}.bar{color:#e6c07b}
+.ln[data-hd="1"]{cursor:pointer}.ln[data-hd="1"]:hover{background:#171b28}
+.cbtn{color:#7fb3ff;cursor:pointer}.cbtn:hover{background:#30344a}
+.toast{position:absolute;right:14px;bottom:44px;background:#30344a;color:#e6c07b;padding:3px 10px;border-radius:4px;display:none}
+.btns{margin:10px 0}button{background:#30344a;color:#ddd;border:1px solid #556;border-radius:6px;padding:5px 10px;margin:0 6px 6px 0;cursor:pointer}
+kbd{background:#333;border:1px solid #555;border-radius:4px;padding:1px 5px;font-size:12px}
+</style></head><body>
+<h1>Ask theo kiểu Grok: alt-screen, mặc định gọn, mở từng block, dùng được chuột</h1>
+<div class="note">
+<b>Chuột:</b> lăn chuột để cuộn · click vào một block để chọn · click vào <u>dòng đầu</u> của tool / thinking / hook để mở toàn màn hình (giống Enter), click <b>← Quay về</b> hoặc Esc để quay lại · bôi đen text rồi thả chuột là tự copy · click vào ô nhập để gõ.<br>
+<b>Phím:</b> <kbd>Tab</kbd> chuyển ô nhập ↔ danh sách block · <kbd>j</kbd>/<kbd>k</kbd> chọn · <kbd>e</kbd> gập/mở (Gọn → Tóm tắt → Đầy đủ) · <kbd>E</kbd> tất cả · <kbd>ctrl+e</kbd> mọi thinking · <kbd>Enter</kbd> xem block toàn màn hình (<kbd>Esc</kbd> quay về).<br>
+<b>Hook (H1):</b> mỗi hook là một dòng như tool, ký hiệu <span class="hook">⚓</span>, gập/mở để xem output của hook.</div>
+<div class="btns">
+<button onclick="key('Tab')">Tab</button><button onclick="key('k')">k ↑</button><button onclick="key('j')">j ↓</button>
+<button onclick="key('e')">e</button><button onclick="key('E')">E</button><button onclick="key('ctrl+e')">ctrl+e</button>
+<button onclick="key('Enter')">Enter</button><button onclick="key('Escape')">Esc</button></div>
+<div class="term" id="t" tabindex="0"></div>
+<script>
+const W=88,H=36;const esc=s=>s.replace(/&/g,'&amp;').replace(/</g,'&lt;');
+const vis=s=>s.replace(/<[^>]+>/g,'').replace(/&lt;/g,'<').replace(/&amp;/g,'&').length;
+const pad=(l,r)=>l+' '.repeat(Math.max(1,W-2-vis(l)-vis(r)))+r;
+const seq=[];for(let i=1;i<=40;i++)seq.push(String(i));
+const file=['package parser','','import "strings"','','// Count returns the number of fields.','func Count(s string) int {','\tfields := strings.Split(s, ",")','\tn := 0','\tfor _, f := range fields {','\t\tn++','\t}','\treturn n','}'];
+const blocks=[
+ {k:'user',text:['chạy seq 1 40 rồi đọc parser.go và sửa lỗi đếm field rỗng']},
+ {k:'think',title:'Thought for 0.5s',body:['Người dùng muốn chạy lệnh trước.','Sau đó đọc parser.go.','Lỗi có thể nằm ở chỗ đếm cả field rỗng.','Cần thêm điều kiện f != "".'],mode:0},
+ {k:'tool',verb:'Ran',head:'print numbers 1 through 40',st:'',sum:'',out:['$ seq 1 40',...seq],mode:0},
+ {k:'tool',verb:'Read',head:'1 file',st:'',sum:'',out:['parser.go',...file],mode:0},
+ {k:'hook',head:'PreToolUse hook (project/lint-guard)',desc:'Chạy gofmt kiểm tra file trước khi agent sửa',st:'<span class="ok">✓ cho phép</span> <span class="m">0.1s</span>',sum:'Edit parser.go',
+  out:['<span class="m">Sự kiện   </span> PreToolUse','<span class="m">Áp dụng   </span> tool edit, write  ·  file *.go','<span class="m">Tác dụng  </span> Chạy gofmt kiểm tra file trước khi agent sửa','<span class="m">Nguồn     </span> .ask/hooks.json  (hook của project)','<span class="m">Lệnh      </span> ./scripts/lint-guard.sh   (timeout 5s)','<span class="m">Kết quả   </span> <span class="ok">cho phép</span> · exit 0 · 0.1s','','<span class="m">── output ──</span>','lint-guard: parser.go đã đúng định dạng'],raw:true,mode:0},
+ {k:'tool',verb:'Edited',head:'parser.go',st:'<span class="add">+3</span> <span class="del">-1</span>',sum:'',
+  out:['<span class="th">@@ -9,3 +9,5 @@</span>','  \tfor _, f := range fields {','<span class="del">- \t\tn++</span>','<span class="add">+ \t\tif f != "" {</span>','<span class="add">+ \t\t\tn++</span>','<span class="add">+ \t\t}</span>','  \t}'],raw:true,mode:0},
+ {k:'hook',head:'PreToolUse hook (user/no-rm)',desc:'Chặn lệnh xóa đệ quy (rm -rf) trong repo',st:'<span class="bad">✗ chặn</span> <span class="m">0.0s</span>',sum:'$ rm -rf build',
+  out:['<span class="m">Sự kiện   </span> PreToolUse','<span class="m">Áp dụng   </span> tool bash','<span class="m">Tác dụng  </span> Chặn lệnh xóa đệ quy (rm -rf) trong repo','<span class="m">Nguồn     </span> ~/.ask/hooks.json  (hook của user)','<span class="m">Lệnh      </span> ask-hook-no-rm   (timeout 5s)','<span class="m">Kết quả   </span> <span class="bad">chặn</span> · exit 2 · 0.0s','<span class="m">Lý do     </span> lệnh xóa đệ quy bị cấm trong repo này','','<span class="m">── output ──</span>','no-rm: blocked "rm -rf build"'],raw:true,mode:0},
+ {k:'tool',verb:'Ran',head:'run the test suite',st:'<span class="bad">✗ exit 1</span>',sum:'',out:['$ go test ./...','--- FAIL: TestCount (0.00s)','    parser_test.go:12: want 2, got 3','FAIL  example.com/p  0.01s','FAIL'],mode:0},
+ {k:'agent',text:['Đã sửa <b>Count</b> để bỏ qua field rỗng. Lệnh xóa thư mục build bị hook <span class="hook">no-rm</span> chặn.','Test <span class="u">TestCount</span> vẫn hỏng vì test mong đợi giá trị cũ; anh muốn tôi sửa luôn test không?']},
+];
+let sel=blocks.length-1,focus='prompt',viewer=null,vscroll=0,vtop=null;
+const NAMES=['Gọn','Tóm tắt','Đầy đủ'];
+const plain=s=>s.replace(/<[^>]+>/g,'').replace(/&lt;/g,'<').replace(/&amp;/g,'&');
+function lines(b,i){
+ const s=(i===sel&&focus==='list');const mk=s?'<span class="bar">▌</span>':' ';const o=[];
+ const copy='';
+ const P=(h,cls)=>o.push({h,b:i,cls});
+ if(b.k==='user'){b.text.forEach((t,j)=>P('<span class="band">'+mk+(j?'  ':'❯ ')+esc(t)+' '.repeat(Math.max(0,W-4-t.length))+'</span>'+copy));}
+ else if(b.k==='agent'){b.text.forEach((t,j)=>P(mk+' '+t+(j===0?copy:'')));P(mk+' <span class="m">claude-sonnet-5-5 · 6.2s · ↑8.1k ↓320 · $0.006</span>');}
+ else if(b.k==='think'){
+  if(b.mode===0)P(mk+' <span class="click"><span class="m">◆ <b>'+b.title+'</b></span></span>'+copy,'hd');
+  else{P(mk+' <span class="click"><span class="th">◆ '+b.title+'</span></span>'+copy,'hd');const body=b.mode===1?['…',...b.body.slice(-2)]:b.body;body.forEach(t=>P(mk+' <span class="th">┃</span> <span class="m">'+esc(t)+'</span>'));}
+ } else {
+  const ic=b.k==='hook'?'<span class="hook">⚓</span>':(b.st.includes('bad')?'<span class="bad">◆</span>':'<span class="ok">◆</span>');
+  const head=b.k==='hook'?'<span class="hook">'+esc(b.head)+'</span>':'<b>'+b.verb+'</b> <span class="m">'+esc(b.head)+'</span>';
+  P(pad(mk+' <span class="click">'+ic+' '+head+'</span>'+(b.mode===0&&b.sum?' <span class="hk">· '+esc(b.sum)+'</span>':'')+copy,b.st),'hd');
+  if(b.desc)P(mk+'   <span class="m">'+esc(b.desc)+'</span>','hd');
+  const L=b.out.map(x=>b.raw?x:esc(x));
+  if(b.mode===1){if(L.length<=6)L.forEach(x=>P(mk+'   '+x));else{L.slice(0,3).forEach(x=>P(mk+'   '+x));P(mk+'   <span class="hk">⋮ '+(L.length-6)+' dòng nữa · click hoặc e để mở hết · Enter toàn màn hình</span>','hd');L.slice(-3).forEach(x=>P(mk+'   '+x));}}
+  if(b.mode===2)L.forEach(x=>P(mk+'   '+x));
+ }
+ P('');return o;
+}
+let lastAll=[];
+function draw(){
+ const out=[];const row=(h,a='')=>out.push('<div class="ln" '+a+'>'+h+'</div>');
+ row('<span class="acc">◢◤ ask</span>  <span class="m">leader 7c1e · ~/src/p · claude-sonnet-5-5</span>');
+ row('<span class="m">'+'─'.repeat(W-2)+'</span>');
+ const bodyH=H-9;
+ if(viewer!=null){
+  const b=blocks[viewer];const all=b.k==='think'?b.body.map(esc):b.out.map(x=>b.raw?x:esc(x));
+  row('<span class="cbtn" data-back="1">← Quay về</span>  <span class="bar">'+esc((b.verb?b.verb+' ':'')+(b.head||b.title))+'</span>  <span class="hk">· lăn chuột / ↑↓ cuộn · Esc hoặc click ← để quay về</span>');
+  const v=all.slice(vscroll,vscroll+bodyH-1);v.forEach(x=>row(' '+x));for(let i=v.length;i<bodyH-1;i++)row('');
+ } else {
+  const all=[];const start={};blocks.forEach((b,i)=>{start[i]=all.length;all.push(...lines(b,i));});lastAll=all;
+  const maxTop=Math.max(0,all.length-bodyH);
+  if(vtop==null)vtop=maxTop;
+  if(focus==='list'){const s0=start[sel];if(s0<vtop)vtop=s0;let e0=s0;while(e0+1<all.length&&all[e0+1].b===sel)e0++;if(e0>=vtop+bodyH)vtop=Math.min(maxTop,e0-bodyH+1);}
+  vtop=Math.max(0,Math.min(vtop,maxTop));
+  const v=all.slice(vtop,vtop+bodyH);v.forEach(x=>row(x.h,'data-b="'+x.b+'" data-hd="'+(x.cls==='hd'?1:0)+'"'));for(let i=v.length;i<bodyH;i++)row('');
+ }
+ row('<span class="m">'+'─'.repeat(W-2)+'</span>');
+ const pf=focus==='prompt';
+ row((pf?'<span class="u">❯</span> ▌':'<span class="m">❯ </span>')+'<span class="m">Hỏi gì cũng được · / lệnh</span>','data-prompt="1"');
+ row('');
+ row('<span class="m">'+'─'.repeat(W-2)+'</span>');
+ const b=blocks[sel];const md=(b.mode!=null)?' · đang: '+NAMES[b.mode]:'';
+ row('<span class="hk">'+(viewer!=null?'↑↓ cuộn · Esc quay về':pf?'Tab hoặc click để chọn block · ctrl+e thinking · E mở/gập tất cả':'j/k chọn · e gập/mở'+md+' · E tất cả · Enter toàn màn hình · Tab ô nhập')+'</span>');
+ document.getElementById('t').innerHTML=out.join('')+'<div class="toast" id="toast"></div>';
+}
+function toast(s){const t=document.getElementById('toast');t.textContent=s;t.style.display='block';clearTimeout(window._tt);window._tt=setTimeout(()=>{t.style.display='none'},1500);}
+function cycle(b){if(b.mode!=null)b.mode=(b.mode+1)%3;}
+function key(k){
+ if(viewer!=null){if(k==='Escape')viewer=null;if(k==='j'||k==='ArrowDown')vscroll++;if(k==='k'||k==='ArrowUp')vscroll=Math.max(0,vscroll-1);return draw();}
+ if(k==='Tab')focus=focus==='prompt'?'list':'prompt';
+ else if(k==='ctrl+e'){const th=blocks.filter(b=>b.k==='think');const open=th.some(b=>b.mode===0);th.forEach(b=>b.mode=open?2:0);}
+ else if(focus==='list'){
+  if(k==='j'||k==='ArrowDown')sel=Math.min(blocks.length-1,sel+1);
+  if(k==='k'||k==='ArrowUp')sel=Math.max(0,sel-1);
+  const b=blocks[sel];
+  if(k==='e')cycle(b);
+  if(k==='E'){const f=blocks.filter(x=>x.mode!=null);const any=f.some(x=>x.mode===0);f.forEach(x=>x.mode=any?2:0);}
+  if(k==='Enter'&&(b.out||b.body)){viewer=sel;vscroll=0;}
+  if(k==='Escape')focus='prompt';
+ }
+ draw();
+}
+const T=document.getElementById('t');
+T.addEventListener('keydown',e=>{let k=e.key;if(e.ctrlKey&&k==='e')k='ctrl+e';
+ if(['Tab','j','k','e','E','ctrl+e','Enter','Escape','ArrowUp','ArrowDown'].includes(k)){e.preventDefault();key(k);}});
+T.addEventListener('wheel',e=>{e.preventDefault();const d=Math.sign(e.deltaY)*3;
+ if(viewer!=null)vscroll=Math.max(0,vscroll+d);else vtop=(vtop||0)+d;draw();},{passive:false});
+T.addEventListener('mouseup',e=>{
+ const s=window.getSelection().toString();
+ if(s.length>0){navigator.clipboard&&navigator.clipboard.writeText(s).catch(()=>{});toast('✓ Đã copy '+s.length+' ký tự');return;}
+ const cp=e.target.closest('[data-copy]');
+ if(cp){const b=blocks[+cp.dataset.copy];const txt=b.out?b.out.map(plain).join('\n'):b.body?b.body.join('\n'):b.text.map(plain).join('\n');
+  navigator.clipboard&&navigator.clipboard.writeText(txt).catch(()=>{});toast('✓ Đã copy block');return;}
+ if(viewer!=null){if(e.target.closest('[data-back]')){viewer=null;draw();}return;}
+ const ln=e.target.closest('.ln');if(!ln)return;
+ if(ln.dataset.prompt){focus='prompt';return draw();}
+ if(ln.dataset.b===undefined)return;
+ const i=+ln.dataset.b;sel=i;focus='list';
+ if(ln.dataset.hd==='1'&&(blocks[i].out||blocks[i].body)){viewer=i;vscroll=0;}
+ draw();
+});
+draw();
+</script></body></html>

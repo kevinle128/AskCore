@@ -1,12 +1,16 @@
 package tui
 
 import (
+	"encoding/json"
+	"fmt"
 	"strings"
 	"testing"
 
 	"github.com/charmbracelet/colorprofile"
 	"github.com/charmbracelet/x/ansi"
 	"github.com/stretchr/testify/require"
+
+	"AskCore/pkg/protocol"
 )
 
 // --- helpers ---
@@ -25,16 +29,6 @@ func plain(rows []string) []string {
 
 // --- block unit tests ---
 
-func TestStartupHeaderBlock(t *testing.T) {
-	b := NewStartupHeader("0.1.0", "leader 7c1e", "~/src/askcore")
-	require.Equal(t, []string{"◢◤ ask   v0.1.0 · leader 7c1e · ~/src/askcore", ""}, plain(linesOf(b, 80, noColor())))
-	require.Equal(t, []string{"◢◤ ask   v0.1.0 · in-process agent · ~/src/askcore", ""},
-		plain(linesOf(NewStartupHeader("0.1.0", "in-process agent", "~/src/askcore"), 80, noColor())))
-	short := plain(linesOf(b, 30, noColor()))
-	require.LessOrEqual(t, displayWidth(short[0]), 30)
-	require.True(t, strings.HasSuffix(short[0], "…"), "a header that does not fit ends with the cut marker: %q", short[0])
-}
-
 func TestUserPromptBlockLayout(t *testing.T) {
 	th := noColor()
 
@@ -45,7 +39,7 @@ func TestUserPromptBlockLayout(t *testing.T) {
 
 	t.Run("a long prompt wraps and keeps the time on the first row", func(t *testing.T) {
 		text := strings.TrimSpace(strings.Repeat("word ", 30))
-		rows := plain(linesOf(NewUserPromptBlock(text, "14:02"), 40, th))
+		rows := plain(renderRows(NewUserPromptBlock(text, "14:02"), RenderContext{Width: 40, Theme: th, Fold: FoldExpanded}))
 		require.Greater(t, len(rows), 3)
 		require.True(t, strings.HasSuffix(rows[0], "14:02"), rows[0])
 		require.LessOrEqual(t, displayWidth(rows[0]), 40-2)
@@ -91,109 +85,184 @@ func TestAssistantTextBlockLayout(t *testing.T) {
 	th := noColor()
 	text := "The test waits for the stale socket check, but CI runs it with a 1 s deadline. The leader removes the stale socket after the lock probe, and the probe can take 1.2 s."
 	require.Equal(t, []string{
-		"  ◆ The test waits for the stale socket check, but CI runs it with a 1 s",
-		"    deadline. The leader removes the stale socket after the lock probe, and the",
-		"    probe can take 1.2 s.",
-	}, plain(linesOf(NewAssistantTextBlock(text), 75+4, th)))
-	require.Equal(t, []string{"  ◆"}, plain(linesOf(NewAssistantTextBlock(""), 80, th)), "an empty reply shows its mark")
+		"  The test waits for the stale socket check, but CI runs it with a 1 s",
+		"  deadline. The leader removes the stale socket after the lock probe, and the",
+		"  probe can take 1.2 s.",
+	}, plain(linesOf(NewAssistantTextBlock(text), 75+2, th)), "the reply has no glyph and its text starts at column 2")
+	require.Empty(t, linesOf(NewAssistantTextBlock(""), 80, th), "an empty reply draws nothing")
+}
+
+func TestAssistantTextBlockLeadAndContinuation(t *testing.T) {
+	th := noColor()
+	stream := newMarkdownStream()
+	require.Equal(t, []string{"", "  after a step"}, plain(linesOf(newAssistantTextBlock("after a step", stream, true, true), 40, th)),
+		"a reply that follows a step starts with an empty row")
+	require.Equal(t, []string{"", "  more"}, plain(linesOf(newAssistantTextBlock("more", newMarkdownStream(), false, false), 40, th)),
+		"a continuation block starts with an empty row")
+	require.Equal(t, []string{"  alone"}, plain(linesOf(newAssistantTextBlock("alone", newMarkdownStream(), true, false), 40, th)))
 }
 
 func TestAssistantTextBlockWithCode(t *testing.T) {
 	text := "The test waits.\n\n```go\ndeadline := 5 * time.Second\n```\n"
 	require.Equal(t, []string{
-		"  ◆ The test waits.",
+		"  The test waits.",
 		"",
-		"    go",
-		"    deadline := 5 * time.Second",
+		"  go",
+		"  deadline := 5 * time.Second",
 	}, plain(linesOf(NewAssistantTextBlock(text), 80, noColor())))
 
-	t.Run("the code panel fills the row including the indent", func(t *testing.T) {
+	t.Run("the code panel fills the row and keeps the gutter blank", func(t *testing.T) {
 		rows := linesOf(NewAssistantTextBlock(text), 60, NewTheme(colorprofile.TrueColor))
 		for _, r := range rows[2:] {
 			require.Equal(t, 60, displayWidth(r))
-			require.True(t, strings.HasPrefix(r, "\x1b[48;2;37;40;56m    "), "the indent is on the panel color: %q", r)
+			require.True(t, strings.HasPrefix(r, " \x1b[48;2;37;40;56m "), "column 0 is the gutter, then the indent is on the panel color: %q", r)
 		}
 	})
+}
 
-	t.Run("a reply that starts with code keeps its mark on its own row", func(t *testing.T) {
-		rows := plain(linesOf(NewAssistantTextBlock("```\ncode\n```"), 80, noColor()))
-		require.Equal(t, []string{"  ◆", "    code"}, rows)
-	})
+func TestUserPromptFoldsAboveThreeRows(t *testing.T) {
+	th := noColor()
+	b := NewUserPromptBlock(strings.TrimSpace(strings.Repeat("word ", 40)), "14:02")
+	fb := b.(foldBlock)
+	require.True(t, fb.foldable(40))
+	require.False(t, fb.foldable(300), "one row at a very wide terminal")
+	require.Equal(t, FoldTruncated, fb.defaultFold())
+
+	all := plain(renderRows(b, RenderContext{Width: 40, Theme: th, Fold: FoldExpanded}))
+	for _, mode := range []FoldMode{FoldTruncated, FoldCollapsed} {
+		rows := plain(renderRows(b, RenderContext{Width: 40, Theme: th, Fold: mode}))
+		require.Len(t, rows, 3+1+1, "%v: three rows, the count row and the empty row", mode)
+		require.Equal(t, all[:3], rows[:3])
+		hidden := len(all) - 1 - 3
+		require.Equal(t, fmt.Sprintf("    … +%d lines · e to expand", hidden), rows[3], mode.String())
+	}
+}
+
+func TestUserPromptThreeRowsOrFewerShowsEveryRowInEveryMode(t *testing.T) {
+	b := NewUserPromptBlock("one\ntwo\nthree", "")
+	for _, mode := range []FoldMode{FoldCollapsed, FoldTruncated, FoldExpanded} {
+		require.Equal(t, []string{"  ❯ one", "    two", "    three", ""},
+			plain(renderRows(b, RenderContext{Width: 40, Theme: noColor(), Fold: mode})), mode.String())
+	}
+	require.False(t, b.(foldBlock).foldable(40))
 }
 
 func TestThinkingBlockForms(t *testing.T) {
 	th := noColor()
 	view := NewTranscriptView()
-	b := NewThinkingBlock("The stale check runs before the deadline starts, so the deadline is too short only when the probe is slow.", view)
-	require.Equal(t, []string{
-		"  ∴ The stale check runs before the deadline starts, so the deadline is too",
-		"    short only when the probe is slow.",
-		"",
-	}, plain(linesOf(b, 80, th)))
+	text := "The stale check runs before the deadline starts, so the deadline is too short only when the probe is slow."
+	b := newThinkingBlock(text, view, false, 1000, 500, true)
 
-	view.SetThinkingHidden(true)
-	require.Equal(t, []string{"  ∴ Thinking...", ""}, plain(linesOf(b, 80, th)), "the same block draws the short form")
+	t.Run("collapsed is one row with the duration", func(t *testing.T) {
+		require.Equal(t, []string{"  ◆ Thought for 0.5s"}, plain(renderRows(b, RenderContext{Width: 80, Theme: th, Fold: FoldCollapsed})))
+	})
+	t.Run("a history block has no duration", func(t *testing.T) {
+		rows := plain(renderRows(NewThinkingBlock(text, view), RenderContext{Width: 80, Theme: th, Fold: FoldCollapsed}))
+		require.Equal(t, []string{"  ◆ Thought"}, rows)
+	})
+	t.Run("expanded shows every line on a rail", func(t *testing.T) {
+		require.Equal(t, []string{
+			"  ◆ Thought for 0.5s",
+			"  ┃ The stale check runs before the deadline starts, so the deadline is too",
+			"  ┃ short only when the probe is slow.",
+		}, plain(renderRows(b, RenderContext{Width: 80, Theme: th, Fold: FoldExpanded})))
+	})
+	t.Run("truncated shows the last three lines after an ellipsis row", func(t *testing.T) {
+		many := newThinkingBlock("one\ntwo\n\nthree\nfour\nfive", view, false, 0, 0, false)
+		require.Equal(t, []string{"  ◆ Thought", "  ┃ …", "  ┃ three", "  ┃ four", "  ┃ five"},
+			plain(renderRows(many, RenderContext{Width: 40, Theme: th, Fold: FoldTruncated})))
+		few := newThinkingBlock("one\ntwo", view, false, 0, 0, false)
+		require.Equal(t, []string{"  ◆ Thought", "  ┃ one", "  ┃ two"},
+			plain(renderRows(few, RenderContext{Width: 40, Theme: th, Fold: FoldTruncated})), "no ellipsis row when nothing is hidden")
+	})
+	t.Run("a block without a view still draws", func(t *testing.T) {
+		require.NotPanics(t, func() { linesOf(NewThinkingBlock("text", nil), 80, th) })
+	})
+}
 
-	view.SetThinkingHidden(false)
-	require.Equal(t, []string{"  ∴ Thinking...", ""}, plain(linesOf(NewThinkingBlock("  ", view), 80, th)), "an empty block has no text to show")
-	require.NotPanics(t, func() { linesOf(NewThinkingBlock("text", nil), 80, th) }, "a block without a view shows its text")
+func TestStreamingThinkingShowsTheLastTwoLinesAndASpinner(t *testing.T) {
+	view := NewTranscriptView()
+	view.SetClock(10_000)
+	view.SetSpinnerFrame(0)
+	b := newThinkingBlock("first\nsecond\nthird", view, true, 8_000, 0, false)
+	fb := b.(foldBlock)
+	require.Equal(t, FoldTruncated, fb.defaultFold(), "a streaming thinking is truncated")
+	require.Equal(t, FoldTruncated, fb.collapseFold(), "and its lowest mode stays truncated")
+	rows := plain(renderRows(b, RenderContext{Width: 40, Theme: noColor(), Fold: FoldTruncated}))
+	require.Equal(t, "  ◆ Thinking… 2s"+strings.Repeat(" ", 40-displayWidth("  ◆ Thinking… 2s")-2)+"⠋", rows[0])
+	require.Equal(t, []string{"  ┃ …", "  ┃ second", "  ┃ third"}, rows[1:])
+
+	ended := newThinkingBlock("first\nsecond\nthird", view, false, 8_000, 2_000, true)
+	require.Equal(t, FoldCollapsed, ended.(foldBlock).defaultFold(), "the block folds when it ends")
 }
 
 func TestThinkingBlockUsesItalicRole(t *testing.T) {
-	rows := linesOf(NewThinkingBlock("pondering", NewTranscriptView()), 60, NewTheme(colorprofile.TrueColor))
-	require.Contains(t, rows[0], "\x1b[", "styled")
-	require.Contains(t, rows[0], "\x1b[3;", "thinking text is italic")
+	rows := renderRows(NewThinkingBlock("pondering", NewTranscriptView()), RenderContext{Width: 60, Theme: NewTheme(colorprofile.TrueColor), Fold: FoldExpanded})
+	require.Contains(t, rows[1], "\x1b[3;", "thinking text is italic")
 }
 
 func TestToolLineBlockForms(t *testing.T) {
 	th := noColor()
 	view := NewTranscriptView()
 
-	t.Run("running", func(t *testing.T) {
+	t.Run("running shows the spinner and no empty row", func(t *testing.T) {
 		rows := linesOf(NewToolLineBlock("echo", "probe code request", ToolRunning, "", "", view), 80, th)
-		require.Len(t, rows, 1, "a running line has no empty row below it")
-		require.Equal(t, "  ◇ echo  probe code request"+strings.Repeat(" ", 80-2-displayWidth("◇ echo  probe code request")-displayWidth("running ⠋")-1)+"running ⠋", plain(rows)[0])
+		require.Len(t, rows, 1)
+		require.Equal(t, "  ◆ echo probe code request"+strings.Repeat(" ", 80-displayWidth("  ◆ echo probe code request")-displayWidth("⠋")-1)+"⠋ ", plain(rows)[0]+" ")
 		require.Equal(t, 80, displayWidth(rows[0]))
+	})
+
+	t.Run("a running step shows the whole seconds once the clock is set", func(t *testing.T) {
+		v := NewTranscriptView()
+		v.SetClock(5_000)
+		b := newToolCallBlock(toolCall{name: "bash", args: "sleep 9", startMs: 1_000}, ToolRunning, "", "", toolOutput{}, v)
+		rows := plain(linesOf(b, 60, th))
+		require.True(t, strings.HasPrefix(rows[0], "  ◆ Running sleep 9"), rows[0])
+		require.True(t, strings.HasSuffix(rows[0], "⠋ 4s"), rows[0])
+		v.SetClock(66_000)
+		require.True(t, strings.HasSuffix(plain(linesOf(b, 60, th))[0], "⠋ 1m05s"))
 	})
 
 	t.Run("the spinner frame comes from the view", func(t *testing.T) {
 		view.SetSpinnerFrame(3)
-		require.Contains(t, plain(linesOf(NewToolLineBlock("echo", "", ToolRunning, "", "", view), 40, th))[0], "running ⠸")
+		require.Contains(t, plain(linesOf(NewToolLineBlock("echo", "", ToolRunning, "", "", view), 40, th))[0], "⠸")
 		view.SetSpinnerFrame(13)
-		require.Contains(t, plain(linesOf(NewToolLineBlock("echo", "", ToolRunning, "", "", view), 40, th))[0], "running ⠸", "the frame wraps")
+		require.Contains(t, plain(linesOf(NewToolLineBlock("echo", "", ToolRunning, "", "", view), 40, th))[0], "⠸", "the frame wraps")
 	})
 
-	t.Run("succeeded", func(t *testing.T) {
+	t.Run("succeeded has nothing at the right and no empty row", func(t *testing.T) {
 		rows := linesOf(NewToolLineBlock("echo", "probe code request", ToolSucceeded, "0.1s", "", view), 80, th)
-		require.Equal(t, "", rows[1], "one empty row follows a finished line")
-		require.Equal(t, "  ● echo  probe code request"+strings.Repeat(" ", 80-2-displayWidth("● echo  probe code request")-displayWidth("✓ 0.1s")-1)+"✓ 0.1s", plain(rows)[0])
+		require.Equal(t, []string{"  ◆ echo probe code request"}, plain(rows))
 	})
 
-	t.Run("failed", func(t *testing.T) {
+	t.Run("failed shows the reason at the right edge", func(t *testing.T) {
 		rows := plain(linesOf(NewToolLineBlock("bash", "false", ToolFailed, "", "exit status 1", view), 60, th))
-		require.True(t, strings.HasPrefix(rows[0], "  ● bash  false"), rows[0])
+		require.True(t, strings.HasPrefix(rows[0], "  ◆ Ran false"), rows[0])
 		require.True(t, strings.HasSuffix(rows[0], "✗ exit status 1"), rows[0])
 		rows = plain(linesOf(NewToolLineBlock("bash", "", ToolFailed, "", "", view), 60, th))
 		require.True(t, strings.HasSuffix(rows[0], "✗ failed"), rows[0])
+		rows = plain(linesOf(NewToolLineBlock("bash", "go test", ToolFailed, "", "exit: 1", view), 60, th))
+		require.True(t, strings.HasSuffix(rows[0], "✗ exit 1"), "the exit header becomes the short form: %q", rows[0])
 	})
 
-	t.Run("arguments are cut first and the status stays whole", func(t *testing.T) {
-		rows := plain(linesOf(NewToolLineBlock("echo", strings.Repeat("long ", 40), ToolSucceeded, "12s", "", view), 50, th))
-		require.True(t, strings.HasSuffix(rows[0], "✓ 12s"), rows[0])
+	t.Run("the description is cut first and the right column stays whole", func(t *testing.T) {
+		rows := plain(linesOf(NewToolLineBlock("bash", strings.Repeat("long ", 40), ToolFailed, "", "exit: 2", view), 50, th))
+		require.True(t, strings.HasSuffix(rows[0], "✗ exit 2"), rows[0])
 		require.Contains(t, rows[0], "…")
-		require.LessOrEqual(t, displayWidth(rows[0]), 49)
+		require.True(t, strings.HasPrefix(rows[0], "  ◆ Ran long long"), rows[0])
+		require.LessOrEqual(t, displayWidth(rows[0]), 50)
 	})
 
-	t.Run("a long failure reason is cut before the name", func(t *testing.T) {
+	t.Run("a long failure reason does not remove the verb", func(t *testing.T) {
 		rows := plain(linesOf(NewToolLineBlock("bash", "x", ToolFailed, "", strings.Repeat("reason ", 20), view), 40, th))
-		require.Contains(t, rows[0], "bash")
+		require.Contains(t, rows[0], "Ran")
 		require.Contains(t, rows[0], "✗")
 		require.LessOrEqual(t, displayWidth(rows[0]), 40)
 	})
 
 	t.Run("one row, whatever the arguments hold", func(t *testing.T) {
 		rows := linesOf(NewToolLineBlock("echo", "line one\nline two\ttab", ToolSucceeded, "1s", "", view), 80, th)
-		require.Len(t, rows, 2)
+		require.Len(t, rows, 1)
 		require.Contains(t, plain(rows)[0], "line one line two tab")
 	})
 }
@@ -236,7 +305,7 @@ func TestNoteBlockWrapsWithIndent(t *testing.T) {
 
 func TestMetaLineDividerSpacer(t *testing.T) {
 	th := noColor()
-	require.Equal(t, []string{"    claude-opus-5-5 · 7.9s · ↑14.1k ↓2.6k · $0.031", ""},
+	require.Equal(t, []string{"  claude-opus-5-5 · 7.9s · ↑14.1k ↓2.6k · $0.031", ""},
 		plain(linesOf(NewMetaLineBlock("claude-opus-5-5 · 7.9s · ↑14.1k ↓2.6k · $0.031"), 80, th)))
 	cut := plain(linesOf(NewMetaLineBlock(strings.Repeat("meta ", 20)), 30, th))
 	require.LessOrEqual(t, displayWidth(cut[0]), 30)
@@ -250,45 +319,54 @@ func TestRoleStylesAreApplied(t *testing.T) {
 		block Block
 		want  string // a sequence that the row must hold
 	}{
-		"error is red":      {NewErrorBlock("Error", ""), "38;2;248;113;113"},
-		"retry is yellow":   {NewRetryNote("x"), "38;2;250;204;21"},
-		"tool name is teal": {NewToolLineBlock("echo", "", ToolSucceeded, "", "", nil), "38;2;45;212;191"},
-		"success mark":      {NewToolLineBlock("echo", "", ToolSucceeded, "1s", "", nil), "38;2;74;222;128"},
-		"assistant mark":    {NewAssistantTextBlock("hi"), "38;2;167;139;250"},
-		"cancel is muted":   {NewCancelMarker("x"), "38;2;111;115;144"},
-		"meta is dim":       {NewMetaLineBlock("m"), "38;2;76;79;102"},
+		"error is red":       {NewErrorBlock("Error", ""), "38;2;248;113;113"},
+		"retry is yellow":    {NewRetryNote("x"), "38;2;250;204;21"},
+		"step glyph is teal": {NewToolLineBlock("echo", "", ToolSucceeded, "", "", nil), "38;2;45;212;191"},
+		"running is yellow":  {NewToolLineBlock("echo", "", ToolRunning, "", "", nil), "38;2;250;204;21"},
+		"failed step is red": {NewToolLineBlock("echo", "", ToolFailed, "", "x", nil), "38;2;248;113;113"},
+		"thinking glyph":     {NewThinkingBlock("x", nil), "38;2;143;149;179"},
+		"cancel is muted":    {NewCancelMarker("x"), "38;2;111;115;144"},
+		"meta is dim":        {NewMetaLineBlock("m"), "38;2;76;79;102"},
 	} {
 		require.Contains(t, strings.Join(linesOf(tc.block, 60, th), "\n"), tc.want, name)
 	}
 }
 
-// Every block, in every color mode, fits any width. A row that is too wide
-// would break the row count of the live region.
+// Every block, in every color mode and every fold mode, fits any width. A row
+// that is too wide would break the row count of the pane.
 func TestBlocksFitAnyWidth(t *testing.T) {
 	view := NewTranscriptView()
+	view.SetClock(9_000)
 	long := strings.Repeat("日本語 words ", 12)
+	out := newToolOutput(strings.Repeat(long+"\n", 9), protocol.ToolResultDetails{})
+	edit := newToolOutput("", protocol.ToolResultDetails{Diff: &protocol.ToolDiff{OldText: long + "\nb\n", NewText: "a\n" + long + "\n"}})
 	blocks := map[string]Block{
-		"header":    NewStartupHeader("0.1.0", "leader 7c1e", "~/src/"+long),
-		"prompt":    NewUserPromptBlock(long, "14:02"),
-		"reply":     NewAssistantTextBlock(streamDoc + "\n" + long),
-		"thinking":  NewThinkingBlock(long, view),
-		"tool":      NewToolLineBlock("echo"+long, long, ToolSucceeded, "12s", "", view),
-		"toolfail":  NewToolLineBlock("echo", long, ToolFailed, "", long, view),
-		"toolrun":   NewToolLineBlock("echo", long, ToolRunning, "", "", view),
-		"retry":     NewRetryNote(long),
-		"error":     NewErrorBlock(long, long),
-		"cancel":    NewCancelMarker(long),
-		"meta":      NewMetaLineBlock(long),
-		"divider":   NewDividerBlock(long),
-		"detach":    NewDetachNote(long, long),
-		"reconnect": NewReconnectNote(long),
+		"prompt":       NewUserPromptBlock(long, "14:02"),
+		"reply":        NewAssistantTextBlock(streamDoc + "\n" + long),
+		"thinking":     NewThinkingBlock(long+"\n"+long+"\n"+long+"\n"+long, view),
+		"thinkinglive": newThinkingBlock(long+"\n"+long+"\n"+long, view, true, 1_000, 0, false),
+		"tool":         newToolBlock("bash"+long, long, ToolSucceeded, "12s", "", out, view),
+		"toolfail":     newToolBlock("bash", long, ToolFailed, "", long, out, view),
+		"toolrun":      newToolBlock("grep", long, ToolRunning, "", "", out, view),
+		"edit":         newToolBlock("edit", long, ToolSucceeded, "1s", "", edit, view),
+		"write":        newToolBlock("write", long, ToolSucceeded, "1s", "", edit, view),
+		"jobnotice":    newJobNotice("job j1", long, ToolNoted, long, "", view),
+		"retry":        NewRetryNote(long),
+		"error":        NewErrorBlock(long, long),
+		"cancel":       NewCancelMarker(long),
+		"meta":         NewMetaLineBlock(long),
+		"divider":      NewDividerBlock(long),
+		"detach":       NewDetachNote(long, long),
+		"reconnect":    NewReconnectNote(long),
 	}
 	for _, p := range []colorprofile.Profile{colorprofile.NoTTY, colorprofile.ANSI256, colorprofile.TrueColor} {
 		th := NewTheme(p)
 		for name, b := range blocks {
-			for _, width := range []int{1, 2, 3, 5, 8, 13, 21, 40, 79} {
-				for _, r := range linesOf(b, width, th) {
-					require.LessOrEqual(t, displayWidth(r), width, "%s at %d (%v): %q", name, width, p, ansi.Strip(r))
+			for _, mode := range []FoldMode{FoldCollapsed, FoldTruncated, FoldExpanded} {
+				for _, width := range []int{1, 2, 3, 5, 8, 13, 21, 29, 30, 40, 59, 60, 79} {
+					for _, r := range renderRows(b, RenderContext{Width: width, Theme: th, Fold: mode}) {
+						require.LessOrEqual(t, displayWidth(r), width, "%s %v at %d (%v): %q", name, mode, width, p, ansi.Strip(r))
+					}
 				}
 			}
 		}
@@ -301,9 +379,11 @@ func TestNotesDropEscapeSequencesFromOutsideText(t *testing.T) {
 		"error":    NewErrorBlock("bad \x1b[31mred\x1b[2J", "next \x1b[32mgreen"),
 		"thinking": NewThinkingBlock("think \x1b[33mamber", NewTranscriptView()),
 		"tool":     NewToolLineBlock("na\x1b[31mme", "ar\x1b[32mgs", ToolSucceeded, "", "", nil),
-		"meta":     NewMetaLineBlock("m\x1b[31model"),
+		"command": newToolCallBlock(toolCall{name: "bash", args: "x", raw: json.RawMessage(`{"command":"echo \u001b[31mred\u001b[2J"}`)},
+			ToolSucceeded, "", "", toolOutput{}, nil),
+		"meta": NewMetaLineBlock("m\x1b[31model"),
 	} {
-		joined := strings.Join(linesOf(b, 60, th), "")
+		joined := strings.Join(renderRows(b, RenderContext{Width: 60, Theme: th, Fold: FoldExpanded}), "")
 		for _, bad := range []string{"\x1b[31m", "\x1b[32m", "\x1b[33m", "\x1b[2J"} {
 			require.NotContains(t, joined, bad, name)
 		}

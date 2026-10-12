@@ -8,6 +8,7 @@ The Agent Client Protocol adapter over the agent's Go API. It is the server side
 - The session host (`host.go`): one Agent and one ordered writer for each session, and the write barrier that holds a prompt result until the settled event is written
 - The mapping from internal events to `session/update` notifications and the follow subscriptions (`updates.go`)
 - `_meta` fields for Ask-only data such as `seq`, `epoch` and `runId` (`meta.go`)
+- `session/close` disposes one session through `Session.Close`: the run stops, background jobs end and the host forgets the session. `initialize` advertises `sessionCapabilities.close`. A routed close needs the current driver generation (`agent.go`).
 - The `_ask/*` method handlers: state, models, controls, steer and follow-up, usage; compact, fork and tree answer "unsupported" (`ask_methods.go`)
 - The leader-only provider method handlers and the `ProviderSetup` interface (`provider_methods.go`)
 - The one error mapper (`errors.go`)

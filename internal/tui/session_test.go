@@ -16,30 +16,43 @@ import (
 	"AskCore/pkg/protocol"
 )
 
-// editorBox returns the rows of the editor box at a width, for a text row.
+// editorBox returns the rows of the prompt pane at a width for a text row: a
+// rule, the row with its left pad, and a rule.
 func editorBox(width int, text string) []string {
-	inner := width - 4
-	return []string{
-		"╭" + strings.Repeat("─", width-2) + "╮",
-		"│ " + padTo(text, inner) + " │",
-		"╰" + strings.Repeat("─", width-2) + "╯",
+	return []string{ruleRow(width), " " + text, ruleRow(width)}
+}
+
+func ruleRow(width int) string { return strings.Repeat("─", width) }
+
+// barLine is the shortcut bar at a width.
+func barLine(width int) string {
+	text := " " + pick(width < shortWidth, barTextShort, barText)
+	if width >= 120 {
+		text += " · shift/option+drag select"
 	}
+	return text
 }
 
 const placeholderRow = "❯ Ask anything  ·  / commands  ·  ctrl+l model"
 
-// footerRow builds a footer row of a width from its two sides. The right side
+// headerRow builds a header row of a width from its two sides. The right side
 // keeps its trailing space, as in the sketches.
-func footerRow(width int, left, right string) string {
+func headerRow(width int, left, right string) string {
 	return left + strings.Repeat(" ", width-displayWidth(left)-displayWidth(right)) + right
 }
 
 const (
-	leftLeader  = "  ● leader 7c1e   ⌂ ~/src/askcore"
+	leftLeader  = "◢◤ ask  ● leader 7c1e  ⌂ ~/src/askcore"
 	rightIdle   = "deepseek-v4.1-flash  ▰▱▱▱▱▱▱▱ 18%  $0.04 "
 	rightNoCtx  = "deepseek-v4.1-flash  ▱▱▱▱▱▱▱▱ 0%  $0.04 "
 	rightCostly = "deepseek-v4.1-flash  ▱▱▱▱▱▱▱▱ 0%  $0.00 "
 )
+
+// requireHeader checks the first row of the screen.
+func requireHeader(t *testing.T, grid []string, left, right string) {
+	t.Helper()
+	require.Equal(t, strings.TrimRight(headerRow(80, left, right), " "), grid[0])
+}
 
 // boxRow builds one row of a selector box. The left part and the right part are
 // joined with spaces up to the inner width.
@@ -120,11 +133,9 @@ func TestRefusedPromptKeepsDraft(t *testing.T) {
 	r.waitCall("prompt:show me the probe code")
 	r.fc.push(PromptSendFailedMsg{ID: 1, Err: &RequestError{Code: -32000, Kind: "not_driver", Message: "not the driver"}})
 	r.h.waitText("✗ Not sent:")
-	requireRows(t, r.h.grid(), []string{
+	requireRows(t, r.h.grid(), append([]string{
 		"┊ ✗ Not sent: not_driver · draft kept · /take to drive",
-		"╭" + strings.Repeat("─", 78) + "╮",
-		"│ ❯ show me the probe code" + strings.Repeat(" ", 53) + "│",
-	})
+	}, append(editorBox(80, "❯ show me the probe code"), barLine(80))...))
 	r.typeText("!")
 	r.waitGone("Not sent")
 }
@@ -261,6 +272,7 @@ func TestSelectorChangesModel(t *testing.T) {
 	r.h.waitText("Select model")
 	r.h.waitText("enter select  ·  esc close  ·  your draft is kept")
 	requireRows(t, r.h.grid(), []string{
+		ruleRow(80),
 		boxTop(80, "Select model"),
 		boxRow(80, " ⌕ type to filter", ""),
 		modelRow(80, true, "alibaba/deepseek-v4.1-flash", "128k", "current"),
@@ -271,7 +283,8 @@ func TestSelectorChangesModel(t *testing.T) {
 		modelRow(80, false, "xai/grok-5-code", "256k", "reasoning"),
 		boxBottom(80),
 		"   enter select  ·  esc close  ·  your draft is kept",
-		footerRow(80, leftLeader, rightNoCtx),
+		ruleRow(80),
+		barLine(80),
 	})
 	requireContentGolden(t, r.h)
 
@@ -307,6 +320,7 @@ func TestSelectorReadinessFailureKeepsModel(t *testing.T) {
 	r.waitCall("set_model:" + opusModel)
 	r.h.waitText("✗ anthropic is not ready: no credential. Model not changed.")
 	requireRows(t, r.h.grid(), []string{
+		ruleRow(80),
 		boxTop(80, "Select model"),
 		boxRow(80, " ⌕ anth", ""),
 		modelRow(80, true, "anthropic/claude-opus-5-5", "1M", "reasoning"),
@@ -316,7 +330,8 @@ func TestSelectorReadinessFailureKeepsModel(t *testing.T) {
 		boxRow(80, "   Run in a shell: ask auth login --provider anthropic", ""),
 		boxBottom(80),
 		"   enter select  ·  esc close  ·  your draft is kept",
-		footerRow(80, leftLeader, rightNoCtx),
+		ruleRow(80),
+		barLine(80),
 	})
 	requireContentGolden(t, r.h)
 	r.key("esc")
@@ -371,14 +386,9 @@ func TestStaleSetModelIgnored(t *testing.T) {
 	close(gate) // the older answer arrives last
 	time.Sleep(100 * time.Millisecond)
 	r.h.settle()
-	footer := ""
-	for _, row := range r.h.settle() {
-		if strings.TrimSpace(row) != "" {
-			footer = row
-		}
-	}
-	require.Contains(t, footer, "qwen4-coder-plus")
-	require.NotContains(t, footer, "claude-opus-5-5", "an older answer changes nothing")
+	header := r.h.settle()[0]
+	require.Contains(t, header, "qwen4-coder-plus")
+	require.NotContains(t, header, "claude-opus-5-5", "an older answer changes nothing")
 }
 
 func TestModelSelectorOnlyWhileIdle(t *testing.T) {
@@ -537,7 +547,7 @@ func TestThinkingCycleDoesNotStickOnClampedLevel(t *testing.T) {
 	r.h.waitText("◐ off")
 }
 
-func TestCtrlTTogglesThinkingBlocks(t *testing.T) {
+func TestCtrlTExpandsAndCollapsesThinkingBlocks(t *testing.T) {
 	r := startView(t, 80, 40)
 	r.event(flat(
 		&protocol.AgentStart{},
@@ -549,23 +559,22 @@ func TestCtrlTTogglesThinkingBlocks(t *testing.T) {
 			protocol.Thinking{Thinking: thinkingText}, protocol.Text{Text: probeReply}),
 		&protocol.AgentEnd{}, &protocol.AgentSettled{},
 	)...)
-	r.h.waitText("The stale check runs before the deadline starts")
+	r.h.waitText("◆ Thought")
+	require.Zero(t, r.h.count("The stale check runs"), "a finished thinking is one row")
 
 	r.key("ctrl+t")
-	r.h.waitText("┊ Thinking blocks: hidden · ctrl+t to show")
-	r.h.waitText("∴ Thinking...")
-	require.Zero(t, r.h.count("The stale check runs"))
+	r.h.waitText("┊ Thinking blocks: expanded · ctrl+t to collapse")
+	r.h.waitText("The stale check runs before the deadline starts")
+	r.h.waitText("┃ ")
 
 	r.key("ctrl+t")
-	r.h.waitText("Thinking blocks: visible · ctrl+t to hide")
-	r.h.waitText("The stale check runs before the deadline starts")
-	require.Equal(t, 1, r.h.count("The stale check runs"), "a rebuild draws each committed row once")
+	r.h.waitText("Thinking blocks: collapsed · ctrl+t to expand")
+	r.waitGone("The stale check runs")
 }
 
 // ---- connection states ----
 
 func TestReconnectStatesGoldens(t *testing.T) {
-	footerLost := footerRow(80, "  ● leader lost   ⌂ ~/src/askcore", rightIdle)
 	prep := func(t *testing.T) *viewRig {
 		r := startView(t, 80, 24)
 		r.firstTurn()
@@ -581,7 +590,8 @@ func TestReconnectStatesGoldens(t *testing.T) {
 		requireRows(t, r.h.grid(), append([]string{
 			"┊ ✗ Disconnected from the leader · reconnecting (attempt 2, next in 2s)",
 			"┊ draft kept · sending waits until the leader is back · nothing is resent",
-		}, append(editorBox(80, "❯ also check the lock timeout"), footerLost)...))
+		}, append(editorBox(80, "❯ also check the lock timeout"), barLine(80))...))
+		requireHeader(t, r.h.grid(), "◢◤ ask  ● leader lost  ⌂ ~/src/askcore", rightIdle)
 		requireContentGolden(t, r.h)
 
 		r.key("enter")
@@ -599,8 +609,8 @@ func TestReconnectStatesGoldens(t *testing.T) {
 		r.h.waitText("↻ Reconnected. Session 3f2a restored.")
 		r.waitGone("Disconnected")
 		r.h.settle()
-		requireRows(t, r.h.grid(), append(editorBox(80, "❯ also check the lock timeout"),
-			footerRow(80, leftLeader, rightIdle)))
+		requireRows(t, r.h.grid(), append(editorBox(80, "❯ also check the lock timeout"), barLine(80)))
+		requireHeader(t, r.h.grid(), leftLeader, rightIdle)
 		requireContentGolden(t, r.h)
 
 		// A block that was produced during the outage arrives once.
@@ -625,8 +635,8 @@ func TestReconnectStatesGoldens(t *testing.T) {
 		r.h.waitText("✗ Session 3f2a is gone: the leader restarted.")
 		r.h.waitText("The transcript above is kept. Your next prompt starts a new session.")
 		r.h.waitText("leader 91b0")
-		requireRows(t, r.h.grid(), append(editorBox(80, "❯ also check the lock timeout"),
-			footerRow(80, "  ● leader 91b0   ⌂ ~/src/askcore", rightCostly)))
+		requireRows(t, r.h.grid(), append(editorBox(80, "❯ also check the lock timeout"), barLine(80)))
+		requireHeader(t, r.h.grid(), "◢◤ ask  ● leader 91b0  ⌂ ~/src/askcore", rightCostly)
 		requireContentGolden(t, r.h)
 
 		// The next prompt creates a session first; the earlier prompt is not sent again.
@@ -662,7 +672,7 @@ func TestResyncSnapshotReplacesTranscript(t *testing.T) {
 	r.fc.push(SnapshotMsg{SessionID: testSessionID, Entries: history, Resync: true})
 	r.h.waitText("fresh question")
 	r.waitGone("why does TestLeaderStale fail on CI?")
-	require.Equal(t, 1, r.h.count("ask   v0.1.0"), "the header is drawn again once")
+	require.Equal(t, 1, r.h.count("model  alibaba/deepseek-v4.1-flash"), "the start line is drawn again once")
 }
 
 func TestPromptRunErrorDoesNotDuplicateTheErrorBlock(t *testing.T) {
@@ -699,6 +709,7 @@ func TestSessionsSelectorAttachesAsObserver(t *testing.T) {
 	r.key("enter")
 	r.h.waitText("Live sessions")
 	requireRows(t, r.h.grid(), []string{
+		ruleRow(80),
 		boxTop(80, "Live sessions"),
 		boxRow(80, " ⌕ type to filter", ""),
 		sessionRow(80, true, "3f2a", "~/src/askcore", "this client drives"),
@@ -755,7 +766,7 @@ func TestInProcessSessionNeedsNoLeaderCalls(t *testing.T) {
 	fc.listErr = ErrNeedsLeader
 	r := startView(t, 80, 24, withFake(fc))
 	r.h.waitText("○ in-process")
-	r.h.waitText("◢◤ ask   v0.1.0 · in-process agent")
+	r.h.waitText("◢◤ ask  ○ in-process")
 
 	r.typeText("/sessions")
 	r.key("enter")
@@ -803,13 +814,13 @@ func TestStartingStatusThenSession(t *testing.T) {
 		}
 	}))
 	r.h.waitText("┊ ◌ Starting leader…  first run can take a few seconds")
-	r.h.waitText("◌ leader starting   ⌂ ~/src/askcore")
+	r.h.waitText("◌ leader starting  ⌂ ~/src/askcore")
 	r.typeText("early input")
 	r.key("enter")
 	r.h.waitText("Starting, please wait…")
 	require.Zero(t, fc.count("prompt:"))
 	close(release)
-	r.h.waitText("◢◤ ask   v0.1.0 · leader 7c1e")
+	r.h.waitText("◢◤ ask  ● leader 7c1e")
 	r.waitGone("Starting leader…")
 	r.h.waitText("● leader 7c1e")
 	require.Equal(t, 1, r.h.count("❯ early input"), "keys typed during startup reach the editor")
@@ -873,15 +884,15 @@ func TestFooterUsageThresholds(t *testing.T) {
 	for _, c := range cases {
 		m := footerModel(t, colorprofile.TrueColor)
 		m.sv.ctxTokens = 128_000 * c.pct / 100
-		row := m.sv.footerText(80)
+		row := m.sv.headerText(80)
 		require.Contains(t, row, m.theme.Render(c.role, c.bar), "%d%%", c.pct)
 	}
 
 	t.Run("short form under 60 columns", func(t *testing.T) {
 		m := footerModel(t, colorprofile.NoTTY)
 		m.sv.ctxTokens = 23_040
-		require.Equal(t, "  ● 7c1e        deepseek-v4.1-flash 18% ", ansi.Strip(m.sv.footerText(40)))
-		require.Equal(t, 40, displayWidth(m.sv.footerText(40)))
+		require.Equal(t, "◢◤ ask ● 7c1e   deepseek-v4.1-flash 18% ", ansi.Strip(m.sv.headerText(40)))
+		require.Equal(t, 40, displayWidth(m.sv.headerText(40)))
 	})
 
 	t.Run("wide characters at 40x14", func(t *testing.T) {
@@ -899,11 +910,12 @@ func TestFooterUsageThresholds(t *testing.T) {
 		r.h.waitText("┊ ◌ Working… 3s · esc")
 		requireRows(t, r.h.grid(), []string{
 			"┊ ◌ Working… 3s · esc",
-			"╭" + strings.Repeat("─", 38) + "╮",
-			"│ ❯ Ask anything" + strings.Repeat(" ", 23) + "│",
-			"╰" + strings.Repeat("─", 38) + "╯",
-			"  ● 7c1e        deepseek-v4.1-flash 18%",
+			ruleRow(40),
+			" ❯ Ask anything",
+			ruleRow(40),
+			" Tab blocks · / commands",
 		})
+		require.Equal(t, "◢◤ ask ● 7c1e   deepseek-v4.1-flash 18%", r.h.grid()[0])
 		for _, row := range r.h.text() {
 			require.LessOrEqual(t, displayWidth(row), 40, row)
 		}
@@ -915,10 +927,10 @@ func TestFooterUsageThresholds(t *testing.T) {
 func TestFooterShapes(t *testing.T) {
 	m := footerModel(t, colorprofile.NoTTY)
 	s := m.sv
-	plain := func(w int) string { return strings.TrimRight(ansi.Strip(s.footerText(w)), " ") }
+	plain := func(w int) string { return strings.TrimRight(ansi.Strip(s.headerText(w)), " ") }
 
 	s.sess = SessionInfo{ID: testSessionID, Role: protocol.ACPRoleObserver}
-	require.Equal(t, strings.TrimRight(footerRow(80, "  ◉ observer 3f2a   ⌂ ~/src/askcore", rightCostly), " "), plain(80))
+	require.Equal(t, strings.TrimRight(headerRow(80, "◢◤ ask  ◉ observer 3f2a  ⌂ ~/…/askcore", rightCostly), " "), plain(80))
 	s.sess.Role = protocol.ACPRoleDriver
 
 	s.conn = connDown
@@ -941,14 +953,15 @@ func TestFooterReasoningModelShowsLevel(t *testing.T) {
 	s.modelID, s.thinking = opusModel, protocol.ThinkingMedium
 	s.ctxTokens = 210_000
 	s.costMicro = 110_000
-	require.Equal(t, "  ● leader 7c1e   ⌂ ~/src/askcore claude-opus-5-5 ◐ medium  ▰▰▱▱▱▱▱▱ 21%  $0.11 ", ansi.Strip(m.sv.footerText(80)))
+	require.Equal(t, headerRow(80, "◢◤ ask  ● leader 7c1e", "claude-opus-5-5 ◐ medium  ▰▰▱▱▱▱▱▱ 21%  $0.11 "), ansi.Strip(m.sv.headerText(80)),
+		"the directory gives way before the model name")
 }
 
 // ---- 120 column sketches ---
 
 func TestScreens120Goldens(t *testing.T) {
 	const w = 120
-	footer := footerRow(w, leftLeader, rightIdle)
+	footer := barLine(w)
 	placeholder := editorBox(w, placeholderRow)
 
 	t.Run("idle", func(t *testing.T) {
@@ -972,13 +985,15 @@ func TestScreens120Goldens(t *testing.T) {
 		r.clock.advance(4 * time.Second)
 		r.event(&protocol.QueueUpdate{})
 		r.h.waitText("Working… 4s")
-		running := "  ◇ echo  probe code request" + strings.Repeat(" ", w-2-displayWidth("◇ echo  probe code request")-displayWidth("running ⠋")-1) + "running ⠋"
-		requireRows(t, r.h.grid(), append([]string{
+		running := "  ◆ echo probe code request" + strings.Repeat(" ", w-displayWidth("  ◆ echo probe code request")-displayWidth("⠋")-1) + "⠋"
+		// The pane is taller than its content: empty rows sit between the
+		// content and the status row.
+		requireRows(t, r.h.grid(), []string{
 			running,
-			"  ◆ The probe lives in internal/leader/client.go. It dials the socket, then sends an initialize frame and waits",
 			"",
-			"┊ ◌ Working… 4s · esc to interrupt",
-		}, append(placeholder, footer)...))
+			"  The probe lives in internal/leader/client.go. It dials the socket, then sends an initialize frame and waits",
+		})
+		requireRows(t, r.h.grid(), append([]string{"┊ ◌ Working… 4s · esc to interrupt"}, append(placeholder, footer)...))
 		requireContentGolden(t, r.h)
 	})
 
@@ -1000,13 +1015,17 @@ func TestScreens120Goldens(t *testing.T) {
 			FollowUp: []string{"then run the leader tests"},
 		})
 		r.h.waitText("Working… 9s")
-		requireRows(t, r.h.grid(), append([]string{
-			"  ◆ The probe lives in internal/leader/client.go. It dials the socket, then sends an initialize frame and waits",
+		requireRows(t, r.h.grid(), []string{
+			"  ◆ echo probe code request",
 			"",
-			"┊ ◌ Working… 9s · esc to interrupt",
+			"  The probe lives in internal/leader/client.go. It dials the socket, then sends an initialize frame and waits",
+			"",
+		})
+		requireRows(t, r.h.grid(), append([]string{
 			"┆ ⧗ steer   use the fake clock from internal/testsupport",
 			"┆ ⧗ next    then run the leader tests",
 			"┆ alt+↑ edit queue · dashed rail = not sent yet",
+			"┊ ◌ Working… 9s · esc to interrupt",
 		}, append(placeholder, footer)...))
 		requireContentGolden(t, r.h)
 	})
@@ -1017,6 +1036,7 @@ func TestScreens120Goldens(t *testing.T) {
 		r.key("ctrl+l")
 		r.h.waitText("Select model")
 		requireRows(t, r.h.grid(), []string{
+			ruleRow(w),
 			boxTop(w, "Select model"),
 			boxRow(w, " ⌕ type to filter", ""),
 			modelRow(w, true, "alibaba/deepseek-v4.1-flash", "128k", "current"),
@@ -1027,6 +1047,7 @@ func TestScreens120Goldens(t *testing.T) {
 			modelRow(w, false, "xai/grok-5-code", "256k", "reasoning"),
 			boxBottom(w),
 			"   enter select  ·  esc close  ·  your draft is kept",
+			ruleRow(w),
 			footer,
 		})
 		requireContentGolden(t, r.h)
@@ -1188,9 +1209,10 @@ func TestRunningToolSpinnerAdvances(t *testing.T) {
 		userAt("go", sketchTime(14, 3)),
 		toolStart("c1", "echo", `{"text":"probe code request"}`, 0),
 	)...)
-	r.h.waitText("running ⠋")
+	r.h.waitText("◆ echo probe code request")
+	r.h.waitText("⠋")
 	r.clock.advance(80 * time.Millisecond)
-	r.h.waitText("running ⠙")
+	r.h.waitText("⠙")
 }
 
 func TestNoticeExpires(t *testing.T) {
@@ -1238,4 +1260,87 @@ func TestSelectorFilterWithNoMatchSelectsNothing(t *testing.T) {
 	require.Zero(t, r.fc.count("set_model"))
 	r.key("backspace", "backspace", "backspace")
 	r.h.waitText("alibaba/deepseek-v4.1-flash")
+}
+
+// ---- screen parts ----
+
+// The program starts on the alternate screen. The first row is the header and
+// the last row is the shortcut bar.
+func TestStartShowsHeaderAndBar(t *testing.T) {
+	t.Run("80x24", func(t *testing.T) {
+		r := startView(t, 80, 24)
+		grid := r.h.settle()
+		require.Len(t, grid, 24)
+		require.True(t, strings.HasPrefix(grid[0], "◢◤ ask  ● leader 7c1e"), grid[0])
+		require.Contains(t, grid[0], "deepseek-v4.1-flash")
+		require.Equal(t, ruleRow(80), grid[1], "a rule under the header")
+		require.Equal(t, " Tab blocks · ctrl+t thinking · ctrl+l model · / commands", grid[23])
+		require.Equal(t, ruleRow(80), grid[22])
+		require.Equal(t, " ❯ Ask anything  ·  / commands  ·  ctrl+l model", grid[21])
+		require.Equal(t, ruleRow(80), grid[20])
+		require.Contains(t, r.h.out.all(), "\x1b[?1049h", "the terminal is on the alternate screen")
+	})
+
+	t.Run("40x14", func(t *testing.T) {
+		r := startView(t, 40, 14)
+		grid := r.h.settle()
+		require.Len(t, grid, 14)
+		require.True(t, strings.HasPrefix(grid[0], "◢◤ ask ● 7c1e"), grid[0])
+		require.Equal(t, " Tab blocks · / commands", grid[13])
+		for _, row := range grid {
+			require.LessOrEqual(t, displayWidth(row), 40, row)
+		}
+	})
+}
+
+// A 12 line draft gives the prompt pane 12 rows and the block pane 7 rows. A
+// 13th line scrolls inside the prompt pane.
+func TestPromptPaneGrowsToHalfTheScreen(t *testing.T) {
+	r := startView(t, 80, 24)
+	r.firstTurn()
+	for i := 1; i <= 12; i++ {
+		if i > 1 {
+			r.key("ctrl+j")
+		}
+		r.typeText(fmt.Sprintf("draft line %d", i))
+	}
+	r.h.waitText("draft line 12")
+	grid := r.h.settle()
+	require.Equal(t, ruleRow(80), grid[22])
+	require.Equal(t, ruleRow(80), grid[9], "the block pane has rows 2 to 8: 7 rows")
+	require.Equal(t, " ❯ draft line 1", grid[10])
+	require.Equal(t, "   draft line 12", grid[21])
+
+	r.key("ctrl+j")
+	r.typeText("draft line 13")
+	r.h.waitText("draft line 13")
+	grid = r.h.settle()
+	require.Equal(t, ruleRow(80), grid[9], "the pane does not grow past half the screen")
+	require.Equal(t, "   draft line 2", grid[10], "the editor scrolls inside the pane")
+	require.Equal(t, "   draft line 13", grid[21])
+}
+
+// A selector takes the prompt pane slot between its rules and keeps the draft.
+func TestSelectorTakesThePromptPaneSlot(t *testing.T) {
+	r := startView(t, 80, 24)
+	r.typeText("my draft")
+	r.key("ctrl+l")
+	r.h.waitText("Select model")
+	grid := r.h.settle()
+	top := -1
+	for i, row := range grid {
+		if strings.HasPrefix(row, "╭─ Select model") {
+			top = i
+		}
+	}
+	require.Positive(t, top)
+	require.Equal(t, ruleRow(80), grid[top-1], "the rule of the prompt pane is above the selector")
+	require.Equal(t, ruleRow(80), grid[22], "and the other rule is under it")
+	require.Contains(t, grid[23], "Tab blocks", "the bar stays")
+	require.Zero(t, r.h.count("❯ my draft"), "the draft is hidden while the selector is open")
+
+	r.key("esc")
+	r.waitGone("Select model")
+	grid = r.h.settle()
+	require.Equal(t, " ❯ my draft", grid[21], "the draft is unchanged")
 }

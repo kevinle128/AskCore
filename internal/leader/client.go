@@ -38,6 +38,9 @@ const (
 	readyTimeout           = 5 * time.Second
 	managementTimeout      = 3 * time.Second
 	pollInterval           = 25 * time.Millisecond
+	// maxStarts is the number of leader starts one call makes when each one ends
+	// with an error before it serves.
+	maxStarts = 3
 )
 
 // ConnectConfig says how to reach the leader of one Ask home.
@@ -50,6 +53,11 @@ type ConnectConfig struct {
 	Deadline time.Duration
 	// CallerExe is the executable of the caller. An `ask` next to it is preferred.
 	CallerExe string
+	// CallerIsAsk tells that CallerExe is the ask program itself. Then a leader
+	// starts from CallerExe, so the leader matches the caller, whatever the name
+	// of its binary (`go run` names it after the package). Other programs, such
+	// as ask-server, leave it false and find `ask` next to them or on the PATH.
+	CallerIsAsk bool
 	// LookPath finds `ask` on the PATH. Nil means exec.LookPath.
 	LookPath func(string) (string, error)
 	// Env is the environment of a started leader. Nil means the current one.
@@ -58,6 +66,12 @@ type ConnectConfig struct {
 	Warn func(string)
 	// StartFn starts the leader process. Nil means StartLeader. Tests replace it.
 	StartFn func(StartConfig) (*Child, error)
+	// ZombieAfter is how long a leader must have served before ConnectOrSpawn
+	// stops it for holding the lock without a socket. Zero means 30 seconds.
+	ZombieAfter time.Duration
+	// EvictWait bounds each wait for such a leader to end after SIGTERM and after
+	// SIGKILL. Zero means 8 seconds.
+	EvictWait time.Duration
 }
 
 func (c ConnectConfig) withDefaults() ConnectConfig {
@@ -76,6 +90,12 @@ func (c ConnectConfig) withDefaults() ConnectConfig {
 	if c.StartFn == nil {
 		c.StartFn = StartLeader
 	}
+	if c.ZombieAfter == 0 {
+		c.ZombieAfter = defaultZombieAfter
+	}
+	if c.EvictWait == 0 {
+		c.EvictWait = defaultEvictWait
+	}
 	return c
 }
 
@@ -93,7 +113,7 @@ func (c *Client) Close() error {
 	return c.Conn.Close()
 }
 
-// Connect reaches a running leader. It never starts one.
+// Connect reaches a running leader. It never starts or replaces one.
 func Connect(ctx context.Context, cfg ConnectConfig) (*Client, error) {
 	return newConnector(cfg).run(ctx, false)
 }
@@ -108,6 +128,16 @@ func ConnectOrSpawn(ctx context.Context, cfg ConnectConfig) (*Client, error) {
 type connector struct {
 	cfg    ConnectConfig
 	hinted bool
+	// exe is the binary to start, found and probed once for all starts of a call;
+	// exeInfo is what its version command reported.
+	exe     string
+	exeInfo protocol.VersionInfo
+	// starts counts the leader processes that this call started.
+	starts int
+	// handled holds the owner records that this call already tried to evict.
+	handled map[Owner]bool
+	// evictNote says what an eviction did, for the error at the deadline.
+	evictNote string
 }
 
 func newConnector(cfg ConnectConfig) *connector { return &connector{cfg: cfg.withDefaults()} }
@@ -133,16 +163,33 @@ func (c *connector) run(ctx context.Context, spawn bool) (*Client, error) {
 		return nil, err
 	}
 	var child *Child
+	var failed error // the error of the last leader start that ended before it served
 	replaced := false
 	for {
 		cl, out, err := c.attempt(ctx)
 		switch out {
 		case outOK:
+			// A leader of an older build that a client started gives way to a newer
+			// client, also when it is busy. One replacement for each call.
+			if spawn && !replaced && newerBuild(stampOfHello(c.cfg.Hello), stampOfRegistered(cl.Info)) {
+				replaced = true
+				done, rerr := c.replaceOlder(ctx, cl)
+				if rerr != nil {
+					return nil, rerr
+				}
+				if done {
+					child = nil
+					continue
+				}
+			}
 			c.hintBuild(cl)
 			return cl, nil
 		case outFatal:
 			return nil, err
 		case outVersion:
+			if !spawn {
+				return nil, fmt.Errorf("%w: %v", ErrVersionRefused, err)
+			}
 			if replaced {
 				return nil, err
 			}
@@ -160,6 +207,10 @@ func (c *connector) run(ctx context.Context, spawn bool) (*Client, error) {
 			switch {
 			case held:
 				// A leader holds the lock: it is starting, or it does not answer. Wait.
+				// A serving leader that lost its socket is stopped, where that is safe.
+				if spawn {
+					c.evictZombie(ctx)
+				}
 			case !spawn:
 				return nil, ErrLeaderAbsent
 			case child == nil:
@@ -171,7 +222,13 @@ func (c *connector) run(ctx context.Context, spawn bool) (*Client, error) {
 				select {
 				case <-child.Exited():
 					if child.Err() != nil {
-						return nil, fmt.Errorf("%w: %v; log: %s", ErrStartupFailed, child.Err(), LogTail(p, 2048))
+						failed = child.Err()
+						if c.starts >= maxStarts {
+							return nil, c.startupFailure(failed)
+						}
+						// A leader that ends with an error before it serves is started again.
+						child = nil
+						break
 					}
 					// A child that exits cleanly lost the lock race. The winner serves soon.
 				default:
@@ -181,7 +238,13 @@ func (c *connector) run(ctx context.Context, spawn bool) (*Client, error) {
 		select {
 		case <-ctx.Done():
 			if child != nil && child.Err() != nil {
-				return nil, fmt.Errorf("%w: %v; log: %s", ErrStartupFailed, child.Err(), LogTail(p, 2048))
+				failed = child.Err()
+			}
+			if failed != nil {
+				return nil, c.startupFailure(failed)
+			}
+			if c.evictNote != "" {
+				return nil, fmt.Errorf("%w: %s", ErrLeaderStarting, c.evictNote)
 			}
 			return nil, fmt.Errorf("%w: waited %s", ErrLeaderStarting, c.cfg.Deadline)
 		case <-time.After(pollInterval):
@@ -189,24 +252,71 @@ func (c *connector) run(ctx context.Context, spawn bool) (*Client, error) {
 	}
 }
 
-// start finds and probes the ask binary and starts a leader from it.
-func (c *connector) start(ctx context.Context) (*Child, error) {
-	exe, err := FindAsk(c.cfg.CallerExe, c.cfg.LookPath)
+// prepare finds and probes the ask binary once for all starts of the call.
+func (c *connector) prepare(ctx context.Context) error {
+	if c.exe != "" {
+		return nil
+	}
+	exe, err := c.leaderExecutable()
 	if err != nil {
+		return err
+	}
+	info, err := ProbeAsk(ctx, exe, c.cfg.Hello.ProtocolVersion)
+	if err != nil {
+		return err
+	}
+	c.exe, c.exeInfo = exe, info
+	return nil
+}
+
+// start starts a leader from the probed ask binary.
+func (c *connector) start(ctx context.Context) (*Child, error) {
+	if err := c.prepare(ctx); err != nil {
 		return nil, err
 	}
-	if _, err := ProbeAsk(ctx, exe, c.cfg.Hello.ProtocolVersion); err != nil {
-		return nil, err
+	c.starts++
+	return c.cfg.StartFn(StartConfig{Executable: c.exe, Paths: c.cfg.Paths, Env: c.cfg.Env})
+}
+
+// startupFailure describes a leader that was started and ended without serving.
+func (c *connector) startupFailure(err error) error {
+	return fmt.Errorf("%w: %v after %d starts; log: %s", ErrStartupFailed, err, c.starts, LogTail(c.cfg.Paths, 2048))
+}
+
+// leaderExecutable returns the binary to start a leader from. A caller that is
+// ask starts the leader from its own binary while that file exists; a caller
+// that exists but is not usable is an error, as for FindAsk. Otherwise ask is
+// found next to the caller or on the PATH.
+func (c *connector) leaderExecutable() (string, error) {
+	if c.cfg.CallerIsAsk && c.cfg.CallerExe != "" {
+		if _, err := os.Lstat(c.cfg.CallerExe); err == nil {
+			return checkExecutable(c.cfg.CallerExe)
+		}
 	}
-	return c.cfg.StartFn(StartConfig{Executable: exe, Paths: c.cfg.Paths, Env: c.cfg.Env})
+	return FindAsk(c.cfg.CallerExe, c.cfg.LookPath)
 }
 
 func (c *connector) hintBuild(cl *Client) {
-	if c.hinted || cl.Info.Build == c.cfg.Hello.Build || c.cfg.Hello.Build == "" {
+	if c.hinted || c.cfg.Hello.Build == "" {
+		return
+	}
+	switch {
+	case cl.Info.Build != c.cfg.Hello.Build:
+		c.hinted = true
+		c.cfg.Warn(fmt.Sprintf("ask: the leader runs build %s and this client is build %s; run `ask leader stop` to restart the leader with this build", cl.Info.Build, c.cfg.Hello.Build))
+	case otherDevBuild(stampOfHello(c.cfg.Hello), stampOfRegistered(cl.Info)):
+		c.hinted = true
+		c.cfg.Warn("ask: the leader runs another dev build; run `ask leader stop` to restart the leader with this build")
+	}
+}
+
+// keep warns once why an older leader stays, and tells that the leader is kept.
+func (c *connector) keep(msg string) {
+	if c.hinted {
 		return
 	}
 	c.hinted = true
-	c.cfg.Warn(fmt.Sprintf("ask: the leader runs build %s and this client is build %s; run `ask leader stop` to restart the leader with this build", cl.Info.Build, c.cfg.Hello.Build))
+	c.cfg.Warn("ask: the leader runs an older build; " + msg)
 }
 
 // attempt tries one connection and one handshake.
@@ -290,7 +400,12 @@ func (c *connector) replace(ctx context.Context, cause error) error {
 	if err != nil || frame.Type != protocol.LeaderFrameControlReply {
 		return fmt.Errorf("%w: %s; the old leader is busy, run `ask leader stop` when its work is done", ErrVersionRefused, remote.Message)
 	}
-	// Wait for the lock and the socket to be free before a new leader starts.
+	return c.waitReleased(ctx)
+}
+
+// waitReleased waits until the lock and the socket are free, so that a new
+// leader can start.
+func (c *connector) waitReleased(ctx context.Context) error {
 	for {
 		held, herr := LockHeld(c.cfg.Paths)
 		if herr == nil && !held && !socketAnswers(c.cfg.Paths) {
@@ -302,6 +417,46 @@ func (c *connector) replace(ctx context.Context, cause error) error {
 		case <-time.After(pollInterval):
 		}
 	}
+}
+
+// replaceOlder stops a leader of an older build, which this client started, and
+// waits until its lock and socket are free. The binary that would start must be
+// newer than the leader too, and it is probed before the old leader is asked to
+// stop. It returns false with no error when the leader stays; it has then said
+// why. If another instance took over during the probe, it closes the old link
+// and returns true so the caller connects to that instance without stopping it.
+// A leader that runs under a supervisor stays: the supervisor would start
+// the old build again.
+func (c *connector) replaceOlder(ctx context.Context, cl *Client) (bool, error) {
+	if err := c.prepare(ctx); err != nil || !newerBuild(stampOfVersion(c.exeInfo), stampOfRegistered(cl.Info)) {
+		c.keep("the binary that would start a new leader is not newer than it; run `ask leader stop` after you install the new binary")
+		return false, nil
+	}
+	frame, err := c.manage(ctx, protocol.LeaderControl{Command: protocol.LeaderControlStatus})
+	if err != nil || frame.Type != protocol.LeaderFrameControlReply {
+		c.keep("it could not be asked for its status; run `ask leader stop` to restart it with this build")
+		return false, nil
+	}
+	var st protocol.LeaderStatus
+	if json.Unmarshal(frame.Payload, &st) != nil {
+		c.keep("it could not be asked for its status; run `ask leader stop` to restart it with this build")
+		return false, nil
+	}
+	if st.InstanceID != cl.Info.InstanceID {
+		_ = cl.Close()
+		return true, nil
+	}
+	if !st.SpawnedByClient {
+		c.keep("it was not started by a client; restart it with the new binary")
+		return false, nil
+	}
+	frame, err = c.manage(ctx, protocol.LeaderControl{Command: protocol.LeaderControlShutdown, InstanceID: st.InstanceID})
+	if err != nil || frame.Type != protocol.LeaderFrameControlReply {
+		c.keep("it refused to stop; run `ask leader stop` to restart it with this build")
+		return false, nil
+	}
+	_ = cl.Close()
+	return true, c.waitReleased(ctx)
 }
 
 // manage sends one control frame over a connection that the version gate

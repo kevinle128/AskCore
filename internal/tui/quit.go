@@ -9,17 +9,17 @@ import (
 
 // Quit flow.
 //
-// A user request to quit ends the program after the live region is cleared.
-// The note that tells what happened to the run is not part of the live region:
-// the entry prints it after the terminal is restored, so that it stays above the
-// shell prompt. A stop from outside (a signal) clears the region and has no note.
+// A user request to quit ends the program and leaves the alternate screen. The
+// note that tells what happened to the run is not part of the screen: the
+// entry prints it after the terminal is restored, so that it stays above the
+// shell prompt. A stop from outside (a signal) has no note.
 
 // quitConfirmFor is how long a first ctrl+c on an empty draft waits for the
 // second press.
 const quitConfirmFor = 2 * time.Second
 
-// StopMsg ends the program at once, as a signal does. The live region is
-// cleared and no note is kept. It is the one way to stop the program from
+// StopMsg ends the program at once, as a signal does. The alternate screen is
+// left and no note is kept. It is the one way to stop the program from
 // outside the update loop other than killing it.
 type StopMsg struct{}
 
@@ -53,6 +53,7 @@ func (s *sessionView) quitConfirmed() bool {
 // agent stops with its client, and the note says which one happened.
 func (s *sessionView) requestQuit() tea.Cmd {
 	s.quitNote = s.buildQuitNote()
+	s.m.closeViewer()
 	s.m.quitting = true
 	return tea.Quit
 }
@@ -80,6 +81,17 @@ func (s *sessionView) buildQuitNote() *quitNote {
 		n.next = "Run ask in this directory to see it again."
 	}
 	return n
+}
+
+// SessionID returns the id of the session that the program shows now, or ""
+// when no session exists: the start failed, the open did not end, or the
+// leader lost the session. The entry prints it after the program ended. Call
+// it after Run returned.
+func (m *Model) SessionID() string {
+	if m.sv == nil {
+		return ""
+	}
+	return m.sv.sess.ID
 }
 
 // ExitNote returns the rows to print below the last screen after the program

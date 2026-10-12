@@ -25,6 +25,7 @@ func DefaultCommands() []CommandSpec {
 		{"/new", "Start a new session in this directory"},
 		{"/sessions", "Watch another live session"},
 		{"/take", "Take control of this session"},
+		{"/copy", "Copy the last reply"},
 		{"/quit", "Detach and quit"},
 	}
 }

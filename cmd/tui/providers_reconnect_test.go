@@ -149,7 +149,7 @@ func TestInteractiveReconnectDrawsNoMissedModelChanges(t *testing.T) {
 
 	a := startAskTerm(t, bin, proxyHome, askTermOptions{})
 	a.waitText("Ask anything")
-	a.waitFor("the leader footer", func(rows []string) bool { return hasRow(rows, "⌂", "leader ") && hasRow(rows, "faux-1") })
+	a.waitFor("the leader in the header row", func(rows []string) bool { return hasRow(rows, "⌂", "leader ", "faux-1") })
 	ids := liveSessionIDs(t, bin, home)
 	require.Len(t, ids, 1)
 	sid := ids[0]

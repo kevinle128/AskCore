@@ -59,6 +59,9 @@ type LeaderRegister struct {
 	ClientKind      string `json:"clientKind"`
 	ProtocolVersion int    `json:"protocolVersion"`
 	Build           string `json:"build"`
+	// CommitTime and DevStamp say how new the build is. See VersionInfo.
+	CommitTime string `json:"commitTime,omitempty"`
+	DevStamp   string `json:"devStamp,omitempty"`
 }
 
 // LeaderRegistered answers a register frame.
@@ -69,6 +72,9 @@ type LeaderRegistered struct {
 	ProtocolVersion int      `json:"protocolVersion"`
 	Ready           bool     `json:"ready"`
 	Controls        []string `json:"controls,omitempty"`
+	// CommitTime and DevStamp say how new the leader build is. See VersionInfo.
+	CommitTime string `json:"commitTime,omitempty"`
+	DevStamp   string `json:"devStamp,omitempty"`
 }
 
 // LeaderError reports a refused request. Upgrade names the side that must
@@ -99,6 +105,9 @@ type LeaderStatus struct {
 	Sessions        int    `json:"sessions"`
 	ActiveRuns      int    `json:"activeRuns"`
 	SpawnedByClient bool   `json:"spawnedByClient"`
+	// CommitTime and DevStamp say how new the leader build is. See VersionInfo.
+	CommitTime string `json:"commitTime,omitempty"`
+	DevStamp   string `json:"devStamp,omitempty"`
 }
 
 // VersionInfo is the output of `ask version --json`. A client reads it before it
@@ -108,4 +117,11 @@ type VersionInfo struct {
 	Build          string `json:"build"`
 	LeaderProtocol int    `json:"leaderProtocol"`
 	ACPVersion     int    `json:"acpVersion"`
+	// CommitTime is the commit time of the VCS revision of the build, in RFC
+	// 3339. It is empty for a build without a VCS stamp.
+	CommitTime string `json:"commitTime,omitempty"`
+	// DevStamp is set only when CommitTime is empty. It is the modification time
+	// of the executable (RFC 3339 with nanoseconds, UTC), a space, and "sha256:"
+	// with the lowercase hex SHA-256 of its bytes.
+	DevStamp string `json:"devStamp,omitempty"`
 }

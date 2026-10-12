@@ -5,72 +5,92 @@ import (
 	"strings"
 )
 
-// Live region layout.
+// Screen layout.
 //
-// The live region is the part of the screen that the program redraws: the
-// transcript tail, status, pending input, a completion list, the editor slot
-// and the footer. Layout gives rows to the slots in a fixed priority order, so
-// a small terminal always keeps the editor usable. It counts terminal columns
-// and rows, never bytes.
+// The TUI owns the whole alternate screen. Top to bottom the rows are:
 //
-// Priority, first to last (the last slots lose rows first):
-//  1. editor slot: at least 1 row; up to 30% of the height, then it scrolls
-//  2. status: 1 row when it has content; a disconnected link uses 2 rows
-//  3. footer: 1 row; hidden under 8 rows
-//  4. pending: up to 3 rows, the last one is "+N more" when rows are cut
-//  5. menu (completion list): up to 8 rows, the last one is "… N more"
-//  6. transcript tail: the rest, but never the last screen row; when it does
-//     not fit, its last rows show
+//	header row
+//	rule
+//	block pane            all rows that no other part uses
+//	queue rows            only when inputs wait
+//	status row(s)         only when the rail has text
+//	rule
+//	prompt pane           menu rows, then the editor rows (or a selector or box)
+//	rule
+//	shortcut bar
 //
-// Under 4 rows only the editor and the status remain. A modal slot (a
-// selector or a dialog) replaces the editor and may use up to 14 rows.
+// Layout counts terminal columns and rows, never bytes. It gives rows to the
+// parts in a fixed priority order, so a small terminal keeps the prompt usable:
+//  1. the prompt pane keeps one row, the bar and the header stay, the block
+//     pane keeps one row (below 4 rows the pane and then the header give way)
+//  2. the three rules, all or none: they exist from rulesMinHeight rows
+//  3. the status row
+//  4. the prompt pane grows up to half of the screen height
+//  5. the queue rows: up to 3, the last one is "+N more" when rows are cut
+//  6. the menu rows (completion list): up to 8, inside the half of the prompt
+//     pane, the last one is "… N more"
+//  7. the block pane takes the rest
 //
-// Top to bottom the rows are drawn: tail, status, pending, menu, editor,
-// footer.
+// A selector or a box replaces the prompt rows and has the same cap.
 
 const (
-	editorHeightPercent = 30
-	statusMaxRows       = 2
-	pendingMaxRows      = 3
-	menuMaxRows         = 8
-	// modalMaxRows is the most rows that a selector or dialog takes. The
-	// provider box with an error under its seven rows needs 14.
-	modalMaxRows       = 14
-	footerMinHeight    = 8
-	compactHeight      = 4
-	minBoxedEditorRows = 3
-	minBoxedWidth      = 6
-	boxPadding         = 4 // "│ " on the left and " │" on the right
+	statusMaxRows  = 2
+	pendingMaxRows = 3
+	menuMaxRows    = 8
+	// modalMaxRows is the most rows that a selector or dialog takes before the
+	// half-height cap of the prompt pane applies. The provider box with an error
+	// under its seven rows needs 14.
+	modalMaxRows = 14
+	// rulesMinHeight is the height from which the rules are drawn. At this
+	// height the header, its rule, one pane row, one status row, the two prompt
+	// rules, one prompt row and the bar fill the screen.
+	rulesMinHeight = 8
+	// minPaneHeight is the number of pane rows that a screen of 4 rows or more
+	// keeps.
+	minPaneHeight = 1
+	// promptLeftPad is the number of columns before a row of the editor. The
+	// right side keeps one column free for the cursor at the end of a row.
+	promptLeftPad = 1
+	// boxPadding is the width of "│ " and " │" in the box of a selector or
+	// dialog.
+	boxPadding = 4
 )
 
-// BoxInnerWidth is the width that an editor row may use inside the box that
-// layout draws around the editor, for a terminal width.
-func BoxInnerWidth(width int) int { return max(0, width-boxPadding) }
+// PromptInnerWidth is the width that an editor row may use inside the prompt
+// pane, for a terminal width.
+func PromptInnerWidth(width int) int { return max(0, width-promptLeftPad-1) }
+
+// promptSlotRows is the most rows that the prompt pane may use for a terminal
+// height: half of the screen, rounded down, and at least one row.
+func promptSlotRows(height int) int { return max(1, height/2) }
 
 // CursorPos is a position in rows and columns, counted from the top left of
 // the rows it refers to.
 type CursorPos struct{ Row, Col int }
 
-// EditorSlot is the content of the editor slot.
+// EditorSlot is the content of the prompt pane.
 type EditorSlot struct {
-	// Rows are the inner rows of the editor, without the box. With Modal
-	// set, they are the complete rows of a selector or dialog.
+	// Rows are the rows of the editor. With Modal set, they are the complete
+	// rows of a selector or dialog.
 	Rows []string
 	// Cursor is the cursor in Rows. Nil hides the hardware cursor.
 	Cursor *CursorPos
-	// Modal marks a selector or dialog: layout draws no box and keeps the
+	// Modal marks a selector or dialog: layout adds no left pad and keeps the
 	// first rows when it must cut.
 	Modal bool
 }
 
-// Slots is what the components contribute to the live region. All rows are
-// already drawn for the terminal width. Layout still guards the width.
+// Slots is what the components contribute to the screen. All rows are already
+// drawn for the terminal width. Layout still guards the width.
 type Slots struct {
+	// Header is the row at the top of the screen.
+	Header string
 	Editor EditorSlot
 	// Status is the run status. A line feed splits it into rows; layout gives
 	// it at most statusMaxRows.
-	Status  string
-	Footer  string
+	Status string
+	// Bar is the shortcut bar at the last row.
+	Bar     string
 	Pending []string
 	Menu    []string
 }
@@ -81,32 +101,40 @@ type SlotSource interface {
 	Slots(width int) Slots
 }
 
-// Frame is the live region ready for the renderer.
+// Frame is the screen ready for the renderer: exactly one row for each
+// terminal row.
 type Frame struct {
 	Rows []string
 	// Cursor is the hardware cursor inside Rows, or nil.
 	Cursor *CursorPos
+	// Geo tells where the parts are, so that a mouse position maps to a part.
+	Geo FrameGeo
 }
 
-// demand is the number of rows each slot wants.
+// FrameGeo is the place of the parts that take mouse input, counted in screen
+// rows from the top.
+type FrameGeo struct {
+	// PaneTop and PaneRows are the rows of the block pane.
+	PaneTop, PaneRows int
+	// PromptTop and PromptRows are the rows that show the editor, or a selector
+	// or box. PromptStart is the index of the first editor row that is shown.
+	PromptTop, PromptRows, PromptStart int
+}
+
+// demand is the number of rows each part wants. prompt is the number of editor
+// rows (or modal rows); menu and queue are the lists that sit above them.
 type demand struct {
-	editor, status, footer, pending, menu, tail int
-	modal                                       bool
+	prompt, menu, status, queue int
 }
 
-// alloc is the number of rows each slot gets.
+// alloc is the number of rows each part gets. headerRule is 0 or 1 and
+// promptRules is 0 or 2.
 type alloc struct {
-	editor, status, footer, pending, menu, tail int
+	header, headerRule, pane, queue, status, promptRules, prompt, menu, bar int
 }
 
-func editorCap(height int, modal bool) int {
-	if modal {
-		return min(modalMaxRows, height)
-	}
-	return max(1, height*editorHeightPercent/100)
-}
-
-// allocate gives rows to the slots in priority order.
+// allocate gives rows to the parts in priority order. The rows add up to
+// height.
 func allocate(height int, d demand) alloc {
 	var a alloc
 	if height <= 0 {
@@ -118,54 +146,67 @@ func allocate(height int, d demand) alloc {
 		rem -= n
 		return n
 	}
-	a.editor = take(d.editor, editorCap(height, d.modal))
+	a.prompt = take(1, 1)
+	a.bar = take(1, 1)
+	a.header = take(1, 1)
+	a.pane = take(minPaneHeight, minPaneHeight)
+	if height >= rulesMinHeight {
+		a.headerRule = take(1, 1)
+		a.promptRules = take(2, 2)
+	}
 	a.status = take(d.status, statusMaxRows)
-	if height < compactHeight {
-		return a
-	}
-	if height >= footerMinHeight {
-		a.footer = take(d.footer, 1)
-	}
-	a.pending = take(d.pending, pendingMaxRows)
-	a.menu = take(d.menu, menuMaxRows)
-	a.tail = take(d.tail, rem)
+	slot := promptSlotRows(height)
+	a.prompt += take(d.prompt-1, slot-1)
+	a.queue = take(d.queue, pendingMaxRows)
+	a.menu = take(d.menu, min(menuMaxRows, slot-a.prompt))
+	a.pane += rem
 	return a
 }
 
-// composeFrame lays out the live region for a terminal of w columns and h rows.
-func composeFrame(s Slots, tail []string, w, h int, th *Theme) Frame {
+// composeFrame lays out the screen for a terminal of w columns and h rows.
+// pane draws the block pane for a number of rows; layout asks for it once the
+// other parts have their rows. The frame has h rows.
+func composeFrame(s Slots, pane func(rows int) []string, w, h int, th *Theme) Frame {
 	if w < 1 || h < 1 {
 		return Frame{}
 	}
 	ed := s.Editor
-	boxed := !ed.Modal && len(ed.Rows) > 0 && w >= minBoxedWidth && editorCap(h, false) >= minBoxedEditorRows
-
 	d := demand{
-		editor:  len(ed.Rows),
-		footer:  boolInt(s.Footer != ""),
-		status:  statusRowCount(s.Status),
-		pending: len(s.Pending),
-		menu:    len(s.Menu),
-		tail:    len(tail),
-		modal:   ed.Modal,
-	}
-	if boxed {
-		d.editor += 2
+		prompt: max(1, len(ed.Rows)),
+		menu:   len(s.Menu),
+		status: statusRowCount(s.Status),
+		queue:  len(s.Pending),
 	}
 	a := allocate(h, d)
-	if h >= compactHeight {
-		// The frame never fills the whole screen. A commit scrolls the screen
-		// by the rows it writes; with one free row above the frame, the row
-		// that leaves the screen is always history and never a stale copy of
-		// the frame.
-		others := a.editor + a.status + a.footer + a.pending + a.menu
-		a.tail = max(0, min(a.tail, h-1-others))
-	}
 
-	var rows []string
+	rows := make([]string, 0, h)
 	add := func(r string) { rows = append(rows, truncateTo(r, w)) }
+	rule := func() { rows = append(rows, th.Render(RoleBorder, strings.Repeat("─", w))) }
 
-	for _, r := range tail[max(0, len(tail)-a.tail):] {
+	if a.header > 0 {
+		add(s.Header)
+	}
+	if a.headerRule > 0 {
+		rule()
+	}
+	geo := FrameGeo{PaneTop: len(rows), PaneRows: a.pane}
+	if a.pane > 0 && pane != nil {
+		got := pane(a.pane)
+		got = got[:min(len(got), a.pane)]
+		for _, r := range got {
+			add(r)
+		}
+		for i := len(got); i < a.pane; i++ {
+			rows = append(rows, "")
+		}
+	} else {
+		for i := 0; i < a.pane; i++ {
+			rows = append(rows, "")
+		}
+	}
+	for _, r := range limitRows(s.Pending, a.queue, func(n int) string {
+		return th.Render(RoleDim, fmt.Sprintf("%s +%d more", GlyphRailQueue, n))
+	}) {
 		add(r)
 	}
 	if a.status > 0 {
@@ -173,10 +214,8 @@ func composeFrame(s Slots, tail []string, w, h int, th *Theme) Frame {
 			add(r)
 		}
 	}
-	for _, r := range limitRows(s.Pending, a.pending, func(n int) string {
-		return th.Render(RoleDim, fmt.Sprintf("%s +%d more", GlyphRailQueue, n))
-	}) {
-		add(r)
+	if a.promptRules > 0 {
+		rule()
 	}
 	for _, r := range limitRows(s.Menu, a.menu, func(n int) string {
 		return th.Render(RoleDim, fmt.Sprintf("… %d more", n))
@@ -185,58 +224,57 @@ func composeFrame(s Slots, tail []string, w, h int, th *Theme) Frame {
 	}
 
 	editorTop := len(rows)
-	cursor := layoutEditor(&rows, ed, a.editor, boxed, w, th)
+	geo.PromptTop, geo.PromptRows, geo.PromptStart = editorTop, a.prompt, promptStart(ed, a.prompt)
+	cursor := layoutPrompt(&rows, ed, a.prompt, w)
 	if cursor != nil {
 		cursor.Row += editorTop
 	}
-
-	if a.footer > 0 {
-		add(s.Footer)
+	if a.promptRules > 0 {
+		rule()
 	}
-	return Frame{Rows: rows, Cursor: cursor}
+	if a.bar > 0 {
+		add(s.Bar)
+	}
+	return Frame{Rows: rows, Cursor: cursor, Geo: geo}
 }
 
-// layoutEditor appends the editor rows and returns the cursor relative to the
+// promptStart is the index of the first editor row that n prompt rows show. An
+// editor scrolls to keep its cursor in view; a selector or box keeps its first
+// rows.
+func promptStart(ed EditorSlot, n int) int {
+	if ed.Modal || ed.Cursor == nil {
+		return 0
+	}
+	return min(max(0, ed.Cursor.Row-n+1), max(0, len(ed.Rows)-n))
+}
+
+// layoutPrompt appends n prompt rows and returns the cursor relative to the
 // first appended row, or nil when the cursor is not visible.
-func layoutEditor(out *[]string, ed EditorSlot, n int, boxed bool, w int, th *Theme) *CursorPos {
+func layoutPrompt(out *[]string, ed EditorSlot, n, w int) *CursorPos {
 	if n <= 0 {
 		return nil
 	}
-	inner := n
-	if boxed {
-		inner = n - 2
-	}
-	start := 0
-	if !ed.Modal && ed.Cursor != nil {
-		start = min(max(0, ed.Cursor.Row-inner+1), max(0, len(ed.Rows)-inner))
-	}
-	visible := ed.Rows[start:min(len(ed.Rows), start+inner)]
+	start := promptStart(ed, n)
+	visible := ed.Rows[min(start, len(ed.Rows)):min(len(ed.Rows), start+n)]
 
 	var cursor *CursorPos
 	if ed.Cursor != nil && ed.Cursor.Row >= start && ed.Cursor.Row < start+len(visible) {
 		cursor = &CursorPos{Row: ed.Cursor.Row - start, Col: ed.Cursor.Col}
 	}
-
-	if !boxed {
-		for _, r := range visible {
-			*out = append(*out, truncateTo(r, w))
-		}
-		if cursor != nil {
-			cursor.Col = min(cursor.Col, w-1)
-		}
-		return cursor
+	pad := promptLeftPad
+	if ed.Modal {
+		pad = 0
 	}
-
-	innerWidth := BoxInnerWidth(w)
-	bar := th.Render(RoleBorder, "│")
-	*out = append(*out, th.Render(RoleBorder, "╭"+strings.Repeat("─", w-2)+"╮"))
+	lead := strings.Repeat(" ", pad)
 	for _, r := range visible {
-		*out = append(*out, bar+" "+padTo(truncateTo(r, innerWidth), innerWidth)+" "+bar)
+		*out = append(*out, truncateTo(lead+r, w))
 	}
-	*out = append(*out, th.Render(RoleBorder, "╰"+strings.Repeat("─", w-2)+"╯"))
+	// An empty editor still owns its row.
+	for i := len(visible); i < n; i++ {
+		*out = append(*out, "")
+	}
 	if cursor != nil {
-		cursor.Row++
-		cursor.Col = min(cursor.Col+2, w-3)
+		cursor.Col = min(cursor.Col+pad, w-1)
 	}
 	return cursor
 }
@@ -260,11 +298,4 @@ func statusRowCount(status string) int {
 		return 0
 	}
 	return min(statusMaxRows, strings.Count(status, "\n")+1)
-}
-
-func boolInt(b bool) int {
-	if b {
-		return 1
-	}
-	return 0
 }

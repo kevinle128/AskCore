@@ -101,7 +101,7 @@ func TestLeaderE2EAutoStartStatusStop(t *testing.T) {
 	require.NoError(t, err)
 	require.NotZero(t, owner.PID)
 	require.Equal(t, instance, owner.Instance)
-	require.NoError(t, leader.VerifyLeaderProcess(owner.PID, owner.Start), "the verification accepts the real leader")
+	require.NoError(t, leader.VerifyLeaderProcess(owner), "the verification accepts the real leader")
 	held, err := leader.LockHeld(paths)
 	require.NoError(t, err)
 	require.True(t, held)
@@ -121,6 +121,9 @@ func TestLeaderE2EAutoStartStatusStop(t *testing.T) {
 	require.NoError(t, json.Unmarshal(out, &raw))
 	var names []string
 	for k := range raw {
+		if k == "commitTime" || k == "devStamp" {
+			continue // the build stamp is identity too
+		}
 		names = append(names, k)
 	}
 	require.ElementsMatch(t, []string{"instanceId", "build", "protocolVersion", "pid", "clients", "sessions", "activeRuns", "spawnedByClient"}, names,
@@ -159,6 +162,25 @@ func TestLeaderE2EAutoStartStatusStop(t *testing.T) {
 	require.Equal(t, protocol.LeaderFrameError, f.Type)
 	_, err = c1.Reader.Next()
 	require.Error(t, err)
+}
+
+func TestLeaderE2EConnectKeepsAnOlderProtocolLeader(t *testing.T) {
+	bin := acpBinary(t)
+	home := leaderHome(t)
+	stopLeaderAtEnd(t, bin, home)
+	c, err := leader.ConnectOrSpawn(context.Background(), e2eConnect(home, bin))
+	require.NoError(t, err)
+	instance := c.Info.InstanceID
+	_ = c.Close()
+
+	cfg := e2eConnect(home, bin)
+	cfg.Hello.ProtocolVersion = protocol.LeaderProtocolVersion + 1
+	cfg.Deadline = time.Second
+	_, err = leader.Connect(context.Background(), cfg)
+	require.ErrorIs(t, err, leader.ErrVersionRefused)
+	st, err := leader.Status(context.Background(), e2eConnect(home, bin))
+	require.NoError(t, err, "Connect must leave the leader running")
+	require.Equal(t, instance, st.InstanceID)
 }
 
 func TestLeaderE2ESpawnRace(t *testing.T) {
@@ -378,7 +400,7 @@ func TestLeaderE2EStopFallsBackToVerifiedSignal(t *testing.T) {
 	paths, _ := leader.ResolvePaths(home)
 	owner, err := leader.ReadOwner(paths)
 	require.NoError(t, err)
-	require.NoError(t, leader.VerifyLeaderProcess(owner.PID, owner.Start))
+	require.NoError(t, leader.VerifyLeaderProcess(owner))
 
 	require.NoError(t, syscall.Kill(owner.PID, syscall.SIGSTOP))
 	t.Cleanup(func() { _ = syscall.Kill(owner.PID, syscall.SIGCONT); _ = syscall.Kill(owner.PID, syscall.SIGKILL) })

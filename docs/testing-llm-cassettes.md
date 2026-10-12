@@ -13,8 +13,8 @@ They do not prove live subscription eligibility or provider approval.
 | 3. Hand-written faults and lifecycle fixtures | HTTP 429/500, a cut stream, bad JSON, a connection reset, retry, tool concurrency, steering, follow-up, slow listeners, and SIGINT | `cmd/tui/headless_fault_test.go`, `cmd/tui/headless_lifecycle_test.go` |
 | 4. Live smoke | Changes in the vendor API. Run it by hand only: `ASK_LIVE=1 go test -run Live ./cmd/tui` | `cmd/tui/headless_live_test.go` |
 
-Layers 1 and 3 go through `newHeadlessAgent` and `runHeadless`.
-This is the same setup and run code as `ask -p`.
+Layers 1 and 3 go through the same agent setup (`newNativeAgent`, `newHeadlessAgent`) and `runHeadless` as `ask -p`.
+The agent has the built-in tools (`read`, `write`, `edit`, `ls`, `grep`, `find`, `bash`, `job_output`, `job_kill`, `job_list`, `monitor`) and a system prompt that lists them, so every request body holds them.
 Cassettes replace only the HTTP transport.
 The lifecycle fixture also supplies extra tools and records retry waits instead of sleeping.
 Its channel gates check overlap and exclusive execution without a timing guess.
@@ -43,7 +43,8 @@ It is built on `go-vcr` v4 and records at the `http.RoundTripper` layer.
   - A request that is not in the cassette fails the test.
   - A recorded request that was never sent fails the test.
 - **Record** first removes the old file, so a failed recording cannot leave stale data. It then sends every request to the real server and saves the cassette after each response. Only `Content-Type`, `Anthropic-Version` and `Anthropic-Beta` request headers are kept. Auth headers and per-request ids never reach the file.
-- **Determinism:** Token Plan request bodies have no timestamps, cwd or ids. Request N repeats the earlier replies, and on replay those come from the cassette. So no normalization is needed beyond sorting the keys.
+- **Determinism:** The request bodies of the cassette tests have no timestamps, cwd or ids, with one exception: the OpenAI Responses wire sends the session ID as `prompt_cache_key`. The cassette tests therefore use one fixed session ID (`cassetteSessionID` in `cmd/tui/headless_record_test.go`, set by `newCassetteAgent`). Request N repeats the earlier replies, and on replay those come from the cassette. So no normalization is needed beyond sorting the keys.
+- **Provider:** The six cassette tests run on OpenAI (`--provider openai --model gpt-5.5`, API key, Responses wire). Replay uses a placeholder key and the same request body. A new cassette test must call `useCassette` with the provider and model, and must use `newCassetteAgent`.
 
 ## Re-record a cassette
 
@@ -55,24 +56,26 @@ ASK_RECORD=1 go test -run '^TestCassetteOneToolCall$' ./cmd/tui
 
 - Always use `-run`, so you re-record only the test you need.
 - A recording may make at most 10 requests by default. Change the limit with `ASK_RECORD_MAX_REQUESTS`. When the limit is reached, the run stops, so a looping agent cannot spend money.
-- The key comes from `ALIBABA_TOKEN_PLAN_API_KEY` or `ASK_ALIBABA_TOKEN_PLAN_API_KEY`.
-- Each cassette uses the default model `deepseek-v4.1-flash`, and costs a few requests.
+- The key comes from `OPENAI_API_KEY` in the environment. Never write it in a command line or a file.
+- Each cassette uses the model `gpt-5.5`, and costs a few requests.
 - Review the YAML diff in the PR. The model may answer in other words. Narrow prompts keep the shape stable, for example "reply with only the number".
 - If the shape changes, fix the prompt or the assertion on purpose. Never loosen an assertion only to make the test pass.
 
 ## Turn a real session into a test
 
 ```sh
-ASK_CAPTURE=/tmp/ask-capture ask -p "..." --provider alibaba-token-plan
+ASK_CAPTURE=/tmp/ask-capture ask -p "..." --provider openai --model gpt-5.5
 # stderr: ask: capturing provider HTTP to /tmp/ask-capture/20261005-215018.780.yaml
 ```
 
 1. Move the file to `cmd/tui/testdata/cassettes/<TestName>.yaml`.
-2. Write `TestName` with `useCassette`, and use the same prompt and tools. `TestCapturedSessionReplays` is an example.
-3. Read the YAML before you commit it. Tool output in a real session can contain file contents or paths.
-4. Commit it. `TestCassettesHoldNoSecrets` fails on auth headers, key-like strings or the key from the environment.
+2. In the file, replace the random session ID (the value of `prompt_cache_key` in each request body) with `cassetteSessionID`, so the replay sends the same body.
+3. Write `TestName` with `useCassette`, and use the same prompt and tools. `TestCapturedSessionReplays` is an example.
+4. Read the YAML before you commit it. Tool output in a real session can contain file contents or paths.
+5. Commit it. `TestCassettesHoldNoSecrets` fails on auth headers, key-like strings or the key from the environment.
 
 Tools run again on replay. If a tool result changes, the next request body changes and the test fails. Capture only sessions whose tools give the same result every time.
+Never turn a `bash` run into a cassette: the command runs again on replay, and any change in its output changes the next request body. The `bash`, job and monitor tools are tested with scripted model replies instead (`cmd/tui/tools_e2e_test.go`, `cmd/tui/tools_leader_e2e_test.go`).
 
 ## Native authentication and capture
 

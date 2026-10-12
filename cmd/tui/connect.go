@@ -534,8 +534,8 @@ func (c *lineClient) prompt(text string) {
 
 // ---- the command ----
 
-// runConnect implements "ask connect". callerExe is the executable that looks
-// for the ask binary next to it when it has to start a leader.
+// runConnect implements "ask connect". callerExe is this ask binary; a leader
+// that it has to start runs from it.
 func runConnect(argv []string, stdin io.Reader, stdout, stderr io.Writer, deps runDependencies, sigs <-chan os.Signal, callerExe string) int {
 	o, err := parseConnectArgs(argv)
 	if err != nil {
@@ -552,10 +552,11 @@ func runConnect(argv []string, stdin io.Reader, stdout, stderr io.Writer, deps r
 		return 1
 	}
 	cl, err := leader.ConnectOrSpawn(context.Background(), leader.ConnectConfig{
-		Paths:     paths,
-		Hello:     protocol.LeaderRegister{ClientKind: "connect", Build: buildIdentity()},
-		CallerExe: callerExe,
-		Warn:      func(s string) { report(stderr, s) },
+		Paths:       paths,
+		Hello:       leaderHello("connect"),
+		CallerExe:   callerExe,
+		CallerIsAsk: true,
+		Warn:        func(s string) { report(stderr, s) },
 	})
 	if err != nil {
 		report(stderr, "Error:", err)

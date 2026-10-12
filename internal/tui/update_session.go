@@ -149,11 +149,15 @@ func (s *sessionView) update(msg tea.Msg) tea.Cmd {
 	switch msg := msg.(type) {
 	case tea.WindowSizeMsg:
 		s.editor.SetWidth(msg.Width)
-		s.maybeHeader()
+		s.maybeStartLine()
 	case tea.KeyPressMsg:
 		cmd = s.onKey(msg)
 	case tea.PasteMsg:
 		cmd = s.onPaste(msg)
+	case tea.MouseMsg:
+		cmd = s.onMouse(msg)
+	case dragTickMsg:
+		cmd = s.onDragTick(msg)
 	case clientEventMsg:
 		cmd = tea.Batch(s.onClient(msg.msg), waitClient(s.events))
 	case openedMsg:
@@ -198,6 +202,8 @@ func (s *sessionView) update(msg tea.Msg) tea.Cmd {
 		cmd = s.onModelsFetched(msg)
 	case cancelFailedMsg:
 		s.onCancelFailed(msg)
+	case clipboardDoneMsg:
+		cmd = s.onCopied(msg)
 	case tickMsg:
 		s.onTick()
 	}
@@ -217,7 +223,7 @@ func (s *sessionView) onOpened(msg openedMsg) tea.Cmd {
 		return tea.Quit
 	}
 	s.adoptClient(msg.client)
-	s.maybeHeader()
+	s.maybeStartLine()
 	return tea.Batch(waitClient(s.events), s.newSessionCmd(false))
 }
 
@@ -287,7 +293,7 @@ func (s *sessionView) onClient(msg Message) tea.Cmd {
 		s.info = v.Info
 		s.conn = connUp
 		s.reconnect = reconnectView{}
-		s.maybeHeader()
+		s.maybeStartLine()
 		return s.onBoxReconnected()
 	case ProvidersChangedMsg:
 		return s.onProvidersChanged(v)
@@ -326,21 +332,16 @@ func (s *sessionView) onClientError(v ClientErrorMsg) tea.Cmd {
 	return nil
 }
 
-// maybeHeader adds the startup header once the size and the link are known.
-func (s *sessionView) maybeHeader() {
-	if s.headerShown || !s.m.sized || s.opening {
+// maybeStartLine adds the placeholder of the first start line once the size
+// and the link are known. The state answer replaces it with the model line.
+func (s *sessionView) maybeStartLine() {
+	if s.startShown || !s.m.sized || s.opening {
 		return
 	}
-	s.headerShown = true
-	where := "in-process agent"
-	if s.info.Mode != ModeInProcess {
-		where = "leader " + ShortID(s.info.InstanceID)
-	}
-	s.headerBlock = startupHeader{version: s.version, where: where, cwd: tildePath(s.cwd, s.home)}
-	// The header stays open until the start line below it is known; the model
-	// comes with the first state answer.
-	s.m.applyBlock(AppendBlockMsg{ID: "header", Block: s.headerBlock, Stable: false})
-	s.starts = append(s.starts, startSlot{id: "header", kind: startHeader})
+	s.startShown = true
+	id := s.nextBlockID()
+	s.m.applyBlock(AppendBlockMsg{ID: id, Block: noRows{}, Stable: false})
+	s.starts = append(s.starts, startSlot{id: id, kind: startFirst})
 	s.settleStartsIfKnown()
 }
 
@@ -355,14 +356,13 @@ func (s *sessionView) resetSessionState() {
 	s.ctxTokens, s.costMicro = 0, 0
 }
 
-// replaceTranscript drops the blocks and draws the history again. The model
-// clears the screen and the scrollback and writes the new committed rows.
+// replaceTranscript drops the blocks. The pane draws the history again as the
+// new blocks arrive.
 func (s *sessionView) replaceTranscript() {
-	s.m.transcript = NewTranscript()
-	s.m.rebuildWanted = true
-	s.headerShown = false
+	s.m.resetTranscript()
+	s.startShown = false
 	s.starts = nil
-	s.maybeHeader()
+	s.maybeStartLine()
 }
 
 func (s *sessionView) onSnapshot(v SnapshotMsg) tea.Cmd {
@@ -389,6 +389,7 @@ func (s *sessionView) onSnapshot(v SnapshotMsg) tea.Cmd {
 			s.addStartSlot(startDivider, "")
 		}
 		s.trl.Reset()
+		s.trl.ForgetJobs()
 		s.resetSessionState()
 		s.followed = v.SessionID
 		// The reset forgets a run that started before the first snapshot; read
@@ -624,9 +625,22 @@ func errText(err error) string {
 
 // ---- queue ----
 
+// visibleQueue returns the queue texts that the user can see. A system
+// reminder is for the model only: it has no queue row, and alt+up never puts
+// it into the draft.
+func visibleQueue(texts []string) []string {
+	out := make([]string, 0, len(texts))
+	for _, t := range texts {
+		if !protocol.IsSystemReminderText(t) {
+			out = append(out, t)
+		}
+	}
+	return out
+}
+
 func (s *sessionView) onQueueUpdate(e *protocol.QueueUpdate) {
-	s.queue.steer = append([]string(nil), e.Steering...)
-	s.queue.follow = append([]string(nil), e.FollowUp...)
+	s.queue.steer = visibleQueue(e.Steering)
+	s.queue.follow = visibleQueue(e.FollowUp)
 	s.queue.seq++
 	// An input that left the queue has no use for its id any more.
 	used := make([]bool, len(s.queue.known))
@@ -796,8 +810,8 @@ func (s *sessionView) onRefresh(msg refreshMsg) {
 			}
 		}
 		if msg.queueSeq == s.queue.seq {
-			s.queue.steer = append([]string(nil), st.Steering...)
-			s.queue.follow = append([]string(nil), st.FollowUp...)
+			s.queue.steer = visibleQueue(st.Steering)
+			s.queue.follow = visibleQueue(st.FollowUp)
 		}
 	}
 	if msg.usage != nil {
@@ -847,6 +861,7 @@ func (s *sessionView) schedule() tea.Cmd {
 func (s *sessionView) onTick() {
 	s.tickPending = false
 	s.trl.View().SetSpinnerFrame(int(s.now().UnixMilli() / int64(defaultTick/time.Millisecond)))
+	s.trl.View().SetClock(s.now().UnixMilli())
 	if s.notice.text != "" && !s.now().Before(s.notice.until) {
 		s.notice = noticeView{}
 	}

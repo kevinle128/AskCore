@@ -1,6 +1,7 @@
 package tui
 
 import (
+	"encoding/json"
 	"fmt"
 	"strings"
 	"time"
@@ -23,7 +24,7 @@ import (
 //
 //   - A block that is still changing is added unstable and replaced; it is
 //     finished at its end event. A block is never replaced after it is
-//     finished, because it may already be in the scrollback.
+//     finished, because a finished block is final.
 //   - The user prompt comes from the user message event. It is the same for
 //     live events, a replayed snapshot and an observer, so the session view
 //     must not add a prompt block of its own.
@@ -32,7 +33,7 @@ import (
 //   - Errors and cancel markers are written when the run ends. A cancel marker
 //     waits for agent_settled, so the partial reply is final before it.
 //   - agent_settled finishes everything that is still open, so that no block
-//     holds the commit frontier after a run.
+//     holds the frontier after a run.
 
 // TranslatorOptions configure a Translator.
 type TranslatorOptions struct {
@@ -52,6 +53,22 @@ type Translator struct {
 	reply *replyState
 	tools map[string]*toolState
 	run   runState
+	// jobs are the background jobs that run, in the order they started. A
+	// reset keeps them: a resync replaces the history, not the jobs.
+	jobs []RunningJob
+	// lastReply is the text of the last finished assistant message that had
+	// text, for /copy.
+	lastReply string
+	// afterStep is true while the last block that the translator added is a
+	// tool or thinking step. A reply that follows a step starts with an empty
+	// row.
+	afterStep bool
+}
+
+// RunningJob is a background job that the session view knows to run.
+type RunningJob struct {
+	ID    string
+	Label string
 }
 
 // NewTranslator returns a Translator with thinking shown.
@@ -71,20 +88,22 @@ func NewTranslator(o TranslatorOptions) *Translator {
 // frame of running tool lines.
 func (t *Translator) View() *TranscriptView { return t.view }
 
-// ToggleThinking switches all thinking blocks between the full text and the
-// short form, and returns the new state. The caller must then send RebuildMsg
-// (or call Model.Rebuild) so that the committed blocks are drawn again, and
-// should show ThinkingNotice(hidden) in the status row for a short time.
-func (t *Translator) ToggleThinking() (hidden bool) { return t.view.ToggleThinking() }
-
 // Reset forgets the state of the open run, message and tools. Blocks that
 // were already sent stay in the transcript. Block ids stay unique across a
 // reset.
 func (t *Translator) Reset() {
+	t.lastReply = ""
+	t.afterStep = false
 	t.reply = nil
 	t.tools = map[string]*toolState{}
 	t.run = runState{}
 }
+
+// RunningJobs returns the background jobs that run, in the order they started.
+func (t *Translator) RunningJobs() []RunningJob { return append([]RunningJob(nil), t.jobs...) }
+
+// ForgetJobs forgets the running jobs. Call it when the view follows another session.
+func (t *Translator) ForgetJobs() { t.jobs = nil }
 
 // Detach freezes the last observed content before the view follows another
 // session. It does not report a tool outcome, cancellation, or a settled run.
@@ -114,6 +133,24 @@ type partState struct {
 	// shown is true when the open block is in the transcript. A thinking part
 	// is added with its first text, so an empty reasoning summary draws nothing.
 	shown bool
+	// lead is true when the part follows a step and needs an empty row above.
+	lead bool
+	// startTS and lastTS are the times of the first and the last event of the
+	// part, in milliseconds. They give the duration of a thinking.
+	startTS, lastTS int64
+	// curText is the text that the open block holds.
+	curText string
+}
+
+// touch notes the time of an event of the part.
+func (p *partState) touch(ts int64) {
+	if ts <= 0 {
+		return
+	}
+	if p.startTS == 0 {
+		p.startTS = ts
+	}
+	p.lastTS = max(p.lastTS, ts)
 }
 
 type replyState struct {
@@ -128,7 +165,10 @@ type toolState struct {
 	order   uint64
 	name    string
 	args    string
+	raw     json.RawMessage
 	startTS int64
+	// out is the latest partial output of the tool.
+	out toolOutput
 }
 
 type errorInfo struct{ text, provider string }
@@ -182,9 +222,12 @@ func (t *Translator) Event(ev protocol.Event) []tea.Msg {
 		}
 	case *protocol.ToolExecutionStart:
 		t.onToolStart(e, &out)
+	case *protocol.ToolExecutionUpdate:
+		t.onToolUpdate(e, &out)
 	case *protocol.ToolExecutionEnd:
 		t.onToolEnd(e, &out)
 	case *protocol.AutoRetryStart:
+		t.afterStep = false
 		emitAppend(&out, t.nextID("n"), NewRetryNote(retryText(e)), true)
 	case *protocol.AutoRetryEnd:
 		if !e.Success {
@@ -237,6 +280,11 @@ func toolResultOf(m protocol.Message) (protocol.ToolResultMessage, bool) {
 // --- user prompt ---
 
 func (t *Translator) userPrompt(m protocol.UserMessage, out *[]tea.Msg) {
+	if body, ok := protocol.SystemReminderBody(m); ok {
+		t.reminder(body, out)
+		return
+	}
+	t.afterStep = false
 	emitAppend(out, t.nextID("u"), NewUserPromptBlock(userText(m), clockTime(m.Timestamp, t.loc)), true)
 }
 
@@ -263,13 +311,14 @@ func (t *Translator) ensureReply(ts int64) *replyState {
 	return t.reply
 }
 
-// segBlock makes the block for a part of a message. last is true for the
-// block that is open; a finished block of a split thinking text is not last.
-func (t *Translator) segBlock(p *partState, text string, last bool) Block {
+// segBlock makes the block for a part of a message. A thinking part is always
+// one block, so that the user folds it as a whole.
+func (t *Translator) segBlock(p *partState, text string) Block {
 	if p.thinking {
-		return newThinkingPart(text, t.view, p.segments == 0, last)
+		known := p.startTS > 0 && p.lastTS >= p.startTS
+		return newThinkingBlock(text, t.view, !p.done, p.startTS, p.lastTS-p.startTS, known)
 	}
-	return newAssistantTextBlock(text, p.md, p.segments == 0)
+	return newAssistantTextBlock(text, p.md, p.segments == 0, p.lead)
 }
 
 // part returns the part for a content index. A missing part is added as an
@@ -287,13 +336,15 @@ func (t *Translator) part(r *replyState, index int, thinking bool, out *[]tea.Ms
 	r.order = append(r.order, index)
 	if !thinking {
 		p.shown = true
-		emitAppend(out, p.cur, t.segBlock(p, "", true), false)
+		p.lead, t.afterStep = t.afterStep, false
+		emitAppend(out, p.cur, t.segBlock(p, ""), false)
 	}
 	return p
 }
 
-// setText sets the text of an open part. Paragraphs that cannot change any
-// more leave the open block and become finished blocks.
+// setText sets the text of an open part. For a reply, paragraphs that cannot
+// change any more leave the open block and become finished blocks. A thinking
+// part stays one block.
 func (t *Translator) setText(p *partState, raw string, out *[]tea.Msg) {
 	if p.done || raw == p.raw {
 		return
@@ -307,59 +358,72 @@ func (t *Translator) setText(p *partState, raw string, out *[]tea.Msg) {
 			return
 		}
 		p.shown = true
-		emitAppend(out, p.cur, t.segBlock(p, "", true), false)
+		t.afterStep = true
+		p.curText = rest
+		emitAppend(out, p.cur, t.segBlock(p, rest), false)
+		return
 	}
-	for {
-		cut := closedCut(p.thinking, rest)
+	for !p.thinking {
+		cut := closedCut(rest)
 		if cut <= 0 {
 			break
 		}
-		emitReplace(out, p.cur, t.segBlock(p, rest[:cut], false))
+		emitReplace(out, p.cur, t.segBlock(p, rest[:cut]))
 		emitFinish(out, p.cur)
-		skip := cut + leadingBlankBytes(rest[cut:], p.thinking)
+		skip := cut + leadingBlankBytes(rest[cut:])
 		p.frozen += skip
 		rest = rest[skip:]
 		p.segments++
 		p.cur = t.nextID("a")
-		if !p.thinking {
-			p.md = newMarkdownStream()
-		}
-		emitAppend(out, p.cur, t.segBlock(p, "", true), false)
+		p.md = newMarkdownStream()
+		emitAppend(out, p.cur, t.segBlock(p, ""), false)
 	}
-	emitReplace(out, p.cur, t.segBlock(p, rest, true))
+	p.curText = rest
+	emitReplace(out, p.cur, t.segBlock(p, rest))
 }
 
+// finishPart ends a part. A thinking block is drawn once more, because it
+// changes from its streaming form to its final form with its duration.
 func (t *Translator) finishPart(p *partState, out *[]tea.Msg) {
 	if p.done {
 		return
 	}
 	p.done = true
 	if p.shown {
+		if p.thinking {
+			emitReplace(out, p.cur, t.segBlock(p, p.curText))
+		}
 		emitFinish(out, p.cur)
 	}
 }
 
 func (t *Translator) onUpdate(e *protocol.MessageUpdate, out *[]tea.Msg) {
 	r := t.ensureReply(e.TS)
+	// partAt returns the part of an event and notes the time of the event.
+	partAt := func(index int, thinking bool) *partState {
+		p := t.part(r, index, thinking, out)
+		p.touch(e.TS)
+		return p
+	}
 	switch ev := e.AssistantMessageEvent.(type) {
 	case protocol.TextStartEvent:
-		p := t.part(r, ev.ContentIndex, false, out)
+		p := partAt(ev.ContentIndex, false)
 		t.setText(p, ev.Content.Text, out)
 	case protocol.TextDeltaEvent:
-		p := t.part(r, ev.ContentIndex, false, out)
+		p := partAt(ev.ContentIndex, false)
 		t.setText(p, p.raw+ev.Delta, out)
 	case protocol.TextEndEvent:
-		p := t.part(r, ev.ContentIndex, false, out)
+		p := partAt(ev.ContentIndex, false)
 		t.setText(p, ev.Content, out)
 		t.finishPart(p, out)
 	case protocol.ThinkingStartEvent:
-		p := t.part(r, ev.ContentIndex, true, out)
+		p := partAt(ev.ContentIndex, true)
 		t.setText(p, ev.Content.Thinking, out)
 	case protocol.ThinkingDeltaEvent:
-		p := t.part(r, ev.ContentIndex, true, out)
+		p := partAt(ev.ContentIndex, true)
 		t.setText(p, p.raw+ev.Delta, out)
 	case protocol.ThinkingEndEvent:
-		p := t.part(r, ev.ContentIndex, true, out)
+		p := partAt(ev.ContentIndex, true)
 		t.setText(p, ev.Content, out)
 		t.finishPart(p, out)
 	}
@@ -377,6 +441,7 @@ func (t *Translator) closeReply(out *[]tea.Msg) {
 }
 
 func (t *Translator) onAssistantEnd(e *protocol.MessageEnd, am protocol.AssistantMessage, out *[]tea.Msg) {
+	t.noteReply(am)
 	r := t.ensureReply(e.TS)
 	visible, lastIsText := false, false
 	for i, blk := range am.Content {
@@ -400,7 +465,7 @@ func (t *Translator) onAssistantEnd(e *protocol.MessageEnd, am protocol.Assistan
 			p = t.part(r, i, thinking, out)
 		}
 		// The end event holds the final text. A part that is already final
-		// keeps the text of its own end event: it may be in the scrollback.
+		// keeps the text of its own end event: it is final.
 		t.setText(p, text, out)
 		t.finishPart(p, out)
 		if p.shown {
@@ -421,6 +486,7 @@ func (t *Translator) onAssistantEnd(e *protocol.MessageEnd, am protocol.Assistan
 		}
 		t.run.lastErr = &errorInfo{text: msg, provider: am.Provider}
 		if lastIsText {
+			t.afterStep = false
 			emitAppend(out, t.nextID("s"), NewSpacerBlock(), true)
 		}
 	case protocol.StopAborted:
@@ -428,6 +494,7 @@ func (t *Translator) onAssistantEnd(e *protocol.MessageEnd, am protocol.Assistan
 	default:
 		if visible {
 			if text := metaText(am, e.TS, r.startTS); text != "" {
+				t.afterStep = false
 				emitAppend(out, t.nextID("m"), NewMetaLineBlock(text), true)
 			}
 		}
@@ -467,15 +534,35 @@ func (t *Translator) onToolStart(e *protocol.ToolExecutionStart, out *[]tea.Msg)
 	if _, dup := t.tools[key]; dup && key != "" {
 		return
 	}
-	st := &toolState{id: t.nextID("t"), order: t.seq, name: e.ToolName, args: shortArgs(e.Args), startTS: e.TS}
+	st := &toolState{id: t.nextID("t"), order: t.seq, name: e.ToolName, args: shortArgs(e.Args), raw: e.Args, startTS: e.TS}
 	if key == "" {
 		key = st.id
 	}
 	t.tools[key] = st
-	emitAppend(out, st.id, NewToolLineBlock(st.name, st.args, ToolRunning, "", "", t.view), false)
+	t.afterStep = true
+	emitAppend(out, st.id, newToolCallBlock(st.call(), ToolRunning, "", "", toolOutput{}, t.view), false)
+}
+
+// onToolUpdate replaces the output of a running tool with its partial result.
+// The partial result holds the output so far, not only the new part.
+func (t *Translator) onToolUpdate(e *protocol.ToolExecutionUpdate, out *[]tea.Msg) {
+	st, ok := t.tools[e.ToolCallID]
+	if !ok {
+		return
+	}
+	o := toolOutputOf(e.PartialResult.Content, e.PartialResult.Details)
+	if o.text == st.out.text {
+		return
+	}
+	st.out = o
+	if st.name == "" {
+		st.name = e.ToolName
+	}
+	emitReplace(out, st.id, newToolCallBlock(st.call(), ToolRunning, "", "", o, t.view))
 }
 
 func (t *Translator) onToolEnd(e *protocol.ToolExecutionEnd, out *[]tea.Msg) {
+	output := toolOutputOf(e.Result.Content, e.Result.Details)
 	failed := e.IsError || (e.Result.IsError != nil && *e.Result.IsError)
 	reason := ""
 	if failed {
@@ -484,27 +571,33 @@ func (t *Translator) onToolEnd(e *protocol.ToolExecutionEnd, out *[]tea.Msg) {
 	st, ok := t.tools[e.ToolCallID]
 	if !ok {
 		// The start event was not seen: show the outcome as a final line.
-		emitAppend(out, t.nextID("t"), toolOutcome(e.ToolName, "", failed, "", reason, t.view), true)
+		t.afterStep = true
+		emitAppend(out, t.nextID("t"), toolOutcome(toolCall{name: e.ToolName}, failed, "", reason, output, t.view), true)
 		return
 	}
 	delete(t.tools, e.ToolCallID)
+	t.noteJob(e, st.name, st.args)
 	duration := ""
 	if st.startTS > 0 && e.TS >= st.startTS {
 		duration = formatDuration(time.Duration(e.TS-st.startTS) * time.Millisecond)
 	}
-	name := st.name
-	if name == "" {
-		name = e.ToolName
+	if st.name == "" {
+		st.name = e.ToolName
 	}
-	emitReplace(out, st.id, toolOutcome(name, st.args, failed, duration, reason, t.view))
+	emitReplace(out, st.id, toolOutcome(st.call(), failed, duration, reason, output, t.view))
 	emitFinish(out, st.id)
 }
 
-func toolOutcome(name, args string, failed bool, duration, reason string, view *TranscriptView) Block {
+// call returns what the block shows of the call.
+func (st *toolState) call() toolCall {
+	return toolCall{name: st.name, args: st.args, raw: st.raw, startMs: st.startTS}
+}
+
+func toolOutcome(c toolCall, failed bool, duration, reason string, out toolOutput, view *TranscriptView) Block {
 	if failed {
-		return NewToolLineBlock(name, args, ToolFailed, "", reason, view)
+		return newToolCallBlock(c, ToolFailed, "", reason, out, view)
 	}
-	return NewToolLineBlock(name, args, ToolSucceeded, duration, "", view)
+	return newToolCallBlock(c, ToolSucceeded, duration, "", out, view)
 }
 
 // blocksText joins the text blocks of a tool result.
@@ -563,10 +656,12 @@ func (t *Translator) writeError(code string, out *[]tea.Msg) {
 		msg = "The request failed."
 	}
 	kind, next := classifyError(code, provider)
+	t.afterStep = false
 	emitAppend(out, t.nextID("e"), NewErrorBlock(ErrorHeadline(kind, sentence(providerErrorText(msg, provider))), next), true)
 }
 
 func (t *Translator) writeNotice(kind, msg, next string, out *[]tea.Msg) {
+	t.afterStep = false
 	emitAppend(out, t.nextID("e"), NewErrorBlock(ErrorHeadline(kind, msg), next), true)
 }
 
@@ -590,7 +685,7 @@ func cancelText(cause string, partial bool) string {
 
 func (t *Translator) onSettled(out *[]tea.Msg) {
 	t.closeReply(out)
-	// A tool that never reported an end would hold the commit frontier.
+	// A tool that never reported an end would hold the frontier.
 	var open []*toolState
 	for _, st := range t.tools {
 		open = append(open, st)
@@ -601,7 +696,7 @@ func (t *Translator) onSettled(out *[]tea.Msg) {
 		}
 	}
 	for _, st := range open {
-		emitReplace(out, st.id, NewToolLineBlock(st.name, st.args, ToolFailed, "", "interrupted", t.view))
+		emitReplace(out, st.id, newToolCallBlock(st.call(), ToolFailed, "", "interrupted", st.out, t.view))
 		emitFinish(out, st.id)
 	}
 	t.tools = map[string]*toolState{}
@@ -610,6 +705,7 @@ func (t *Translator) onSettled(out *[]tea.Msg) {
 		t.writeError("", out)
 	}
 	if t.run.cancelled {
+		t.afterStep = false
 		emitAppend(out, t.nextID("c"), NewCancelMarker(cancelText(t.run.cause, t.run.hadReply)), true)
 	}
 	t.run = runState{}

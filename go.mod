@@ -42,6 +42,7 @@ require (
 	go.uber.org/goleak v1.3.0
 	go.uber.org/mock v0.6.0
 	go.uber.org/zap v1.28.0
+	golang.org/x/image v0.45.0
 	golang.org/x/sys v0.47.0
 	golang.org/x/term v0.45.0
 	golang.org/x/text v0.41.0
@@ -415,6 +416,6 @@ replace charm.land/fantasy => github.com/kevinle128/fantasy v0.0.0-2026100509451
 // The Ask copy raises one scanner limit. See third_party/acp-go-sdk/PATCH.txt.
 replace github.com/coder/acp-go-sdk => ./third_party/acp-go-sdk
 
-// Ask copy of Bubble Tea v2.0.10 with the inline resize replay patch. See
+// Ask copy of Bubble Tea v2.0.10 with a resize guard in the renderer. See
 // third_party/bubbletea/PATCH.txt.
 replace charm.land/bubbletea/v2 => ./third_party/bubbletea

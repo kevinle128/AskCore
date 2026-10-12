@@ -260,7 +260,11 @@ func (a *Agent) dispose() error {
 	if r != nil {
 		<-r.done
 	}
-	err := src.Close()
+	var releaseErr error
+	if a.cfg.Release != nil {
+		releaseErr = a.cfg.Release()
+	}
+	err := errors.Join(releaseErr, src.Close())
 	a.mu.Lock()
 	a.postLocked(&protocol.AgentDisposed{})
 	a.mu.Unlock()
@@ -428,8 +432,8 @@ func (a *Agent) idleLocked() error {
 	return nil
 }
 
-// State returns the status, a copy of the context messages, and the
-// stored model and thinking level.
+// State returns the status, a copy of the context messages, the stored model
+// and thinking level, and the texts of the queued inputs.
 func (a *Agent) State() State {
 	a.mu.Lock()
 	st, src := Idle, a.source
@@ -438,8 +442,9 @@ func (a *Agent) State() State {
 	}
 	model := a.cfg.Model
 	level := thinkingLevel(a.cfg.Options.Reasoning)
+	steering, followUp := textsOf(a.in.steering), textsOf(a.in.followUp)
 	a.mu.Unlock()
-	return State{Status: st, Messages: src.Messages(), Model: model, ThinkingLevel: level}
+	return State{Status: st, Messages: src.Messages(), Model: model, ThinkingLevel: level, Steering: steering, FollowUp: followUp}
 }
 
 func thinkingLevel(level protocol.ThinkingLevel) protocol.ThinkingLevel {

@@ -255,12 +255,12 @@ func (g *providerRig) firstRunEnv(extra ...string) []string {
 	return append(g.env("ASK_FAUX=0"), extra...)
 }
 
-// start runs `ask` on a terminal and waits for the leader footer.
+// start runs `ask` on a terminal and waits for the leader in the header row.
 func (g *providerRig) start(env []string) *askTerm {
 	g.t.Helper()
 	a := startAskTerm(g.t, g.bin, g.home, askTermOptions{}, env...)
 	a.waitText("Ask anything")
-	requireLeaderFooter(g.t, a, g.bin, g.home)
+	requireLeaderHeader(g.t, a, g.bin, g.home)
 	return a
 }
 
@@ -335,9 +335,9 @@ func (a *askTerm) requireNoSecret(secrets ...string) {
 	}
 }
 
-func (a *askTerm) waitNoModelFooter() {
+func (a *askTerm) waitNoModelHeader() {
 	a.t.Helper()
-	a.waitFor("the no model footer", func(rows []string) bool { return hasRow(rows, "leader ", "no model") })
+	a.waitFor("no model in the header row", func(rows []string) bool { return hasRow(rows, "leader ", "no model") })
 }
 
 // resize changes the terminal size. The process has no controlling terminal,
@@ -358,7 +358,7 @@ func TestInteractiveFirstRunNoModel(t *testing.T) {
 	g := newProviderRig(t)
 	a := g.start(g.firstRunEnv())
 	a.waitText("Add a provider with /providers")
-	a.waitNoModelFooter()
+	a.waitNoModelHeader()
 	rows := a.rows()
 	require.False(t, containsRow(rows, "▱"), "no context bar:\n%s", a.screen())
 	require.False(t, hasRowPrefix(rows, "  model  "), "no model line:\n%s", a.screen())
@@ -370,15 +370,15 @@ func TestInteractiveFirstRunNoModel(t *testing.T) {
 func TestInteractiveFirstPromptNotSent(t *testing.T) {
 	g := newProviderRig(t)
 	a := g.start(g.firstRunEnv())
-	a.waitNoModelFooter()
+	a.waitNoModelHeader()
 	a.write("hello there")
-	a.waitRow("│ ❯ hello there")
+	a.waitDraft("hello there")
 	a.write("\r")
 	a.waitRow("✗ Not sent: no model")
 	a.waitText("Add a provider with /providers")
 	rows := a.rows()
-	require.True(t, hasRowPrefix(rows, "│ ❯ hello there"), "the draft stays in the editor:\n%s", a.screen())
-	require.False(t, hasRowPrefix(rows, "  ❯ hello there"), "nothing went to the scrollback:\n%s", a.screen())
+	require.True(t, hasRowPrefix(rows, draftPrompt+"hello there"), "the draft stays in the editor:\n%s", a.screen())
+	require.False(t, hasRowPrefix(rows, committedPrompt+"hello there"), "no prompt band in the block pane:\n%s", a.screen())
 
 	// Nothing reached the leader or the model service.
 	ctx, cancel := context.WithTimeout(context.Background(), clientWait)
@@ -492,7 +492,7 @@ func TestInteractiveAPIKeySaved(t *testing.T) {
 	g := newProviderRig(t)
 	key := fakeSecret("sk-test-")
 	a := g.start(g.firstRunEnv())
-	a.waitNoModelFooter()
+	a.waitNoModelHeader()
 	a.openProviders()
 	a.pickProvider("openai api")
 	a.waitText("Paste your API key.")
@@ -505,7 +505,7 @@ func TestInteractiveAPIKeySaved(t *testing.T) {
 		return containsRow(rows, "Ask anything") && !containsRow(rows, "╭─ Providers")
 	})
 	// A saved key does not choose a model by itself.
-	a.waitNoModelFooter()
+	a.waitNoModelHeader()
 	a.requireNoSecret(key)
 
 	reqs := g.p.requests("api.openai.com")
@@ -525,7 +525,7 @@ func TestInteractiveTokenPlanKeySavedUnchecked(t *testing.T) {
 	g := newProviderRig(t)
 	key := fakeSecret("tp-test-")
 	a := g.start(g.firstRunEnv())
-	a.waitNoModelFooter()
+	a.waitNoModelHeader()
 	a.openProviders()
 	a.pickProvider("alibaba")
 	a.waitText("Paste your API key.")
@@ -566,14 +566,14 @@ func TestInteractiveTokenPlanBadKeyAtFirstPrompt(t *testing.T) {
 	a.pasteSecret(key)
 	a.write("\r")
 	a.waitRow("✓ alibaba-token-plan: Saved. This provider cannot be checked before use.")
-	a.waitNoModelFooter()
+	a.waitNoModelHeader()
 	require.Zero(t, g.p.total(), "the key save makes no provider request")
 	a.write(keyCtrlL)
 	a.waitText("Select model")
 	a.write("deepseek")
 	a.waitRow("│", "deepseek")
 	a.write("\r")
-	a.waitFor("the model in the footer", func(rows []string) bool { return hasRow(rows, "leader ", "deepseek") })
+	a.waitFor("the model in the header row", func(rows []string) bool { return hasRow(rows, "leader ", "deepseek") })
 
 	a.write("say hello\r")
 	a.waitRow("✗ Error (auth): alibaba-token-plan refused the key (HTTP 401).")
@@ -591,23 +591,23 @@ func TestInteractiveStartLineShowsPair(t *testing.T) {
 	a := g.start(g.firstRunEnv("ALIBABA_TOKEN_PLAN_API_KEY=" + fakeSecret("tp-test-")))
 	pair := regexp.MustCompile(`^  model  (alibaba-token-plan/\S+)`)
 	var line string
-	var head int
+	var at int
 	a.waitFor("the start line", func(rows []string) bool {
 		for i, r := range rows {
-			if strings.HasPrefix(r, "◢◤ ask") && i+1 < len(rows) {
-				if m := pair.FindStringSubmatch(rows[i+1]); m != nil {
-					line, head = m[1], i
-					return true
-				}
+			if m := pair.FindStringSubmatch(r); m != nil {
+				line, at = m[1], i
+				return true
 			}
 		}
 		return false
 	})
+	// The line is the first row of the block pane: the header row and its rule
+	// come directly before it.
 	rows := a.rows()
-	require.Empty(t, rows[head+2], "one empty row follows the line:\n%s", a.screen())
-	require.True(t, strings.HasPrefix(rows[head+3], "╭"), "the editor follows:\n%s", a.screen())
+	require.Equal(t, strings.Repeat("─", termCols), rows[at-1], "the header rule precedes the line:\n%s", a.screen())
+	require.True(t, strings.HasPrefix(rows[at-2], "◢◤ ask"), "the header row precedes the rule:\n%s", a.screen())
 	bare := strings.TrimPrefix(line, "alibaba-token-plan/")
-	a.waitFor("the bare model in the footer", func(rows []string) bool {
+	a.waitFor("the bare model in the header row", func(rows []string) bool {
 		return hasRow(rows, "leader ", bare) && !hasRow(rows, "leader ", "alibaba-token-plan/")
 	})
 	require.Equal(t, "deepseek-v4.1-flash", bare)
@@ -672,7 +672,7 @@ func TestInteractiveProviderBusyTwoClients(t *testing.T) {
 
 	second := startAskTerm(t, g.bin, g.home, askTermOptions{}, g.firstRunEnv()...)
 	second.waitText("Ask anything")
-	requireLeaderFooter(t, second, g.bin, g.home)
+	requireLeaderHeader(t, second, g.bin, g.home)
 	second.openProviders()
 	second.pickProvider("grok")
 	second.waitRow("Could not start: another client is signing in to xai.")
@@ -691,7 +691,7 @@ func TestInteractiveLoginLeaderLost(t *testing.T) {
 	g := newProviderRig(t)
 	a := g.start(g.firstRunEnv())
 	a.startGrokLogin()
-	oldLeader := requireLeaderFooter(t, a, g.bin, g.home)
+	oldLeader := requireLeaderHeader(t, a, g.bin, g.home)
 
 	ctx, cancel := context.WithTimeout(context.Background(), clientWait)
 	defer cancel()
@@ -791,13 +791,13 @@ func TestInteractiveRemoveCurrentProvider(t *testing.T) {
 	// ask for a provider.
 	env := g.firstRunEnv("ANTHROPIC_API_KEY=" + fakeSecret("sk-ant-test-"))
 	first := g.start(env)
-	first.waitFor("a model in the footer", func(rows []string) bool {
+	first.waitFor("a model in the header row", func(rows []string) bool {
 		return hasRow(rows, "leader ", "deepseek") && !containsRow(rows, "no model")
 	})
 	second := startAskTerm(t, g.bin, g.home, askTermOptions{}, env...)
 	second.waitText("Ask anything")
-	requireLeaderFooter(t, second, g.bin, g.home)
-	second.waitFor("a model in the footer", func(rows []string) bool { return hasRow(rows, "leader ", "deepseek") })
+	requireLeaderHeader(t, second, g.bin, g.home)
+	second.waitFor("a model in the header row", func(rows []string) bool { return hasRow(rows, "leader ", "deepseek") })
 
 	first.openProviders()
 	first.write("alibaba")
@@ -808,8 +808,8 @@ func TestInteractiveRemoveCurrentProvider(t *testing.T) {
 	first.waitRow("✓ Removed the saved credential for alibaba-token-plan.")
 	first.waitRow("is no longer available.")
 	first.waitText("with /model.")
-	first.waitNoModelFooter()
-	second.waitNoModelFooter()
+	first.waitNoModelHeader()
+	second.waitNoModelHeader()
 	first.waitText("No model. Choose one with /model")
 
 	first.write("hello after removal\r")
@@ -838,7 +838,7 @@ func TestInteractiveRemovalCancelsOtherClientSignIn(t *testing.T) {
 
 	signer := startAskTerm(t, g.bin, g.home, askTermOptions{}, g.firstRunEnv()...)
 	signer.waitText("Ask anything")
-	requireLeaderFooter(t, signer, g.bin, g.home)
+	requireLeaderHeader(t, signer, g.bin, g.home)
 	signer.openProviders()
 	signer.waitFor("the signed in row", func(rows []string) bool { return hasRow(rows, "xAI Grok sign-in", "signed in") })
 	signer.write("grok")
@@ -894,7 +894,7 @@ func TestInteractiveDefaultModelSurvivesNewSession(t *testing.T) {
 	b.waitFor("the start line with the saved default", func(rows []string) bool {
 		return hasRow(rows, "  model  openai/gpt-5.5")
 	})
-	b.waitFor("the footer", func(rows []string) bool { return hasRow(rows, "leader ", "gpt-5.5") })
+	b.waitFor("the model in the header row", func(rows []string) bool { return hasRow(rows, "leader ", "gpt-5.5") })
 	info, err := os.Stat(filepath.Join(g.home, "settings.json"))
 	require.NoError(t, err)
 	require.Equal(t, os.FileMode(0o600), info.Mode().Perm())
@@ -935,7 +935,7 @@ func TestInteractiveFallbackNoticeWhenDefaultRemoved(t *testing.T) {
 	a.write("\r")
 	a.waitRow("✓ Removed the saved credential for openai.")
 	a.write(keyEsc)
-	a.waitNoModelFooter()
+	a.waitNoModelHeader()
 	a.quitDetached()
 
 	b := g.start(g.firstRunEnv())
@@ -943,7 +943,7 @@ func TestInteractiveFallbackNoticeWhenDefaultRemoved(t *testing.T) {
 		return hasRow(rows, "  model  alibaba-token-plan/")
 	})
 	b.waitRow("Default model openai/gpt-5.5 is not usable (no credential).")
-	b.waitFor("the footer", func(rows []string) bool { return hasRow(rows, "leader ", "deepseek") })
+	b.waitFor("the model in the header row", func(rows []string) bool { return hasRow(rows, "leader ", "deepseek") })
 	b.quitDetached()
 }
 
@@ -952,7 +952,7 @@ func TestInteractiveProvidersChangedSecondClient(t *testing.T) {
 	driver := g.start(g.firstRunEnv())
 	observer := startAskTerm(t, g.bin, g.home, askTermOptions{}, g.firstRunEnv()...)
 	observer.waitText("Ask anything")
-	requireLeaderFooter(t, observer, g.bin, g.home)
+	requireLeaderHeader(t, observer, g.bin, g.home)
 	observer.openProviders()
 	observer.write(strings.Repeat(keyDown, 5)) // the xAI Grok row
 	observer.waitFor("the selection on the Grok row", func(rows []string) bool {
@@ -967,7 +967,7 @@ func TestInteractiveProvidersChangedSecondClient(t *testing.T) {
 	observer.waitFor("the row reads signed in", func(rows []string) bool {
 		return hasRowPrefix(rows, "│ ❯ ● xAI Grok sign-in") && hasRow(rows, "xAI Grok sign-in", "signed in")
 	})
-	require.False(t, containsRow(observer.rows(), "✓ xai: signed in"), "no note in the scrollback of the other client:\n%s", observer.screen())
+	require.False(t, containsRow(observer.rows(), "✓ xai: signed in"), "no note in the block pane of the other client:\n%s", observer.screen())
 	observer.write(keyEsc)
 	observer.quitDetached()
 	driver.quitDetached()

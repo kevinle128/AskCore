@@ -30,6 +30,10 @@ type ServerConfig struct {
 	// InstanceID and Build identify this leader process.
 	InstanceID string
 	Build      string
+	// CommitTime and DevStamp say how new this build is. Both are optional and
+	// are sent to clients as they are.
+	CommitTime string
+	DevStamp   string
 	// Ready tells the client whether startup work is done. When false the leader
 	// sends a leader_ready frame later on the returned writer.
 	Ready    bool
@@ -126,6 +130,7 @@ func Accept(conn net.Conn, cfg ServerConfig, clientID string) (*Accepted, error)
 	payload, err := json.Marshal(protocol.LeaderRegistered{
 		ClientID: clientID, InstanceID: cfg.InstanceID, Build: cfg.Build,
 		ProtocolVersion: cfg.ProtocolVersion, Ready: cfg.Ready, Controls: cfg.Controls,
+		CommitTime: cfg.CommitTime, DevStamp: cfg.DevStamp,
 	})
 	if err != nil {
 		_ = conn.Close()

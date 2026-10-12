@@ -1,10 +1,24 @@
-◢◤ ask   v0.1.0 · leader 7c1e · ~/src/askcore
-
+◢◤ ask  ● leader 7c1e  ⌂ ~/src/askcore                                 no model
+────────────────────────────────────────────────────────────────────────────────
   ✓ openai: API key saved. 2 models ready.
     Choose a model with /model.
 
+
+
+
+
+
+
+
+
+
+
+
+
+
+
 ┊ ✓ openai key saved · 2 models · choose one with /model
-╭──────────────────────────────────────────────────────────────────────────────╮
-│ ❯ Ask anything  ·  / commands  ·  ctrl+l model                               │
-╰──────────────────────────────────────────────────────────────────────────────╯
-  ● leader 7c1e   ⌂ ~/src/askcore                                      no model
+────────────────────────────────────────────────────────────────────────────────
+ ❯ Ask anything  ·  / commands  ·  ctrl+l model
+────────────────────────────────────────────────────────────────────────────────
+ Tab blocks · ctrl+t thinking · ctrl+l model · / commands

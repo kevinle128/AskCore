@@ -104,7 +104,7 @@ def start(home, cols, rows, env=None):
     SESSIONS.append(s)
     STARTED_HOMES.add(home)
     if not s.wait("leader [0-9a-f]+", 15):
-        log("WARN: no leader id in footer after 15 s")
+        log("WARN: no leader id in the header after 15 s")
     return s
 
 
@@ -258,7 +258,7 @@ def cancel(cols, rows, key):
     s.type(LONG)
     s.send("\r")
     CALLS["openai-key"] += 1
-    s.wait(r"◆", 60)
+    s.wait(r"Working", 60)
     time.sleep(1.5)
     shot(f"cancel-{key}-streaming", s)
     t0 = time.time()
@@ -289,7 +289,7 @@ def ctrlc_running():
     s.type(LONG)
     s.send("\r")
     CALLS["openai-key"] += 1
-    s.wait(r"◆", 60)
+    s.wait(r"Working", 60)
     time.sleep(1)
     s.send(KEYS["ctrl+c"])
     time.sleep(0.4)
@@ -348,7 +348,7 @@ def detach():
     s.type(LONG)
     s.send("\r")
     CALLS["openai-key"] += 1
-    s.wait(r"◆", 60)
+    s.wait(r"Working", 60)
     time.sleep(0.5)
     shot("detach-before", s)
     s.send(KEYS["ctrl+d"])
@@ -377,7 +377,7 @@ def detach():
     finish(o, KEY_HOME)
 
 
-def no_model_footer(s):
+def no_model_header(s):
     return has_line(s, r"leader [0-9a-f]+.*no model")
 
 
@@ -395,7 +395,7 @@ def providers(cols=80, rows=24):
     s.wait("no model", 15)
     s.settle(1.0, 10)
     shot("p1-first-run", s)
-    check("providers_first_run.footer_no_model", no_model_footer(s))
+    check("providers_first_run.header_no_model", no_model_header(s))
     check("providers_first_run.rail_notice", has_line(s, "Add a provider with /providers"))
     check("providers_first_run.no_model_line", not has_line(s, r"^  model  \S+/\S+"))
     s.send(KEYS["ctrl+l"])
@@ -436,7 +436,7 @@ def providers(cols=80, rows=24):
     check("key_saved_then_model.saved", ok)
     check("key_saved_then_model.choose_hint", s.wait(r"Choose a model with /model\.", 5, view=False))
     s.wait(r"Ask anything", 5)
-    check("key_saved_then_model.still_no_model", no_model_footer(s))
+    check("key_saved_then_model.still_no_model", no_model_header(s))
     s.send(KEYS["ctrl+l"])
     check("key_saved_then_model.model_selector", s.wait("Select model", 10))
     check("key_saved_then_model.openai_group", s.wait(r"● openai", 5))
@@ -448,7 +448,7 @@ def providers(cols=80, rows=24):
     ok = s.wait(r"leader [0-9a-f]+.*gpt-5\.5", 15)
     s.settle(1.0, 10)
     shot("p3-model-chosen", s)
-    check("key_saved_then_model.footer_model", ok)
+    check("key_saved_then_model.header_model", ok)
     check("key_saved_then_model.change_line", has_line(s, r"model\s+openai/gpt-5\.5", view=False))
     check("key_saved_then_model.default_saved", s.wait(r"Default model: openai/gpt-5\.5", 5, view=False))
     ok = prompt(s, OK, "openai-key")
@@ -462,7 +462,7 @@ def providers(cols=80, rows=24):
     s.settle(1.0, 10)
     shot("p5-restart-saved-default", s)
     check("default_model_persists.start_line", ok)
-    check("default_model_persists.footer", has_line(s, r"leader [0-9a-f]+.*gpt-5\.5"))
+    check("default_model_persists.header", has_line(s, r"leader [0-9a-f]+.*gpt-5\.5"))
 
     # remove_then_no_model: remove the only provider; prompt refused, no call.
     check("remove_then_no_model.opened", open_providers(s))
@@ -474,7 +474,7 @@ def providers(cols=80, rows=24):
     check("remove_then_no_model.removed", s.wait(r"Removed the saved credential for openai\.", 20, view=False))
     s.send(KEYS["esc"])
     s.settle(1.0, 10)
-    check("remove_then_no_model.footer_no_model", s.wait(r"leader [0-9a-f]+.*no model", 15))
+    check("remove_then_no_model.header_no_model", s.wait(r"leader [0-9a-f]+.*no model", 15))
     s.type("hello after removal")
     s.send("\r")
     ok = s.wait(r"Not sent: no model", 10, view=False)
@@ -489,7 +489,7 @@ def providers(cols=80, rows=24):
     s.wait("no model", 15)
     s.settle(1.0, 10)
     shot("p5-restart-after-removal", s)
-    check("default_model_persists.no_model_after_removal", no_model_footer(s))
+    check("default_model_persists.no_model_after_removal", no_model_header(s))
     finish(s, KEY_HOME)
 
 
@@ -500,7 +500,7 @@ def oauth(cols=80, rows=24):
     s.settle(1.5, 15)
     shot("o1-start", s)
     check("oauth_rows_and_switch.start_line", has_line(s, r"^  model  \S+/\S+", view=False))
-    check("oauth_rows_and_switch.footer_model", not no_model_footer(s))
+    check("oauth_rows_and_switch.header_model", not no_model_header(s))
     check("oauth_rows_and_switch.providers_open", open_providers(s))
     s.settle(0.8, 5)
     shot("o2-providers", s)
@@ -529,7 +529,7 @@ def oauth(cols=80, rows=24):
         ok = s.wait(rf"leader [0-9a-f]+\s+.*{re.escape(model)}", 15)
         s.settle(1.0, 10)
         shot(f"o4-{n}-switched-{prov}", s)
-        check(f"oauth_rows_and_switch.footer_{n}_{prov}", ok)
+        check(f"oauth_rows_and_switch.header_{n}_{prov}", ok)
         pat = rf"model\s+{prov}/{re.escape(model)} · was {re.escape(prev)}"
         check(f"oauth_rows_and_switch.change_line_{n}_{prov}", has_line(s, pat, view=False), f"was={prev}")
     finish(s, OAUTH_HOME)

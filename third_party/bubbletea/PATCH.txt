@@ -8,55 +8,46 @@ Used by:    internal/tui and cmd/tui, through the replace line in the go.mod of 
 
 What is here
   All non-test Go files of the module, go.mod, go.sum, LICENSE and one test file,
-  replay_test.go, which guards the patch. The other upstream tests and the testdata
-  folder are not copied. This folder is its own module: "go test ./..." from the
-  repository root does not run it. Run: go -C third_party/bubbletea test ./...
+  renderer_patch_test.go, which guards the patch. The other upstream tests and the
+  testdata folder are not copied. This folder is its own module: "go test ./..." from
+  the repository root does not run it. Run: go -C third_party/bubbletea test ./...
+  The test TestDependencyPins in internal/tui runs it as one of its subtests.
 
 The changes
-  Four upstream files are changed and two files are new.
-  tea.go            Program counts window size events (field resizeGeneration), puts the
-                    count in the size message, and answers a replay request in the event
-                    loop. A request for an old generation or an old size gets Stale.
-  input.go          The size message is built from Width and Height only, because the
-                    message has a new field.
-  screen.go         WindowSizeMsg has a new field, Generation.
-  cursed_renderer.go  Two changes in insertAbove (the code behind tea.Println), and one new method.
-                    (1) A row that fills every column is not followed by erase-to-end-of-line.
-                    After such a row the cursor sits on the last column with a wrap pending, and
-                    the erase removed the last character. The line is blank after the insert, so
-                    the erase is not needed there. Rows that end inside a line keep the erase.
-                    (2) insertAbove sets the field cursorMoved. A commit leaves the terminal
-                    cursor at the top of the frame, and a frame that did not change made the next
-                    flush write nothing, so the cursor stayed there. flushLocked does not take the
-                    "no changes" exit while cursorMoved is set; it then writes only the cursor
-                    move (about 17 bytes with the show and hide sequences), not the frame.
-                    New method replayInline: one synchronized write that clears the screen
-                    and the scrollback, draws the startup text and the committed lines again,
-                    and draws the live view. It does not acknowledge a commit.
-  inline_replay.go  New. Public API: ReplayInlineTranscript and InlineReplayResult.
-  replay_test.go    New. Renderer tests: the repair write, a full-width committed row keeps its last
-                    character, and the cursor is placed again after a commit.
+  One upstream file is changed. The other files equal v2.0.10.
+  cursed_renderer.go  New field awaitingSizedView. resize sets it, render clears it, and
+                    flush writes nothing while it is set (a closing flush always writes).
+                    Without it, the renderer draws the previous view at the new size in the
+                    time between a resize and the next view of the program. The program
+                    draws that view for the old row and column counts, so the frame shows
+                    wrong rows for one flush.
 
-Why
-  After a resize, an inline program cannot repair lines that the terminal reflowed in its
-  scrollback. The program needs a way to redraw its committed lines in one atomic write.
-  Upstream v2.0.10 has no such call.
-  The two insertAbove changes let an inline program commit rows at the full terminal width and
-  keep the cursor in its editor after a commit. Upstream v2.0.10 drops the last column of a
-  full-width committed row and leaves the cursor at the top of the frame.
+Why this copy is kept
+  Upstream v2.0.10 has no resize guard. The alternate screen program resizes often (a
+  window drag sends many size events), and the guard removes the flash of a wrong
+  frame. The terminal restore on every end path (leave the alternate screen, show the
+  cursor, mouse reporting off) is upstream behavior: no patch is needed for it.
 
 Guard
-  internal/tui: TestInlineReplayPatchPresent uses the public API and reads the output
-  through a terminal emulator. TestDependencyPins fails when the replace line or the
-  Ultraviolet pin moves. replay_test.go tests the renderer inside the module.
+  renderer_patch_test.go tests inside the module: a flush after a resize writes nothing,
+  the next view is drawn, and a closing flush still writes.
+  TestDependencyPins fails when the replace line or the Ultraviolet pin moves.
 
 How to update
   1. Download the new upstream tag (go mod download charm.land/bubbletea/v2@TAG) and copy
      its non-test Go files, go.mod, go.sum and LICENSE into this folder.
-  2. Apply the changes above again. The patches (diffs against v2.0.10) are in
-     the patches folder of this copy, one for each of tea.go, input.go, screen.go
-     and cursed_renderer.go. inline_replay.go and replay_test.go are copied as they are.
+  2. Apply the files of the patches folder again (patch -p1 from this folder; each is a
+     diff against v2.0.10).
   3. Keep Ultraviolet at the pin of the root go.mod, or test the new commit with the
-     resize scenarios first.
+     resize scenarios and the golden tests first.
   4. Run: go -C third_party/bubbletea test ./... and go test ./internal/tui/... ./cmd/tui/...
-  5. Drop this copy and the replace line when upstream has an inline replay call.
+  5. Drop this copy and the replace line when upstream has the same guard. Then remove
+     the replace line in go.mod, delete this folder, add the go.sum lines of the
+     module and update deps_pin_test.go.
+
+History
+  The first copy had a larger patch for inline mode: a full-width committed row, a cursor
+  placed again after a commit, a commit that writes nothing on the alternate screen, the
+  screen switch before a commit, and tea.ReplayInlineTranscript with InlineReplayResult.
+  The interactive TUI moved to the alternate screen and has no consumer for these, so
+  they were removed with the inline commit path.

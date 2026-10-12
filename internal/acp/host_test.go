@@ -3,6 +3,8 @@ package acp
 import (
 	"context"
 	"errors"
+	"sort"
+	"strings"
 	"sync"
 	"testing"
 	"time"
@@ -137,4 +139,37 @@ func TestHostConcurrentSessionsAndOutputFailure(t *testing.T) {
 	require.ErrorIs(t, err, writeErr)
 	_, err = h.NewSession(hostDeadline(t), t.TempDir())
 	require.Error(t, err)
+}
+
+func TestHostCloseClosesSessionsInParallel(t *testing.T) {
+	h := NewHost(context.Background(), func(_ context.Context, id, cwd string) (*agent.Agent, error) {
+		p, err := faux.New()
+		if err != nil {
+			return nil, err
+		}
+		m, _ := p.Model("faux-1")
+		return agent.New(agent.Config{
+			SessionID:  id,
+			LoopConfig: agent.LoopConfig{Model: m, Stream: p.Stream, Cwd: cwd},
+			Release: func() error {
+				time.Sleep(time.Second)
+				return errors.New("release " + id)
+			},
+		})
+	}, nil)
+	for range 3 {
+		_, err := h.NewSession(hostDeadline(t), t.TempDir())
+		require.NoError(t, err)
+	}
+
+	start := time.Now()
+	err := h.Close()
+	elapsed := time.Since(start)
+
+	require.Less(t, elapsed, 2*time.Second, "sessions close at the same time")
+	require.Error(t, err)
+	lines := strings.Split(err.Error(), "\n")
+	require.Len(t, lines, 3, "every session error is joined")
+	require.True(t, sort.StringsAreSorted(lines), "errors are sorted by session ID: %v", lines)
+	require.Same(t, err, h.Close(), "a second call returns the stored result")
 }

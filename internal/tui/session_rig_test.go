@@ -446,15 +446,8 @@ type viewRig struct {
 }
 
 type rigConfig struct {
-	opts    func(*Options)
-	fc      *fakeClient
-	program []tea.ProgramOption
-}
-
-// withProgram adds options of the Bubble Tea program, for example a color
-// profile for a test that reads the escape sequences of the output.
-func withProgram(o ...tea.ProgramOption) rigOption {
-	return func(c *rigConfig) { c.program = append(c.program, o...) }
+	opts func(*Options)
+	fc   *fakeClient
 }
 
 type rigOption func(*rigConfig)
@@ -481,19 +474,18 @@ func startView(t *testing.T, width, height int, ro ...rigOption) *viewRig {
 		Location:     time.UTC,
 		Now:          clock.Now,
 		TickInterval: -1,
-		SettleDelay:  30 * time.Millisecond,
 	}
 	if cfg.opts != nil {
 		cfg.opts(&opts)
 	}
 	m := New(opts)
 	r := &viewRig{t: t, fc: cfg.fc, m: m, clock: clock}
-	r.h = startScreen(t, m, width, height, cfg.program...)
+	r.h = startScreen(t, m, width, height)
 	t.Cleanup(func() { close(cfg.fc.events) })
 	if opts.Client != nil {
 		r.h.waitText("Ask anything")
-		r.h.waitText("ask   v0.1.0")
-		// The start line below the header comes with the first state answer.
+		r.h.waitText("◢◤ ask")
+		// The start line at the top of the pane comes with the first state answer.
 		r.waitCall("usage")
 		r.h.settle()
 	}

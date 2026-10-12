@@ -32,6 +32,9 @@ type LeaderParams struct {
 	SpawnedByClient bool
 	// Logger may be nil.
 	Logger *zap.Logger
+	// Stopping runs once when the leader begins to stop, before its listener
+	// closes. It may be nil.
+	Stopping func()
 }
 
 // LeaderRuntime is the composed leader: one shared ACP host behind one internal
@@ -110,6 +113,7 @@ func NewLeaderRuntime(p LeaderParams) (*LeaderRuntime, error) {
 		SpawnedByClient: p.SpawnedByClient,
 		ActiveRuns:      a.ActiveRuns,
 		QuiesceIfIdle:   a.QuiesceIfIdle,
+		Stopping:        p.Stopping,
 	})
 	if err != nil {
 		_ = a.Close()

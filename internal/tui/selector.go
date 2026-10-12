@@ -12,7 +12,7 @@ import (
 // Selector component.
 //
 // A selector is a filtered list in a rounded box. It replaces the editor in
-// the editor slot and keeps the draft. It owns its filter, its selected row and
+// the prompt pane slot and keeps the draft. It owns its filter, its selected row and
 // the window of rows it shows. A key press gives back an action for the root;
 // the selector never calls the client.
 //

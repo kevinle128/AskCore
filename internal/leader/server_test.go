@@ -230,6 +230,26 @@ func TestServerCloseTellsClients(t *testing.T) {
 	require.NoError(t, h.srv.Close(), "Close is safe to call twice")
 }
 
+func TestServerCloseCallsStoppingBeforeTheListenersClose(t *testing.T) {
+	var calls atomic.Int32
+	var dialedOK atomic.Bool
+	var h *harness
+	h = startHarness(t, harnessOpts{edit: func(c *Config) {
+		c.Stopping = func() {
+			calls.Add(1)
+			conn, err := net.DialTimeout("unix", h.paths.Socket, time.Second)
+			if err == nil {
+				dialedOK.Store(true)
+				_ = conn.Close()
+			}
+		}
+	}})
+	require.NoError(t, h.srv.Close())
+	require.NoError(t, h.srv.Close())
+	require.EqualValues(t, 1, calls.Load(), "the hook runs once")
+	require.True(t, dialedOK.Load(), "the socket still accepted when the hook ran")
+}
+
 func TestServerInvalidFirstFrameClosed(t *testing.T) {
 	h := startHarness(t)
 	conn, err := net.Dial("unix", h.paths.Socket)
@@ -355,4 +375,26 @@ func TestRouterPostRefusesAfterStop(t *testing.T) {
 	for range 100 {
 		require.False(t, h.srv.r.post(clientGoneEvent{}), "a stopped router takes no event")
 	}
+}
+
+func TestRegisteredCarriesBuildStamps(t *testing.T) {
+	const commit = "2026-10-11T09:30:00Z"
+	const dev = "2026-10-11T16:42:48Z sha256:ab"
+	h := startHarness(t, harnessOpts{edit: func(c *Config) {
+		c.Server.CommitTime = commit
+		c.Server.DevStamp = dev
+	}})
+	c := h.ready(nil)
+	require.Equal(t, commit, c.reg.Info.CommitTime)
+	require.Equal(t, dev, c.reg.Info.DevStamp)
+}
+
+func TestStatusCarriesBuildStamps(t *testing.T) {
+	const commit = "2026-10-11T09:30:00Z"
+	h := startHarness(t, harnessOpts{edit: func(c *Config) { c.Server.CommitTime = commit }})
+	a := h.ready(nil)
+	a.write(protocol.LeaderFrame{Type: protocol.LeaderFrameControl, Payload: marshalPlain(protocol.LeaderControl{Command: protocol.LeaderControlStatus})})
+	st := waitControlResult[protocol.LeaderStatus](t, a)
+	require.Equal(t, commit, st.CommitTime)
+	require.Empty(t, st.DevStamp)
 }

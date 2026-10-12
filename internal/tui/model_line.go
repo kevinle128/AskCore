@@ -8,8 +8,8 @@ import (
 
 // Model line.
 //
-// A session names its provider and model in scrollback: a start line under the
-// header, after a divider or after a restore note, and a change line when the
+// A session names its provider and model in the block pane: a start line at
+// the top, after a divider or after a restore note, and a change line when the
 // leader reports a new model. The lines are plain transcript blocks of the
 // client, drawn again at each width.
 
@@ -94,9 +94,9 @@ func (s *sessionView) pairText(r modelRef) (pair, api string) {
 	return pair, api
 }
 
-// modelLineBlock is the content under the header, after a divider or after a
-// restore note: the pair, an optional "was" part, a fallback reason and the
-// trace warning.
+// modelLineBlock is the content at the top of the pane, after a divider or
+// after a restore note: the pair, an optional "was" part, a fallback reason and
+// the trace warning.
 type modelLineBlock struct {
 	pair string
 	api  string
@@ -193,8 +193,8 @@ func (b modelLineBlock) Lines(rc RenderContext) []string {
 	return append(rows, "")
 }
 
-// noRows is a placeholder in the transcript. It holds the commit frontier
-// until the state of the session is known, and then it is replaced.
+// noRows is a placeholder in the transcript. It draws nothing until the state
+// of the session is known, and then it is replaced.
 type noRows struct{}
 
 func (noRows) Lines(RenderContext) []string { return nil }
@@ -203,7 +203,8 @@ func (noRows) Lines(RenderContext) []string { return nil }
 type startKind int
 
 const (
-	startHeader startKind = iota
+	// startFirst is the start line at the top of a transcript.
+	startFirst startKind = iota
 	startDivider
 	startRestore
 )
@@ -257,7 +258,7 @@ func (s *sessionView) startBlockFor(kind startKind) modelLineBlock {
 			b.fallback = "Default model " + pair + " is not usable (" + fallbackReasonText(s.fallback.Reason) + ")."
 		}
 	}
-	if kind == startHeader {
+	if kind == startFirst {
 		b.trace = s.trace
 	}
 	return b
@@ -287,7 +288,7 @@ func (s *sessionView) settleStartsIfKnown() {
 }
 
 // settleStarts replaces the placeholders with the start line of the model that
-// the view knows and releases the commit frontier.
+// the view knows and marks them stable.
 func (s *sessionView) settleStarts() {
 	if len(s.starts) == 0 {
 		return
@@ -295,9 +296,6 @@ func (s *sessionView) settleStarts() {
 	for _, st := range s.starts {
 		b := s.startBlockFor(st.kind)
 		switch st.kind {
-		case startHeader:
-			s.headerBlock.start = b
-			s.m.applyBlock(ReplaceBlockMsg{ID: st.id, Block: s.headerBlock})
 		case startRestore:
 			s.m.applyBlock(ReplaceBlockMsg{ID: st.id, Block: restoredNote{text: st.note, start: b}})
 		default:

@@ -197,9 +197,11 @@ func TestHostResetFencesEpochOfHeldEvents(t *testing.T) {
 	require.Equal(t, oldEpoch, got[3])
 	require.Equal(t, "fresh", got[9])
 	mu.Unlock()
+	// The queue texts come from the Agent queue, not from queue_update events:
+	// these events are made up, and the Agent queue is empty.
 	steering, followUp := s.Queues()
 	require.Empty(t, steering)
-	require.Equal(t, []string{"new"}, followUp)
+	require.Empty(t, followUp)
 }
 
 func TestHostContinueStateErrorDoesNotBindSiblingRun(t *testing.T) {

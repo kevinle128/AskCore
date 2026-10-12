@@ -34,7 +34,7 @@ func (s *sessionView) onGone(v SessionGoneMsg) {
 	s.accepted = nil
 	s.gen++
 	s.needNew = true
-	// Blocks of the lost run would hold the commit frontier for ever.
+	// Blocks of the lost run would hold the frontier for ever.
 	s.apply(s.trl.Event(&protocol.AgentSettled{}))
 	s.resetSessionState()
 	s.settleStarts()

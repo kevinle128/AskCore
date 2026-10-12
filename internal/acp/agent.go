@@ -220,10 +220,13 @@ func (a *Adapter) Initialize(_ context.Context, _ sdk.InitializeRequest) (sdk.In
 	a.initialized.Store(true)
 	info := a.cfg.Info
 	return sdk.InitializeResponse{
-		ProtocolVersion:   sdk.ProtocolVersion(wireVersion),
-		AgentCapabilities: sdk.AgentCapabilities{PromptCapabilities: sdk.PromptCapabilities{Image: true}},
-		AgentInfo:         &info,
-		AuthMethods:       append([]sdk.AuthMethod{}, a.cfg.AuthMethods...),
+		ProtocolVersion: sdk.ProtocolVersion(wireVersion),
+		AgentCapabilities: sdk.AgentCapabilities{
+			PromptCapabilities:  sdk.PromptCapabilities{Image: true},
+			SessionCapabilities: sdk.SessionCapabilities{Close: &sdk.SessionCloseCapabilities{}},
+		},
+		AgentInfo:   &info,
+		AuthMethods: append([]sdk.AuthMethod{}, a.cfg.AuthMethods...),
 	}, nil
 }
 
@@ -430,8 +433,34 @@ func (a *Adapter) Logout(context.Context, sdk.LogoutRequest) (sdk.LogoutResponse
 	return sdk.LogoutResponse{}, requestError(unsupported("logout"))
 }
 
-func (a *Adapter) CloseSession(context.Context, sdk.CloseSessionRequest) (sdk.CloseSessionResponse, error) {
-	return sdk.CloseSessionResponse{}, requestError(unsupported("session/close"))
+// CloseSession disposes the session: its run stops, its background jobs end,
+// and the host forgets it. Only the current driver may close a routed session.
+// An error after the close began (internal) still leaves the session closed.
+func (a *Adapter) CloseSession(_ context.Context, req sdk.CloseSessionRequest) (sdk.CloseSessionResponse, error) {
+	if err := a.gate(); err != nil {
+		return sdk.CloseSessionResponse{}, requestError(err)
+	}
+	s, err := a.session(string(req.SessionId))
+	if err != nil {
+		return sdk.CloseSessionResponse{}, requestError(err)
+	}
+	route, err := a.metaRoute(req.Meta)
+	if err == nil {
+		err = a.checkRouteSession(route, string(req.SessionId))
+	}
+	if err != nil {
+		return sdk.CloseSessionResponse{}, requestError(err)
+	}
+	release, err := s.guard(route)
+	if err != nil {
+		return sdk.CloseSessionResponse{}, requestError(err)
+	}
+	// The guard only checks the authority; Close waits for the run to stop.
+	release()
+	if err := s.Close(); err != nil {
+		return sdk.CloseSessionResponse{}, requestError(err)
+	}
+	return sdk.CloseSessionResponse{}, nil
 }
 
 func (a *Adapter) ListSessions(context.Context, sdk.ListSessionsRequest) (sdk.ListSessionsResponse, error) {

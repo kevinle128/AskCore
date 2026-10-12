@@ -20,11 +20,17 @@ func guardStdout(stderr io.Writer) (restore func()) {
 	sigpipe := make(chan os.Signal, 1)
 	signal.Notify(sigpipe, syscall.SIGPIPE)
 	prev := os.Stdout
+	swapped := false
 	if f, ok := stderr.(*os.File); ok {
 		os.Stdout = f
+		swapped = true
 	}
 	return func() {
-		os.Stdout = prev
+		// A run with a stderr that is not a file never touches the global, so
+		// runs in one process do not race on it.
+		if swapped {
+			os.Stdout = prev
+		}
 		signal.Stop(sigpipe)
 	}
 }

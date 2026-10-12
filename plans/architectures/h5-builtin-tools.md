@@ -313,3 +313,21 @@ Recommendation given: A.
 Answer: A.
 Consequence: the spill file stops at 64 MB; the in-memory head and tail buffer keeps working; the result says `[spill file capped at 64 MB]`; the job is not killed.
 Spike 1 completed (user chose A, 2026-10-10): 5 tagged runs and 1 untagged control; keep the Grok shape; polling happens with or without the notice, so `job_output` must answer at once and say a notice will arrive.
+
+### N3. Monitor contract (user, 2026-10-11)
+
+Question (from the H5 plan, `plans/261010-2349-h5-builtin-tools/plan.md` N3): is the monitor Grok's shape, Grok's shape plus a pattern, or an observer attached to a bash job?
+Answer: exactly as Grok CLI (grok-build `crates/codegen/xai-grok-tools/src/implementations/grok_build/monitor/types.rs`, `tool.rs`).
+Supersession note: this replaces "lines that match a pattern become events" in the architecture (Jobs section) and the Q10 consequence wording "lines matching a pattern become events". Q10 (separate tool), Q11 (Steer) and Q14 (`<system-reminder>`) stay.
+Consequence: `monitor(command, description, timeout_ms?, persistent?)`; no pattern parameter; each stdout line is an event; the command's exit ends the watch; filtering is the command's job, and the description tells the model to print only DONE/FAILED/CANCELLED lines, to use `grep --line-buffered` in pipes, and to print FAILED at once.
+Consequence: `timeout_ms` default 36,000,000 (10 h), max 10 h; `persistent: true` means no timeout (runs until `job_kill` or session end); `timeout_ms` above the max with `persistent` false is a validation error. This differs from `bash` background jobs, which have no time limit (Q9).
+Consequence: the monitor starts its own background job `monitor-N`, counted toward the cap of 10; the result returns the job id, the resolved timeout and `persistent`.
+Consequence: event shaping as Grok: lines cut at 500 chars, batches cut at 3,000 chars, 200 ms debounce batching, token bucket 10 refilled 1 per 2,000 ms, auto-stop after 30,000 ms of continuous violation; Ask improvement: auto-stop kills the process group.
+
+### Images in `read` (user, 2026-10-11)
+
+Question (from the H5 plan, unresolved question 1): should `read` return images, and with or without resize?
+Answer: exactly like Pi (`pi/packages/coding-agent/src/core/tools/read.ts:59-135`, `utils/mime.ts`, `utils/image-process.ts`, `utils/image-resize-core.ts`).
+Consequence: detection by magic bytes (jpeg, png, gif, webp, bmp; a JPEG with byte 3 `0xf7` is rejected); png, jpeg, gif and webp kept, other formats converted to PNG with EXIF orientation applied; auto-resize on (max 2000x2000, max 4.5 MiB base64, PNG then JPEG qualities 80, 85, 70, 55, 40, then scale down); Pi's result and failure texts; a note for a model without image input.
+Consequence: this pulls H-TOOL-20 (image resize, P1) into H5. `images.autoResize` (true) and `images.blockImages` (false) are fixed at Pi's defaults in H5; H6 makes them settings.
+Consequence: new module `golang.org/x/image` (pure Go: webp and bmp decode, draw for scaling) next to the standard image packages; the roadmap rule "do not rebuild native image libraries" stays satisfied.

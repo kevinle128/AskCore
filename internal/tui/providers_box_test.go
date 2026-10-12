@@ -63,7 +63,6 @@ func TestProviderBoxGoldens(t *testing.T) {
 			}
 		}
 		require.Equal(t, []string{
-			"│   ● Claude Pro/Max sign-in           │",
 			"│   ● Anthropic… env ANTHROPIC_API_KEY │",
 			"│ ❯ ● ChatGPT Plus/Pro sign… signed in │",
 			"│   … 3 more                           │",

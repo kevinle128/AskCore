@@ -92,7 +92,7 @@ func (e *Editor) Revision() uint64 { return e.revision }
 // SetWidth tells the editor the terminal width. Vertical cursor movement
 // needs it to know where rows wrap. Call it when the size changes.
 func (e *Editor) SetWidth(terminalWidth int) {
-	e.textW = max(1, BoxInnerWidth(terminalWidth)-promptWidth)
+	e.textW = max(1, PromptInnerWidth(terminalWidth)-promptWidth)
 }
 
 // Accept tells the editor that the leader accepted a submitted prompt. It

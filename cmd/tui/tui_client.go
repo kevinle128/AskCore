@@ -15,7 +15,6 @@ import (
 	"AskCore/internal/tui"
 	"AskCore/internal/tuiclient"
 	"AskCore/internal/tuiclient/rpc"
-	"AskCore/pkg/protocol"
 )
 
 // inProcessStopWait bounds the wait for the in-process agent to stop when the
@@ -25,8 +24,7 @@ const inProcessStopWait = 10 * time.Second
 // tuiClientOptions are the facts that openTUIClient cannot read from the
 // process dependencies.
 type tuiClientOptions struct {
-	// callerExe is the executable that looks for the ask binary next to it when a
-	// leader must be started.
+	// callerExe is this ask binary. A leader that must be started runs from it.
 	callerExe string
 	// env is the environment of a leader that this client starts. Nil means the
 	// current environment.
@@ -58,11 +56,12 @@ func openTUIClient(ctx context.Context, deps runDependencies, o tuiClientOptions
 		var c *tuiclient.Client
 		c, err = tuiclient.Open(ctx, tuiclient.Config{
 			Dial: tuiclient.LeaderDial(leader.ConnectConfig{
-				Paths:     paths,
-				Hello:     protocol.LeaderRegister{ClientKind: "tui", Build: buildIdentity()},
-				CallerExe: o.callerExe,
-				Env:       o.env,
-				Warn:      o.warn,
+				Paths:       paths,
+				Hello:       leaderHello("tui"),
+				CallerExe:   o.callerExe,
+				CallerIsAsk: true,
+				Env:         o.env,
+				Warn:        o.warn,
 			}),
 			ClientName:     "ask",
 			Version:        buildIdentity(),
@@ -86,6 +85,9 @@ func openTUIClient(ctx context.Context, deps runDependencies, o tuiClientOptions
 // leader, so both modes treat prompts, queues and follow the same way. Closing
 // the client stops the agent and its run.
 func openInProcessClient(ctx context.Context, deps runDependencies) (*tuiclient.Client, error) {
+	// The terminal belongs to the full-screen program. A job error has no line
+	// of its own there; the job stays readable with job_list and job_output.
+	deps.onJobError = func(error) {}
 	params, err := acpParams(deps)
 	if err != nil {
 		return nil, err

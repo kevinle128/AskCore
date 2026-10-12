@@ -10,6 +10,7 @@ import (
 	"io"
 	"net"
 	"os"
+	"path/filepath"
 	"strings"
 	"syscall"
 	"time"
@@ -118,10 +119,11 @@ func runLeader(argv []string, stdout, stderr io.Writer, deps runDependencies, si
 func leaderConnect(paths leader.Paths) leader.ConnectConfig {
 	exe, _ := os.Executable()
 	return leader.ConnectConfig{
-		Paths:     paths,
-		Hello:     protocol.LeaderRegister{ClientKind: "cli", Build: buildIdentity()},
-		CallerExe: exe,
-		Deadline:  leaderStopWait * 3,
+		Paths:       paths,
+		Hello:       leaderHello("cli"),
+		CallerExe:   exe,
+		CallerIsAsk: true,
+		Deadline:    leaderStopWait * 3,
 	}
 }
 
@@ -201,6 +203,9 @@ func leaderStop(paths leader.Paths, stdout, stderr io.Writer) int {
 // way out the socket (only if it is still ours) and last the lock.
 func serveLeader(o leaderOptions, paths leader.Paths, stderr io.Writer, deps runDependencies, sigs <-chan os.Signal) int {
 	started := time.Now()
+	// First of all: a `go run` binary can be removed while this leader still runs,
+	// and the stamp of a build without a VCS stamp is read from that file.
+	commitTime, devStamp := buildStamps()
 	if err := leader.EnsureHome(paths.Home); err != nil {
 		report(stderr, "Error:", err)
 		return 1
@@ -259,9 +264,11 @@ func serveLeader(o leaderOptions, paths leader.Paths, stderr io.Writer, deps run
 	params := app.LeaderParams{
 		ACPParams: acp,
 		Server: leader.ServerConfig{
-			InstanceID: instance, Build: buildIdentity(), Controls: []string{protocol.LeaderControlStatus, protocol.LeaderControlShutdown},
+			InstanceID: instance, Build: buildIdentity(), CommitTime: commitTime, DevStamp: devStamp,
+			Controls: []string{protocol.LeaderControlStatus, protocol.LeaderControlShutdown},
 		},
 		PID: os.Getpid(), SpawnedByClient: o.spawned, Logger: logger,
+		Stopping: markStopping(lock, stderr),
 	}
 	var rt *app.LeaderRuntime
 	graph := fx.New(app.LeaderModule, fx.Supply(params), fx.NopLogger, fx.Populate(&rt))
@@ -269,7 +276,28 @@ func serveLeader(o leaderOptions, paths leader.Paths, stderr io.Writer, deps run
 		report(stderr, "Error:", err)
 		return 1
 	}
-	return serveLeaderRuntime(rt, lock, paths, leader.Owner{PID: os.Getpid(), Start: started.Unix(), Instance: instance}, stderr, sigs)
+	return serveLeaderRuntime(rt, lock, paths, leader.Owner{PID: os.Getpid(), Start: started.Unix(), Instance: instance, Exe: leaderExe()}, stderr, sigs)
+}
+
+// markStopping returns the hook that records the state stopping in the lock
+// file as the leader begins to stop. A failure goes to stderr and changes nothing
+// else: the leader stops either way.
+func markStopping(lock *leader.Lock, stderr io.Writer) func() {
+	return func() {
+		if err := lock.MarkStopping(); err != nil {
+			report(stderr, "ask leader: owner record:", err)
+		}
+	}
+}
+
+// leaderExe is the path that this leader process was started from, as its
+// command line shows it. A client starts the leader with an absolute path; a
+// relative name gives no record, and the name ask identifies the process.
+func leaderExe() string {
+	if len(os.Args) > 0 && filepath.IsAbs(os.Args[0]) {
+		return os.Args[0]
+	}
+	return ""
 }
 
 // serveLeaderRuntime owns startup cleanup until Serve takes over. A second
@@ -291,6 +319,7 @@ func serveLeaderRuntime(rt *app.LeaderRuntime, lock *leader.Lock, paths leader.P
 			report(stderr, "ask leader: socket cleanup:", err)
 		}
 	}()
+	owner.State = leader.OwnerServing
 	if err := lock.WriteOwner(owner); err != nil {
 		_ = ln.Close()
 		report(stderr, "Error:", err)

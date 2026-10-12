@@ -5,9 +5,8 @@ import "github.com/charmbracelet/x/ansi"
 // WindowSizeMsg is used to report the terminal size. It's sent to Update once
 // initially and then on every terminal resize.
 type WindowSizeMsg struct {
-	Width      int
-	Height     int
-	Generation uint64
+	Width  int
+	Height int
 }
 
 // ClearScreen is a special command that tells the program to clear the screen

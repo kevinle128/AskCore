@@ -36,6 +36,7 @@ const (
 	tagFollow
 	tagUnfollow
 	tagTake
+	tagClose
 )
 
 // maxEndedFollows is how many ended subscriptions the router remembers. The
@@ -375,8 +376,11 @@ func (r *router) handleSessionCall(c *client, m *rpcMessage, pol policy) {
 		meta.Capabilities = c.caps
 	}
 	var tag *reqTag
-	if pol.kind == callFollow {
+	switch pol.kind {
+	case callFollow:
 		tag = &reqTag{kind: tagFollow, session: sid, memberGen: c.members[sid].gen}
+	case callClose:
+		tag = &reqTag{kind: tagClose, session: sid}
 	}
 	r.forward(c, m, meta, tag)
 }
@@ -689,9 +693,45 @@ func (r *router) onAgentResponse(m *rpcMessage) {
 		r.deliver(c, restored, restored.Msg)
 	case tagTake:
 		r.finishTake(c, restored, out, m, tag, failed)
+	case tagClose:
+		if s := r.sessions[tag.session]; s != nil && (!failed || hostDropped(out)) {
+			r.forgetSession(s)
+		}
+		r.deliver(c, restored, restored.Msg)
 	default:
 		r.deliver(c, restored, restored.Msg)
 	}
+}
+
+// forgetSession drops a session that the host closed. The host ended its run
+// and its follows, so the router sends no unfollow. Every member leaves the
+// session, and its open questions end. Frames already queued for a member
+// stay, so the last events of the session still arrive.
+func (r *router) forgetSession(s *session) {
+	for sub, f := range r.follows {
+		if f.session == s.id {
+			delete(r.follows, sub)
+			r.noteEnded(sub, f.owner.id)
+		}
+	}
+	for c := range s.members {
+		delete(c.members, s.id)
+		r.dropRecipient(c, s.id)
+	}
+	r.cancelQuestions(s, s.gen)
+	delete(r.sessions, s.id)
+}
+
+// hostDropped tells whether a failed close still left the host without the
+// session: it did not know the session, or the close began and then failed.
+func hostDropped(out *rpcMessage) bool {
+	var e struct {
+		Data protocol.ACPErrorData `json:"data"`
+	}
+	if json.Unmarshal(out.fields["error"], &e) != nil {
+		return false
+	}
+	return e.Data.Kind == protocol.ACPErrUnknownSession || e.Data.Kind == protocol.ACPErrInternal
 }
 
 func (r *router) deliver(c *client, restored Restored, msg json.RawMessage) {
@@ -844,6 +884,7 @@ func (r *router) status() protocol.LeaderStatus {
 		InstanceID: r.cfg.Server.InstanceID, Build: r.cfg.Server.Build,
 		ProtocolVersion: protocol.LeaderProtocolVersion, PID: r.cfg.PID,
 		Clients: len(r.clients), Sessions: len(r.sessions), SpawnedByClient: r.cfg.SpawnedByClient,
+		CommitTime: r.cfg.Server.CommitTime, DevStamp: r.cfg.Server.DevStamp,
 	}
 	if r.cfg.ActiveRuns != nil {
 		st.ActiveRuns = r.cfg.ActiveRuns()

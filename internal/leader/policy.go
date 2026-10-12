@@ -16,6 +16,7 @@ const (
 	callAttach
 	callDetach
 	callListLive
+	callClose       // session/close: the router forgets the session when the host closed it
 	callUnsupported // answered by the router with the unsupported error
 )
 
@@ -47,6 +48,7 @@ var policies = map[string]policy{
 
 	"session/prompt": {kind: callSession, driverOnly: true},
 	"session/cancel": {kind: callSession, driverOnly: true},
+	"session/close":  {kind: callClose, driverOnly: true},
 
 	protocol.ACPState:       {kind: callSession, subscribe: true},
 	protocol.ACPModels:      {kind: callSession, subscribe: true},
@@ -72,7 +74,6 @@ var policies = map[string]policy{
 
 	// Durable session calls have no owner yet.
 	"session/load":              {kind: callUnsupported},
-	"session/close":             {kind: callUnsupported},
 	"session/resume":            {kind: callUnsupported},
 	"session/list":              {kind: callUnsupported},
 	"session/set_mode":          {kind: callUnsupported},

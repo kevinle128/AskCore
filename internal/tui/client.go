@@ -64,7 +64,7 @@ const (
 	ModeInProcess Mode = "in-process"
 )
 
-// ConnInfo identifies the link. InstanceID is the leader id that the footer
+// ConnInfo identifies the link. InstanceID is the leader id that the header
 // shows; it is empty in process.
 type ConnInfo struct {
 	Mode       Mode

@@ -34,6 +34,7 @@ const (
 	RoleAccent
 	RoleAssistant
 	RoleTool
+	RoleHook
 	RoleThinking
 	RoleCode
 	RoleSuccess
@@ -49,7 +50,7 @@ const (
 
 var roleNames = [roleCount]string{
 	"fg", "muted", "dim", "border", "panel", "code-panel", "selected",
-	"accent", "assistant", "tool", "thinking", "code",
+	"accent", "assistant", "tool", "hook", "thinking", "code",
 	"success", "warning", "error", "prov-1", "prov-2", "prov-3", "prov-4", "logo",
 }
 
@@ -101,6 +102,7 @@ var palette = [roleCount]roleSpec{
 	RoleAccent:    {fg: "#f472b6", fg256: "205", plain: attrBold},
 	RoleAssistant: {fg: "#a78bfa", fg256: "141", plain: attrBold},
 	RoleTool:      {fg: "#2dd4bf", fg256: "43", plain: attrBold},
+	RoleHook:      {fg: "#14b8a6", fg256: "37", plain: attrBold},
 	RoleThinking:  {fg: "#8f95b3", fg256: "103", all: attrItalic},
 	RoleCode:      {fg: "#fb923c", fg256: "209"},
 	RoleSuccess:   {fg: "#4ade80", fg256: "78", plain: attrBold},
@@ -260,8 +262,14 @@ func gradientAt(pos float64) color.Color {
 
 // Glyphs of the style guide. Each glyph has one meaning and one column.
 const (
-	GlyphUser       = "❯"
-	GlyphAssistant  = "◆"
+	GlyphUser      = "❯"
+	GlyphAssistant = "◆"
+	GlyphStep      = "◆"
+	// GlyphHook is U+2693 without a variation selector. It is two columns
+	// wide: rows that start with it reserve both columns.
+	GlyphHook       = "⚓"
+	GlyphRail       = "┃"
+	GlyphMore       = "⋮"
 	GlyphThinking   = "∴"
 	GlyphToolRun    = "◇"
 	GlyphToolDone   = "●"

@@ -218,6 +218,47 @@ func TestConnectOrSpawnPassesTheFoundBinary(t *testing.T) {
 	require.Equal(t, filepath.Join(sibDir, "ask"), exe, "the sibling of the caller is started")
 }
 
+// A caller that is the ask program starts the leader from its own binary, so the
+// leader matches the caller. Its name does not matter: `go run` makes a binary
+// named after the package. An `ask` on the PATH is not used.
+func TestConnectOrSpawnStartsTheCallerWhenItIsAsk(t *testing.T) {
+	p := testPaths(t)
+	pl := newProcLeader(t)
+	dir := t.TempDir()
+	caller := filepath.Join(dir, "tui")
+	require.NoError(t, os.WriteFile(caller, []byte("#!/bin/sh\n"+versionScript("dev", protocol.LeaderProtocolVersion)+"\n"), 0o755))
+	pathDir := askDir(t)
+	var exe string
+	cfg := connectConfig(p)
+	cfg.CallerExe = caller
+	cfg.CallerIsAsk = true
+	cfg.LookPath = func(string) (string, error) { return filepath.Join(pathDir, "ask"), nil }
+	cfg.StartFn = func(sc StartConfig) (*Child, error) { exe = sc.Executable; return pl.start(sc) }
+	c, err := ConnectOrSpawn(context.Background(), cfg)
+	require.NoError(t, err)
+	_ = c.Close()
+	require.Equal(t, caller, exe)
+}
+
+// The binary of a running ask can be gone, for example after an upgrade or when
+// `go run` has removed its temporary binary. Then the caller finds ask as any
+// other program does.
+func TestConnectOrSpawnCallerThatIsGoneFindsAsk(t *testing.T) {
+	p := testPaths(t)
+	pl := newProcLeader(t)
+	pathDir := askDir(t)
+	var exe string
+	cfg := connectConfig(p)
+	cfg.CallerExe = filepath.Join(t.TempDir(), "tui") // removed
+	cfg.CallerIsAsk = true
+	cfg.LookPath = func(string) (string, error) { return filepath.Join(pathDir, "ask"), nil }
+	cfg.StartFn = func(sc StartConfig) (*Child, error) { exe = sc.Executable; return pl.start(sc) }
+	c, err := ConnectOrSpawn(context.Background(), cfg)
+	require.NoError(t, err)
+	_ = c.Close()
+	require.Equal(t, filepath.Join(pathDir, "ask"), exe)
+}
+
 func TestConnectOrSpawnAskOnPathOnly(t *testing.T) {
 	p := testPaths(t)
 	pl := newProcLeader(t)
@@ -277,15 +318,88 @@ func TestConnectOrSpawnStartupFailureShowsTheLog(t *testing.T) {
 	p := testPaths(t)
 	cfg := connectConfig(p)
 	cfg.CallerExe = filepath.Join(askDir(t), "ask")
+	var starts atomic.Int32
 	cfg.StartFn = func(sc StartConfig) (*Child, error) {
+		starts.Add(1)
 		require.NoError(t, os.WriteFile(sc.Paths.Log, []byte("ask leader: cannot open the agent\n"), 0600))
-		ch := &Child{exited: make(chan struct{}), err: errors.New("exit status 1")}
-		close(ch.exited)
-		return ch, nil
+		return failedChild("exit status 1"), nil
 	}
 	_, err := ConnectOrSpawn(context.Background(), cfg)
 	require.ErrorIs(t, err, ErrStartupFailed)
 	require.Contains(t, err.Error(), "cannot open the agent")
+	require.EqualValues(t, 3, starts.Load())
+}
+
+// failedChild is a child that exited with an error before it served.
+func failedChild(msg string) *Child {
+	ch := &Child{exited: make(chan struct{}), err: errors.New(msg)}
+	close(ch.exited)
+	return ch
+}
+
+// countingAsk returns a directory with an `ask` that reports the current
+// protocol and appends one line to the count file at each `version` run.
+func countingAsk(t *testing.T) (dir, countFile string) {
+	t.Helper()
+	dir = t.TempDir()
+	countFile = filepath.Join(dir, "version-runs")
+	body := fmt.Sprintf(`if [ "$1" = version ]; then echo run >> %q; echo '{"name":"ask","build":"dev","leaderProtocol":%d,"acpVersion":1}'; exit 0; fi; exit 3`, countFile, protocol.LeaderProtocolVersion)
+	fakeAsk(t, dir, body)
+	return dir, countFile
+}
+
+func TestConnectOrSpawnStartsAgainAfterAnEarlyExit(t *testing.T) {
+	p := testPaths(t)
+	pl := newProcLeader(t)
+	dir, countFile := countingAsk(t)
+	var starts atomic.Int32
+	cfg := connectConfig(p)
+	cfg.CallerExe = filepath.Join(dir, "ask")
+	cfg.StartFn = func(sc StartConfig) (*Child, error) {
+		if starts.Add(1) <= 2 {
+			return failedChild("exit status 1"), nil
+		}
+		return pl.start(sc)
+	}
+	c, err := ConnectOrSpawn(context.Background(), cfg)
+	require.NoError(t, err)
+	_ = c.Close()
+	require.EqualValues(t, 3, starts.Load())
+	runs, err := os.ReadFile(countFile)
+	require.NoError(t, err)
+	require.Equal(t, "run\n", string(runs), "the binary is probed once for all starts")
+}
+
+func TestConnectOrSpawnStopsAfterThreeStarts(t *testing.T) {
+	p := testPaths(t)
+	var starts atomic.Int32
+	cfg := connectConfig(p)
+	cfg.CallerExe = filepath.Join(askDir(t), "ask")
+	cfg.StartFn = func(sc StartConfig) (*Child, error) {
+		n := starts.Add(1)
+		require.NoError(t, os.WriteFile(sc.Paths.Log, []byte(fmt.Sprintf("start %d failed\n", n)), 0600))
+		return failedChild("exit status 1"), nil
+	}
+	_, err := ConnectOrSpawn(context.Background(), cfg)
+	require.ErrorIs(t, err, ErrStartupFailed)
+	require.Contains(t, err.Error(), "after 3 starts")
+	require.Contains(t, err.Error(), "start 3 failed")
+	require.EqualValues(t, 3, starts.Load())
+}
+
+func TestConnectOrSpawnDoesNotRetryAStartError(t *testing.T) {
+	p := testPaths(t)
+	var starts atomic.Int32
+	cfg := connectConfig(p)
+	cfg.CallerExe = filepath.Join(askDir(t), "ask")
+	boom := errors.New("exec failed")
+	cfg.StartFn = func(StartConfig) (*Child, error) {
+		starts.Add(1)
+		return nil, boom
+	}
+	_, err := ConnectOrSpawn(context.Background(), cfg)
+	require.ErrorIs(t, err, boom)
+	require.EqualValues(t, 1, starts.Load())
 }
 
 func TestConnectOrSpawnAdoptsAWinnerThatStartsLate(t *testing.T) {
@@ -298,7 +412,9 @@ func TestConnectOrSpawnAdoptsAWinnerThatStartsLate(t *testing.T) {
 	require.NoError(t, err)
 	cfg := connectConfig(p)
 	cfg.CallerExe = filepath.Join(askDir(t), "ask")
+	var starts atomic.Int32
 	cfg.StartFn = func(StartConfig) (*Child, error) {
+		starts.Add(1)
 		ch := &Child{exited: make(chan struct{})}
 		close(ch.exited)
 		return ch, nil
@@ -306,6 +422,7 @@ func TestConnectOrSpawnAdoptsAWinnerThatStartsLate(t *testing.T) {
 	c, err := ConnectOrSpawn(context.Background(), cfg)
 	require.NoError(t, err)
 	_ = c.Close()
+	require.LessOrEqual(t, starts.Load(), int32(1), "a clean exit is a lock loser and is not started again")
 }
 
 func TestConnectOrSpawnNoSpawnForUnsafeHome(t *testing.T) {
@@ -604,7 +721,7 @@ func TestStopSignalsAVerifiedLeaderProcess(t *testing.T) {
 	require.NoError(t, err)
 	require.NoError(t, l.WriteOwner(Owner{PID: proc.Process.Pid, Start: time.Now().Unix(), Instance: "fake"}))
 	go func() { <-exited; _ = l.Release() }()
-	require.Eventually(t, func() bool { return VerifyLeaderProcess(proc.Process.Pid, time.Now().Unix()) == nil }, 5*time.Second, 20*time.Millisecond,
+	require.Eventually(t, func() bool { return VerifyLeaderProcess(Owner{PID: proc.Process.Pid, Start: time.Now().Unix()}) == nil }, 5*time.Second, 20*time.Millisecond,
 		"a shell script named ask that runs `leader` is accepted")
 
 	require.Eventually(t, func() bool { _, err := os.Stat(ready); return err == nil }, 10*time.Second, 20*time.Millisecond, "the script handles SIGTERM")

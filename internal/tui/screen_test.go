@@ -1,7 +1,6 @@
 package tui
 
 import (
-	"fmt"
 	"strings"
 	"sync"
 	"testing"
@@ -239,48 +238,6 @@ func (h *screenHarness) settle() []string {
 	}
 	h.t.Fatalf("screen did not settle:\n%s", prev)
 	return nil
-}
-
-// eachOnceInOrder reports whether every token shows exactly once in the
-// scrollback and the screen together, in the given order. The second result
-// says what is wrong, for the failure message.
-func eachOnceInOrder(rows []string, tokens []string) (bool, string) {
-	text := strings.Join(rows, "\n")
-	last := -1
-	for _, tok := range tokens {
-		if n := strings.Count(text, tok); n != 1 {
-			return false, fmt.Sprintf("%q shows %d times", tok, n)
-		}
-		idx := strings.Index(text, tok)
-		if idx < last {
-			return false, fmt.Sprintf("%q is out of order", tok)
-		}
-		last = idx
-	}
-	return true, ""
-}
-
-// requireEachOnce waits until every token shows exactly once and in order,
-// then checks that this still holds after the screen stops changing.
-//
-// The wait is needed because a commit writes a row above the frame while the
-// frame on screen still shows that row in its tail. The renderer draws the
-// shorter frame on its own timer, so for up to one draw interval a row shows
-// twice. A row that stays twice is a defect: the wait then times out, and the
-// final check fails if it comes back after the screen is quiet.
-func (h *screenHarness) requireEachOnce(tokens ...string) {
-	h.t.Helper()
-	var why string
-	h.waitFor("every row once and in order", func(h *screenHarness) bool {
-		ok, w := eachOnceInOrder(h.text(), tokens)
-		why = w
-		return ok
-	})
-	h.settle()
-	ok, w := eachOnceInOrder(h.text(), tokens)
-	if !ok {
-		h.t.Fatalf("%s after the screen stopped changing (was: %s):\n%s", w, why, strings.Join(h.text(), "\n"))
-	}
 }
 
 // settleText waits until the scrollback and the screen together stop

@@ -92,10 +92,10 @@ func TestOwnerMetadata(t *testing.T) {
 	p := testPaths(t)
 	l, err := Acquire(p)
 	require.NoError(t, err)
-	require.NoError(t, l.WriteOwner(Owner{PID: 77, Start: 1234567, Instance: "inst-9"}))
+	require.NoError(t, l.WriteOwner(Owner{PID: 77, Start: 1234567, Instance: "inst-9", Exe: "/tmp/go-build1/exe/tui"}))
 	o, err := ReadOwner(p)
 	require.NoError(t, err)
-	require.Equal(t, Owner{PID: 77, Start: 1234567, Instance: "inst-9"}, o)
+	require.Equal(t, Owner{PID: 77, Start: 1234567, Instance: "inst-9", Exe: "/tmp/go-build1/exe/tui"}, o)
 	pid, err := ReadPID(p)
 	require.NoError(t, err)
 	require.Equal(t, 77, pid)
@@ -103,6 +103,69 @@ func TestOwnerMetadata(t *testing.T) {
 	o, err = ReadOwner(p)
 	require.NoError(t, err)
 	require.Equal(t, Owner{}, o, "release clears the owner")
+}
+
+func TestOwnerRecordKeepsItsState(t *testing.T) {
+	p := testPaths(t)
+	l, err := Acquire(p)
+	require.NoError(t, err)
+	o := Owner{PID: 77, Start: 1234567, Instance: "inst-9", Exe: "/usr/bin/ask", State: OwnerServing}
+	require.NoError(t, l.WriteOwner(o))
+	got, err := ReadOwner(p)
+	require.NoError(t, err)
+	require.Equal(t, o, got)
+
+	require.NoError(t, l.MarkStopping())
+	got, err = ReadOwner(p)
+	require.NoError(t, err)
+	o.State = OwnerStopping
+	require.Equal(t, o, got, "only the state changes")
+
+	require.NoError(t, l.Release())
+	got, err = ReadOwner(p)
+	require.NoError(t, err)
+	require.Equal(t, Owner{}, got)
+}
+
+func TestOwnerRecordWithoutExeKeepsItsState(t *testing.T) {
+	p := testPaths(t)
+	l, err := Acquire(p)
+	require.NoError(t, err)
+	defer func() { _ = l.Release() }()
+	require.NoError(t, l.WriteOwner(Owner{PID: 5, Start: 9, Instance: "i", State: OwnerServing}))
+	got, err := ReadOwner(p)
+	require.NoError(t, err)
+	require.Equal(t, Owner{PID: 5, Start: 9, Instance: "i", State: OwnerServing}, got)
+}
+
+func TestOwnerRecordWithoutStateReadsAsEmpty(t *testing.T) {
+	p := testPaths(t)
+	require.NoError(t, EnsureHome(p.Home))
+	require.NoError(t, os.WriteFile(p.Lock, []byte("77\n1234567\ninst-9\n/usr/bin/ask\n"), 0o600))
+	got, err := ReadOwner(p)
+	require.NoError(t, err)
+	require.Equal(t, Owner{PID: 77, Start: 1234567, Instance: "inst-9", Exe: "/usr/bin/ask"}, got)
+	require.Empty(t, got.State)
+}
+
+func TestMarkStoppingAfterReleaseFails(t *testing.T) {
+	p := testPaths(t)
+	l, err := Acquire(p)
+	require.NoError(t, err)
+	require.NoError(t, l.WriteOwner(Owner{PID: 1, State: OwnerServing}))
+	require.NoError(t, l.Release())
+	require.ErrorIs(t, l.MarkStopping(), ErrLockReleased)
+}
+
+func TestMarkStoppingWithoutARecordDoesNothing(t *testing.T) {
+	p := testPaths(t)
+	l, err := Acquire(p)
+	require.NoError(t, err)
+	defer func() { _ = l.Release() }()
+	require.NoError(t, l.MarkStopping())
+	got, err := ReadOwner(p)
+	require.NoError(t, err)
+	require.Equal(t, Owner{}, got)
 }
 
 func TestRotateLogOnlyAboveSize(t *testing.T) {
@@ -278,12 +341,32 @@ func TestVerifyLeaderProcessRefusesOthers(t *testing.T) {
 	require.NoError(t, sleeper.Start())
 	t.Cleanup(func() { _ = sleeper.Process.Kill(); _ = sleeper.Wait() })
 
-	err := VerifyLeaderProcess(sleeper.Process.Pid, time.Now().Unix())
+	now := time.Now().Unix()
+	err := VerifyLeaderProcess(Owner{PID: sleeper.Process.Pid, Start: now})
 	require.ErrorIs(t, err, ErrNotLeaderProcess, "a process that is not `ask leader` is never a target")
-	require.ErrorIs(t, VerifyLeaderProcess(os.Getpid(), time.Now().Unix()), ErrNotLeaderProcess)
-	require.ErrorIs(t, VerifyLeaderProcess(0, time.Now().Unix()), ErrNotLeaderProcess)
-	require.ErrorIs(t, VerifyLeaderProcess(1<<22+12345, time.Now().Unix()), ErrNotLeaderProcess, "a dead pid")
-	require.ErrorIs(t, VerifyLeaderProcess(sleeper.Process.Pid, 0), ErrNotLeaderProcess, "no recorded start: fail closed")
+	require.ErrorIs(t, VerifyLeaderProcess(Owner{PID: sleeper.Process.Pid, Start: now, Exe: "sleep"}), ErrNotLeaderProcess,
+		"the recorded executable must run as `<exe> leader`")
+	require.ErrorIs(t, VerifyLeaderProcess(Owner{PID: os.Getpid(), Start: now}), ErrNotLeaderProcess)
+	require.ErrorIs(t, VerifyLeaderProcess(Owner{PID: 0, Start: now}), ErrNotLeaderProcess)
+	require.ErrorIs(t, VerifyLeaderProcess(Owner{PID: 1<<22 + 12345, Start: now}), ErrNotLeaderProcess, "a dead pid")
+	require.ErrorIs(t, VerifyLeaderProcess(Owner{PID: sleeper.Process.Pid}), ErrNotLeaderProcess, "no recorded start: fail closed")
+}
+
+// A leader that a client started from a binary with another name, such as the
+// temporary binary of `go run`, is identified by the executable it recorded.
+func TestVerifyLeaderProcessAcceptsTheRecordedExecutable(t *testing.T) {
+	dir := t.TempDir()
+	exe := filepath.Join(dir, "tui")
+	require.NoError(t, os.WriteFile(exe, []byte("#!/bin/sh\nsleep 30\n"), 0o755))
+	proc := exec.Command(exe, "leader", "--spawned-by-client")
+	proc.SysProcAttr = &syscall.SysProcAttr{Setpgid: true}
+	require.NoError(t, proc.Start())
+	t.Cleanup(func() { _ = syscall.Kill(-proc.Process.Pid, syscall.SIGKILL); _ = proc.Wait() })
+	now := time.Now().Unix()
+
+	require.Eventually(t, func() bool {
+		return VerifyLeaderProcess(Owner{PID: proc.Process.Pid, Start: now, Exe: exe}) == nil
+	}, 2*time.Second, 20*time.Millisecond, "the recorded executable identifies the leader")
 }
 
 func TestLeaderCommandLine(t *testing.T) {
@@ -297,8 +380,24 @@ func TestLeaderCommandLine(t *testing.T) {
 		"/usr/local/bin/ask-server leader":   false,
 		"":                                   false,
 		"/usr/local/bin/ask --home x leader": false,
+		"/tmp/go-build1/exe/tui leader":      false,
 	} {
-		require.Equal(t, want, isLeaderCommandLine(line), line)
+		require.Equal(t, want, isLeaderCommandLine(line, ""), line)
+	}
+
+	exe := "/tmp/go build1/exe/tui"
+	for line, want := range map[string]bool{
+		exe + " leader --spawned-by-client":    true,
+		exe + " leader":                        true,
+		"/bin/sh " + exe + " leader":           true,
+		exe + " connect":                       false,
+		exe + " leaderx":                       false,
+		"/tmp/other/tui leader":                false,
+		"/usr/local/bin/ask leader":            true,
+		"/usr/bin/vim " + exe + " leader":      false,
+		"/tmp/go build1/exe/tui-server leader": false,
+	} {
+		require.Equal(t, want, isLeaderCommandLine(line, exe), line)
 	}
 }
 

@@ -432,7 +432,6 @@ func (h *channelHandlers) shutdown() {
 
 // Program is a terminal user interface.
 type Program struct {
-	resizeGeneration uint64
 	// disableInput disables all input. This is useful for programs that
 	// don't need input, like a progress bar or a spinner.
 	disableInput bool
@@ -769,23 +768,6 @@ func (p *Program) eventLoop(model Model, cmds chan Cmd) (Model, error) {
 				continue
 			}
 
-			if size, ok := msg.(WindowSizeMsg); ok {
-				p.resizeGeneration++
-				size.Generation = p.resizeGeneration
-				p.width, p.height = size.Width, size.Height
-				msg = size
-			}
-			if request, ok := msg.(inlineReplayMsg); ok {
-				result := InlineReplayResult{Generation: request.Generation, Entries: len(request.Entries)}
-				if request.Generation != p.resizeGeneration || request.Width != p.width || request.Height != p.height {
-					result.Stale = true
-				} else if r, ok := p.renderer.(*cursedRenderer); ok {
-					result.Err = r.replayInline(request.Entries)
-				} else {
-					result.Err = fmt.Errorf("inline replay requires the terminal renderer")
-				}
-				msg = result
-			}
 			// Handle special internal messages.
 			switch msg := msg.(type) {
 			case QuitMsg:

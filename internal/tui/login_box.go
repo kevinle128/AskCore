@@ -3,6 +3,7 @@ package tui
 import (
 	"fmt"
 	"net/url"
+	"strconv"
 	"strings"
 	"time"
 
@@ -156,8 +157,8 @@ func linkable(raw string) bool {
 	return err == nil && (u.Scheme == "https" || u.Scheme == "http") && u.Host != ""
 }
 
-// urlRowCap is the largest number of URL rows for a terminal height.
-func urlRowCap(height int) int { return max(1, height-10) }
+// urlRowCap is the largest number of URL rows in a slot of height rows.
+func urlRowCap(height int) int { return max(1, height-4) }
 
 // countdownText writes the time left as m:ss.
 func countdownText(left time.Duration) string {
@@ -296,16 +297,22 @@ func (d *loginDialog) slot(s *sessionView, width, height int) EditorSlot {
 	var urls boxContent
 	d.urlRows(&urls, th, b.inner, urlRowCap(height))
 	budget := loginContentBudget(height)
-	if len(c.rows)+len(urls.rows)+len(afterURL.rows) > budget {
+	over := func() bool { return len(c.rows)+len(urls.rows)+len(afterURL.rows) > budget }
+	if over() {
 		c.dropBlanks()
 		afterURL.dropBlanks()
-		for len(c.rows) > 0 && len(c.rows)+len(urls.rows)+len(afterURL.rows) > budget {
+		for len(c.rows) > 0 && over() {
 			c.rows = c.rows[:len(c.rows)-1]
 		}
 		introRows = len(c.rows)
-		for cap := urlRowCap(height) - 1; cap >= 1 && len(c.rows)+len(urls.rows)+len(afterURL.rows) > budget; cap-- {
+		for cap := urlRowCap(height) - 1; cap >= 1 && over(); cap-- {
 			urls = boxContent{}
 			d.urlRows(&urls, th, b.inner, cap)
+		}
+		if over() {
+			// The input and the warning come before the URL. The hint row
+			// still offers ctrl+y to copy it.
+			urls = boxContent{}
 		}
 	}
 	c.rows = append(c.rows, urls.rows...)
@@ -334,8 +341,8 @@ func loginContentBudget(height int) int {
 	if height < 6 {
 		return max(1, height-3)
 	}
-	// Keep the wait, footer and one free screen row outside the box.
-	return max(1, min(modalMaxRows, height-3)-3)
+	// The box keeps its title, bottom and hint rows.
+	return max(1, min(modalMaxRows, height)-3)
 }
 
 func (c *boxContent) dropRow(i int) {
@@ -415,14 +422,18 @@ func (d *loginDialog) inputRow(c *boxContent, th *Theme) {
 	c.cursor = &CursorPos{Row: len(c.rows) - 1, Col: leadW}
 }
 
-// urlRows adds the rows of the URL. Each row is the same link to the whole URL.
+// urlRows adds the rows of the URL. Each row is a link to the whole URL.
+// The renderer does not write a link again when the row before has the same
+// link, so the later rows would lose it. Each row has its own link id to make
+// the links differ. The id depends only on the row, so a repeated frame does
+// not change any cell.
 func (d *loginDialog) urlRows(c *boxContent, th *Theme, inner, maxRows int) {
 	rows, capped := urlRows(d.url, max(1, inner-1), maxRows)
 	link := linkable(d.url)
-	for _, r := range rows {
+	for i, r := range rows {
 		text := th.Render(RoleFg, r)
 		if link {
-			text = ansi.SetHyperlink(d.url) + text + ansi.ResetHyperlink()
+			text = ansi.SetHyperlink(d.url, "id=ask-url-"+strconv.Itoa(i)) + text + ansi.ResetHyperlink()
 		}
 		c.add(" " + text)
 	}

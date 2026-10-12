@@ -17,10 +17,11 @@ import (
 // never calls the client.
 
 const (
-	// providerBoxChrome is the number of rows that the box and the screen keep
-	// for themselves: title, search row, bottom, hint, rail and footer, and the
-	// rows of the transcript that stay visible.
-	providerBoxChrome = 11
+	// providerBoxChrome is the number of rows that the box keeps for itself
+	// besides the list rows: title, the "more" row, search row, bottom and hint.
+	providerBoxChrome = 5
+	// providerWindowMin is the step of a page key. A slot that is too low shows
+	// fewer list rows than this.
 	providerWindowMin = 3
 	providerWindowMax = 8
 
@@ -214,9 +215,9 @@ func (pb *providerBox) addFilter(text string) {
 	pb.sel, pb.top = 0, 0
 }
 
-// window is the number of rows the list shows for a terminal height.
+// providerWindow is the number of rows the list shows in a slot of height rows.
 func providerWindow(height int) int {
-	return min(providerWindowMax, max(providerWindowMin, height-providerBoxChrome))
+	return min(providerWindowMax, max(1, height-providerBoxChrome))
 }
 
 // hint is the key hints of the box for a width.
@@ -270,7 +271,7 @@ func (pb *providerBox) slot(width, height int, th *Theme) EditorSlot {
 	var c boxContent
 	vis := pb.visible()
 	sel := min(pb.sel, max(0, len(vis)-1))
-	window := providerWindow(height)
+	window := providerWindow(height - pb.noteRows(b.inner))
 	switch {
 	case pb.loading:
 		c.add(" " + th.Style(RoleDim).Render(providerLoadingText))
@@ -318,6 +319,19 @@ func (pb *providerBox) slot(width, height int, th *Theme) EditorSlot {
 	}
 	c.cursor = &CursorPos{Row: len(c.rows) - 1, Col: displayWidth(search)}
 	return b.slot("Providers", c, pb.hint(width))
+}
+
+// noteRows is the number of rows that the notes take: an empty row and the
+// wrapped lines of each note.
+func (pb *providerBox) noteRows(inner int) int {
+	if len(pb.notes) == 0 {
+		return 0
+	}
+	n := 1
+	for _, note := range pb.notes {
+		n += len(wrapLines(note, max(1, inner-3)))
+	}
+	return n
 }
 
 // menuSlot draws the row menu of a row that has a saved credential.

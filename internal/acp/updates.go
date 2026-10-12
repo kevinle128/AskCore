@@ -37,8 +37,21 @@ func standardUpdates(ev protocol.Event) []sdk.SessionUpdate {
 			status = sdk.ToolCallStatusFailed
 		}
 		opts := []sdk.ToolCallUpdateOpt{sdk.WithUpdateStatus(status)}
-		if c := toolContent(e.Result.Content); len(c) > 0 {
-			opts = append(opts, sdk.WithUpdateContent(c))
+		content := toolContent(e.Result.Content)
+		if d, ok := detailsOf(e.Result.Details); ok {
+			if k, ok := detailsKind(d.Kind); ok {
+				opts = append(opts, sdk.WithUpdateKind(k))
+			}
+			if locs := toolLocations(d.Locations); len(locs) > 0 {
+				opts = append(opts, sdk.WithUpdateLocations(locs))
+			}
+			if d.Diff != nil {
+				// The diff comes before the model text.
+				content = append([]sdk.ToolCallContent{sdk.ToolDiffContent(d.Diff.Path, d.Diff.NewText, d.Diff.OldText)}, content...)
+			}
+		}
+		if len(content) > 0 {
+			opts = append(opts, sdk.WithUpdateContent(content))
 		}
 		return []sdk.SessionUpdate{sdk.UpdateToolCall(sdk.ToolCallId(e.ToolCallID), opts...)}
 	}
@@ -56,7 +69,7 @@ func blockUpdates(b protocol.BlockEvent) []sdk.SessionUpdate {
 	case protocol.ThinkingDeltaEvent:
 		return textUpdate(e.Delta, true)
 	case protocol.ToolCallStartEvent:
-		opts := []sdk.ToolCallStartOpt{sdk.WithStartKind(sdk.ToolKindOther), sdk.WithStartStatus(sdk.ToolCallStatusPending)}
+		opts := []sdk.ToolCallStartOpt{sdk.WithStartKind(kindOf(e.ToolName)), sdk.WithStartStatus(sdk.ToolCallStatusPending)}
 		if json.Valid(e.Arguments) {
 			opts = append(opts, sdk.WithStartRawInput(json.RawMessage(e.Arguments)))
 		}
@@ -69,6 +82,58 @@ func blockUpdates(b protocol.BlockEvent) []sdk.SessionUpdate {
 		return []sdk.SessionUpdate{sdk.UpdateToolCall(sdk.ToolCallId(e.ToolCall.ID), opts...)}
 	}
 	return nil
+}
+
+// kindOf returns the standard ACP kind of a tool by its name. Every other
+// name, extension and MCP tools included, is "other".
+func kindOf(name string) sdk.ToolKind {
+	switch name {
+	case "read":
+		return sdk.ToolKindRead
+	case "write", "edit":
+		return sdk.ToolKindEdit
+	case "ls", "grep", "find":
+		return sdk.ToolKindSearch
+	case "bash", "monitor":
+		return sdk.ToolKindExecute
+	}
+	return sdk.ToolKindOther
+}
+
+// detailsOf decodes the details of a tool result. Details that are not a JSON
+// object give false, and the frame stays as it is without them.
+func detailsOf(raw json.RawMessage) (protocol.ToolResultDetails, bool) {
+	var d protocol.ToolResultDetails
+	if len(raw) == 0 || json.Unmarshal(raw, &d) != nil {
+		return protocol.ToolResultDetails{}, false
+	}
+	return d, true
+}
+
+// detailsKind maps the kind of result details to an ACP kind. A value outside
+// the kinds that the tools write is not sent.
+func detailsKind(kind string) (sdk.ToolKind, bool) {
+	switch kind {
+	case protocol.ToolKindRead, protocol.ToolKindEdit, protocol.ToolKindExecute, protocol.ToolKindSearch, protocol.ToolKindOther:
+		return sdk.ToolKind(kind), true
+	}
+	return "", false
+}
+
+func toolLocations(locs []protocol.ToolLocation) []sdk.ToolCallLocation {
+	var out []sdk.ToolCallLocation
+	for _, l := range locs {
+		if l.Path == "" {
+			continue
+		}
+		loc := sdk.ToolCallLocation{Path: l.Path}
+		if l.Line > 0 {
+			line := l.Line
+			loc.Line = &line
+		}
+		out = append(out, loc)
+	}
+	return out
 }
 
 func textUpdate(text string, thought bool) []sdk.SessionUpdate {

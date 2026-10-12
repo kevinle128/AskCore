@@ -4,7 +4,6 @@ import (
 	"fmt"
 	"strings"
 	"testing"
-	"time"
 
 	tea "charm.land/bubbletea/v2"
 	"github.com/charmbracelet/colorprofile"
@@ -384,7 +383,7 @@ func TestEditorSlotRowsFitWidth(t *testing.T) {
 			e.SetWidth(width)
 			e.Handle(tea.PasteMsg{Content: text})
 			slot := e.Slot(width, th)
-			inner := BoxInnerWidth(width)
+			inner := PromptInnerWidth(width)
 			for _, row := range slot.Rows {
 				require.LessOrEqual(t, displayWidth(row), inner, "width %d row %q", width, row)
 			}
@@ -412,7 +411,7 @@ func TestEditorSlotPlaceholderAndPrompt(t *testing.T) {
 func TestEditorSlotWrapsWords(t *testing.T) {
 	th := NewTheme(colorprofile.NoTTY)
 	e := NewEditor(nil)
-	width := 4 + 2 + 8 // inner 10, text 8 columns
+	width := 2 + 2 + 8 // inner 10, text 8 columns
 	e.SetWidth(width)
 	typeText(t, e, "hello world")
 	slot := e.Slot(width, th)
@@ -428,7 +427,7 @@ func TestEditorSlotWrapsWords(t *testing.T) {
 
 func TestEditorMovesAcrossWrappedRows(t *testing.T) {
 	e := NewEditor(nil)
-	e.SetWidth(4 + 2 + 8)
+	e.SetWidth(2 + 2 + 8)
 	typeText(t, e, "hello world")
 	pressKeys(t, e, "up")
 	require.Equal(t, 5, e.Cursor(), "up moves to the same column of the row above")
@@ -447,7 +446,7 @@ type editorApp struct {
 
 func newEditorApp() *editorApp {
 	a := &editorApp{ed: NewEditor(DefaultCommands())}
-	a.Model = New(Options{Slots: a, Profile: colorprofile.NoTTY, SettleDelay: 20 * time.Millisecond})
+	a.Model = New(Options{Slots: a, Profile: colorprofile.NoTTY})
 	return a
 }
 
@@ -455,7 +454,7 @@ func (a *editorApp) Slots(width int) Slots {
 	return Slots{
 		Editor: a.ed.Slot(width, a.Theme()),
 		Menu:   a.ed.MenuRows(width, a.Theme()),
-		Footer: "  footer",
+		Bar:    " bar",
 	}
 }
 
@@ -594,8 +593,8 @@ func TestEditorGrowsThenScrolls(t *testing.T) {
 	})
 	t.Run("scrolls", func(t *testing.T) {
 		app, h := startEditorApp(t, 40, 20)
-		typeLines(app, h, 9)
-		h.waitText("  line 9")
+		typeLines(app, h, 13)
+		h.waitText("  line 13")
 		h.requireGolden()
 		require.Zero(t, h.count("❯ line 1"))
 	})
@@ -617,8 +616,8 @@ func TestEditorHardwareCursorFollowsText(t *testing.T) {
 		pos := h.emu.CursorPosition()
 		return pos.Y == row && row > 0
 	})
-	// "│ ❯ " is 4 columns, "日本a" is 5.
-	require.Equal(t, 9, h.emu.CursorPosition().X)
+	// " ❯ " is 3 columns, "日本a" is 5.
+	require.Equal(t, 8, h.emu.CursorPosition().X)
 }
 
 func TestCompletionListGolden(t *testing.T) {
@@ -698,4 +697,51 @@ func TestCommandWithTrailingSpaceStillRuns(t *testing.T) {
 	res := pressKeys(t, e, "enter")
 	require.Equal(t, "/model", res.Command)
 	require.Nil(t, res.Submit)
+}
+
+func TestMoveCursorToPlacesTheCursorAtARowAndColumn(t *testing.T) {
+	tests := []struct {
+		name     string
+		text     string
+		row, col int
+		want     int
+	}{
+		{"start of the first row", "abc\ndef", 0, 0, 0},
+		{"inside the second row", "abc\ndef", 1, 2, 6},
+		{"right of the text goes to the end of the row", "abc\ndef", 0, 40, 3},
+		{"below the last row goes to the last row", "abc\ndef", 9, 1, 5},
+		{"above the first row goes to the first row", "abc\ndef", -3, 1, 1},
+		{"negative column goes to the row start", "abc\ndef", 1, -4, 4},
+		{"wide characters count two columns", "日本語", 0, 4, len("日本")},
+		{"second cell of a wide character is the same character", "日本語", 0, 3, len("日")},
+	}
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			e := newTestEditor()
+			typeText(t, e, tc.text)
+			e.MoveCursorTo(tc.row, tc.col)
+			require.Equal(t, tc.want, e.Cursor())
+			require.Equal(t, tc.text, e.Text())
+		})
+	}
+}
+
+func TestMoveCursorToUsesWrappedRowsAndEndsTheStickyColumn(t *testing.T) {
+	e := NewEditor(DefaultCommands())
+	e.SetWidth(14) // text columns: 14 - 2 (pad) - 2 (prompt) = 10
+	typeText(t, e, "aaaa bbbb cccc dddd")
+	e.MoveCursorTo(1, 2)
+	require.Equal(t, strings.Index(e.Text(), "cccc")+2, e.Cursor())
+	pressKeys(t, e, "up")
+	require.Equal(t, 2, e.Cursor(), "up keeps the column of the click, not an older column")
+}
+
+func TestMoveCursorToKeepsAPasteMarkerWhole(t *testing.T) {
+	e := newTestEditor()
+	e.Handle(tea.PasteMsg{Content: strings.Repeat("line\n", 12)})
+	typeText(t, e, "x")
+	marker := strings.Index(e.Text(), "x")
+	require.Positive(t, marker)
+	e.MoveCursorTo(0, 3)
+	require.Zero(t, e.Cursor(), "the cursor never lands inside the marker")
 }

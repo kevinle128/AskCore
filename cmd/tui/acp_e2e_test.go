@@ -456,7 +456,7 @@ func TestACPE2EInitialize(t *testing.T) {
 	require.Equal(t, "ask", res.AgentInfo.Name)
 	require.False(t, res.AgentCapabilities.LoadSession, "no durable load is advertised")
 	require.Equal(t, true, res.AgentCapabilities.PromptCapabilities["image"])
-	require.Empty(t, res.AgentCapabilities.Session, "no session list, resume or close capability is advertised")
+	require.Equal(t, map[string]any{"close": map[string]any{}}, res.AgentCapabilities.Session, "only session/close is advertised; no list or resume")
 	ids := map[string]bool{}
 	for _, m := range res.AuthMethods {
 		ids[m.ID] = true
@@ -1205,7 +1205,6 @@ func TestACPE2EUnsupported(t *testing.T) {
 		{"session/load", map[string]any{"sessionId": sid, "cwd": t.TempDir(), "mcpServers": []any{}}, "", -32601},
 		{"session/list", map[string]any{}, "unsupported", -32601},
 		{"session/resume", map[string]any{"sessionId": sid, "cwd": t.TempDir()}, "unsupported", -32601},
-		{"session/close", map[string]any{"sessionId": sid}, "unsupported", -32601},
 		{"session/set_mode", map[string]any{"sessionId": sid, "modeId": "x"}, "unsupported", -32601},
 		{"session/set_config_option", map[string]any{"sessionId": sid, "configId": "x", "value": "y"}, "unsupported", -32601},
 		{"logout", map[string]any{}, "unsupported", -32601},

@@ -9,6 +9,7 @@ import (
 	"os"
 	"path/filepath"
 	"sync"
+	"sync/atomic"
 	"testing"
 	"time"
 
@@ -155,4 +156,15 @@ func TestLeaderDriverLossCancelsQuestionAndKeepsRealRun(t *testing.T) {
 	b.waitCount("session/update", 1)
 	var state protocol.ACPStateResult
 	require.NoError(t, json.Unmarshal(b.must(protocol.ACPState, map[string]any{"sessionId": sid}), &state))
+}
+
+func TestLeaderStoppingHookReachesTheServer(t *testing.T) {
+	var calls atomic.Int32
+	p := fauxLeaderParamsWith(t, func() []faux.Step { return nil }, nil)
+	p.Stopping = func() { calls.Add(1) }
+	l := startLeader(t, p)
+	require.Zero(t, calls.Load(), "a serving leader is not stopping")
+	l.cancel()
+	<-l.done
+	require.EqualValues(t, 1, calls.Load())
 }

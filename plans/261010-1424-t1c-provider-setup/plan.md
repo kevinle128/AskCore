@@ -7,7 +7,7 @@ effort: "12-14d"
 branch: new-session
 tags: [feature, tui, acp, leader, auth, security, tdd]
 blockedBy: []
-blocks: []
+blocks: [261010-2349-h5-builtin-tools]
 created: 2026-10-10
 mode: deep
 tdd: true

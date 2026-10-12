@@ -178,3 +178,70 @@ func TestLeaderSecondSignalEscapesStartedToolDrain(t *testing.T) {
 	_ = rt.Stop(context.Background())
 	c.inflight.Wait()
 }
+
+// The leader records that it serves, and that it stops before its socket stops
+// answering. A client that finds a lock holder without a socket relies on this to
+// tell a leader that lost its socket from one that drains.
+func TestLeaderRecordsStoppingBeforeItStopsServing(t *testing.T) {
+	home := leaderHome(t)
+	paths, err := leader.ResolvePaths(home)
+	require.NoError(t, err)
+	require.NoError(t, leader.EnsureHome(home))
+	lock, err := leader.Acquire(paths)
+	require.NoError(t, err)
+	defer func() { _ = lock.Release() }()
+	fp, err := faux.New(faux.WithChunk(1000, 1000))
+	require.NoError(t, err)
+	model, ok := fp.Model("faux-1")
+	require.True(t, ok)
+	var errOut bytes.Buffer
+	mark := markStopping(lock, &errOut)
+	type atStop struct {
+		state     string
+		answering bool
+	}
+	stops := make(chan atStop, 2)
+	rt, err := app.NewLeaderRuntime(app.LeaderParams{
+		ACPParams: app.ACPParams{Home: home, Initial: model,
+			NewAgent: func(service *auth.Service, id, cwd string, _ providers.Model) (*agent.Agent, error) {
+				return app.NewNativeAgent(app.NativeAgentConfig{Auth: service, InitialStream: fp.Stream,
+					Config: agent.Config{SessionID: id, Tools: &tools.Registry{}, LoopConfig: agent.LoopConfig{
+						Model: model, Stream: fp.Stream, Cwd: cwd, Options: providers.StreamOptions{APIKey: "test-key"},
+					}}})
+			}},
+		Server:          leader.ServerConfig{InstanceID: "state-test", Build: "dev", Controls: []string{protocol.LeaderControlStatus, protocol.LeaderControlShutdown}},
+		SpawnedByClient: true,
+		Stopping: func() {
+			mark()
+			o, _ := leader.ReadOwner(paths)
+			stops <- atStop{state: o.State, answering: leader.Serving(paths)}
+		},
+	})
+	require.NoError(t, err)
+	defer func() { _ = rt.Stop(context.Background()) }()
+	exited := make(chan int, 1)
+	go func() {
+		code := serveLeaderRuntime(rt, lock, paths, leader.Owner{PID: os.Getpid(), Instance: "state-test"}, &errOut, make(chan os.Signal))
+		_ = lock.Release() // serveLeader releases the lock last, after the socket is gone
+		exited <- code
+	}()
+	require.Eventually(t, func() bool { return leader.Serving(paths) }, 5*time.Second, time.Millisecond)
+	o, err := leader.ReadOwner(paths)
+	require.NoError(t, err)
+	require.Equal(t, leader.OwnerServing, o.State, "a serving leader records serving")
+
+	res, err := leader.Stop(context.Background(), e2eConnect(home, ""), 10*time.Second)
+	require.NoError(t, err)
+	require.True(t, res.WasRunning)
+	select {
+	case s := <-stops:
+		require.Equal(t, leader.OwnerStopping, s.state)
+		require.True(t, s.answering, "the record changes before the socket stops answering")
+	case <-time.After(5 * time.Second):
+		t.Fatal("the stopping hook did not run")
+	}
+	require.Equal(t, 0, <-exited)
+	o, err = leader.ReadOwner(paths)
+	require.NoError(t, err)
+	require.Equal(t, leader.Owner{}, o, "release clears the record")
+}
