@@ -24,6 +24,12 @@ The credential transaction owner is [AuthStore](auth.go).
 `NewAuthStore` selects `ASK_HOME` or `~/.ask` unless given an absolute home.
 `Read` returns one provider record and the store-wide revision.
 `Replace` and `Logout` compare that revision, so a logout of an absent provider still rejects an earlier login attempt.
+Native sign-in and logout use `ReadProvider`, `ReplaceProvider`, and `LogoutProvider` to compare only that provider's revision.
+This permits a pending sign-in to finish after another provider changes, while a removal of the same provider still rejects it.
+The optional `providerRevisions` object records the last store revision, a migration baseline, and the last revision of each changed provider, including removed providers.
+The existing global-revision API and schema version 1 stay the same.
+An older writer keeps this unknown object but advances only the global revision.
+When those revisions differ, the next provider transaction uses the global revision as its fence and starts new provider metadata after a successful write.
 The store keeps unknown JSON fields and reads Pi-style root provider records with API keys.
 An OAuth record needs an explicit method tag.
 
@@ -45,6 +51,14 @@ These budgets cannot interrupt a blocked OS sync call, and a forced kill can int
 The durable fence prevents automatic grant reuse after an uncertain rotation.
 A network rotation and a disk commit cannot form one atomic transaction.
 This store assumes one authoritative local filesystem and does not coordinate distributed replicas.
+
+## Default model
+
+[SettingsStore](settings.go) keeps one field of `settings.json` for the leader: `defaultModel`, the `provider/id@api` id of the model that a new session uses.
+It takes the lock sidecar `settings.json.lock`, reads fresh data, keeps every field it does not own, and writes with the same 0600 temporary file, rename and directory sync as `auth.json`.
+The leader writes it when a client sets a model with `saveDefault` (the `/model` choice); a failed write does not undo the switch and the answer says `defaultSaved: false`.
+A missing file means no default.
+A file that is not owner-only, or not a JSON object, is refused and never overwritten.
 
 ## File names
 

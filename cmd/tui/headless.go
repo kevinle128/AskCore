@@ -3,6 +3,7 @@ package main
 import (
 	"context"
 	"crypto/rand"
+	"errors"
 	"fmt"
 	"io"
 	"maps"
@@ -18,8 +19,11 @@ import (
 	"AskCore/internal/agent"
 	"AskCore/internal/app"
 	"AskCore/internal/auth"
+	"AskCore/internal/jobs"
+	"AskCore/internal/pipeline"
 	"AskCore/internal/providers"
 	"AskCore/internal/providers/anthropic"
+	"AskCore/internal/sandbox"
 	"AskCore/internal/tools"
 	"AskCore/pkg/protocol"
 )
@@ -51,6 +55,13 @@ type runDependencies struct {
 	inferenceHTTP *http.Client
 	now           func() time.Time
 	wait          func(context.Context, time.Duration) error
+	// environ returns the environment that the child processes of the tools
+	// inherit from. Nil means os.Environ.
+	environ func() []string
+	// onJobError replaces the stderr line for job table errors. The in-process
+	// TUI sets it, because its stderr is the terminal under a full-screen
+	// program.
+	onJobError func(error)
 }
 
 func run(argv []string, stdin io.Reader, stdout, stderr io.Writer) int {
@@ -107,6 +118,16 @@ func runWithDependencies(argv []string, stdin io.Reader, stdout, stderr io.Write
 	if len(argv) > 0 && argv[0] == "acp" {
 		return runACP(argv[1:], stdin, stdout, stderr, deps, sigs)
 	}
+	if len(argv) > 0 && argv[0] == "connect" {
+		exe, _ := os.Executable()
+		return runConnect(argv[1:], stdin, stdout, stderr, deps, sigs, exe)
+	}
+	if len(argv) > 0 && argv[0] == "leader" {
+		return runLeader(argv[1:], stdout, stderr, deps, sigs)
+	}
+	if len(argv) > 0 && argv[0] == "version" {
+		return runVersion(argv[1:], stdout, stderr)
+	}
 	o, diags := parseArgs(argv)
 	failed := false
 	for _, d := range diags {
@@ -127,13 +148,14 @@ func runWithDependencies(argv []string, stdin io.Reader, stdout, stderr io.Write
 	stdinTTY := isTerminal(stdin)
 	mode := selectMode(o, stdinTTY, isTerminal(stdout))
 	if mode == modeInteractive {
-		return runInteractive(stdin, stdout, stderr)
+		return runInteractive(stdin, stdout, stderr, deps, sigs)
 	}
 	defer guardStdout(stderr)()
 
 	if deps.inferenceHTTP != nil {
 		o.transport = deps.inferenceHTTP.Transport
 	}
+	o.environ = deps.environ
 	if _, err := startCapture(&o, deps.getenv, stderr, nil); err != nil {
 		report(stderr, "Error:", err)
 		return 1
@@ -146,7 +168,7 @@ func runWithDependencies(argv []string, stdin io.Reader, stdout, stderr io.Write
 			return 1
 		}
 	}
-	ag, err := newHeadlessAgentWithAuth(o, deps.getenv, service)
+	ag, jt, err := newHeadlessAgentWithAuth(o, deps.getenv, service)
 	if err != nil {
 		report(stderr, "Error:", err)
 		return 1
@@ -154,10 +176,17 @@ func runWithDependencies(argv []string, stdin io.Reader, stdout, stderr io.Write
 	prompts, err := readPrompts(o, stdin, stdinTTY)
 	if err != nil {
 		report(stderr, "Error:", err)
+		if err := ag.Dispose(); err != nil {
+			report(stderr, "Dispose:", err)
+		}
 		return 1
 	}
 
-	return runHeadless(ag, prompts, mode, stdout, stderr, sigs, service)
+	code := runHeadless(ag, prompts, mode, stdout, stderr, sigs, service)
+	// The signal path returns after abortGrace, which is shorter than the kill
+	// grace of a job, so a job that traps SIGTERM can still live here.
+	jt.KillRemaining()
+	return code
 }
 
 // selectMode follows Pi's resolveAppMode. --mode text does not force print
@@ -197,46 +226,101 @@ func readPrompts(o options, stdin io.Reader, stdinTTY bool) ([]string, error) {
 	return buildPrompts(piped, files, o.messages), nil
 }
 
-// builtinTools are the tools that every headless agent registers.
-func builtinTools() []tools.Tool { return []tools.Tool{tools.Echo{}} }
-
-// newHeadlessAgent builds the in-process agent with the builtin tools, then
-// the extra tools. ask passes no extra tools; a test passes the tools its
-// scenario needs and still runs the same agent setup as ask.
-// faux is the default. alibaba-token-plan is the H3 Token Plan adapter.
-func newHeadlessAgent(o options, getenv func(string) string, extra ...tools.Tool) (*agent.Agent, error) {
-	return newHeadlessAgentWithAuth(o, getenv, nil, extra...)
+// sessionTools are the tools that every agent registers: the file, search and
+// shell tools over the state of one session, and the demo echo tool. modelInput
+// returns the input kinds of the current model; nil means every model takes
+// images.
+func sessionTools(jt *jobs.Table, fs *tools.FileState, modelInput func() []string) []tools.Tool {
+	ts := tools.NewFileTools(fs, modelInput)
+	ts = append(ts, tools.Grep{}, tools.Find{})
+	ts = append(ts, tools.NewShellTools(jt)...)
+	return append(ts, tools.Echo{})
 }
 
-func newHeadlessAgentWithAuth(o options, getenv func(string) string, service *auth.Service, extra ...tools.Tool) (*agent.Agent, error) {
+// newHeadlessAgent builds the in-process agent with the session tools, then
+// the extra tools. ask passes no extra tools; a test passes the tools its
+// scenario needs and still runs the same agent setup as ask. The job table
+// closes when the Agent is disposed.
+// faux is the default. alibaba-token-plan is the H3 Token Plan adapter.
+func newHeadlessAgent(o options, getenv func(string) string, extra ...tools.Tool) (*agent.Agent, error) {
+	ag, _, err := newHeadlessAgentWithAuth(o, getenv, nil, extra...)
+	return ag, err
+}
+
+func newHeadlessAgentWithAuth(o options, getenv func(string) string, service *auth.Service, extra ...tools.Tool) (*agent.Agent, *jobs.Table, error) {
 	cwd, err := os.Getwd()
 	if err != nil {
-		return nil, err
+		return nil, nil, err
 	}
 	return newNativeAgent(o, getenv, service, newSessionID(), cwd, extra...)
 }
 
 // newNativeAgent builds one independent agent for the session and directory.
 // The headless run and every ACP session use it, so both share one composition.
-func newNativeAgent(o options, getenv func(string) string, service *auth.Service, sessionID, cwd string, extra ...tools.Tool) (*agent.Agent, error) {
+func newNativeAgent(o options, getenv func(string) string, service *auth.Service, sessionID, cwd string, extra ...tools.Tool) (*agent.Agent, *jobs.Table, error) {
 	stream, model, err := openProvider(o, getenv)
 	if err != nil {
-		return nil, err
+		return nil, nil, err
 	}
+	return newNativeAgentOn(o, getenv, service, sessionID, cwd, stream, model, extra...)
+}
+
+// commandGuardEnv enables the command-guard when its value is "1".
+const commandGuardEnv = "ASK_COMMAND_GUARD"
+
+// newNativeAgentOn builds the agent on a given model. stream serves the demo
+// model and may be nil when the model is a catalog model or when the agent has
+// no model.
+//
+// The agent owns a file state and a job table of its own. The table closes
+// when the Agent is disposed (Config.Release), which kills the background jobs
+// of the session. The caller gets the table too, for a last sweep at exit. A
+// failed constructor closes it before it returns.
+func newNativeAgentOn(o options, getenv func(string) string, service *auth.Service, sessionID, cwd string, stream providers.StreamFn, model providers.Model, extra ...tools.Tool) (*agent.Agent, *jobs.Table, error) {
 	reasoning := o.thinking
 	if o.provider == anthropic.ProviderID && reasoning == "" {
 		reasoning = protocol.ThinkingMedium
 	}
+	environ := o.environ
+	if environ == nil {
+		environ = os.Environ
+	}
+	onJobError := o.onJobError
+	if onJobError == nil {
+		onJobError = func(err error) { report(os.Stderr, "jobs:", err) }
+	}
+	// ag is bound after the constructor; the closures run later, at the start
+	// of a tool call or a job, so they see the current model.
+	var ag *agent.Agent
+	jt := jobs.New(jobs.Options{
+		Clock: sandbox.SystemClock,
+		Env: func() []string {
+			st := ag.State()
+			return sandbox.ChildEnv(environ(), map[string]string{
+				"ASK_SESSION_ID":      sessionID,
+				"ASK_PROVIDER":        st.Model.Provider,
+				"ASK_MODEL":           st.Model.ID,
+				"ASK_REASONING_LEVEL": string(st.ThinkingLevel),
+			})
+		},
+		// A notice that the Agent refused has no caller to report to. The job
+		// stays readable with job_list and job_output.
+		OnError: onJobError,
+	})
+	fail := func(err error) (*agent.Agent, *jobs.Table, error) {
+		return nil, nil, errors.Join(err, jt.Close())
+	}
+	modelInput := func() []string { return ag.State().Model.Input }
 	reg := &tools.Registry{}
-	for _, t := range builtinTools() {
+	for _, t := range sessionTools(jt, tools.NewFileState(), modelInput) {
 		if err := reg.Register(t, tools.SourceInfo{Kind: tools.SourceBuiltin}); err != nil {
-			return nil, err
+			return fail(err)
 		}
 	}
 	// Extra tools do not ship with ask, so they are not marked builtin.
 	for _, t := range extra {
 		if err := reg.Register(t, tools.SourceInfo{Kind: tools.SourceExtension, Name: "injected"}); err != nil {
-			return nil, err
+			return fail(err)
 		}
 	}
 	bound := providers.BoundKey{}
@@ -252,17 +336,33 @@ func newNativeAgent(o options, getenv func(string) string, service *auth.Service
 			Cwd:      cwd,
 			Wait:     o.wait,
 		},
-		Tools:     reg,
-		SessionID: sessionID,
+		Tools:        reg,
+		SystemPrompt: tools.PromptSection(reg.Snapshot()),
+		SessionID:    sessionID,
+		Release:      jt.Close,
+	}
+	if getenv(commandGuardEnv) == "1" {
+		pl := pipeline.NewRegistry()
+		pl.OnBeforeTool(pipeline.CommandGuard)
+		cfg.Pipeline = pl
 	}
 	native := app.NativeAgentConfig{
 		Config: cfg, InitialStream: stream, Auth: service,
 		Env: func(k string) (string, bool) { v := getenv(k); return v, v != "" },
 	}
+	if o.provider == "faux" {
+		native.InitialAPI = "faux"
+	}
 	if o.transport != nil {
 		native.HTTPClient = &http.Client{Transport: o.transport}
 	}
-	return app.NewNativeAgent(native)
+	made, err := app.NewNativeAgent(native)
+	if err != nil {
+		return fail(err)
+	}
+	ag = made
+	jt.SetNotifier(jobs.Notifier{FollowUp: ag.FollowUp, Steer: ag.Steer, Remove: ag.Remove})
+	return ag, jt, nil
 }
 
 func newSessionID() string {
@@ -306,6 +406,11 @@ func runHeadless(ag *agent.Agent, prompts []string, mode runMode, stdout, stderr
 			code = 1
 		case mode == modePrint:
 			code = printReply(ag.State().Messages, out, stderr)
+		}
+		// The reply is read before Dispose, which ends the background jobs
+		// of the session. Dispose does not change the exit code.
+		if derr := ag.Dispose(); derr != nil {
+			report(stderr, "Dispose:", derr)
 		}
 		if out.failed(stderr) {
 			return 1
@@ -362,15 +467,45 @@ func runHeadless(ag *agent.Agent, prompts []string, mode runMode, stdout, stderr
 	}
 }
 
-func promptAll(ctx context.Context, ag *agent.Agent, prompts []string) error {
+// promptTarget is the part of the Agent that promptAll uses.
+type promptTarget interface {
+	Prompt(ctx context.Context, msgs ...protocol.Message) error
+	WaitForIdle(ctx context.Context) error
+}
+
+// busyRetryDelay is the pause before a prompt retries after ErrBusy, so a
+// listener that is still being called is not met by a tight loop.
+const busyRetryDelay = 5 * time.Millisecond
+
+// promptAll sends the prompts in order. A job notice can start a run of its
+// own, so each prompt waits for the Agent to be idle first and, when a notice
+// run starts in between and Prompt returns ErrBusy, waits again and retries
+// the same prompt. After the last prompt it waits once more: a notice that
+// came during the last prompt gets its answer before the caller reads the
+// reply.
+func promptAll(ctx context.Context, ag promptTarget, prompts []string) error {
 	for _, p := range prompts {
-		if err := ctx.Err(); err != nil {
-			return err
-		}
 		msg := protocol.UserMessage{Content: []protocol.UserBlock{protocol.Text{Text: p}}, Timestamp: time.Now().UnixMilli()}
-		if err := ag.Prompt(ctx, msg); err != nil {
-			return err
+		for {
+			if err := ctx.Err(); err != nil {
+				return err
+			}
+			if err := ag.WaitForIdle(ctx); err != nil {
+				return err
+			}
+			err := ag.Prompt(ctx, msg)
+			if err == nil {
+				break
+			}
+			if !errors.Is(err, agent.ErrBusy) {
+				return err
+			}
+			select {
+			case <-time.After(busyRetryDelay):
+			case <-ctx.Done():
+				return ctx.Err()
+			}
 		}
 	}
-	return nil
+	return ag.WaitForIdle(ctx)
 }

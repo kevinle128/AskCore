@@ -82,6 +82,11 @@ Do not expose internal or Bubble Tea types in the public UI SDK.
   It uses `internal/app.ACPModule` with the shared native auth composition: no listener, no database, no leader, and no credential input on the protocol connection.
   Sign in on the host with `ask auth login`; `authenticate` only checks readiness.
   Exit codes: 0 input ended, 1 error or lost output, 130 SIGINT, 143 SIGTERM, 129 SIGHUP.
+- `go run ./cmd/tui leader` - Run the local leader (`ask leader`): one agent for all local clients on `<ASK_HOME>/leader.sock`, owner only.
+  `ask leader status|list|stop` never start a leader. Clients start it on demand through `leader.ConnectOrSpawn`.
+  See [the leader owner](internal/leader/README.md).
+- `go run ./cmd/tui connect` - Line-oriented leader client (`ask connect --help`). It never falls back to an agent of its own.
+- `go run ./cmd/tui version --json` - Build and protocol versions on one line.
 - `go run ./cmd/tui -p "hello"` - Run a headless prompt in process.
   `--mode json` writes each agent event as one JSON line.
   `faux` remains the default provider.

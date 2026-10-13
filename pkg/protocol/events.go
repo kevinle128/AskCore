@@ -11,6 +11,7 @@ const (
 	TypeAgentSettled        = "agent_settled"
 	TypeAgentDisposed       = "agent_disposed"
 	TypeQueueUpdate         = "queue_update"
+	TypeModelUpdate         = "model_update"
 	TypeTurnStart           = "turn_start"
 	TypeTurnEnd             = "turn_end"
 	TypeCycleStart          = "cycle_start"
@@ -89,6 +90,16 @@ type QueueUpdate struct {
 	Envelope
 	Steering []string
 	FollowUp []string
+}
+
+// ModelUpdate reports the model of an Agent after every change, including a
+// clear. Provider, ID and API name the model; all three are empty when the
+// Agent has no model.
+type ModelUpdate struct {
+	Envelope
+	Provider string
+	ID       string
+	API      string
 }
 
 // TurnStart opens one model response and its tool calls. CycleID names the
@@ -209,6 +220,7 @@ func (*AgentEnd) EventType() string            { return TypeAgentEnd }
 func (*AgentSettled) EventType() string        { return TypeAgentSettled }
 func (*AgentDisposed) EventType() string       { return TypeAgentDisposed }
 func (*QueueUpdate) EventType() string         { return TypeQueueUpdate }
+func (*ModelUpdate) EventType() string         { return TypeModelUpdate }
 func (*TurnStart) EventType() string           { return TypeTurnStart }
 func (*TurnEnd) EventType() string             { return TypeTurnEnd }
 func (*CycleStart) EventType() string          { return TypeCycleStart }

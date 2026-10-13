@@ -20,6 +20,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"slices"
 	"strconv"
 	"strings"
 	"sync"
@@ -163,7 +164,7 @@ func startE2E(t *testing.T, o e2eOptions) *e2ePeer {
 		home = filepath.Join(root, "ask-home")
 		require.NoError(t, os.MkdirAll(home, 0o700))
 	}
-	env := []string{"PATH=" + os.Getenv("PATH"), "HOME=" + root, "ASK_HOME=" + home, "TZ=Asia/Saigon"}
+	env := []string{"PATH=" + os.Getenv("PATH"), "HOME=" + root, "ASK_HOME=" + home, "ASK_FAUX=1", "TZ=Asia/Saigon"}
 	for k, v := range o.env {
 		env = append(env, k+"="+v)
 	}
@@ -455,7 +456,7 @@ func TestACPE2EInitialize(t *testing.T) {
 	require.Equal(t, "ask", res.AgentInfo.Name)
 	require.False(t, res.AgentCapabilities.LoadSession, "no durable load is advertised")
 	require.Equal(t, true, res.AgentCapabilities.PromptCapabilities["image"])
-	require.Empty(t, res.AgentCapabilities.Session, "no session list, resume or close capability is advertised")
+	require.Equal(t, map[string]any{"close": map[string]any{}}, res.AgentCapabilities.Session, "only session/close is advertised; no list or resume")
 	ids := map[string]bool{}
 	for _, m := range res.AuthMethods {
 		ids[m.ID] = true
@@ -1204,7 +1205,6 @@ func TestACPE2EUnsupported(t *testing.T) {
 		{"session/load", map[string]any{"sessionId": sid, "cwd": t.TempDir(), "mcpServers": []any{}}, "", -32601},
 		{"session/list", map[string]any{}, "unsupported", -32601},
 		{"session/resume", map[string]any{"sessionId": sid, "cwd": t.TempDir()}, "unsupported", -32601},
-		{"session/close", map[string]any{"sessionId": sid}, "unsupported", -32601},
 		{"session/set_mode", map[string]any{"sessionId": sid, "modeId": "x"}, "unsupported", -32601},
 		{"session/set_config_option", map[string]any{"sessionId": sid, "configId": "x", "value": "y"}, "unsupported", -32601},
 		{"logout", map[string]any{}, "unsupported", -32601},
@@ -1458,6 +1458,13 @@ func TestACPE2EEOFDeliversUnterminatedRequest(t *testing.T) {
 	require.GreaterOrEqual(t, p.replyIndex(999), 0, "EOF lost a request without a trailing newline")
 }
 
+// fixtureHosts are the destinations that the provider fixture answers. The
+// certificate names them all, and the proxy refuses every other host.
+var fixtureHosts = []string{
+	"api.anthropic.com", "platform.claude.com", "api.openai.com", "auth.openai.com",
+	"api.x.ai", "auth.x.ai", "token-plan.ap-southeast-1.maas.aliyuncs.com",
+}
+
 // providerFixture is an external provider and OAuth service. The test process
 // serves HTTPS behind a CONNECT proxy. The production child uses its normal
 // HTTP clients and verifies the fixture certificate with a temporary CA file.
@@ -1470,6 +1477,12 @@ type providerFixture struct {
 	inference func(n int, r *http.Request, body []byte) (status int, contentType, body2 string)
 	// token answers the OAuth token endpoint.
 	token func(grant map[string]string) (int, any)
+	// retryAfter is the Retry-After header of a 429 answer. Empty sends none.
+	retryAfter string
+	// route answers a destination that the switch below does not know: key
+	// probes, device authorization, a second token service. It runs with mu
+	// held. A route that returns ok false is an unexpected destination.
+	route func(r *http.Request, body []byte) (status int, contentType, out string, ok bool)
 
 	inferenceCalls int
 	tokenGrants    []map[string]string
@@ -1490,6 +1503,9 @@ func newProviderFixture(t *testing.T) *providerFixture {
 			f.authHeaders = append(f.authHeaders, r.Header.Get("Authorization")+"|"+r.Header.Get("X-Api-Key"))
 			status, ct, out := f.inference(n, r, body)
 			w.Header().Set("Content-Type", ct)
+			if status == http.StatusTooManyRequests && f.retryAfter != "" {
+				w.Header().Set("Retry-After", f.retryAfter)
+			}
 			w.WriteHeader(status)
 			_, _ = io.WriteString(w, out)
 		case "https://platform.claude.com/v1/oauth/token":
@@ -1499,13 +1515,21 @@ func newProviderFixture(t *testing.T) *providerFixture {
 			status, v := f.token(grant)
 			oauthJSON(w, status, v)
 		default:
+			if f.route != nil {
+				if status, ct, out, ok := f.route(r, body); ok {
+					w.Header().Set("Content-Type", ct)
+					w.WriteHeader(status)
+					_, _ = io.WriteString(w, out)
+					return
+				}
+			}
 			f.t.Errorf("unexpected destination %q", r.Host+r.URL.Path)
 			http.Error(w, "bad", http.StatusBadRequest)
 		}
 	}))
 	pub, key, err := ed25519.GenerateKey(rand.Reader)
 	require.NoError(t, err)
-	cert := &x509.Certificate{SerialNumber: big.NewInt(1), Subject: pkix.Name{CommonName: "ACP fixture"}, DNSNames: []string{"api.anthropic.com", "platform.claude.com"}, NotBefore: time.Now().Add(-time.Hour), NotAfter: time.Now().Add(time.Hour), IsCA: true, BasicConstraintsValid: true, KeyUsage: x509.KeyUsageCertSign | x509.KeyUsageDigitalSignature, ExtKeyUsage: []x509.ExtKeyUsage{x509.ExtKeyUsageServerAuth}}
+	cert := &x509.Certificate{SerialNumber: big.NewInt(1), Subject: pkix.Name{CommonName: "ACP fixture"}, DNSNames: fixtureHosts, NotBefore: time.Now().Add(-time.Hour), NotAfter: time.Now().Add(time.Hour), IsCA: true, BasicConstraintsValid: true, KeyUsage: x509.KeyUsageCertSign | x509.KeyUsageDigitalSignature, ExtKeyUsage: []x509.ExtKeyUsage{x509.ExtKeyUsageServerAuth}}
 	der, err := x509.CreateCertificate(rand.Reader, cert, cert, pub, key)
 	require.NoError(t, err)
 	backend.TLS = &tls.Config{Certificates: []tls.Certificate{{Certificate: [][]byte{der}, PrivateKey: key}}, MinVersion: tls.VersionTLS12}
@@ -1514,7 +1538,7 @@ func newProviderFixture(t *testing.T) *providerFixture {
 	f.certFile = filepath.Join(t.TempDir(), "fixture-ca.pem")
 	require.NoError(t, os.WriteFile(f.certFile, pem.EncodeToMemory(&pem.Block{Type: "CERTIFICATE", Bytes: der}), 0o600))
 	f.server = httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		if r.Method != http.MethodConnect || (r.Host != "api.anthropic.com:443" && r.Host != "platform.claude.com:443") {
+		if r.Method != http.MethodConnect || !slices.Contains(fixtureHosts, strings.TrimSuffix(r.Host, ":443")) {
 			http.Error(w, "destination refused", http.StatusForbidden)
 			return
 		}

@@ -1,0 +1,14 @@
+◢◤ ask ● 7c1e   deepseek-v4.1-flash 18%
+────────────────────────────────────────
+  ❯ giải thích lỗi               14:05
+    日本語のテスト
+
+  The 日本語 test fails because each
+  wide character uses two columns.
+  deepseek-v4.1-flash · 0.5s · ↑12.4k ↓…
+
+┊ ◌ Working… 3s · esc
+────────────────────────────────────────
+ ❯ Ask anything
+────────────────────────────────────────
+ Tab blocks · / commands

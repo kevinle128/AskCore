@@ -41,3 +41,60 @@ Plan: `plans/261006-0933-lifecycle-event-pipeline-redesign/plan.md` (12 phases, 
 - [x] Phase 09: tool coordinator, abort outcomes, repair, and AfterTool context; independent review approved 10/10; final agent/pipeline tests and race, full lint, build, and Matrix09 passed; all 34 assertions reviewed
 - [x] Phase 10: end-to-end, write-failure, and signal fixtures; independent review approved 10/10; full tests, full race, CLI checks, N8 race count 200, final lint, build, and Matrix all passed; all 197 assertions reviewed
 - [x] Phase 11: roadmap, architecture, and package documentation complete; independent review approved 10/10; all nine steps accepted, 199 local links valid, stale API scan and whitespace checks passed
+
+## T1c provider setup (2026-10-10)
+
+Plan: `plans/261010-1424-t1c-provider-setup/plan.md` (8 phases; cook `--auto --tdd`; phase 1 design approved).
+- [x] Phase 1 TUI design
+- [x] Phase 2 protocol shapes, model event, no-model contract (parallel with 3)
+- [x] Phase 3 auth broker, key check, status, default-model store (parallel with 2)
+- [x] Phase 4 leader host and router
+- [x] Phase 5 TUI client contract and tuiclient
+- [x] Phase 6 TUI screens and design amendments
+- [x] Phase 7 E2E and security acceptance
+- [ ] Phase 8 real-provider acceptance and docs: new OAuth sign-in not run
+
+## Provider access glossary follow-ups (2026-10-10)
+
+Glossary: `docs/CONTEXT.md`. User decisions on 2026-10-10.
+- [x] Rename the provider setup feature away from "account": `internal/app/provider_setup.go` (+ test), `cmd/tui/leader_provider_setup_e2e_test.go`, `internal/leader/router_provider_setup_test.go`, `acp.ProviderSetup` and `Config.ProviderSetup`, comments and package READMEs
+- [x] Make the login option labels consistent: user chose `sign-in` labels (2026-10-10); code, goldens, design and preview updated (third round in the design change table)
+- [x] Key save is not a sign-in: new status `saved` for a key save; wire change `signed_in` -> `saved`; rail `<provider> key saved · N models`; other clients see `credential saved`
+- [x] Fallback reason `not_signed_in` -> `no_credential`; TUI text `(no credential)`, not-ready text `no credential`
+- [x] `ProviderDefault` / `providerDefault` -> `RecommendedModel` / `recommendedModel`
+- [x] Removal copy: already neutral ("Removed the saved credential for …"); protocol name `logout` stays
+
+### Review
+- Full `go test ./...` passed twice; `-race` passed on protocol, auth, providers, app, acp, leader, tuiclient, tui; golangci-lint 0 issues.
+- Four goldens changed by one line each (rail and fallback text only).
+- Plans are historical records and keep the old names.
+
+## T1b tool output, transcript view and /copy (2026-10-12)
+
+Plan: `plans/261012-0226-t1b-tool-output/plan.md` (design approved by user 2026-10-12). Run with `/ak:cook --auto --tdd`.
+- [x] Step 0: alt-screen return spike (partial; fork renderer fixed with tests; Terminal.app, iTerm2, kitty hand check open)
+- [x] Steps 1-2: translator reads result details; collapsed previews, hint and truncation rows
+- [x] Step 5: `/copy` (open: OSC 52 write goes through renderer)
+- [x] Step 3: transcript view (held commits and resize rebuild)
+- [x] Step 4: terminal restore on ctrl+c and signals
+- [x] Step 6: E2E with the built ask (view, SIGTERM, /copy, in-process view)
+- [x] Step 7: docs
+- Note: uncommitted job-notice work (finished slice) is in the same TUI files; do not commit it with this slice by accident.
+
+## T1b Grok-style alternate-screen TUI (2026-10-12)
+
+Plan: `plans/261012-1337-t1b-grok-style-altscreen/plan.md` (design approved by user 2026-10-12, all 14 open questions accepted). Run with `/ak:cook --auto --tdd`. No commits: the worktree holds uncommitted work of earlier slices.
+- [x] Step 0: spike, 2000 blocks, frame budget (stop and re-plan when over budget)
+- [x] Steps 1-2: screen model, block list, fold modes, row text
+- [x] Steps 3-4: focus, keys, selection marks, indicators
+- [x] Steps 5-6: scroll and follow, bottom marker, mouse
+- [x] Steps 7-8: hook rows, exit line
+- [x] Steps 9-10: fork cleanup, screen tests for design section 10
+- [x] Step 11: E2E with the built `ask`
+- [x] Step 12: docs
+- [x] Hyperlink rows of the login box carry per-row OSC 8 ids (renderer bug at the pinned Ultraviolet version)
+
+### Review
+- Full `go test ./...`, fork tests, golangci-lint and `python3 e2e/tui/run.py` (24 of 24, two engines) passed. Independent review found three defects (marker count at a full window, settle after fold commands, lost mouse release); fixed with tests.
+- Open (not in this plan): optional `description` argument for `bash`; H11 hook event; H8 resume (exit line format); detach note above the exit line stays until the user decides.
+- Nothing is committed; rollback snapshot ref `refs/snapshots/t1b-altscreen-baseline`.

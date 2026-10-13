@@ -85,7 +85,7 @@ Go has no classes. A "class" is a struct with methods. The rule is **one package
 | `internal/leader` | local router on a Unix socket, `ConnectOrSpawn` client | |
 | `internal/pipeline` | typed control contracts, around middleware, decisions, and scoped handler registries | `internal/pipeline` |
 | `internal/providers` | Api, Provider and Model types, compat record, LLM vendors, registry; `acp/` for subprocess agents | `internal/providers` |
-| `internal/tools` | tool registry, every builtin tool (no built-in approval policy) | `internal/tools` |
+| `internal/tools` | tool registry, every builtin tool (`file_*`, `search_*`, `shell_*`; no built-in approval policy) | `internal/tools` |
 | `internal/mcp` | MCP client bridge | `internal/mcp` |
 | `internal/skills` | SKILL.md metadata discovery, explicit reload | `internal/skills` |
 | `internal/bootstrap` | `AGENTS.md` discovery and loading; `templates/` is a data folder for embedded `.md` templates (not a Go package) | `internal/bootstrap` |
@@ -95,8 +95,9 @@ Go has no classes. A "class" is a struct with methods. The rule is **one package
 | `internal/bus` | bounded replay ring and followers; publication belongs to agent | `internal/bus` |
 | `internal/hooks` | sync and notify event dispatch; `handlers/` for command and HTTP handlers | `internal/hooks` |
 | `internal/permissions` | RBAC for gateway and HTTP callers | `internal/permissions` |
-| `internal/sandbox` | isolated command execution | `internal/sandbox` |
-| `internal/workspace` | session cwd, project root, project trust store | `internal/workspace` |
+| `internal/sandbox` | process runner: process group, filtered environment, bounded output, group kill (standard library only) | `internal/sandbox` |
+| `internal/jobs` | per-session job table of the `bash` and `monitor` tools: states, completion notices, monitor events, cleanup; imports `sandbox` and `pkg/protocol` only | |
+| `internal/workspace` | path resolution for tools today; session cwd, project root and project trust store planned | `internal/workspace` |
 | `internal/cron` | scheduled agent runs | `internal/cron` |
 | `internal/crypto` | AES-256-GCM helpers, parked for credentials | `internal/crypto` |
 | `internal/channels` | channel manager, `BaseChannel`; one subfolder for each platform, added when needed | `internal/channels` |
@@ -121,7 +122,7 @@ Ask has no `thirdparty/` folder. A vendor goes to the package of the capability 
 | LLM API | `internal/providers/<api>/`, one adapter for each wire API; a vendor is data (provider and model records) | `anthropic/`, `openai/`, `acp/`; shared fantasy plumbing in `fantasykit/` |
 | Chat platform | `internal/channels/<vendor>/` | `channels/telegram/` |
 | Backend of one tool | `internal/tools/<tool>_<vendor>.go` | `web_search_brave.go`, `web_search_tavily.go` |
-| Infrastructure client | its own package | `cache/` (Redis), `messaging/` (asynq), `sandbox/` (Docker) |
+| Infrastructure client | its own package | `cache/` (Redis), `messaging/` (asynq) |
 
 ### 3.2 Logging
 
@@ -131,7 +132,7 @@ Ask has no `thirdparty/` folder. A vendor goes to the package of the capability 
 
 ## 4. Where interfaces live
 
-1. **A main interface is in the package that owns the concept**, usually in `types.go`: `tools.Tool`, `providers.Provider`, `agent.Agent`, `pipeline.Around`, `channels.Channel`, `hooks.Handler`, `sandbox.Sandbox`, `tracing.SpanExporter`.
+1. **A main interface is in the package that owns the concept**, usually in `types.go`: `tools.Tool`, `providers.Provider`, `agent.Agent`, `pipeline.Around`, `channels.Channel`, `hooks.Handler`, `sandbox.Clock`, `tracing.SpanExporter`.
 2. **Storage interfaces are in `internal/store`**, one file for each entity (`<entity>_store.go`). The implementation is in `store/gormstore`. `store.Stores` collects all store interfaces. A large interface is made from small ones (dewee `AgentStore` at `internal/store/agent_store.go:912-973`), and a consumer asks for the smallest one that it needs.
 3. **A small private interface is at the consumer**, lower-case, in the file that uses it (dewee `humanHandoffAgentStore` at `internal/tools/human_handoff.go:27`).
 
@@ -235,6 +236,7 @@ Evidence from Grok: its leader connects to its agent with `acp::AgentSideConnect
 |---|---|---|---|
 | Leader | `ask leader` (binary `ask`, `cmd/tui`) | Holds one agent instance for all local clients. Accepts clients on a Unix socket and connects them to the agent over ACP. | Yes, one instance |
 | TUI | `ask` (binary `ask`) | Interactive terminal UI. An ACP client of the leader. | No (see "Fallback") |
+| Line client | `ask connect` (binary `ask`) | A small line-oriented ACP client of the leader that proves the transport before the TUI exists (H13b). It never falls back to an agent of its own. | No |
 | Headless | `ask -p "..."`, `ask --mode json` (binary `ask`) | Runs one prompt and exits. It builds its own agent in process and calls the agent's Go API directly (no ACP). It does not use the leader. | Yes, its own instance |
 | Daemon | `cmd/server` | Network door: HTTP, gRPC and WS gateway, the monitoring dashboard, chat channels. An ACP client of the leader. | No |
 
@@ -253,46 +255,79 @@ Evidence from Grok: its leader connects to its agent with `acp::AgentSideConnect
 
 **The leader is a router, not a second agent.** The leader holds no agent logic. It does four things, as Grok's `run_leader_server` does (`SH/leader/server.rs`):
 
-1. It accepts a client and does a handshake: `register` → `registered` → `leader_ready` when startup work (settings, auth) is done.
-2. It forwards each client's ACP requests to the agent pipe. It prefixes each request `id` with the client id (Grok: `rewrite_request_id`, `server.rs:376-392`) so that ids of two clients do not collide.
+1. It accepts a client and does a handshake: `register` → `registered`, and `leader_ready` when startup work (settings, auth) is not done yet. The leader first sends one `initialize` to the agent and starts accepting clients only after the answer, so it answers every client's `initialize` from that cached result and keeps the capabilities of each client.
+2. It forwards each client's ACP requests to the agent pipe. It gives each request an id of its own and restores the original raw id on the answer (Grok: `rewrite_request_id`, `server.rs:376-392`, which prefixes the client id), so ids of two clients do not collide. Ids stay raw JSON: numbers above 2^53 and string and number spellings of one value stay exact. `$/cancel_request` is rewritten only through the requests of the sender.
 3. It reads each ACP message that the agent writes. It routes responses back to the requesting client and restores the original id (`parse_response_id`, `server.rs:395`). It sends `session/update` notifications to every client that subscribes to that session.
-4. It sends reverse requests to clients. It sends permission and question requests to all subscribers, and the first answer wins (`server.rs:506-507`). It sends other reverse requests only to the session's driver client.
+4. It sends reverse requests to clients. It sends permission and question requests to all subscribers, and the first valid answer wins (`server.rs:506-507`). Each recipient gets an id of its own, an answer must select an offered option or say cancelled, and a late, repeated or foreign answer is ignored. It sends other reverse requests (files, terminals) only to the session's driver client, and a terminal belongs to the client that made it. When nobody can answer, the agent gets a safe error at once.
 
-A client that disconnects does not cancel the run. A client that reconnects asks for events after its last `seq`.
+A client that disconnects does not cancel the run. A client that reconnects gets a new client id, attaches again and follows from its last cursor (`_ask/session/follow` with the cursor); nothing is sent twice and no prompt is sent again.
+
+**Sessions, drivers and views (H13b).**
+The one agent holds many sessions.
+The creator of a session is its driver; other clients are observers.
+`_ask/session/attach` adds an observer, `detach` leaves, `list_live` lists the live sessions and `take` makes the caller the driver.
+A take works when the session has no live driver (also while a run is active) or when the session is idle; it fails with `busy` while a live driver runs.
+The host owns the driver generation and checks it at each mutation commit boundary.
+A detach also prevents a pending take result from restoring a client as the live driver.
+Observers can read, follow and answer shared questions, but cannot prompt, cancel or change the session.
+`/new` and attach change only the caller's view.
+When the driver leaves, the run goes on and the open questions of that generation end with a cancelled error.
+[The host](../internal/acp/host.go) and [router](../internal/leader/router.go) own these rules.
+
+**Output.** Each client has one writer and an unbounded queue, as in Grok (`server.rs:1564`). A client that does not read keeps its place and later gets every frame in order; the router never waits for a socket, and another client is not slowed. A frame is at most 64 MiB (Grok has the same limit). A prompt result is queued after the updates before it for the same client; it does not wait for the write to another client. `ask acp` over stdio keeps its stricter rule: a prompt result waits until the updates are written.
 
 **Leader lifecycle.** Ask copies these rules from Grok:
 
 - The TUI and the daemon call one function, `ConnectOrSpawn` (Grok: `connect_or_spawn`, `SH/leader/mod.rs:1376`). It connects to `~/.ask/leader.sock`. If there is no leader, it starts `ask leader` in the background and connects again.
 - An flock on `~/.ask/leader.lock` holds the pid and makes sure that only one leader runs. The leader that gets the lock removes a stale socket. A leader that does not get the lock exits, and the client uses the leader that won.
 - The leader detaches from the terminal (`Setsid`). Stdin and stdout go to `/dev/null`. Stderr is appended to `~/.ask/leader.log`, which rotates by size. A leader that a client starts gets a `--spawned-by-client` flag, so that cleanup never stops a leader that the user runs under a supervisor.
-- `ask leader list | status | stop` manage the leader. `stop` sends a `shutdown` control frame first and uses SIGTERM through the pid file as a fallback.
+- `ask leader list | status | stop` manage the leader and never start one.
+  `list` shows the single endpoint of the home.
+  `stop` sends a `shutdown` control frame first and waits for the lock and the socket to be free.
+  Linux permits SIGTERM fallback only through a verified pidfd while the recorded lock owner still matches.
+  macOS and platforms without a stable process handle refuse PID fallback.
+  See [process safety](../internal/leader/proc_linux.go) and [platform refusal](../internal/leader/proc_darwin.go).
+- The lock file holds the PID, the start time and the instance id. It is never removed, so its inode stays the same. The leader opens its socket only after the whole composition succeeded. A client reads `ask version --json` of the binary before it starts a leader from it.
 
-Ask does **not** copy these Grok parts: zombie-leader eviction, the acquire-slot guard, the grok.com relay and auto-update relaunch.
+Idle replacement must account for accepted router requests, session creation, auth checks, mutations, queued input, runs and open reverse calls.
+[Host admission](../internal/acp/host.go) and [router admission](../internal/leader/router.go) own the atomic idle barrier.
+Graceful shutdown joins native auth cleanup and Agent drain in parallel.
+A second signal reports incomplete cleanup and bypasses that join so the command can exit.
+See [runtime stop](../internal/app/module_leader.go) and [command lifecycle](../cmd/tui/leader.go).
+
+- A start that ends with an error before it serves is retried, at most three starts in a call.
+- On Linux, a lock holder with a `serving` owner record, older than 30 s, that has no connectable socket is stopped: SIGTERM through a verified pidfd, then SIGKILL after 8 s through the same pidfd. A `stopping` record is never signalled, and macOS refuses (no stable process handle).
+- A client of a newer build replaces an older leader that a client started, also when it is busy, once per call and never as a downgrade (see the version rule below).
+
+Ask does **not** copy these Grok parts: the acquire-slot guard, the grok.com relay and auto-update relaunch.
 
 **Security of the local socket.** Ask adds these rules. Grok does not have them: its leader code has no peer-credential check and no explicit socket permissions.
 
 - `~/.ask` has mode 0700 and the socket has mode 0600.
+- Artifact opens and removals use a checked private directory handle.
+  Socket cleanup checks the owned inode while the flock is held; automatic listener unlink is disabled.
+  See [private paths](../internal/leader/paths.go), [lock ownership](../internal/leader/lock.go) and [listener setup](../cmd/tui/leader.go).
 - The leader rejects a peer whose UID is not the owner (`SO_PEERCRED` on Linux, `LOCAL_PEERCRED` on macOS).
-- The leader rejects a client whose protocol version is different. The error tells which side must upgrade. A leader started by a client may be stopped and started again at the new version. Grok only warns.
+- The leader rejects a client whose protocol version is different. The error tells which side must upgrade. Only the outer leader protocol number refuses a client; a different build prints a hint and shows in `ask leader status`. After a protocol mismatch, a leader started by a client is replaced by a newer client only when it reports idle and agrees to stop in one step. For the same protocol, a client whose build is newer replaces an older leader that a client started even when it is busy (its sessions end and their jobs are killed): a later commit time between VCS builds, or, between builds without a VCS stamp, another SHA-256 with a later file modification time. A leader that a supervisor or the user started, a newer leader and an unknown stamp stay. The refused connection can send only `status` and the conditional `shutdown`, never ACP. Grok only warns.
 - The local socket needs no token. The token, the loopback bind and the Origin check apply to the daemon's network gateway (roadmap H13).
 
-**Fallback.** When the TUI cannot connect to the leader, it may build its own agent in process, as headless mode does. Grok does this (`PG/app/mod.rs:1107-1113`). The TUI uses one `AgentClient` interface with two implementations: `remote` (ACP over the leader socket, or over WebSocket to a remote agent) and `direct` (the in-process Go API). The UI code is the same for both.
+**Fallback.** When the TUI cannot connect to the leader, it may build its own agent in process, as headless mode does. Grok does this (`PG/app/mod.rs:1107-1113`). The H13b client `ask connect` has no fallback: it reports why the leader cannot be reached. The TUI uses one `AgentClient` interface with two implementations: `remote` (ACP over the leader socket, or over WebSocket to a remote agent) and `direct` (the in-process Go API). The UI code is the same for both.
 
 **Concurrent credential writers.** The [credential transaction](../internal/settings/README.md#credential-transaction) owns cross-process auth writes on one authoritative local filesystem.
 Session locking for concurrent headless and leader use remains planned under H8.
 
 **Editors.** Because the agent speaks standard ACP, an ACP editor (for example Zed) can run Ask as an agent over stdio (`ask acp`), as Grok does with `grok agent stdio`.
 
-**Where the code goes (planned).**
+**Where the code goes.**
 
 | Place | Content |
 |---|---|
 | `internal/agent` | The agent and its typed Go API. Internal events stay Pi-style. |
 | `internal/acp` (new) | The ACP adapter over the Go API: implements the ACP `Agent` interface, maps internal events to `session/update`, puts Ask-only fields (`seq`, `runId`) in `_meta`, and serves the `_ask/*` methods. |
-| `internal/leader` (new) | `server.go` (listen, handshake, id rewrite, routing, fan-out), `client.go` (`Connect`, `ConnectOrSpawn`), `lock.go` (flock, pid, paths), `spawn.go` |
+| `internal/leader` | `server.go` and `router.go` (listen, handshake, id rewrite, routing, fan-out), `reverse.go`, `client.go` (`Connect`, `ConnectOrSpawn`, `Status`, `Stop`), `lock.go`, `paths.go` (flock, owner record, paths), `spawn.go` (start, log, process identity), `frame.go`, `handshake.go`, `peer*.go`. See [its README](../internal/leader/README.md) |
 | `pkg/protocol` | The leader frames (register, control, ACP payload), the `_ask/*` method and notification types, and the `_meta` fields. The standard ACP types come from an ACP Go SDK (roadmap decision). The `AgentClient` interface for the TUI and the daemon. |
 | `internal/app` | fx modules: `AgentModule` (agent, providers, tools, sessions, settings, hooks), `LeaderServerModule`, `GatewayModule` |
-| `cmd/tui` (`ask`) | `ask` = TUI + `AgentClient` (remote). `ask -p` = `AgentModule` + `AgentClient` (direct). `ask leader` = `AgentModule` + ACP adapter + `LeaderServerModule`. `ask acp` = `AgentModule` + ACP adapter on stdio. |
+| `cmd/tui` (`ask`) | `ask connect` = line client of the leader. `ask version --json` = build and protocol versions. `ask` = TUI + `AgentClient` (remote). `ask -p` = `AgentModule` + `AgentClient` (direct). `ask leader` = `AgentModule` + ACP adapter + `LeaderServerModule`. `ask acp` = `AgentModule` + ACP adapter on stdio. |
 | `cmd/server` | `GatewayModule` + leader client |
 
 ---
@@ -325,12 +360,12 @@ See the [operating guide](../README.md#native-auth-and-headless-prompts) for met
 
 | Package | Must not import |
 |---|---|
-| `tools`, `pipeline`, `providers`, `store` | `agent` |
+| `tools`, `sandbox`, `jobs`, `workspace`, `pipeline`, `providers`, `store` | `agent` |
 | `store` | `store/gormstore` |
 | `providers` | `tools` |
-| `agent`, `pipeline`, `tools`, `providers`, `store` | `gateway`, `http`, `channels/<vendor>` |
+| `agent`, `pipeline`, `tools`, `sandbox`, `jobs`, `workspace`, `providers`, `store` | `gateway`, `http`, `channels/<vendor>` |
 
-Allowed: `tools` imports `providers`.
+Allowed: `tools` imports `providers`, `sandbox`, `jobs` and `workspace`. `jobs` imports `sandbox`. The Agent reaches `jobs` only through the `Notifier` that the composition root sets, and `jobs` reaches the Agent only through it.
 
 ### 8.2 Rules added by Ask
 
@@ -338,7 +373,7 @@ Allowed: `tools` imports `providers`.
 |---|---|
 | Handlers call store interfaces only | `http`, `gateway`, `gateway/methods` must not import `store/gormstore`, `gorm.io`, `database/sql` |
 | One composition root | Only `internal/app` and `cmd/server` import `store/gormstore` |
-| Core does not import adapters | `agent`, `pipeline`, `tools`, `providers`, `store`, `sessions`, `hooks`, `bus` must not import `acp`, `leader` |
+| Core does not import adapters | `agent`, `pipeline`, `tools`, `sandbox`, `jobs`, `workspace`, `providers`, `store`, `sessions`, `hooks`, `bus` must not import `acp`, `leader` |
 | Config through constructors | Only `internal/app` and `cmd/*` import `internal/config`. Runtime settings and credentials are files that `internal/settings` owns |
 | Providers receive resolved credentials | Providers must not import `internal/auth` or `internal/settings` |
 | Settings uses standard library only | `internal/settings` must not import other internal packages or dependencies |
@@ -349,11 +384,12 @@ Allowed: `tools` imports `providers`.
 
 | You are adding | Put it in | Implement or do |
 |---|---|---|
-| A new builtin tool | `internal/tools/<family>_*.go` | `tools.Tool`; add it to the `tools` fx group |
+| A new builtin tool | `internal/tools/<family>_*.go` | `tools.Tool`; add it to `sessionTools` in `cmd/tui/headless.go` (the one place all entry points share) |
 | A new backend of a tool | `internal/tools/<tool>_<vendor>.go` | the tool's backend interface (for example `SearchProvider`) |
 | A new LLM vendor | its provider and model records (data); a new adapter `internal/providers/<api>/` only for a new wire API | `providers.Provider` for a new adapter |
 | A new chat platform | `internal/channels/<vendor>/` | `channels.Channel`, embed `BaseChannel` |
-| A new control handler | `internal/pipeline/<name>.go` | Register a typed handler with `pipeline.Registry`; stages stay private to agent |
+| A new control handler | `internal/pipeline/<name>.go` | Register a typed handler with `pipeline.Registry`; stages stay private to agent. Example: `command-guard` (`CommandGuard`, a `BeforeTool` handler) is registered on a per-agent registry only when `ASK_COMMAND_GUARD=1`; the handler never reads the environment |
+| A new job or process rule | `internal/jobs/` or `internal/sandbox/` | Jobs reach the Agent through `jobs.Notifier`. Resources that a session owns close through `agent.Config.Release`, which `Agent.Dispose` calls once after the run and its started tools drained and before the log closes (the job table closes there) |
 | A new session entry type | `internal/sessions/entry.go` | |
 | A new event type | `pkg/protocol` | Agent publishes lifecycle events; bus owns replay and follow; hooks owns the planned extension adapter |
 | A new user setting or credential | `internal/settings/` | |

@@ -4,21 +4,41 @@ import (
 	"bufio"
 	"bytes"
 	"encoding/json"
+	"os"
 	"strings"
 	"testing"
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
-	"AskCore/internal/providers/anthropic"
+	"AskCore/internal/agent"
+	"AskCore/internal/providers"
 	"AskCore/internal/tools"
+	"AskCore/pkg/protocol"
 )
 
-// These tests run the real Token Plan adapter through the same agent setup
-// and run code as ask -p. The model replies come from cassettes in
-// testdata/cassettes. Re-record one with:
+// These tests run the real OpenAI Responses adapter, with an API key, through
+// the same agent setup and run code as ask -p. The model replies come from
+// cassettes in testdata/cassettes. Re-record one with the key in
+// OPENAI_API_KEY:
 //
 //	ASK_RECORD=1 go test -run '^TestName$' ./cmd/tui
+
+// cassetteSessionID is the session ID of every cassette run. The OpenAI wire
+// sends the session ID as prompt_cache_key, and a recorded body only matches
+// when that value is the same at record and at replay.
+const cassetteSessionID = "00000000-0000-4000-8000-000000000001"
+
+// newCassetteAgent is newHeadlessAgent with the fixed session ID. It uses the
+// same composition (newNativeAgent) as ask -p.
+func newCassetteAgent(t *testing.T, o options, getenv func(string) string, extra ...tools.Tool) *agent.Agent {
+	t.Helper()
+	cwd, err := os.Getwd()
+	require.NoError(t, err)
+	ag, _, err := newNativeAgent(o, getenv, nil, cassetteSessionID, cwd, extra...)
+	require.NoError(t, err)
+	return ag
+}
 
 // jsonEvent is the part of a JSON-mode event line that the tests read.
 type jsonEvent struct {
@@ -39,9 +59,16 @@ type jsonEvent struct {
 // returns the events.
 func runCassetteJSON(t *testing.T, prompt string, extra ...tools.Tool) []jsonEvent {
 	t.Helper()
-	o, getenv := useCassette(t, anthropic.ModelID)
-	ag, err := newHeadlessAgent(o, getenv, extra...)
-	require.NoError(t, err)
+	return runCassetteJSONAt(t, "", prompt, extra...)
+}
+
+// runCassetteJSONAt is runCassetteJSON with a thinking level. An empty level
+// keeps the default of the model.
+func runCassetteJSONAt(t *testing.T, level protocol.ThinkingLevel, prompt string, extra ...tools.Tool) []jsonEvent {
+	t.Helper()
+	o, getenv := useCassette(t, providers.ProviderOpenAI, providers.ModelGPT55)
+	o.thinking = level
+	ag := newCassetteAgent(t, o, getenv, extra...)
 	var out, errb bytes.Buffer
 	code := runHeadless(ag, []string{prompt}, modeJSON, &out, &errb, nil)
 	require.Equal(t, 0, code, errb.String())
@@ -95,9 +122,8 @@ func toolCalls(t *testing.T, events []jsonEvent) map[string]map[string]float64 {
 }
 
 func TestCassetteTextReply(t *testing.T) {
-	o, getenv := useCassette(t, anthropic.ModelID)
-	ag, err := newHeadlessAgent(o, getenv)
-	require.NoError(t, err)
+	o, getenv := useCassette(t, providers.ProviderOpenAI, providers.ModelGPT55)
+	ag := newCassetteAgent(t, o, getenv)
 	var out, errb bytes.Buffer
 	code := runHeadless(ag, []string{"Reply with exactly the word pong and nothing else."}, modePrint, &out, &errb, nil)
 	require.Equal(t, 0, code, errb.String())
@@ -160,7 +186,7 @@ func TestCassetteJSONEventOrder(t *testing.T) {
 }
 
 func TestCassetteThinkingReply(t *testing.T) {
-	events := runCassetteJSON(t, "Think step by step: what is 17 * 3? Reply with only the number.")
+	events := runCassetteJSONAt(t, protocol.ThinkingMedium, "Think step by step: what is 17 * 3? Reply with only the number.")
 	ends := assistantEnds(events)
 	require.Len(t, ends, 1)
 	var thinking bool
@@ -176,13 +202,15 @@ func TestCassetteThinkingReply(t *testing.T) {
 // TestCapturedSessionReplays replays a cassette that ASK_CAPTURE wrote from a
 // real run of
 //
-//	ask -p "Use the echo tool with the text captured, then reply with only the word ok." --provider alibaba-token-plan
+//	ask -p "Use the echo tool with the text captured, then reply with only the word ok." --provider openai --model gpt-5.5
 //
 // A captured session needs no re-record command; capture it again instead.
+// The session ID of the real run is a random value that the OpenAI wire sends
+// as prompt_cache_key. After a capture, replace that value in the file with
+// cassetteSessionID, so the replay sends the same body.
 func TestCapturedSessionReplays(t *testing.T) {
-	o, getenv := useCassette(t, anthropic.ModelID)
-	ag, err := newHeadlessAgent(o, getenv)
-	require.NoError(t, err)
+	o, getenv := useCassette(t, providers.ProviderOpenAI, providers.ModelGPT55)
+	ag := newCassetteAgent(t, o, getenv)
 	var out, errb bytes.Buffer
 	code := runHeadless(ag, []string{"Use the echo tool with the text captured, then reply with only the word ok."}, modePrint, &out, &errb, nil)
 	require.Equal(t, 0, code, errb.String())

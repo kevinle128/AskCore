@@ -168,3 +168,24 @@ func TestAvailableModelsReturnsIndependentRows(t *testing.T) {
 		t.Fatal("rows share storage")
 	}
 }
+
+func TestCatalogOneRecommendedModelPerProvider(t *testing.T) {
+	t.Parallel()
+	seen := map[string]bool{}
+	for _, m := range AvailableModels() {
+		if seen[m.Provider] {
+			continue
+		}
+		seen[m.Provider] = true
+		ref, ok := RecommendedModel(m.Provider)
+		require.True(t, ok, "provider %s has no recommended model", m.Provider)
+		assert.Equal(t, m.Provider, ref.Provider)
+		assert.NotEmpty(t, ref.API, "the API is set so a provider with two wire formats stays exact")
+		_, err := Find(ref)
+		require.NoError(t, err, "recommended model of %s is not in the catalog", m.Provider)
+	}
+	_, ok := RecommendedModel("other")
+	assert.False(t, ok)
+	ref, _ := RecommendedModel(ProviderTokenPlan)
+	assert.Equal(t, Ref{Provider: ProviderTokenPlan, ID: ModelDeepSeekFlash, API: APIAnthropicMessages}, ref)
+}

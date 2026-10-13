@@ -8,12 +8,20 @@ import (
 )
 
 // printReply writes the outcome of print mode, as Pi's runPrintMode does
-// after the last prompt. Only the last message counts. An assistant reply
-// writes each text block and a newline to stdout and gives 0. An error or
-// aborted reply writes its error text to stderr and gives 1. Anything else
-// writes nothing and gives 0. A failed stdout write gives 1; the caller
-// reports it.
+// after the last prompt. Only the last message counts, after the trailing
+// system reminders: a job notice that arrives after the reply must not hide
+// it. An assistant reply writes each text block and a newline to stdout and
+// gives 0. An error or aborted reply writes its error text to stderr and gives
+// 1. Anything else writes nothing and gives 0. A failed stdout write gives 1;
+// the caller reports it.
 func printReply(msgs []protocol.Message, stdout, stderr io.Writer) int {
+	for len(msgs) > 0 {
+		u, ok := msgs[len(msgs)-1].(protocol.UserMessage)
+		if !ok || !protocol.IsSystemReminder(u) {
+			break
+		}
+		msgs = msgs[:len(msgs)-1]
+	}
 	if len(msgs) == 0 {
 		return 0
 	}

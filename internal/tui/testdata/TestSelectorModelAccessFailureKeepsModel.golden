@@ -1,0 +1,24 @@
+◢◤ ask  ● leader 7c1e  ⌂ ~/src/askcore  deepseek-v4.1-flash  ▱▱▱▱▱▱▱▱ 0%  $0.04
+────────────────────────────────────────────────────────────────────────────────
+  model  alibaba/deepseek-v4.1-flash
+
+
+
+
+
+
+
+
+
+────────────────────────────────────────────────────────────────────────────────
+╭─ Select model ───────────────────────────────────────────────────────────────╮
+│  ⌕ anth                                                                      │
+│ ❯ ● anthropic/claude-opus-5-5                                 1M  reasoning  │
+│   ● anthropic/claude-sonnet-5-5                               1M  reasoning  │
+│                                                                              │
+│  ✗ anthropic: this model is not available with your ChatGPT sign-in. Model   │
+│    not changed.                                                              │
+╰──────────────────────────────────────────────────────────────────────────────╯
+   enter select  ·  esc close  ·  your draft is kept
+────────────────────────────────────────────────────────────────────────────────
+ Tab blocks · ctrl+t thinking · ctrl+l model · / commands

@@ -179,6 +179,10 @@ func (a *Agent) enqueue(msg protocol.Message, followUp bool) (string, error) {
 	}
 	var started *run
 	if r := a.active; r == nil {
+		if a.cfg.Model.ID == "" {
+			a.mu.Unlock()
+			return "", ErrNoModel
+		}
 		started = a.startRunLocked(context.Background())
 	} else if r.closing || r.ctx.Err() != nil {
 		// The active run cannot take the message: it is cancelled, or it has

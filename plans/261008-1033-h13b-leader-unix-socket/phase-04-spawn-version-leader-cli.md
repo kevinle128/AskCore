@@ -1,11 +1,24 @@
 ---
 phase: 4
 title: "Spawn, version and leader CLI"
-status: pending
+status: completed
 priority: P1
 effort: "1.5d"
 dependencies: [1, 3]
 ---
+
+
+## Current repair state (2026-10-09)
+
+The socket shutdown control is the first stop path.
+[proc_linux.go](../../internal/leader/proc_linux.go) uses a pidfd, verifies the process and current lock owner, and signals only through that handle.
+Linux refuses fallback when the handle cannot be obtained or verified.
+[proc_darwin.go](../../internal/leader/proc_darwin.go) and [proc_other.go](../../internal/leader/proc_other.go) refuse PID signal fallback because they have no stable process handle.
+There is no current macOS check-to-kill fallback.
+[leader_regression_test.go](../../cmd/tui/leader_regression_test.go) checks replacement-socket preservation and the complete command path for a second signal during a started tool drain.
+The foreground SIGTERM E2E test now uses synchronized output collection.
+The full Linux leader test binary passed in `alpine:3` after repair.
+The final exit gates passed; the [repair report](../reports/pm-261009-h13b-repairs.md) records their evidence and accepted limits.
 
 # Phase 4: Spawn, version and leader CLI
 
@@ -93,3 +106,46 @@ Only the flock winner rotates the log; concurrent spawning callers must not rota
 Keep stderr log ownership checks before append and rotation.
 
 Add tests for mismatch management controls with ACP refused, a run admitted between status and idle shutdown, supervised leader replacement refused, hung probe reaped, ready timeout, unsafe endpoint with no child spawned, socket identity changed during cleanup, and losing spawns that cannot rotate the winner log.
+
+## Historical review (2026-10-08)
+
+### What was built
+
+- **`internal/leader`.**
+  - `client.go`: `Connect`, `ConnectOrSpawn`, `Status`, `Stop`. One deadline covers connect, binary discovery, probe, start, register, readiness and replacement. A failure is sorted: absent or stale endpoint (may start a leader), a leader that holds the lock but does not answer (waits, never starts a second one), unsafe access, a peer that is not a leader, a version refusal, a startup failure with the log tail. Only the first sort starts a process.
+  - `spawn.go`: `FindAsk` (sibling of the caller before the PATH; an unusable sibling is an error), `ProbeAsk` (bounded `ask version --json`, hung child killed with its process group and reaped), `StartLeader` (own session, null input and output, private append log, reaped), `LockHeld`, `AcquireWait`, `RotateLog`, `LogTail`, `VerifyLeaderProcess`.
+  - `proc_darwin.go` (ps), `proc_linux.go` (/proc), `dup_*.go`: process identity and the redirect of stderr to the log.
+  - Lock metadata now holds PID, start time and instance id.
+- **`cmd/tui`.** `ask leader` (foreground; `--spawned-by-client`), `ask leader status|list|stop`, `ask version [--json]`. `ask acp` reports the same build identity. The shared `acpParams` feeds both `ask acp` and `ask leader`.
+- **Server.** A conditional shutdown (`ifIdle`) is accepted only from a leader that a client started, and only after the router quiesces on its own goroutine.
+
+### Evidence
+
+| Check | Result |
+|---|---|
+| `go test -race ./internal/leader ./internal/acp ./internal/app ./pkg/protocol` | pass; `internal/leader` also passed 12 runs in a row |
+| `go test ./cmd/tui/...` | pass (65 s) |
+| `golangci-lint run ./...` and `go vet ./...` | clean |
+| `internal/leader` test binary in an `alpine:3` arm64 container (Linux `/proc`, `Dup3`) | pass, 7 runs |
+| Built binary: auto start, status, list, stop (socket 0600, home 0700, lock and log 0600, lock inode kept, PID record cleared, process gone, clients told) | `TestLeaderE2EAutoStartStatusStop` |
+| Built binary: spawn race of four clients, one lock owner | `TestLeaderE2ESpawnRace` |
+| Built binary: a second binary (stands in for `ask-server`) finds `ask` next to itself, then on the PATH, from another directory, and fails with a clear message when it is nowhere | `TestLeaderE2ETwoBinaryResolver` |
+| Built binary: startup failure reported with the reason from the log; log rotation by the lock winner; foreground leader exit 143 on SIGTERM and a second leader exits 0 | `TestLeaderE2E*` |
+| Headless mode starts no leader | `TestLeaderE2EHeadlessStartsNoLeader` |
+| Signal fallback: a process that is `ask leader` by command line and by recorded start gets SIGTERM; an unrelated live process or a stale PID never does | `TestStopSignalsAVerifiedLeaderProcess`, `TestStopRefusesUnverifiedPID`, `TestStopIgnoresAStalePIDInTheLockFile` |
+| Version skew (supplemental, in process): only an idle leader that a client started is replaced; busy, supervised and newer leaders stay | `TestReplaceOnlyIdleSpawnedLeader`, `TestVersionMismatchOlderClientIsRefusedWithoutReplacement` |
+
+### Changes from the outline
+
+- The mismatch path does not keep one connection for several commands. Each refusal closes the management connection, and a client sends one command for each connection.
+- `ask leader` builds the whole composition before it opens the socket, so a leader that cannot start never has a socket (`ASK_FAUX_TPS=fast` is the real fault used in the test).
+- A status request registers as a normal client, so it counts itself in `clients`.
+- The leader that a person starts is not touched by a client: `SpawnedByClient` is false and the conditional shutdown is refused.
+
+### Known limits
+
+- The original macOS fallback had a check-to-signal gap.
+  That fallback is removed.
+  Current macOS stop requires the socket shutdown control and refuses PID signaling.
+- Linux fallback now requires the verified pidfd path described above.
+- `go build ./...` could not be run because of a local command hook; `go vet ./...` and the test suites compile every package.

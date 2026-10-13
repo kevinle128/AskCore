@@ -72,6 +72,10 @@ type Follow struct {
 	// Cursor is the cut: Entries holds what was committed when the event with
 	// Cursor.Seq was published, and Events starts after it.
 	Cursor Cursor
+	// Head is the last event that was published when the follow began. It is
+	// Cursor for a snapshot. For a resumed follow the events after Cursor, up
+	// to Head, are the ones the client missed.
+	Head Cursor
 	// Entries is the snapshot of the log. It is nil when Resumed.
 	Entries []sessions.Entry
 	// Stream is set when an assistant message was open at the cut.
@@ -133,7 +137,7 @@ func (a *Agent) Follow(cursor Cursor) *Follow {
 	if a.ring == nil {
 		a.ring = bus.NewRing(a.cfg.FollowLimits, a.pub.epoch, a.pub.seq)
 	}
-	f := &Follow{}
+	f := &Follow{Head: Cursor{Epoch: a.pub.epoch, Seq: a.pub.seq}}
 	if cursor.Epoch != "" {
 		if resumed, err := a.ring.Resume(a.cfg.SessionID, cursor.Epoch, cursor.Seq); err == nil {
 			f.Cursor, f.Resumed, f.Events = cursor, true, resumed

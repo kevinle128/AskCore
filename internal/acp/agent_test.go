@@ -39,10 +39,10 @@ func TestAdapterInitializeGateAndCapabilities(t *testing.T) {
 	require.Equal(t, true, prompt["image"])
 	require.NotEqual(t, true, prompt["audio"])
 	require.NotEqual(t, true, prompt["embeddedContext"])
-	if sc, ok := caps["sessionCapabilities"].(map[string]any); ok {
-		for _, k := range []string{"list", "resume", "close", "fork"} {
-			require.NotContains(t, sc, k, "an unavailable capability is not advertised")
-		}
+	sc, _ := caps["sessionCapabilities"].(map[string]any)
+	require.Contains(t, sc, "close", "session/close is available")
+	for _, k := range []string{"list", "resume", "fork"} {
+		require.NotContains(t, sc, k, "an unavailable capability is not advertised")
 	}
 	require.Equal(t, "ask", res["agentInfo"].(map[string]any)["name"])
 	require.Len(t, res["authMethods"], 1)
@@ -345,7 +345,7 @@ func TestAdapterDeferredMethodsAreExplicitlyUnsupported(t *testing.T) {
 	require.Equal(t, -32601, f.Error.Code)
 	f = p.call("_ask/session/nope", map[string]any{"sessionId": sid})
 	require.Equal(t, -32601, f.Error.Code)
-	for _, m := range []string{"session/list", "session/resume", "session/close", "logout", "session/set_mode", "session/set_config_option"} {
+	for _, m := range []string{"session/list", "session/resume", "logout", "session/set_mode", "session/set_config_option"} {
 		f = p.call(m, map[string]any{"sessionId": sid, "cwd": "/", "modeId": "m", "configId": "c", "value": "v", "mcpServers": []any{}})
 		require.NotNil(t, f.Error, m)
 		require.Contains(t, []int{-32601, -32602}, f.Error.Code, m)
@@ -505,4 +505,17 @@ func TestAdapterFailStopsRunsAndClosesOutput(t *testing.T) {
 	f := p.a.Failure()
 	p.a.Fail(errors.New("second failure"))
 	require.Equal(t, f, p.a.Failure(), "the first failure stays")
+}
+
+func TestAdapterCloseSessionDisposesTheSession(t *testing.T) {
+	p := newAdapterPeer(t, testConfig(says("x"), nil), nil)
+	sid := p.start()
+	var res map[string]any
+	p.ok("session/close", map[string]any{"sessionId": sid}, &res)
+	_, ok := p.a.host.Session(sid)
+	require.False(t, ok, "the host forgets a closed session")
+	f := p.call(protocol.ACPState, map[string]any{"sessionId": sid})
+	require.Equal(t, protocol.ACPErrUnknownSession, f.errKind(t))
+	f = p.call("session/close", map[string]any{"sessionId": sid})
+	require.Equal(t, protocol.ACPErrUnknownSession, f.errKind(t), "a second close finds no session")
 }

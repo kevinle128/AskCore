@@ -1,0 +1,8 @@
+{
+  "Replace": {
+    "/Users/dale/.paseo/worktrees/09kf6w9r/worried-ferret/internal/acp/review_regression_test.go": "/Users/dale/.paseo/worktrees/09kf6w9r/worried-ferret/plans/reports/h13b-review-artifacts/acp-regression_test.go.txt",
+    "/Users/dale/.paseo/worktrees/09kf6w9r/worried-ferret/internal/leader/review_regression_test.go": "/Users/dale/.paseo/worktrees/09kf6w9r/worried-ferret/plans/reports/h13b-review-artifacts/leader-regression_test.go.txt",
+    "/Users/dale/.paseo/worktrees/09kf6w9r/worried-ferret/cmd/tui/review_regression_test.go": "/Users/dale/.paseo/worktrees/09kf6w9r/worried-ferret/plans/reports/h13b-review-artifacts/cli-regression_test.go.txt",
+    "/Users/dale/.paseo/worktrees/09kf6w9r/worried-ferret/internal/app/review_regression_test.go": "/Users/dale/.paseo/worktrees/09kf6w9r/worried-ferret/plans/reports/h13b-review-artifacts/app-regression_test.go.txt"
+  }
+}

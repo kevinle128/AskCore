@@ -7,6 +7,8 @@ import (
 	"net/http"
 	"strings"
 	"time"
+	"unicode"
+	"unicode/utf8"
 )
 
 // LoginRequest supplies private, cancellation-aware user interaction.
@@ -16,10 +18,46 @@ type LoginRequest struct {
 	HostID      string
 	Notify      func(context.Context, LoginNotice) error
 	Input       func(context.Context) (string, error)
+	// Account receives the display name of the signed-in account when the
+	// method learns one. It runs before the credential is committed, so the
+	// caller must not treat a call as a successful sign-in.
+	Account func(string)
+	// BeforeCommit runs once, right before the credential is stored. A non-nil
+	// error stops the sign-in and nothing is stored.
+	BeforeCommit func() error
 }
 
 // LoginNotice contains private sign-in instructions, never issued tokens.
-type LoginNotice struct{ URL, UserCode, Message string }
+// ExpiresAt is set only by the device-code flow and is the time after which
+// the user code is no longer valid.
+type LoginNotice struct {
+	URL, UserCode, Message string
+	ExpiresAt              time.Time
+}
+
+const accountNameLimit = 128
+
+// reportAccount hands a display name to the caller. The name comes from a
+// provider answer, so it loses control and format characters and is cut to a
+// fixed length before a terminal can show it.
+func reportAccount(r LoginRequest, name string) {
+	if r.Account == nil {
+		return
+	}
+	var b strings.Builder
+	for _, c := range strings.TrimSpace(name) {
+		if unicode.IsControl(c) || unicode.Is(unicode.Cf, c) || c == utf8.RuneError {
+			continue
+		}
+		if b.Len()+utf8.RuneLen(c) > accountNameLimit {
+			break
+		}
+		b.WriteRune(c)
+	}
+	if v := strings.TrimSpace(b.String()); v != "" {
+		r.Account(v)
+	}
+}
 
 // NativeOptions supplies external HTTP and time boundaries.
 type NativeOptions struct {
@@ -78,7 +116,7 @@ func (s *Service) Login(ctx context.Context, provider, method string, r LoginReq
 	if !found {
 		return ErrMethod
 	}
-	current, revision, err := s.Store.Read(ctx, provider)
+	current, revision, err := s.Store.ReadProvider(ctx, provider)
 	if err != nil {
 		return err
 	}
@@ -108,7 +146,12 @@ func (s *Service) Login(ctx context.Context, provider, method string, r LoginReq
 			return ErrRecovery
 		}
 	}
-	_, err = s.Store.Replace(ctx, provider, revision, next)
+	if r.BeforeCommit != nil {
+		if err = r.BeforeCommit(); err != nil {
+			return err
+		}
+	}
+	_, err = s.Store.ReplaceProvider(ctx, provider, revision, next)
 	return err
 }
 
@@ -124,13 +167,13 @@ func (s *Service) Logout(ctx context.Context, provider, method string) error {
 	if s == nil || s.Store == nil {
 		return ErrNoCredential
 	}
-	c, rev, err := s.Store.Read(ctx, provider)
+	c, rev, err := s.Store.ReadProvider(ctx, provider)
 	if err != nil {
 		return err
 	}
 	if method != "" && c.Method != "" && c.Method != method {
 		return ErrMethod
 	}
-	_, err = s.Store.Logout(ctx, provider, rev)
+	_, err = s.Store.LogoutProvider(ctx, provider, rev)
 	return err
 }

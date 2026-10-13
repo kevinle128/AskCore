@@ -1,11 +1,22 @@
 ---
 phase: 2
 title: "Router: routes, drivers, ordered output"
-status: pending
+status: completed
 priority: P1
 effort: "1.5d"
 dependencies: [1]
 ---
+
+
+## Current repair state (2026-10-09)
+
+[router.go](../../internal/leader/router.go) now records a membership epoch before a pending take has a member.
+A detach prevents a late take result from restoring that client as the live driver.
+The host-assigned generation remains committed.
+The idle barrier also counts requests accepted by the router before the SDK admits them.
+[router_safety_test.go](../../internal/leader/router_safety_test.go) checks these boundaries, concurrent takes and rewritten-line size limits.
+Accepted queue and driver-loss take rules are unchanged.
+The final exit gates passed; the [repair report](../reports/pm-261009-h13b-repairs.md) records their evidence and accepted limits.
 
 # Phase 2: Router: routes, drivers, ordered output
 
@@ -96,6 +107,14 @@ go test -race ./internal/leader/... -count=1
 go run github.com/golangci/golangci-lint/v2/cmd/golangci-lint run ./internal/leader/...
 ```
 
+## Notes from Phase 1
+
+- `leader.Accept` returns `(*Accepted, ErrVersionMismatch)` for a client with another protocol version. The server loop must branch on `Accepted.Management` (or on that error) and send such a client only to `NextManagement`. It must never route its ACP frames.
+- Generate client ids from `[A-Za-z0-9_-]` only. `IDTable.Forward` refuses anything else.
+- `IDTable.Restore` returns `Dropped: true` for a response whose client left. The router uses that to release a session, Follow stream or take that the request created.
+- `LineReader.Next` returns a copy of each line, so a queued broadcast stays valid.
+- The router must run ping handling and the writer on `Accepted.Reader` and `Accepted.Writer`. One goroutine reads and one writes.
+
 ## Risks
 
 - Head-of-line blocking if a lock is held during writes: enforce with the slow-client test.
@@ -130,3 +149,34 @@ Do not resend a prompt on reconnect.
 The pending reverse table is the only shared-question cache; Phase 6 completes its answer and cancellation rules.
 
 Add tests for concurrent complete agent-link writes, invalid initialize, repeated initialize, failed implicit subscription, explicit detach staying detached, busy foreign-view switch, late new/take/follow results after disconnect, repeated Unfollow, and stale events after detach then reattach.
+
+## Historical review (2026-10-08)
+
+### What was built
+
+`internal/leader`: `server.go` (accept loop, client reader and writer goroutines, agent-link reader and writer, link initialize, control frames, ordered shutdown), `router.go` (one goroutine that owns all routing state), `policy.go` (the one method table), `rpc.go` (JSON-RPC helpers, route-meta injection), `queue.go` (unbounded FIFO). `pkg/protocol` gained the take, attach and list-live results, the `not_driver` and `client_not_initialized` error kinds, and the `ifIdle` control flag.
+
+### Evidence
+
+| Check | Result |
+|---|---|
+| `go test -race ./internal/leader -count=4` | pass, goleak clean |
+| `golangci-lint` on `internal/leader` and `pkg/protocol` | 0 issues |
+| Real Unix socket, real `Register` clients, scripted NDJSON agent over pipes | every RED-list test below |
+
+All tests in the RED list exist and pass: uninitialized client, creator is driver, observer mutation and cancel notification, take with the live-driver flag and the copied generation, initialize answered from the cache, link initialize before ready, new session changes only the caller's view, route meta overwrite, Follow owner-only, unfollow by another client, detach unfollows and fences old events, session update to subscribers only, orphan notification, prompt result after its updates, slow client, ping, disconnect, implicit subscribe, replay of pending questions, eviction of resolved questions, client loss keeps the agent stream. The extra tests of the routing rules section are also there: concurrent complete writes (8 clients, same ids), invalid and repeated initialize, failed implicit subscribe, explicit detach stays detached, late new-session, take and Follow results after the client left, repeated Unfollow, oversize outgoing frame closes only its recipient.
+
+### Changes from the outline
+
+- **The reverse-request table moved here from Phase 6.** The router cannot be correct without it, so one table serves shared questions (first valid answer wins, late and duplicate answers ignored, the other clients get `$/cancel_request`), driver-only calls (`fs/*`, `terminal/*`, with a capability check and a safe error to the agent when nobody can answer), replay on attach, cancel on driver loss, detach or take of the same generation, and the agent's own `$/cancel_request`. It is covered by `router_reverse_test.go`. Phase 6 re-proves it against the real host.
+- The server starts accepting clients only after the link initialize. `leader_ready` stays in the protocol, but the server always registers clients as ready.
+- A management-only connection (version mismatch) is closed after each answer. A client sends one command for each connection.
+- `attach` is always allowed. It observes. The roadmap rule "a switch on a busy session you do not drive is rejected" is `take`: the host rejects a take of a busy session with a live foreign driver.
+- A finished reverse request is remembered for late answers; the router keeps the last 4096. This is housekeeping, not a limit on new requests.
+- Client ids are `c1`, `c2` and so on; internal router requests use `leader:N`.
+
+### Open items passed on
+
+- Phase 3 must make the real host return `_meta["ask.dev/route"].driverGen` on `session/new` and `driverGen` in the take result, reject a stale generation, and accept the `liveDriver` flag. The router treats a missing generation as an internal error.
+- `Config.ActiveRuns` and `Config.QuiesceIfIdle` are supplied by app in Phase 3.
+- `scripted agent` tests prove the router only. No acceptance row rests on them.

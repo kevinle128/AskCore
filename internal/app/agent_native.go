@@ -1,12 +1,14 @@
 package app
 
 import (
+	"AskCore/internal/acp"
 	"AskCore/internal/agent"
 	"AskCore/internal/auth"
 	"AskCore/internal/providers"
 	"AskCore/internal/providers/anthropic"
 	"AskCore/internal/providers/openai"
 	"context"
+	"errors"
 	"fmt"
 	"net/http"
 	"os"
@@ -16,8 +18,11 @@ import (
 // NativeAgentConfig supplies session ownership and private inference transport.
 // Config retains tool, session writer, pipeline, and lifecycle options.
 type NativeAgentConfig struct {
-	Config        agent.Config
+	Config agent.Config
+	// InitialStream serves InitialAPI, or Config.Model.API when InitialAPI is
+	// empty. Its API can differ from the saved model of a new session.
 	InitialStream providers.StreamFn
+	InitialAPI    providers.API
 	Auth          *auth.Service
 	Env           func(string) (string, bool)
 	HTTPClient    *http.Client
@@ -39,11 +44,16 @@ func NewNativeAgent(in NativeAgentConfig) (*agent.Agent, error) {
 	if !info.IsDir() {
 		return nil, fmt.Errorf("native agent: cwd must be a directory")
 	}
-	if in.InitialStream == nil {
-		return nil, fmt.Errorf("native agent: initial stream is required")
-	}
 	wires := providers.NewRegistry()
-	wires.Register(cfg.Model.API, in.InitialStream)
+	// The initial stream serves the demo model. A session with no demo model
+	// has none and uses the native wires only.
+	if in.InitialStream != nil {
+		api := in.InitialAPI
+		if api == "" {
+			api = cfg.Model.API
+		}
+		wires.Register(api, in.InitialStream)
+	}
 	aopts := []anthropic.Option{anthropic.WithEnv(in.Env)}
 	oopts := []openai.Option{openai.WithEnv(in.Env)}
 	if in.HTTPClient != nil {
@@ -68,7 +78,7 @@ func NewNativeAgent(in NativeAgentConfig) (*agent.Agent, error) {
 			if m.Provider == "faux" {
 				return nil
 			}
-			return ready(ctx, m, key)
+			return markModelAccess(ready(ctx, m, key))
 		}
 	}
 	return agent.New(cfg)
@@ -103,10 +113,19 @@ func NativeAuthReady(ctx context.Context, s *auth.Service, m providers.Model, ke
 	}
 	binding, err := s.Resolve(ctx, m, key)
 	if err != nil {
-		return err
+		return markModelAccess(err)
 	}
 	if requestedMethod != "" && binding.Method != requestedMethod {
 		return auth.ErrMethod
 	}
 	return nil
+}
+
+// markModelAccess tags an account access denial, so that a client can tell it
+// from a missing sign-in. Any other error stays as it is.
+func markModelAccess(err error) error {
+	if errors.Is(err, auth.ErrAccess) {
+		return fmt.Errorf("%w: %w", acp.ErrModelAccess, err)
+	}
+	return err
 }

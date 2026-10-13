@@ -351,3 +351,29 @@ func TestInputRewrittenToFewerMessagesIsAcknowledgedAsDropped(t *testing.T) {
 	assert.Equal(t, 1, accepted)
 	assert.Equal(t, 1, dropped)
 }
+
+// State reads the queue itself, not the last queue_update that a listener got:
+// a caller that queued or removed an input sees the change at once, also while
+// the publisher still holds the update.
+func TestStateShowsTheQueueBeforeListenersSeeTheUpdate(t *testing.T) {
+	p, m := newFaux(t)
+	a := newAgent(t, p, m, nil)
+	ids := keepQueued(t, a, "k1", "k2")
+	assert.Equal(t, []string{"k1", "k2"}, a.State().FollowUp)
+
+	held, release := make(chan struct{}), make(chan struct{})
+	var once sync.Once
+	a.Subscribe(func(ev protocol.Event) error {
+		if _, ok := ev.(*protocol.QueueUpdate); ok {
+			once.Do(func() { close(held); <-release })
+		}
+		return nil
+	})
+	require.True(t, a.Remove(ids[0]))
+	require.NoError(t, waitOrFail(context.Background(), held, "the publisher"))
+	require.True(t, a.Remove(ids[1])) // its update waits behind the held one
+	st := a.State()
+	assert.Empty(t, st.FollowUp, "the queue is read at once")
+	assert.Empty(t, st.Steering)
+	close(release)
+}

@@ -394,7 +394,7 @@ func TestBrowserClosedInputAndStateBoundDenial(t *testing.T) {
 				}()
 				return nil
 			}}, "https://claude.ai/oauth/authorize", "http://localhost:53692/callback", "state", true, false)
-			if denied && !errors.Is(e, errAuthorizationDenied) {
+			if denied && !errors.Is(e, ErrAuthorizationDenied) {
 				t.Fatalf("denial: %v", e)
 			}
 			if !denied && e != nil {

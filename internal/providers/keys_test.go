@@ -62,3 +62,28 @@ func TestResolveKey(t *testing.T) {
 		require.ErrorIs(t, err, boom)
 	})
 }
+
+func TestKeyEnvNames(t *testing.T) {
+	t.Parallel()
+	assert.Equal(t, []string{"ASK_ALIBABA_TOKEN_PLAN_API_KEY", "ALIBABA_TOKEN_PLAN_API_KEY"}, KeyEnvNames(ProviderTokenPlan))
+	assert.Equal(t, []string{"ANTHROPIC_API_KEY"}, KeyEnvNames(ProviderAnthropic))
+	assert.Equal(t, []string{"XAI_API_KEY"}, KeyEnvNames(ProviderXAI))
+	assert.Equal(t, []string{"OPENAI_API_KEY"}, KeyEnvNames(ProviderOpenAI))
+	assert.Empty(t, KeyEnvNames("other"))
+	// A caller cannot change the shared table through the result.
+	names := KeyEnvNames(ProviderOpenAI)
+	names[0] = "CHANGED"
+	assert.Equal(t, []string{"OPENAI_API_KEY"}, KeyEnvNames(ProviderOpenAI))
+}
+
+func TestKeyEnvNameReturnsSetVariable(t *testing.T) {
+	t.Parallel()
+	env := func(values map[string]string) func(string) (string, bool) {
+		return func(k string) (string, bool) { v, ok := values[k]; return v, ok }
+	}
+	assert.Equal(t, "ALIBABA_TOKEN_PLAN_API_KEY", KeyEnvName(ProviderTokenPlan, env(map[string]string{"ALIBABA_TOKEN_PLAN_API_KEY": "k"})))
+	assert.Equal(t, "ASK_ALIBABA_TOKEN_PLAN_API_KEY", KeyEnvName(ProviderTokenPlan, env(map[string]string{"ASK_ALIBABA_TOKEN_PLAN_API_KEY": "k", "ALIBABA_TOKEN_PLAN_API_KEY": "k"})))
+	assert.Empty(t, KeyEnvName(ProviderOpenAI, env(map[string]string{"OPENAI_API_KEY": "   "})), "a blank value is not a key")
+	assert.Empty(t, KeyEnvName(ProviderOpenAI, nil))
+	assert.Empty(t, KeyEnvName("other", env(map[string]string{"OPENAI_API_KEY": "k"})))
+}

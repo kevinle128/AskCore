@@ -38,6 +38,14 @@ type options struct {
 	transport http.RoundTripper
 	// wait is the retry clock. Nil uses the production timer.
 	wait func(context.Context, time.Duration) error
+	// environ returns the environment that the child processes of the tools
+	// inherit from. Nil means os.Environ.
+	environ func() []string
+	// onJobError receives the errors that the job table of a session cannot
+	// report to a caller, such as a notice that the Agent refused. Nil writes
+	// one line to stderr, which suits print mode, ask acp and the leader (its
+	// stderr is the leader log).
+	onJobError func(error)
 }
 
 // diagnostic is one parse problem. Any error ends the program with exit 1; a
@@ -177,6 +185,9 @@ Usage:
   ask [options] [--] [@files...] [messages...]
   ask auth --help
   ask acp --help
+  ask connect --help
+  ask leader --help
+  ask version [--json]
 
 Options:
   --print, -p           Non-interactive mode: run the prompt, print the reply and exit

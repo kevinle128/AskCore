@@ -85,6 +85,25 @@ type authDocument struct {
 	fields    map[string]json.RawMessage
 	providers map[string]json.RawMessage
 	revision  uint64
+	revisions *providerRevisions
+}
+
+// providerRevisions keeps a revision for each changed provider, including
+// removed providers. StoreRevision detects writes by an older store version.
+type providerRevisions struct {
+	StoreRevision uint64            `json:"storeRevision"`
+	Baseline      uint64            `json:"baseline"`
+	Providers     map[string]uint64 `json:"providers"`
+}
+
+func (d *authDocument) providerRevision(provider string) uint64 {
+	if d.revisions == nil || d.revisions.StoreRevision != d.revision {
+		return d.revision
+	}
+	if revision, ok := d.revisions.Providers[provider]; ok {
+		return revision
+	}
+	return d.revisions.Baseline
 }
 
 func validProvider(p string) bool {
@@ -170,6 +189,16 @@ func readDocument(path string) (authDocument, error) {
 			return d, fmt.Errorf("%w: invalid revision", ErrUnsafeStore)
 		}
 	}
+	if raw := d.fields["providerRevisions"]; len(raw) > 0 {
+		if json.Unmarshal(raw, &d.revisions) != nil || d.revisions == nil || d.revisions.Providers == nil || d.revisions.StoreRevision > d.revision || d.revisions.Baseline > d.revisions.StoreRevision {
+			return d, fmt.Errorf("%w: invalid provider revisions", ErrUnsafeStore)
+		}
+		for provider, revision := range d.revisions.Providers {
+			if !validProvider(provider) || revision < d.revisions.Baseline || revision > d.revisions.StoreRevision {
+				return d, fmt.Errorf("%w: invalid provider revision", ErrUnsafeStore)
+			}
+		}
+	}
 	if raw := d.fields["providers"]; len(raw) > 0 {
 		if json.Unmarshal(raw, &d.providers) != nil || d.providers == nil {
 			return d, fmt.Errorf("%w: invalid providers", ErrUnsafeStore)
@@ -215,13 +244,21 @@ func (s *AuthStore) transaction(ctx context.Context, provider string, update fun
 	if err = update(&d); err != nil {
 		return d.revision, err
 	}
-	return s.writeDocument(ctx, path, &d)
+	return s.writeDocument(ctx, path, provider, &d)
 }
 
-func (s *AuthStore) writeDocument(ctx context.Context, path string, d *authDocument) (uint64, error) {
+func (s *AuthStore) writeDocument(ctx context.Context, path, provider string, d *authDocument) (uint64, error) {
+	if d.revisions == nil || d.revisions.StoreRevision != d.revision {
+		// An older writer advances the global revision only. Fence every earlier
+		// provider read before starting a new set of provider revisions.
+		d.revisions = &providerRevisions{Baseline: d.revision, Providers: map[string]uint64{}}
+	}
 	d.revision++
+	d.revisions.StoreRevision = d.revision
+	d.revisions.Providers[provider] = d.revision
 	d.fields["schemaVersion"] = json.RawMessage("1")
 	d.fields["revision"], _ = json.Marshal(d.revision)
+	d.fields["providerRevisions"], _ = json.Marshal(d.revisions)
 	providers, err := json.Marshal(d.providers)
 	if err != nil {
 		return 0, err
@@ -311,6 +348,16 @@ func (s *AuthStore) commit(ctx context.Context, path string, b []byte) error {
 
 // Read returns one credential and the store-wide revision.
 func (s *AuthStore) Read(ctx context.Context, provider string) (Credential, uint64, error) {
+	return s.read(ctx, provider, false)
+}
+
+// ReadProvider returns a credential and its provider revision. Unrelated
+// provider writes do not change it; a logout does, even without a credential.
+func (s *AuthStore) ReadProvider(ctx context.Context, provider string) (Credential, uint64, error) {
+	return s.read(ctx, provider, true)
+}
+
+func (s *AuthStore) read(ctx context.Context, provider string, scoped bool) (Credential, uint64, error) {
 	var c Credential
 	if !validProvider(provider) {
 		return c, 0, fmt.Errorf("%w: provider", ErrUnsafeStore)
@@ -331,16 +378,30 @@ func (s *AuthStore) Read(ctx context.Context, provider string) (Credential, uint
 	if err != nil {
 		return c, 0, err
 	}
+	revision := d.revision
+	if scoped {
+		revision = d.providerRevision(provider)
+	}
 	raw := d.providers[provider]
 	if len(raw) == 0 {
-		return c, d.revision, nil
+		return c, revision, nil
 	}
 	c, err = decodeCredential(raw)
-	return c, d.revision, err
+	return c, revision, err
 }
 
 // Replace writes one credential only if the store-wide revision still matches.
 func (s *AuthStore) Replace(ctx context.Context, p string, expected uint64, c Credential) (uint64, error) {
+	return s.replace(ctx, p, expected, c, false)
+}
+
+// ReplaceProvider writes a credential if its provider revision still matches.
+// It returns the new global revision, as Replace does.
+func (s *AuthStore) ReplaceProvider(ctx context.Context, p string, expected uint64, c Credential) (uint64, error) {
+	return s.replace(ctx, p, expected, c, true)
+}
+
+func (s *AuthStore) replace(ctx context.Context, p string, expected uint64, c Credential, scoped bool) (uint64, error) {
 	raw, err := json.Marshal(c)
 	if err != nil {
 		return 0, err
@@ -349,7 +410,11 @@ func (s *AuthStore) Replace(ctx context.Context, p string, expected uint64, c Cr
 		return 0, err
 	}
 	return s.transaction(ctx, p, func(d *authDocument) error {
-		if d.revision != expected {
+		revision := d.revision
+		if scoped {
+			revision = d.providerRevision(p)
+		}
+		if revision != expected {
 			return ErrConflict
 		}
 		old := d.providers[p]
@@ -374,8 +439,22 @@ func (s *AuthStore) Replace(ctx context.Context, p string, expected uint64, c Cr
 
 // Logout deletes one credential and advances revision even if it was absent.
 func (s *AuthStore) Logout(ctx context.Context, p string, expected uint64) (uint64, error) {
+	return s.logout(ctx, p, expected, false)
+}
+
+// LogoutProvider deletes a credential if its provider revision still matches.
+// It retains a provider revision after removal and returns the global revision.
+func (s *AuthStore) LogoutProvider(ctx context.Context, p string, expected uint64) (uint64, error) {
+	return s.logout(ctx, p, expected, true)
+}
+
+func (s *AuthStore) logout(ctx context.Context, p string, expected uint64, scoped bool) (uint64, error) {
 	return s.transaction(ctx, p, func(d *authDocument) error {
-		if d.revision != expected {
+		revision := d.revision
+		if scoped {
+			revision = d.providerRevision(p)
+		}
+		if revision != expected {
 			return ErrConflict
 		}
 		delete(d.providers, p)
@@ -488,7 +567,7 @@ func (s *AuthStore) Refresh(ctx context.Context, p string, generation uint64, at
 	if err != nil {
 		return empty, err
 	}
-	if _, err = s.writeDocument(ctx, path, &d); err != nil {
+	if _, err = s.writeDocument(ctx, path, p, &d); err != nil {
 		return empty, err
 	}
 	exchangeCtx, cancel := context.WithTimeout(ctx, 15*time.Second)
@@ -515,7 +594,7 @@ func (s *AuthStore) Refresh(ctx context.Context, p string, generation uint64, at
 		return empty, err
 	}
 	d.providers[p] = raw
-	if _, err = s.writeDocument(commitCtx, path, &d); err != nil {
+	if _, err = s.writeDocument(commitCtx, path, p, &d); err != nil {
 		return empty, err
 	}
 	return cloneCredential(replacement), nil

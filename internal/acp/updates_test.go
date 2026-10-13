@@ -85,6 +85,79 @@ func TestACPUpdatesToolLifecycle(t *testing.T) {
 	require.Equal(t, "failed", marshalUpdate(t, ups[0])["status"])
 }
 
+func TestStandardUpdatesSetsKindByToolName(t *testing.T) {
+	cases := map[string]string{
+		"read": "read", "write": "edit", "edit": "edit",
+		"ls": "search", "grep": "search", "find": "search",
+		"bash": "execute", "monitor": "execute",
+		"echo": "other", "job_output": "other", "job_kill": "other", "job_list": "other",
+		"mcp__srv__tool": "other",
+	}
+	for name, want := range cases {
+		ups := standardUpdates(blockEvent(protocol.ToolCallStartEvent{ID: "c1", ToolName: name}))
+		require.Len(t, ups, 1, name)
+		require.Equal(t, want, marshalUpdate(t, ups[0])["kind"], name)
+	}
+}
+
+func endWithDetails(details string, text string) *protocol.ToolExecutionEnd {
+	res := protocol.ToolExecutionResult{Content: []protocol.UserBlock{protocol.Text{Text: text}}}
+	if details != "" {
+		res.Details = json.RawMessage(details)
+	}
+	return &protocol.ToolExecutionEnd{ToolCallID: "c1", ToolName: "edit", Result: res}
+}
+
+func TestStandardUpdatesAddsDiffAndLocationsForEdit(t *testing.T) {
+	details := `{"path":"/w/a.go","kind":"edit","diff":{"path":"/w/a.go","oldText":"old\n","newText":"new\n"},"locations":[{"path":"/w/a.go","line":3},{"path":"/w/a.go"}]}`
+	ups := standardUpdates(endWithDetails(details, "edited"))
+	require.Len(t, ups, 1)
+	m := marshalUpdate(t, ups[0])
+	require.Equal(t, "completed", m["status"])
+	require.Equal(t, "edit", m["kind"])
+	content := m["content"].([]any)
+	require.Len(t, content, 2)
+	diff := content[0].(map[string]any)
+	require.Equal(t, "diff", diff["type"])
+	require.Equal(t, "/w/a.go", diff["path"])
+	require.Equal(t, "old\n", diff["oldText"])
+	require.Equal(t, "new\n", diff["newText"])
+	text := content[1].(map[string]any)
+	require.Equal(t, "content", text["type"])
+	require.Equal(t, "edited", text["content"].(map[string]any)["text"])
+	require.Equal(t, []any{
+		map[string]any{"path": "/w/a.go", "line": float64(3)},
+		map[string]any{"path": "/w/a.go"},
+	}, m["locations"])
+}
+
+func TestStandardUpdatesAddsLocationsForRead(t *testing.T) {
+	ev := endWithDetails(`{"path":"/w/a.go","kind":"read","locations":[{"path":"/w/a.go","line":10}]}`, "body")
+	ev.ToolName = "read"
+	m := marshalUpdate(t, standardUpdates(ev)[0])
+	require.Equal(t, "read", m["kind"])
+	require.Equal(t, []any{map[string]any{"path": "/w/a.go", "line": float64(10)}}, m["locations"])
+	content := m["content"].([]any)
+	require.Len(t, content, 1)
+	require.Equal(t, "body", content[0].(map[string]any)["content"].(map[string]any)["text"])
+}
+
+func TestStandardUpdatesIgnoresUnknownDetails(t *testing.T) {
+	plain := marshalUpdate(t, standardUpdates(endWithDetails("", "out"))[0])
+	for _, details := range []string{`{"foo":1}`, `{"foo":`, `[1,2]`, `"text"`, `null`, `{"kind":"bogus"}`} {
+		got := marshalUpdate(t, standardUpdates(endWithDetails(details, "out"))[0])
+		require.Equal(t, plain, got, details)
+	}
+	require.NotContains(t, plain, "kind")
+	require.NotContains(t, plain, "locations")
+}
+
+func TestStandardUpdatesKeepsUserMessagesOut(t *testing.T) {
+	msg := protocol.UserMessage{Content: []protocol.UserBlock{protocol.Text{Text: protocol.SystemReminder("note")}}}
+	require.Empty(t, standardUpdates(&protocol.MessageStart{Message: msg}))
+	require.Empty(t, standardUpdates(&protocol.MessageEnd{Message: msg}))
+}
+
 func TestACPUpdatesLifecycleEventsHaveNoStandardForm(t *testing.T) {
 	for _, ev := range []protocol.Event{&protocol.AgentStart{}, &protocol.AgentSettled{}, &protocol.QueueUpdate{}, &protocol.AutoRetryStart{}, &protocol.AttemptEnd{}, &protocol.CycleEnd{}} {
 		require.Empty(t, standardUpdates(ev), ev.EventType())

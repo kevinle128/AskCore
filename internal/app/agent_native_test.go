@@ -12,8 +12,14 @@ import (
 
 func TestNativeAgentExplicitIdentity(t *testing.T) {
 	cfg := NativeAgentConfig{Config: agent.Config{SessionID: "session-explicit", LoopConfig: agent.LoopConfig{Cwd: t.TempDir()}}}
-	if _, err := NewNativeAgent(cfg); err == nil {
-		t.Fatal("missing initial stream accepted")
+	// The initial stream serves the demo model only; a catalog model or no
+	// model needs none.
+	ag, err := NewNativeAgent(cfg)
+	if err != nil {
+		t.Fatalf("an agent with no initial stream: %v", err)
+	}
+	if ag.State().Model.ID != "" {
+		t.Fatal("an agent with no model reports one")
 	}
 	cfg.Config.SessionID = ""
 	if _, err := NewNativeAgent(cfg); err == nil {

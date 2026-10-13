@@ -25,6 +25,8 @@ func TestAdapterErrorMapperKinds(t *testing.T) {
 		{"host closed", ErrHostClosed, protocol.ACPErrDisposed},
 		{"no key", agent.ErrNoAPIKey, protocol.ACPErrNoAPIKey},
 		{"auth", fmt.Errorf("%w: %s", ErrAuth, secret), protocol.ACPErrNoAPIKey},
+		{"model access", fmt.Errorf("%w: %w", ErrAuth, fmt.Errorf("%w: %s", ErrModelAccess, secret)), protocol.ACPErrModelAccess},
+		{"model access alone", ErrModelAccess, protocol.ACPErrModelAccess},
 		{"queue full", agent.ErrQueueFull, protocol.ACPErrQueueFull},
 		{"no input", agent.ErrNoInput, protocol.ACPErrInvalidContent},
 		{"continue empty", agent.ErrContinueEmpty, protocol.ACPErrInvalidState},

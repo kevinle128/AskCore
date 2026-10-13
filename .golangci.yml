@@ -26,24 +26,52 @@ linters:
             - $gostd
             - AskCore/pkg/protocol
         tui-client-boundary:
+          list-mode: strict
+          files:
+            - "**/internal/tui/**"
+          allow:
+            - $gostd
+            - AskCore/pkg/protocol
+            - AskCore/pkg/askui
+            - AskCore/internal/tuiext
+            - AskCore/internal/tui
+            # Terminal UI libraries: Bubble Tea, Lip Gloss, Glamour (charm.land),
+            # the Charm x packages, and the syntax highlighter and width helpers
+            # that they build on.
+            - charm.land
+            - github.com/charmbracelet
+            - github.com/alecthomas/chroma
+            - github.com/rivo/uniseg
+            - github.com/mattn/go-runewidth
+            - golang.org/x/text
+            - golang.org/x/term
+            # Test helpers only.
+            - github.com/stretchr/testify
+            - go.uber.org/goleak
+        # Depguard matches a package path by prefix, so the allow entry
+        # AskCore/internal/tui above also matches AskCore/internal/tuiclient.
+        # This rule closes that gap.
+        tui-no-client-implementation:
           list-mode: lax
           files:
             - "**/internal/tui/**"
           deny:
-            - pkg: AskCore/internal/agent
-              desc: terminal components receive client dependencies through constructors
-            - pkg: AskCore/internal/acp
-              desc: terminal components receive client dependencies through constructors
-            - pkg: AskCore/internal/leader
-              desc: terminal components receive client dependencies through constructors
-            - pkg: AskCore/internal/providers
-              desc: terminal components receive client dependencies through constructors
-            - pkg: AskCore/internal/tools
-              desc: terminal components receive client dependencies through constructors
-            - pkg: AskCore/internal/store
-              desc: terminal components receive client dependencies through constructors
-            - pkg: AskCore/internal/config
-              desc: terminal components receive client dependencies through constructors
+            - pkg: AskCore/internal/tuiclient
+              desc: terminal components receive the client through the tui.Client interface
+        tuiclient-boundary:
+          list-mode: strict
+          files:
+            - "**/internal/tuiclient/**"
+          allow:
+            - $gostd
+            - AskCore/pkg/protocol
+            - AskCore/internal/leader
+            - AskCore/internal/tui
+            - AskCore/internal/tuiclient
+            - github.com/coder/acp-go-sdk
+            # Test helpers only. Production code has no use for them.
+            - github.com/stretchr/testify
+            - go.uber.org/goleak
         tuiext-host-boundary:
           list-mode: strict
           files:
@@ -60,6 +88,9 @@ linters:
             - "**/internal/agent/**"
             - "**/internal/pipeline/**"
             - "**/internal/tools/**"
+            - "**/internal/sandbox/**"
+            - "**/internal/jobs/**"
+            - "**/internal/workspace/**"
             - "**/internal/providers/**"
             - "**/internal/store/**"
             - "**/internal/sessions/**"
@@ -68,6 +99,8 @@ linters:
           deny:
             - pkg: AskCore/internal/tui
               desc: core packages must not depend on terminal components or UI extension hosts
+            - pkg: AskCore/internal/tuiclient
+              desc: core packages must not depend on the terminal client of the agent
         settings-stdlib-only:
           list-mode: strict
           files:
@@ -87,6 +120,9 @@ linters:
           list-mode: lax
           files:
             - "**/internal/tools/**"
+            - "**/internal/sandbox/**"
+            - "**/internal/jobs/**"
+            - "**/internal/workspace/**"
             - "**/internal/pipeline/**"
             - "**/internal/providers/**"
             - "**/internal/store/**"
@@ -100,6 +136,9 @@ linters:
             - "**/internal/agent/**"
             - "**/internal/pipeline/**"
             - "**/internal/tools/**"
+            - "**/internal/sandbox/**"
+            - "**/internal/jobs/**"
+            - "**/internal/workspace/**"
             - "**/internal/providers/**"
             - "**/internal/store/**"
           deny:
@@ -115,6 +154,9 @@ linters:
             - "**/internal/agent/**"
             - "**/internal/pipeline/**"
             - "**/internal/tools/**"
+            - "**/internal/sandbox/**"
+            - "**/internal/jobs/**"
+            - "**/internal/workspace/**"
             - "**/internal/providers/**"
             - "**/internal/store/**"
             - "**/internal/sessions/**"
@@ -125,6 +167,19 @@ linters:
               desc: the ACP adapter wraps the agent; core packages must not import it
             - pkg: AskCore/internal/leader
               desc: the leader routes bytes to the agent; core packages must not import it
+        leader-router-boundary:
+          list-mode: strict
+          files:
+            - "**/internal/leader/**"
+          allow:
+            - $gostd
+            - AskCore/pkg/protocol
+            - AskCore/internal/logs
+            - golang.org/x/sys/unix
+            - go.uber.org/zap
+            # Test helpers only. Production code has no use for them.
+            - github.com/stretchr/testify
+            - go.uber.org/goleak
         providers-no-tools:
           list-mode: lax
           files:

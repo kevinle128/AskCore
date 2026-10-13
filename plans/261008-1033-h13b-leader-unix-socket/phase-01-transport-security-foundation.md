@@ -1,11 +1,23 @@
 ---
 phase: 1
 title: "Transport and security foundation"
-status: pending
+status: completed
 priority: P1
 effort: "2d"
 dependencies: []
 ---
+
+
+## Current repair state (2026-10-09)
+
+The original descriptor and socket-cleanup gaps are repaired.
+[paths.go](../../internal/leader/paths.go) opens checked private directories and uses descriptor-relative artifact opens.
+[lock.go](../../internal/leader/lock.go) retains the directory handle and checks socket identity before removal while the flock is held.
+[the command](../../cmd/tui/leader.go) disables automatic Unix-listener unlink.
+Replacement-socket and held-directory checks are in [lock_test.go](../../internal/leader/lock_test.go) and [leader_regression_test.go](../../cmd/tui/leader_regression_test.go).
+The SDK source patch is selected by the relative `replace` in [go.mod](../../go.mod); [PATCH.txt](../../third_party/acp-go-sdk/PATCH.txt) owns its provenance.
+The full Linux leader test binary passed in `alpine:3` after repair.
+The final exit gates passed; the [repair report](../reports/pm-261009-h13b-repairs.md) records their evidence and accepted limits.
 
 # Phase 1: Transport and security foundation
 
@@ -204,18 +216,18 @@ Record the result in the phase review section.
 
 ## Tasks & Steps
 
-1. [ ] Add protocol types and `TestLeaderFrameJSONNames` (RED → GREEN).
-2. [ ] Frame codec tests, then implementation; add fuzz seed corpus.
-3. [ ] Id table tests, then implementation.
-4. [ ] Path and private-open tests, then implementation.
-5. [ ] Lock tests (goroutine, child process, inode, stale socket), then implementation.
-6. [ ] Peer credential tests on darwin; implementation for darwin, linux, other.
-7. [ ] Handshake tests on a real socket, then implementation.
-8. [ ] Depguard rule plus negative control.
-9. [ ] `go.mod`: move only `golang.org/x/sys` to direct; confirm `go build ./...`.
+1. [x] Add protocol types and `TestLeaderFrameJSONNames` (RED → GREEN).
+2. [x] Frame codec tests, then implementation; add fuzz seed corpus.
+3. [x] Id table tests, then implementation.
+4. [x] Path and private-open tests, then implementation.
+5. [x] Lock tests (goroutine, child process, inode, stale socket), then implementation.
+6. [x] Peer credential tests on darwin; implementation for darwin, linux, other.
+7. [x] Handshake tests on a real socket, then implementation.
+8. [x] Depguard rule plus negative control.
+9. [x] `go.mod`: move only `golang.org/x/sys` to direct; confirm `go build ./...`.
   Do not bundle other tidy drift.
-10. [ ] Route-context spike; write the result below.
-11. [ ] Run tests-after commands; record outputs.
+10. [x] Route-context spike; write the result below.
+11. [x] Run tests-after commands; record outputs.
 
 ## Verification
 
@@ -247,11 +259,48 @@ go build ./... && go vet ./...
 
 ## Spike result
 
-_To be filled during cook: go or fallback, with test output._
+**Go.** `TestRouteMetaReachesAdapter` (`internal/acp/route_meta_test.go`) drives a real `AgentSideConnection` over pipes with one link-level `initialize`. It sends `session/new` (twice), `session/prompt`, `session/cancel` and `_ask/session/state` with two different route metas. A recording `sdk.Agent` wrapper around a real `*Adapter` sees each meta exactly as sent, including a `driverGen` of `9007199254740993` that stays exact as decimal text. The adapter results are unchanged (two independent sessions, `end_turn`). This proves SDK delivery only. The adapter still ignores `req.Meta`; Phase 3 proves consumption with `TestAdapterRouteMetaCapabilitiesPerSession`.
 
-## Review
+## Historical review
 
-_To be filled after cook._
+### Evidence (2026-10-08)
+
+| Check | Result |
+|---|---|
+| `go test -race ./internal/leader/... ./pkg/protocol/... -count=1` | pass (goleak on the whole leader package) |
+| `go test -race ./internal/acp/... ./internal/app/... -count=1` | pass |
+| `go test ./cmd/tui/... -count=1` | pass (61 s); editor and headless unchanged |
+| `GOOS=linux go vet` and `GOOS=freebsd go vet ./internal/leader/...` | pass |
+| Linux test binary of `internal/leader` run in an `alpine:3` arm64 container (root) | pass: peer check with the real `SO_PEERCRED` call, lock, paths, handshake |
+| `golangci-lint run ./...` | 0 issues |
+| Depguard negative control | a scratch file importing `AskCore/internal/acp` in `internal/leader` fails with `not allowed from list 'leader-router-boundary'`; the file was removed |
+| `go vet ./...` | pass |
+| `go mod tidy -diff` | only the existing `go-oidc` drift remains; `x/sys` moved to the direct block |
+
+### Changes from the design text
+
+- `Paths` has no `PID` field. The PID lives in the lock file, as architecture 7.3 says. `ReadPID(paths)` reads it.
+- No `lock_unix.go`. `internal/leader` is unix-only through `syscall`, like `internal/settings`, so one `lock.go` holds the flock code.
+- `EnsureHome` keeps the strict parent rule of `internal/settings` (the parent must be a real directory, not a symlink). A probe confirmed that settings refuses `ASK_HOME=/tmp/x` on macOS and accepts `/tmp/<real directory>/x`, so the leader and native auth now share one policy. Tests build their home under `filepath.EvalSymlinks` of a `/tmp` directory (`/private/tmp/...` on macOS).
+- `FrameReader` reads the body with `io.ReadAll(io.LimitReader)` after the size check. A peer that claims 64 MiB and sends nothing cannot make the leader allocate 64 MiB. `TestFrameHostileLengthDoesNotPreallocate` covers it.
+- `ServerConfig.OwnerUID` is a pointer; nil means the current user, so UID 0 stays a valid owner.
+- `Accept(conn, cfg, clientID)` returns reader and writer for the caller. After a version mismatch it returns a management-only connection (`Accepted.Management`); `NextManagement` allows only `status` and `shutdown` control frames and refuses ACP.
+- `Accept` returns the management-only connection together with `ErrVersionMismatch`, so a caller cannot take a mismatch for success.
+- `IDTable.Forward` refuses a client id outside letters, digits, `-` and `_` (`ErrInvalidClientID`). `Restore` finds the echoed id by exact bytes, and a character such as `<` would change under JSON escaping.
+- `LineReader` returns a copy of each line. A first version returned the reuse buffer, and a test showed a held line turning into the next one.
+- `LeaderControl`, `LeaderControlStatus` and `LeaderControlShutdown` were added to `pkg/protocol` for that management path.
+
+### Gaps and open gates
+
+- The manual root check (`sudo nc -U`) was not run: `sudo` is interactive. The automated tests run the real syscall with an injected owner UID, as decided.
+- **SDK parser gate (blocks Phase 3, not Phase 1):** the installed SDK `receive` scanner stops at 10 MiB. The leader codecs already accept 64 MiB frames and 65 MiB internal lines, but the common ACP connection needs a pinned SDK source patch before app integration. Run `artifacts/verify-sdk-frame-limit.py`, then record provenance, license and update procedure.
+- Frame-writer tests at exactly 64 MiB run in the normal suite (about 3 s). Line tests run at the real `MaxLine` (65 MiB) with the newline at the boundary.
+- Socket replacement during cleanup had no executed test at this checkpoint.
+  The current repair state above supersedes this gap.
+- Private directory descriptors were omitted at this checkpoint.
+  This did not meet the original requirement.
+  The current repair state above closes the omission.
+- **Not run:** `go build ./...` (a local command hook blocks the word). `go vet ./...`, `go test -c` and the `cmd/tui` test suite, which builds the binary, cover compilation.
 
 ## SDK parser gate before app integration
 

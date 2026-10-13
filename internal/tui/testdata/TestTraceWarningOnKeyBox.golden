@@ -1,0 +1,24 @@
+◢◤ ask  ● leader 7c1e  ⌂ ~/src/askcore  deepseek-v4.1-flash  ▱▱▱▱▱▱▱▱ 0%  $0.04
+────────────────────────────────────────────────────────────────────────────────
+  model  alibaba-token-plan/deepseek-v4.1-flash
+  TEA_TRACE is on: typed and pasted text, keys included, is written to
+  /tmp/ask-trace.log.
+
+
+
+
+
+
+
+────────────────────────────────────────────────────────────────────────────────
+╭─ OpenAI API key ─────────────────────────────────────────────────────────────╮
+│  Paste your API key. It is sent once to the leader and is never shown.       │
+│                                                                              │
+│  TEA_TRACE is on: typed and pasted text, keys included, is written to        │
+│  /tmp/ask-trace.log.                                                         │
+│                                                                              │
+│  key  paste or type the key; it stays hidden                                 │
+╰──────────────────────────────────────────────────────────────────────────────╯
+   enter save  ·  esc cancel  ·  ctrl+u clear
+────────────────────────────────────────────────────────────────────────────────
+ Tab blocks · ctrl+t thinking · ctrl+l model · / commands

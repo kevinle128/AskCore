@@ -152,9 +152,14 @@ func TestHostQueueOverflowFailsConnection(t *testing.T) {
 	WithQueueLimit(3, 0)(h)
 	s, err := h.NewSession(hostDeadline(t), t.TempDir())
 	require.NoError(t, err)
+	// The writer skips every write after the host failed. One event sent before
+	// the run makes the writer block inside the write callback first. Only then
+	// does the run fill the queue, so the overflow cannot come before the first
+	// write on a slow machine.
+	require.NoError(t, s.observe(&protocol.QueueUpdate{Envelope: protocol.Envelope{Seq: 1}}))
+	<-entered
 	done := make(chan error, 1)
 	go func() { _, err := s.Prompt(hostDeadline(t), hostUser("hi")); done <- err }()
-	<-entered
 	var got error
 	select {
 	case got = <-done:
@@ -192,9 +197,11 @@ func TestHostResetFencesEpochOfHeldEvents(t *testing.T) {
 	require.Equal(t, oldEpoch, got[3])
 	require.Equal(t, "fresh", got[9])
 	mu.Unlock()
+	// The queue texts come from the Agent queue, not from queue_update events:
+	// these events are made up, and the Agent queue is empty.
 	steering, followUp := s.Queues()
 	require.Empty(t, steering)
-	require.Equal(t, []string{"new"}, followUp)
+	require.Empty(t, followUp)
 }
 
 func TestHostContinueStateErrorDoesNotBindSiblingRun(t *testing.T) {

@@ -182,3 +182,32 @@ func TestUnknownRoleInsideEventStaysRaw(t *testing.T) {
 	require.NoError(t, err)
 	assert.Equal(t, "branchSummary", ev.(*MessageEnd).Message.Role())
 }
+
+// TestModelUpdateEventCodec pins the bytes: an empty model keeps its three
+// keys, so a reader can tell "no model" from an old event without the keys.
+func TestModelUpdateEventCodec(t *testing.T) {
+	prefix := func(seq string) string {
+		return `{"seq":` + seq + `,"ts":170000000000` + seq + `,"sessionId":"s1","runId":"r1","type":"model_update"`
+	}
+	cases := []struct {
+		ev   Event
+		want string
+	}{
+		{&ModelUpdate{Envelope: env(1), Provider: "anthropic", ID: "claude-x", API: "anthropic-messages"},
+			prefix("1") + `,"provider":"anthropic","id":"claude-x","api":"anthropic-messages"}`},
+		{&ModelUpdate{Envelope: env(2)}, prefix("2") + `,"provider":"","id":"","api":""}`},
+	}
+	for _, tc := range cases {
+		b, err := EncodeEvent(tc.ev)
+		require.NoError(t, err)
+		assert.Equal(t, tc.want, string(b))
+		back, err := DecodeEvent(b)
+		require.NoError(t, err)
+		assert.Equal(t, tc.ev, back)
+	}
+	assert.Equal(t, "model_update", (&ModelUpdate{}).EventType())
+
+	back, err := DecodeEvent([]byte(`{"seq":3,"ts":1,"sessionId":"s","runId":"","type":"model_update"}`))
+	require.NoError(t, err)
+	assert.Equal(t, &ModelUpdate{Envelope: Envelope{Seq: 3, TS: 1, SessionID: "s"}}, back)
+}

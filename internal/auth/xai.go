@@ -12,6 +12,13 @@ import (
 const xaiClient = "b1a00492-073a-47ea-816f-4c329264a828"
 const xaiToken = "https://auth.x.ai/oauth2/token"
 
+var (
+	// ErrDeviceExpired means the device code ended before the user approved it.
+	ErrDeviceExpired = errors.New("auth: device code expired")
+	// ErrDeviceDenied means the user refused the device authorization.
+	ErrDeviceDenied = errors.New("auth: device authorization denied")
+)
+
 type deviceResponse struct {
 	Device   string   `json:"device_code"`
 	User     string   `json:"user_code"`
@@ -51,30 +58,34 @@ func (n *native) xaiLogin(ctx context.Context, r LoginRequest, _ settings.Creden
 	if d.Complete != "" {
 		uri = d.Complete
 	}
-	if e = notify(ctx, r, LoginNotice{URL: uri, UserCode: d.User, Message: "Enter the device code to sign in."}); e != nil {
+	if e = notify(ctx, r, LoginNotice{URL: uri, UserCode: d.User, Message: "Enter the device code to sign in.", ExpiresAt: deadline}); e != nil {
 		return settings.Credential{}, e
 	}
 	for {
 		remaining := deadline.Sub(n.now())
 		if remaining <= interval {
-			return settings.Credential{}, errors.New("auth: device code expired")
+			return settings.Credential{}, ErrDeviceExpired
 		}
 		if e = n.wait(ctx, interval); e != nil {
-			return settings.Credential{}, e
+			return settings.Credential{}, deviceEnd(e, deadline, n.now())
 		}
 		remaining = deadline.Sub(n.now())
 		if remaining <= 0 {
-			return settings.Credential{}, errors.New("auth: device code expired")
+			return settings.Credential{}, ErrDeviceExpired
 		}
 		pollCtx, pollCancel := context.WithTimeout(ctx, remaining)
 		var t tokenResponse
 		status, e = n.form(pollCtx, xaiToken, url.Values{"grant_type": {"urn:ietf:params:oauth:grant-type:device_code"}, "client_id": {xaiClient}, "device_code": {d.Device}}, &t)
 		pollCancel()
 		if e != nil {
-			return settings.Credential{}, e
+			return settings.Credential{}, deviceEnd(e, deadline, n.now())
 		}
 		if status >= 200 && status < 300 {
-			return n.credential(t, "xai-oauth", settings.Credential{}, true)
+			c, e := n.credential(t, "xai-oauth", settings.Credential{}, true)
+			if e == nil {
+				reportAccount(r, idTokenEmail(t.IDToken))
+			}
+			return c, e
 		}
 		switch t.Error {
 		case "authorization_pending":
@@ -88,14 +99,24 @@ func (n *native) xaiLogin(ctx context.Context, r LoginRequest, _ settings.Creden
 				interval += 5 * time.Second
 			}
 		case "access_denied", "authorization_denied":
-			return settings.Credential{}, errors.New("auth: device authorization denied")
+			return settings.Credential{}, ErrDeviceDenied
 		case "expired_token":
-			return settings.Credential{}, errors.New("auth: device code expired")
+			return settings.Credential{}, ErrDeviceExpired
 		default:
 			return settings.Credential{}, errors.New("auth: device polling failed")
 		}
 	}
 }
+
+// deviceEnd names a wait or poll failure that came from the device deadline:
+// the code expired, whatever timer fired first.
+func deviceEnd(err error, deadline, now time.Time) error {
+	if errors.Is(err, context.DeadlineExceeded) && !now.Before(deadline) {
+		return ErrDeviceExpired
+	}
+	return err
+}
+
 func (n *native) xaiRefresh(ctx context.Context, c settings.Credential) (settings.Credential, error) {
 	if c.OAuth == nil {
 		return settings.Credential{}, ErrRecovery

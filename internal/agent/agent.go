@@ -16,6 +16,23 @@ import (
 	"AskCore/pkg/protocol"
 )
 
+type mutationGuardKey struct{}
+
+// WithMutationGuard checks external ownership at the commit of Prompt,
+// Continue or SetModel. The guard returns a release function that keeps ownership
+// stable until the Agent state is changed. It runs without Agent locks and must
+// not wait for a run or call Agent methods. Other callers need no guard.
+func WithMutationGuard(ctx context.Context, guard func() (func(), error)) context.Context {
+	return context.WithValue(ctx, mutationGuardKey{}, guard)
+}
+
+func mutationGuard(ctx context.Context) (func(), error) {
+	if guard, ok := ctx.Value(mutationGuardKey{}).(func() (func(), error)); ok {
+		return guard()
+	}
+	return func() {}, nil
+}
+
 // Agent runs the loop on one conversation, one run at a time. It numbers
 // the events of all its runs in one sequence, keeps the finished messages in
 // its session log and tells its listeners every event. The Agent driver is
@@ -36,6 +53,9 @@ type Agent struct {
 	// wake is set when input arrived that the active run cannot take. When
 	// that run ends and a queue holds input, a new run starts.
 	wake bool
+	// clearPending is set by ClearModel while a run is active. The run keeps
+	// its model; end clears the model before it decides on a queued run.
+	clearPending bool
 	// disposed closes admission: Dispose set it first.
 	disposed bool
 	// posted holds events that no run publishes, such as queue_update. The
@@ -90,6 +110,10 @@ type run struct {
 	// for the next run.
 	closing bool
 }
+
+// ErrNoModel is returned by Prompt, Continue, Steer and FollowUp when the
+// Agent has no model. It is returned before a run starts, so no event follows.
+var ErrNoModel = errors.New("agent: no model is set")
 
 // errUserAbort is the cancel cause of Abort.
 var errUserAbort = errors.New("aborted by the user")
@@ -236,7 +260,11 @@ func (a *Agent) dispose() error {
 	if r != nil {
 		<-r.done
 	}
-	err := src.Close()
+	var releaseErr error
+	if a.cfg.Release != nil {
+		releaseErr = a.cfg.Release()
+	}
+	err := errors.Join(releaseErr, src.Close())
 	a.mu.Lock()
 	a.postLocked(&protocol.AgentDisposed{})
 	a.mu.Unlock()
@@ -293,6 +321,11 @@ func (a *Agent) SetModel(ctx context.Context, model providers.Model) error {
 		return ErrNoAPIKey
 	}
 
+	release, err := mutationGuard(ctx)
+	if err != nil {
+		return err
+	}
+	defer release()
 	a.mu.Lock()
 	defer a.mu.Unlock()
 	if a.disposed {
@@ -302,8 +335,36 @@ func (a *Agent) SetModel(ctx context.Context, model providers.Model) error {
 		return ErrBusy
 	}
 	a.cfg.Model = model
+	a.clearPending = false
 	a.cfg.Options.Reasoning = providers.ClampThinkingLevel(model, thinkingLevel(a.cfg.Options.Reasoning))
+	a.postLocked(&protocol.ModelUpdate{Provider: model.Provider, ID: model.ID, API: string(model.API)})
 	return nil
+}
+
+// ClearModel removes the model, so no run can start until SetModel gives one.
+// An idle Agent clears at once and publishes an empty model_update. While a run
+// is active the clear is deferred to the end of that run: the run keeps its
+// model, and a queued run that follows it gets none. It returns false when
+// there was no model to clear, or after Dispose.
+func (a *Agent) ClearModel() bool {
+	a.mu.Lock()
+	defer a.mu.Unlock()
+	if a.disposed || a.cfg.Model.ID == "" {
+		return false
+	}
+	if a.active != nil {
+		a.clearPending = true
+		return true
+	}
+	a.clearModelLocked()
+	return true
+}
+
+// clearModelLocked drops the model and posts the empty update. mu must be held.
+func (a *Agent) clearModelLocked() {
+	a.clearPending = false
+	a.cfg.Model = providers.Model{}
+	a.postLocked(&protocol.ModelUpdate{})
 }
 
 // SetThinkingLevel stores ClampThinkingLevel of the current model. It does
@@ -371,8 +432,8 @@ func (a *Agent) idleLocked() error {
 	return nil
 }
 
-// State returns the status, a copy of the context messages, and the
-// stored model and thinking level.
+// State returns the status, a copy of the context messages, the stored model
+// and thinking level, and the texts of the queued inputs.
 func (a *Agent) State() State {
 	a.mu.Lock()
 	st, src := Idle, a.source
@@ -381,8 +442,9 @@ func (a *Agent) State() State {
 	}
 	model := a.cfg.Model
 	level := thinkingLevel(a.cfg.Options.Reasoning)
+	steering, followUp := textsOf(a.in.steering), textsOf(a.in.followUp)
 	a.mu.Unlock()
-	return State{Status: st, Messages: src.Messages(), Model: model, ThinkingLevel: level}
+	return State{Status: st, Messages: src.Messages(), Model: model, ThinkingLevel: level, Steering: steering, FollowUp: followUp}
 }
 
 func thinkingLevel(level protocol.ThinkingLevel) protocol.ThinkingLevel {
@@ -393,10 +455,18 @@ func thinkingLevel(level protocol.ThinkingLevel) protocol.ThinkingLevel {
 }
 
 func (a *Agent) begin(ctx context.Context) (*run, error) {
+	release, err := mutationGuard(ctx)
+	if err != nil {
+		return nil, err
+	}
+	defer release()
 	a.mu.Lock()
 	defer a.mu.Unlock()
 	if err := a.idleLocked(); err != nil {
 		return nil, err
+	}
+	if a.cfg.Model.ID == "" {
+		return nil, ErrNoModel
 	}
 	return a.startRunLocked(ctx), nil
 }
@@ -417,6 +487,12 @@ func (a *Agent) startRunLocked(ctx context.Context) *run {
 func (a *Agent) end(r *run) {
 	r.cancel(nil)
 	a.mu.Lock()
+	// The deferred clear applies before a queued run can start, so that run
+	// copies a config without a model.
+	if a.clearPending && !a.disposed {
+		a.clearModelLocked()
+	}
+	a.clearPending = false
 	var next *run
 	if a.wake && !a.disposed && a.in.len() > 0 {
 		next = a.startRunLocked(context.Background())
@@ -440,6 +516,13 @@ func (a *Agent) drive(r *run) {
 		return
 	}
 	_ = a.execute(r, func(ctx context.Context, ac pipeline.AgentContext, cfg LoopConfig, d driver, emit Emit) error {
+		if cfg.Model.ID == "" {
+			// The queued input has no model to run on. The run ends with the
+			// error and a settled event, and the input stays queued. The empty
+			// failure message is not written to the session log.
+			r.preparationFailure = true
+			return ErrNoModel
+		}
 		_, err := runQueued(ctx, ac, cfg, d, emit)
 		return err
 	})

@@ -21,6 +21,7 @@ import (
 	"AskCore/internal/agent"
 	"AskCore/internal/app"
 	"AskCore/internal/auth"
+	"AskCore/internal/jobs"
 	"AskCore/internal/providers"
 	"AskCore/internal/providers/anthropic"
 	"AskCore/internal/providers/faux"
@@ -145,7 +146,9 @@ func runLifecycleFixture(t *testing.T, durable bool) {
 		registry := providers.NewRegistry()
 		registry.RegisterProvider(anthropic.New(anthropic.WithHTTPClient(&http.Client{Transport: rt})))
 		toolRegistry := &tools.Registry{}
-		for _, tool := range append(builtinTools(), safe, exclusive) {
+		jt := jobs.New(jobs.Options{})
+		t.Cleanup(func() { _ = jt.Close() })
+		for _, tool := range append(sessionTools(jt, tools.NewFileState(), nil), safe, exclusive) {
 			require.NoError(t, toolRegistry.Register(tool, tools.SourceInfo{Kind: tools.SourceExtension}))
 		}
 		store, storeErr := settings.NewAuthStore(t.TempDir())
@@ -163,6 +166,11 @@ func runLifecycleFixture(t *testing.T, durable bool) {
 	firstStart := make(chan struct{}, 1)
 	var observed []protocol.Event
 	ag.Subscribe(func(event protocol.Event) error {
+		// runHeadless disposes the Agent at the end. The JSON stream does not
+		// carry agent_disposed, so the comparison leaves it out.
+		if _, ok := event.(*protocol.AgentDisposed); ok {
+			return nil
+		}
 		observed = append(observed, event)
 		if _, ok := event.(*protocol.ToolExecutionStart); ok {
 			select {
@@ -350,7 +358,9 @@ func TestHeadlessPrintRetriesTransientFailureOnce(t *testing.T) {
 			model, ok := provider.Model("faux-1")
 			require.True(t, ok)
 			toolRegistry := &tools.Registry{}
-			for _, tool := range builtinTools() {
+			jt := jobs.New(jobs.Options{})
+			t.Cleanup(func() { _ = jt.Close() })
+			for _, tool := range sessionTools(jt, tools.NewFileState(), nil) {
 				require.NoError(t, toolRegistry.Register(tool, tools.SourceInfo{Kind: tools.SourceBuiltin}))
 			}
 			log := &sessions.MemoryLog{}

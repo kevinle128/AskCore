@@ -26,17 +26,25 @@ const (
 	defaultBudget   = 10
 )
 
-// useCassette returns the options and getenv for a Token Plan run of model
+// cassetteKeyEnv lists the variables that carry the API key of a cassette
+// provider. A replay answers them with a placeholder key; a recording reads
+// the real value from the process environment.
+var cassetteKeyEnv = map[string]bool{
+	"ASK_ALIBABA_TOKEN_PLAN_API_KEY": true,
+	"OPENAI_API_KEY":                 true,
+}
+
+// useCassette returns the options and getenv for a run of provider and model
 // that goes through testdata/cassettes/<test name>.yaml. It replays by
 // default, with a placeholder API key. With ASK_RECORD=1 it records from the
 // real model with the key from the environment. The test fails at cleanup
 // when the cassette reports a mismatch or an unused recorded request.
-func useCassette(t *testing.T, model string) (options, func(string) string) {
+func useCassette(t *testing.T, provider, model string) (options, func(string) string) {
 	t.Helper()
 	path := filepath.Join("testdata", "cassettes", strings.ReplaceAll(t.Name(), "/", "_")+".yaml")
 	mode, opts := cassette.Replay, []cassette.Option(nil)
 	getenv := func(k string) string {
-		if k == "ASK_ALIBABA_TOKEN_PLAN_API_KEY" {
+		if cassetteKeyEnv[k] {
 			return "replay-placeholder-key"
 		}
 		return ""
@@ -59,7 +67,7 @@ func useCassette(t *testing.T, model string) (options, func(string) string) {
 			t.Errorf("%v\nre-record with: %s=1 go test -run '^%s$' ./cmd/tui", err, recordEnv, t.Name())
 		}
 	})
-	return options{provider: anthropic.ProviderID, model: model, transport: rec}, getenv
+	return options{provider: provider, model: model, transport: rec}, getenv
 }
 
 // rtFunc is an http.RoundTripper made from a function.
@@ -177,13 +185,13 @@ func TestCaptureOffWithoutEnv(t *testing.T) {
 var keyLike = regexp.MustCompile(`\bsk-[A-Za-z0-9_-]{16,}`)
 
 // TestCassettesHoldNoSecrets fails when a committed cassette has an auth
-// header, a key-like string or a Token Plan key from the environment.
+// header, a key-like string or a provider key from the environment.
 func TestCassettesHoldNoSecrets(t *testing.T) {
 	files, err := filepath.Glob(filepath.Join("testdata", "cassettes", "*.yaml"))
 	require.NoError(t, err)
 	require.NotEmpty(t, files)
 	var keys []string
-	for _, k := range []string{"ASK_ALIBABA_TOKEN_PLAN_API_KEY", "ALIBABA_TOKEN_PLAN_API_KEY"} {
+	for _, k := range []string{"ASK_ALIBABA_TOKEN_PLAN_API_KEY", "ALIBABA_TOKEN_PLAN_API_KEY", "OPENAI_API_KEY"} {
 		if v := os.Getenv(k); v != "" {
 			keys = append(keys, v)
 		}

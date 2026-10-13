@@ -1,0 +1,53 @@
+Ask copy of charm.land/bubbletea/v2
+
+Upstream:   https://github.com/charmbracelet/bubbletea (module charm.land/bubbletea/v2)
+Version:    v2.0.10
+Module sum: h1:oolvo20VBpI0PfqE7iFjkZ1bx0WpmXGfnKz5Yldjq5o= (upstream v2.0.10; Ask go.sum had no entry before this copy)
+License:    MIT (file LICENSE, unchanged)
+Used by:    internal/tui and cmd/tui, through the replace line in the go.mod of the repository
+
+What is here
+  All non-test Go files of the module, go.mod, go.sum, LICENSE and one test file,
+  renderer_patch_test.go, which guards the patch. The other upstream tests and the
+  testdata folder are not copied. This folder is its own module: "go test ./..." from
+  the repository root does not run it. Run: go -C third_party/bubbletea test ./...
+  The test TestDependencyPins in internal/tui runs it as one of its subtests.
+
+The changes
+  One upstream file is changed. The other files equal v2.0.10.
+  cursed_renderer.go  New field awaitingSizedView. resize sets it, render clears it, and
+                    flush writes nothing while it is set (a closing flush always writes).
+                    Without it, the renderer draws the previous view at the new size in the
+                    time between a resize and the next view of the program. The program
+                    draws that view for the old row and column counts, so the frame shows
+                    wrong rows for one flush.
+
+Why this copy is kept
+  Upstream v2.0.10 has no resize guard. The alternate screen program resizes often (a
+  window drag sends many size events), and the guard removes the flash of a wrong
+  frame. The terminal restore on every end path (leave the alternate screen, show the
+  cursor, mouse reporting off) is upstream behavior: no patch is needed for it.
+
+Guard
+  renderer_patch_test.go tests inside the module: a flush after a resize writes nothing,
+  the next view is drawn, and a closing flush still writes.
+  TestDependencyPins fails when the replace line or the Ultraviolet pin moves.
+
+How to update
+  1. Download the new upstream tag (go mod download charm.land/bubbletea/v2@TAG) and copy
+     its non-test Go files, go.mod, go.sum and LICENSE into this folder.
+  2. Apply the files of the patches folder again (patch -p1 from this folder; each is a
+     diff against v2.0.10).
+  3. Keep Ultraviolet at the pin of the root go.mod, or test the new commit with the
+     resize scenarios and the golden tests first.
+  4. Run: go -C third_party/bubbletea test ./... and go test ./internal/tui/... ./cmd/tui/...
+  5. Drop this copy and the replace line when upstream has the same guard. Then remove
+     the replace line in go.mod, delete this folder, add the go.sum lines of the
+     module and update deps_pin_test.go.
+
+History
+  The first copy had a larger patch for inline mode: a full-width committed row, a cursor
+  placed again after a commit, a commit that writes nothing on the alternate screen, the
+  screen switch before a commit, and tea.ReplayInlineTranscript with InlineReplayResult.
+  The interactive TUI moved to the alternate screen and has no consumer for these, so
+  they were removed with the inline commit path.

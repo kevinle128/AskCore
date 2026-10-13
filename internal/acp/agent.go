@@ -50,6 +50,24 @@ type Config struct {
 	Log io.Writer
 	// HostOptions change the session host.
 	HostOptions []HostOption
+	// ProviderSetup serves the provider methods. Only the leader composition sets it,
+	// together with RequireRoute: a link without both answers every provider
+	// method with unsupported. It also lets the model list keep usable rows only.
+	ProviderSetup ProviderSetup
+	// DefaultModel reads the saved default model id. It reports "" when none is
+	// saved. Nil means the host has no default store.
+	DefaultModel func(ctx context.Context) (string, error)
+	// SaveDefault stores a model id as the default model for new sessions. Nil
+	// means the host has no default store.
+	SaveDefault func(ctx context.Context, modelID string) error
+	// StartFallback returns the fallback of a session that the Factory just
+	// built, once: the saved default that the session could not start on. Nil
+	// means no session has one.
+	StartFallback func(sessionID string) *protocol.ACPModelFallback
+	// RequireRoute makes the adapter refuse a call that has no route context.
+	// The leader link sets it. The editor link leaves it off and has no
+	// driver generation to check.
+	RequireRoute bool
 }
 
 // Adapter implements the ACP Agent interface over a Host. Each session has its
@@ -202,10 +220,13 @@ func (a *Adapter) Initialize(_ context.Context, _ sdk.InitializeRequest) (sdk.In
 	a.initialized.Store(true)
 	info := a.cfg.Info
 	return sdk.InitializeResponse{
-		ProtocolVersion:   sdk.ProtocolVersion(wireVersion),
-		AgentCapabilities: sdk.AgentCapabilities{PromptCapabilities: sdk.PromptCapabilities{Image: true}},
-		AgentInfo:         &info,
-		AuthMethods:       append([]sdk.AuthMethod{}, a.cfg.AuthMethods...),
+		ProtocolVersion: sdk.ProtocolVersion(wireVersion),
+		AgentCapabilities: sdk.AgentCapabilities{
+			PromptCapabilities:  sdk.PromptCapabilities{Image: true},
+			SessionCapabilities: sdk.SessionCapabilities{Close: &sdk.SessionCloseCapabilities{}},
+		},
+		AgentInfo:   &info,
+		AuthMethods: append([]sdk.AuthMethod{}, a.cfg.AuthMethods...),
 	}, nil
 }
 
@@ -236,6 +257,10 @@ func (a *Adapter) Authenticate(ctx context.Context, req sdk.AuthenticateRequest)
 	if !listed || a.cfg.Authenticate == nil {
 		return sdk.AuthenticateResponse{}, requestError(newKindError(protocol.ACPErrInvalidParams, "unknown authentication method"))
 	}
+	if err := a.host.beginOperation(); err != nil {
+		return sdk.AuthenticateResponse{}, requestError(err)
+	}
+	defer a.host.endOperation()
 	if err := a.cfg.Authenticate(ctx, req.MethodId); err != nil {
 		return sdk.AuthenticateResponse{}, requestError(fmt.Errorf("%w: %w", ErrAuth, err))
 	}
@@ -255,11 +280,35 @@ func (a *Adapter) NewSession(ctx context.Context, req sdk.NewSessionRequest) (sd
 	case !filepath.IsAbs(req.Cwd):
 		return sdk.NewSessionResponse{}, requestError(newKindError(protocol.ACPErrInvalidParams, "cwd must be an absolute path"))
 	}
+	route, err := routeFromMeta(req.Meta)
+	if err == nil {
+		err = a.needRoute(route)
+	}
+	if err != nil {
+		return sdk.NewSessionResponse{}, requestError(err)
+	}
 	s, err := a.host.NewSession(ctx, req.Cwd)
 	if err != nil {
 		return sdk.NewSessionResponse{}, requestError(err)
 	}
-	return sdk.NewSessionResponse{SessionId: sdk.SessionId(s.ID)}, nil
+	if a.cfg.StartFallback != nil {
+		s.setFallback(a.cfg.StartFallback(s.ID))
+	}
+	if a.cfg.ProviderSetup != nil {
+		s.commit.Lock()
+		provider := s.Agent().State().Model.Provider
+		if provider != "" && !a.cfg.ProviderSetup.Usable(ctx, provider) {
+			s.Agent().ClearModel()
+		}
+		s.commit.Unlock()
+	}
+	res := sdk.NewSessionResponse{SessionId: sdk.SessionId(s.ID)}
+	if route != nil {
+		// The router needs the generation that the host committed. The editor link has no router.
+		s.setDriver(route)
+		res.Meta = map[string]any{protocol.ACPRouteMetaKey: protocol.ACPRouteMeta{DriverGen: s.Gen()}}
+	}
+	return res, nil
 }
 
 // userMessage converts prompt blocks. It accepts text and image blocks only.
@@ -312,11 +361,24 @@ func (a *Adapter) Prompt(ctx context.Context, req sdk.PromptRequest) (sdk.Prompt
 	if err != nil {
 		return sdk.PromptResponse{}, requestError(err)
 	}
+	// The authority of the call is checked before its content is read.
+	route, err := a.metaRoute(req.Meta)
+	if err == nil {
+		err = a.checkRouteSession(route, string(req.SessionId))
+	}
+	if err != nil {
+		return sdk.PromptResponse{}, requestError(err)
+	}
 	msg, err := userMessage(req.Prompt)
 	if err != nil {
 		return sdk.PromptResponse{}, requestError(err)
 	}
-	res, err := s.Prompt(ctx, msg)
+	release, err := s.guard(route)
+	if err != nil {
+		return sdk.PromptResponse{}, requestError(err)
+	}
+	defer release()
+	res, err := s.Prompt(s.mutationContext(ctx, route), msg)
 	if err != nil {
 		return sdk.PromptResponse{}, requestError(err)
 	}
@@ -333,7 +395,23 @@ func (a *Adapter) Cancel(_ context.Context, req sdk.CancelNotification) error {
 		return nil
 	}
 	if s, ok := a.host.Session(string(req.SessionId)); ok {
+		// A notification has no answer. A cancel without a valid route, or from
+		// an old driver generation, is dropped.
+		route, err := a.metaRoute(req.Meta)
+		if err != nil || (route != nil && route.DriverGen == 0) || a.checkRouteSession(route, string(req.SessionId)) != nil {
+			return nil
+		}
+		done, err := s.guard(route)
+		if err != nil {
+			return nil
+		}
+		defer done()
+		release, err := s.mutationCommit(route)
+		if err != nil {
+			return nil
+		}
 		s.Abort()
+		release()
 	}
 	return nil
 }
@@ -342,12 +420,47 @@ func unsupported(method string) error {
 	return fmt.Errorf("%w: %s", errUnsupported, method)
 }
 
+// Session returns a live session by ID, for the composition that owns the host.
+func (a *Adapter) Session(id string) (*Session, bool) { return a.host.Session(id) }
+
+// QuiesceIfIdle closes admission when nothing is active. See Host.QuiesceIfIdle.
+func (a *Adapter) QuiesceIfIdle() bool { return a.host.QuiesceIfIdle() }
+
+// ActiveRuns counts the sessions that are not idle.
+func (a *Adapter) ActiveRuns() int { return a.host.ActiveRuns() }
+
 func (a *Adapter) Logout(context.Context, sdk.LogoutRequest) (sdk.LogoutResponse, error) {
 	return sdk.LogoutResponse{}, requestError(unsupported("logout"))
 }
 
-func (a *Adapter) CloseSession(context.Context, sdk.CloseSessionRequest) (sdk.CloseSessionResponse, error) {
-	return sdk.CloseSessionResponse{}, requestError(unsupported("session/close"))
+// CloseSession disposes the session: its run stops, its background jobs end,
+// and the host forgets it. Only the current driver may close a routed session.
+// An error after the close began (internal) still leaves the session closed.
+func (a *Adapter) CloseSession(_ context.Context, req sdk.CloseSessionRequest) (sdk.CloseSessionResponse, error) {
+	if err := a.gate(); err != nil {
+		return sdk.CloseSessionResponse{}, requestError(err)
+	}
+	s, err := a.session(string(req.SessionId))
+	if err != nil {
+		return sdk.CloseSessionResponse{}, requestError(err)
+	}
+	route, err := a.metaRoute(req.Meta)
+	if err == nil {
+		err = a.checkRouteSession(route, string(req.SessionId))
+	}
+	if err != nil {
+		return sdk.CloseSessionResponse{}, requestError(err)
+	}
+	release, err := s.guard(route)
+	if err != nil {
+		return sdk.CloseSessionResponse{}, requestError(err)
+	}
+	// The guard only checks the authority; Close waits for the run to stop.
+	release()
+	if err := s.Close(); err != nil {
+		return sdk.CloseSessionResponse{}, requestError(err)
+	}
+	return sdk.CloseSessionResponse{}, nil
 }
 
 func (a *Adapter) ListSessions(context.Context, sdk.ListSessionsRequest) (sdk.ListSessionsResponse, error) {

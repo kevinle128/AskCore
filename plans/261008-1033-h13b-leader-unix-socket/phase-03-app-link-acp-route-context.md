@@ -1,11 +1,26 @@
 ---
 phase: 3
 title: "App link and ACP route context"
-status: pending
+status: completed
 priority: P1
 effort: "1.5d"
 dependencies: [1, 2]
 ---
+
+
+## Current repair state (2026-10-09)
+
+[host.go](../../internal/acp/host.go) checks driver generation at each mutation commit boundary.
+Model readiness occurs before that final check, so a completed take prevents the old driver from committing the prepared change.
+Authenticate registers work with host admission.
+The host checks idleness under the admission write lock and sets the quiesce flag only after the check succeeds.
+The router also checks requests that it accepted before SDK admission.
+[driver_commit_test.go](../../internal/acp/driver_commit_test.go) checks model preparation, cancel and the other driver mutations, auth admission, run admission and take ordering.
+[leader_frame_test.go](../../internal/app/leader_frame_test.go) sends frames above 10 MiB in both directions through the real shared host.
+It also sends an exact 64 MiB socket frame with 64 KiB capabilities, then checks that an oversized client cannot stop another client or the common link.
+[router_safety_test.go](../../internal/leader/router_safety_test.go) checks transformed lines at the internal size boundary.
+The focused app race checks passed in 36.182 s.
+The final exit gates passed; the [repair report](../reports/pm-261009-h13b-repairs.md) records their evidence and accepted limits.
 
 # Phase 3: App link and ACP route context
 
@@ -85,3 +100,34 @@ Keep the existing host event-queue safeguards; the user decision removes socket 
 The common link reader must keep draining into socket queues when a client stops reading.
 
 Add deterministic tests for two concurrent takes, take racing every driver-only mutation, driver loss while take waits, new-session factory racing idle shutdown, auth/model change racing idle shutdown, generation above 2^53, malformed route meta, and slow-client input that does not overflow the host event queue.
+
+## Historical review (2026-10-08)
+
+### What was built
+
+- **SDK parser gate closed.** `third_party/acp-go-sdk` holds the non-test Go files, `go.mod`, `LICENSE`, `version` and the `schema` folder of upstream v0.13.5, with one change in `connection.go`: the scanner maximum is `(65 << 20) + 1`. A relative `replace` line in `go.mod` selects it. `third_party/acp-go-sdk/PATCH.txt` records source, version, module sum, licence, the change, the reason and the update steps. The note is plain text because markdown files belong in `plans/` and `docs/` only. `TestSDKAcceptsLeaderLineLimit` passes a line at the limit and fails one byte above it; it fails when the patch is removed.
+- **`internal/acp`.** `route.go` parses the route context from the `_meta` of standard calls and from the params of `_ask` calls. A route that is present but malformed is refused on every link, so it never falls back to the editor path. `Config.RequireRoute` makes the leader link refuse a call without a route. The host owns the driver generation: it starts at 1, `Session.guard` checks it and counts the change as in flight under the admission lock, and `Session.Take` commits a take under the same lock (refused as busy only when the caller says a live driver exists). `session/new` returns the generation in its result `_meta` when the call carried a route; the editor result is unchanged. `Host.QuiesceIfIdle` closes admission and counts sessions being built, runs, queued inputs and changes in flight. `Adapter.Session`, `QuiesceIfIdle` and `ActiveRuns` give the composition what it needs.
+- **`internal/app/module_leader.go`.** `LeaderModule` and `NewLeaderRuntime` build one adapter and host behind one internal pipe link, with the `leader.Server` on top. `Serve` starts the router and serves a listener. `Stop` runs in this order: server close (clients told, link closed), host disposal (started tool bodies drain), credential refresh drain.
+- **`internal/leader`.** The control path asks the router to quiesce on the router goroutine. An open question blocks the idle shutdown, and after a quiesce the router takes no new request.
+
+### Evidence
+
+| Check | Result |
+|---|---|
+| `go test -race ./internal/acp ./internal/app ./internal/leader -count=3` | pass |
+| `go test ./cmd/tui/...` (existing H13a editor and headless E2E, 60 s) | pass |
+| `golangci-lint run ./...` | 0 issues |
+| `go vet ./...` | pass |
+| Real server, real socket, real adapter and host, faux model (`internal/app/leader_routing_test.go`) | independent sessions, shared run with an observer, take and generation, private Follow, client loss during a run, idle shutdown through a version-mismatched client, stop disposes sessions |
+
+### Changes from the outline
+
+- The conformance test of H13a asserted that the SDK folder name ends with `@v0.13.5` (module cache layout). It now reads the `version` file of the copy and accepts the `third_party/acp-go-sdk` location. The pinned identity is unchanged.
+- The original flag-first idle check was replaced after review.
+  The current check holds the admission write lock, checks work first and sets the flag only when idle.
+- The route is validated once for all `_ask` methods in `HandleExtensionMethod` and travels to the handlers in the context.
+
+### Open items passed on
+
+- The command that listens on `~/.ask/leader.sock`, takes the lock, spawns and manages the leader is Phase 4.
+- Pending reverse calls from the host do not exist yet; the router's own open questions block an idle shutdown.

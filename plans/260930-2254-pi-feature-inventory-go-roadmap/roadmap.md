@@ -15,6 +15,8 @@ Revision 14 (2026-10-06): after the source audit `plans/reports/review-261006-11
 Revision 15 (2026-10-06): the lifecycle redesign is implemented (plan `261006-0933-lifecycle-event-pipeline-redesign`).
 The implemented control points, in-memory request reconstruction, queues, retry, tool outcomes, disposal, and follow path are removed from the remaining H8, H9, H11, and H12 work.
 Revision 16 (2026-10-06): prioritize the local Leader ACP and TUI path after completed H4, H7a and lifecycle work.
+Revision 17 (2026-10-08): H13b (leader over the Unix socket) is implemented (plan `261008-1033-h13b-leader-unix-socket`). The line client `ask connect` is its runnable exit; the T1a TUI replaces it. The repository holds a patched copy of the ACP SDK (`third_party/acp-go-sdk`, one scanner limit raised to 65 MiB).
+Revision 18 (2026-10-10): T1c (provider setup in the TUI: `/providers`, `/model` with usable models only, first run with no model) follows T1a; see the T1 section. It delivers the local part of H17 rows H-SLASH-10 and H-AUTH-10 and of the T2 login and logout dialogs early; the gateway transport stays in H17.
 Reference: Pi 1.0.1, commit `4c6fb7cfe`, at `/Users/dale/Desktop/workspace/opensources/pi` (user, 2026-10-05; before that Pi 0.99.1, commit `2bbfcca4`). Line citations written before 2026-10-05 are at `2bbfcca4`. Each phase checks and fixes the citations it uses.
 Inputs: `inventory-harness.md` (H-*), `inventory-extensions.md` (E-*), `inventory-tui.md` (T-*), `timeline.md`, the edge-case report `plans/reports/researcher-260930-2254-pi-edge-cases.md` (E§N; the top-30 list is E§24#N), and the waku report `plans/reports/researcher-260930-2254-waku-watch-it-think.md`.
 
@@ -60,9 +62,9 @@ The user answers these one per turn, in this order. Each blocked phase starts wi
 | D12 | "Watch it think" (from waku-agent) | H12, W1, T2 | **Decided (user, 2026-09-30):** a read-only web monitoring dashboard served by the daemon, plus a TUI inspector and OTel export. The web has no chat and no control. | Done. The docs rule is narrowed. |
 | D13 | External-extension runtime (internal extensions are compiled-in Go, decided) | X1 | **A:** stdio JSON-RPC subprocess in any language. **B:** Go source that Ask builds on load into a separate binary, cached, over stdio (needs the Go toolchain). **C:** TypeScript through esbuild (Go library) + goja, in process (closest to Pi; no Node APIs, no isolation). **D:** WASM (wazero), sandboxed. Options can be layered. | **Decided (user, 2026-10-01): B only.** External extensions are Go source. Ask builds each one on load (`go build`, cached by content hash) into a separate binary and runs it as a child process over stdio. The stdio protocol exists as the transport, but Go through the `pkg/` SDK is the only supported way to write one. TypeScript (C) and WASM (D) are not planned. A machine without the Go toolchain gets no external extensions; skills, templates, MCP and shell hooks still work there. |
 | D14 | Bubble Tea version and inline output route | T1 | Tested v2 with a minimal local renderer patch; exact upstream Ultraviolet | **Decided after T0 acceptance (2026-10-07):** `charm.land/bubbletea/v2` v2.0.10 with the tested local Bubble Tea patch; unmodified Ultraviolet `v0.0.0-20260703014108-f5a850f9c2b7`; retain Go 1.27.0. Use one output owner with ordinary exact-once commits and 120 ms resize purge/replay. T0 physical acceptance is user-reported for Terminal.app/iTerm2, without independent captures. [Decision and limits](../reports/pm-261007-1312-d14-tui-decision.md). Root migration and reproducible product packaging belong to T1; no immutable remote fork release exists yet. |
-| D15 | Fullscreen (alt-screen) in the first TUI milestone | T1, T2 | Inline only first, or both | **Decided (must have first): inline only** in the first TUI milestone. Fullscreen is later. |
+| D15 | Fullscreen (alt-screen) in the first TUI milestone | T1, T2 | Inline only first, or both | **Decided (user, 2026-10-12): the alternate screen is the default and only mode of the interactive TUI, in T1b.** This reverses the earlier decision (must have first: inline only; fullscreen later). The alternate screen moved from T2 to T1b with the Grok-style design: [plan](../261012-1337-t1b-grok-style-altscreen/plan.md), [design](../261012-1337-t1b-grok-style-altscreen/design.md). Headless `ask -p` is unchanged. There is no inline mode and no mode switch. |
 | D16 | External agent protocol | H13 | **Decided (user, 2026-10-01): ACP** (Agent Client Protocol, JSON-RPC 2.0, JSON) plus `_ask/*` extension methods and `_meta` is the only protocol between the agent process and anything outside it (leader socket, remote agent over WebSocket, editors over stdio). Inside the process and in headless mode: direct Go calls. No protobuf on ACP links; protobuf/gRPC only for internal service APIs and OTLP (Grok does the same: `plans/reports/researcher-261001-0117-grok-protobuf-usage.md`). | Done. |
-| D17 | ACP Go SDK | H13 | **A:** `coder/acp-go-sdk` v0.13.5 (no release or maintainer reply since June 2026, per a fork's README). **B:** the fork `lx-wnk/acp-go-sdk` v1.21.0, tracks ACP schema 1.21.0, same module path (needs `replace`). **C:** `caelis-labs/acp-go-sdk` v1.4.0. **D:** generate our own types from the ACP JSON schema. | Keep open until a conformance check passes at H13a: pin the SDK and the ACP schema version separately; prove custom `_ask/*` methods, preserved `_meta`, notifications and `session/cancel` through the leader; map each M1 Go API call to ACP. Note: an ACP `session/prompt` response ends the turn and carries a stop reason, while Pi's `prompt` response only means "accepted"; define when the ACP response is sent relative to `agent_settled` (after retries and compaction). Check the current ACP schema for standard usage updates before adding `_ask/*` usage methods. The same Go API tests run against the direct and the remote client. |
+| D17 | ACP Go SDK | H13 | **A:** `coder/acp-go-sdk` v0.13.5 (no release or maintainer reply since June 2026, per a fork's README). **B:** the fork `lx-wnk/acp-go-sdk` v1.21.0, tracks ACP schema 1.21.0, same module path (needs `replace`). **C:** `caelis-labs/acp-go-sdk` v1.4.0. **D:** generate our own types from the ACP JSON schema. | Keep open until a conformance check passes at H13a: pin the SDK and the ACP schema version separately; prove custom `_ask/*` methods, preserved `_meta`, notifications and `session/cancel` through the leader; map each M1 Go API call to ACP. Note: an ACP `session/prompt` response ends the turn and carries a stop reason, while Pi's `prompt` response only means "accepted"; define when the ACP response is sent relative to `agent_settled` (after retries and compaction). Check the current ACP schema for standard usage updates before adding `_ask/*` usage methods. The same Go API tests run against the direct and the remote client. **H13b note (2026-10-08):** the module stays v0.13.5, but the repository holds a copy at `third_party/acp-go-sdk` (a relative `replace`) with one change: the scanner limit for one line is 65 MiB, not 10 MiB, because the leader carries messages of up to 64 MiB. Record: `third_party/acp-go-sdk/PATCH.txt`. |
 | D18 | Terminal record of JSON mode before H9 | H2 | **A:** pull a minimal `agent_settled` into H2. **B:** end at `agent_end` until H9. **C:** defer JSON mode to H8. | **Decided (user, 2026-10-01): A.** H2 emits `agent_settled` right after `agent_end`. The lifecycle redesign now places it after retry and queued work; future compaction must remain inside that final boundary. A JSON reader never changes. |
 | D19 | Abort in the middle of a tool batch | H2, H3 | **A:** deviate: every unstarted call gets "Operation aborted". **B:** as Pi: prepared calls get "Operation aborted"; calls after the break point get no events and no result; the loop makes one more stream call with the aborted signal; `transformMessages` (H3) synthesizes "No result provided" at replay. | **Decided (user, 2026-10-01): B, as Pi** (`A:agent-loop.ts:575-577,613-643`; `AI:api/transform-messages.ts:158-180`). The H2 pairing test covers the loop part only. The full pairing test after abort is in H3. **Revised (user, 2026-10-06): DeepSeek model** (answer "B" to the question in `plans/reports/review-261006-0848-lifecycle-pipeline-report-audit.md`). Normal cancellation records an outcome for every call of the batch: `TOOL_ABORTED_BEFORE_DISPATCH` for a call that never started, `ABORTED` for a started body, and drains started bodies before the Step closes. Crash or unexpected failure repair appends `TOOL_NOT_STARTED` or `TOOL_OUTCOME_UNKNOWN` results for the open tail only, and never re-executes a tool (DeepSeek `5badb15`: `packages/core/agent-loop/src/tool-calls.ts:221-260`, `packages/core/session/src/repair.ts:14-197`). **Implemented by the lifecycle redesign.** The earlier H2/H3 Pi abort behavior is history, not the current contract. Design: `plans/reports/architecture-261006-ask-lifecycle-event-pipeline.md` section 9.4. **Reaffirmed (user, 2026-10-06):** started bodies drain with no time bound, as DeepSeek (`tool-calls.ts:233`) and Pi (`A:agent-loop.ts:646`); the Agent stays busy until they return. Each tool must return promptly on `ctx` cancel; process tools kill the whole process group (Pi `bash.ts:126-144`), enforced in H5. |
 | D20 | Hook and stream failure contract | H2 | **A:** recover inside the loop. **B:** as Pi. | **Decided (user, 2026-10-01): B, as Pi.** A throw or panic in a tool, `prepareArguments`, validation, `beforeToolCall` or `afterToolCall` becomes an error tool result (`A:agent-loop.ts:769-775,841-847,892-895`). An error from `transformContext`, `convertToLlm`, `getApiKey`, `prepareRequest`, `finishTurn` or the stream function is not caught by the loop. The loop returns it, and the `Agent` wrapper builds the error assistant message plus `message_start`, `message_end`, `turn_end` and `agent_end` (`A:agent.ts:523-548`). |
@@ -298,6 +300,7 @@ Rules behind this order:
   - An ambient cwd.
   - Native image libraries.
 - **Exit:** in print mode the agent reads a repo, edits a file and runs its tests.
+- **Status:** implemented (2026-10-11). Plan: [`261010-2349-h5-builtin-tools`](../261010-2349-h5-builtin-tools/plan.md). Real-provider run: [report](../reports/real-provider-acceptance-261011-h5-tools.md). Tools `read`, `write`, `edit`, `ls`, `grep`, `find`, `bash`, plus `job_output`, `job_kill`, `job_list` and `monitor`, over the packages `tools`, `sandbox` and `jobs`; `command-guard` is a compiled-in handler that `ASK_COMMAND_GUARD=1` enables. The release gate is closed by T1b slice N1 (2026-10-12, [`261012-0155-t1b-job-notices`](../261012-0155-t1b-job-notices/plan.md)): the TUI never shows a `<system-reminder>` notice, draws a job line for a finished job and shows running jobs on the status rail. The protocol gap is closed too: `session/close` works through the leader and `ask acp` (2026-10-12, [`261012-0230-leader-session-close`](../261012-0230-leader-session-close/plan.md)).
 
 ### H6: Settings, trust, system prompt, context files and skills
 
@@ -468,7 +471,8 @@ Rules behind this order:
 ### H13: Leader, ACP adapter and gateway (Pi's RPC mode, multi-client)
 
 - **Waits on:** H13a needs completed H4/H7a/lifecycle and D16/D17; H13b needs H13a; H13c needs H13b, H8, H10 and H12.
-- **Schedule:** H13a and H13b are next, before the remaining harness phases; H13c follows H12.
+- **Schedule:** H13a and H13b are complete; T1a precedes the remaining harness phases.
+  H13c follows H12.
 - **Early scope:** expose the completed agent API, lifecycle events, follow path, queues, retry, cancellation, model switching and H7a auth through local ACP.
   Reuse the current in-memory log and session boundary.
   Durable resume and compaction become available after H8 and H10.
@@ -478,6 +482,14 @@ Rules behind this order:
 - **Split into three steps, each with its own runnable exit:**
   - **H13a ACP adapter over stdio.** `internal/acp` over the agent's Go API, plus the `_ask/*` methods. Exit: `ask acp` works with a scripted ACP client over stdio (prompt, cancel, model selection, queues and follow updates), and starts no network listener.
   - **H13b Leader over the Unix socket.** `internal/leader`: handshake with a hard version gate, id rewrite, per-session subscribers and driver, `ConnectOrSpawn`, flock, pid, log, 0700/0600 permissions, peer-UID check. Exit: two `ask` TUI stubs share one auto-started leader.
+    **Completed (2026-10-09): repairs and final gates passed.**
+    The stub is `ask connect`.
+    `ask leader`, `ask leader status|list|stop` and `ask version --json` are the other commands.
+    The [plan](../261008-1033-h13b-leader-unix-socket/plan.md) records the original exit evidence and current repair checks.
+    The [repair report](../reports/pm-261009-h13b-repairs.md) owns final gate results.
+    The [built-client tests](../../cmd/tui/connect_e2e_test.go), [command regression tests](../../cmd/tui/leader_regression_test.go), [shared-host frame tests](../../internal/app/leader_frame_test.go) and [lifecycle tests](../../internal/app/leader_lifecycle_test.go) own the repaired acceptance paths.
+    Accepted decisions remain: injected-owner UID evidence with a literal second-user manual gap; take after driver loss even when busy; unbounded client output queues; the outer protocol integer as the version gate.
+    See [the leader contract](../../internal/leader/README.md).
   - **H13c Daemon over ACP plus the network gateway.** `cmd/server` becomes an ACP client of the leader and adds the network gateway (security rules below). Exit: an authenticated remote WS client runs a prompt through the daemon.
   - Each fx composition (headless, leader, editor `ask acp`, daemon) gets its own `fx.ValidateApp` test. Headless and editor modes must start no network listener.
 - **External protocol rule (D16):** external agent links carry ACP JSON-RPC only: the leader socket, the remote WS link, and editor stdio. The Pi RPC response envelope stops at this boundary. gRPC stays for internal service APIs only (for example health and admin), never for prompting or tool execution. The X1 extension stdio link is a separate extension-host contract, not an agent link.
@@ -488,7 +500,11 @@ Rules behind this order:
   - The multiplexer keeps each client's `initialize` state (capabilities, cwd) and passes only the driver's capabilities for that session to the adapter.
   - Reverse calls go only to eligible clients (driver, or all subscribers for shared questions). When the driver disconnects during a question, the question is cancelled; late or duplicate answers are ignored.
 - **Spawn from two binaries (Grok uses one binary, so this part is new):** `ConnectOrSpawn` must start `ask leader` even when `ask-server` calls it. It finds `ask` next to its own executable first, then on `PATH`, checks the version before the spawn, and fails with a clear message when `ask` is absent or incompatible. Connect and readiness waits are bounded, including a live lock holder that has no usable socket.
-- **Version mismatch:** reject by default with an upgrade hint. Restart a client-spawned leader automatically only after a verified idle shutdown handshake and the lock release. Before any pid-based signal, check that the pid still belongs to an `ask leader` process.
+- **Version mismatch:** reject by default with an upgrade hint.
+  Restart a client-spawned leader automatically only after a verified idle shutdown handshake and lock release.
+  Linux PID fallback requires a verified pidfd and a matching lock owner.
+  macOS and platforms without a stable process handle refuse that fallback.
+  The [leader process contract](../../internal/leader/README.md) owns stop safety.
 - **Read in Pi:** `CD:rpc.md`, `CD:rpc-commands.md`, `C:modes/rpc/rpc-types.ts:22-74`, `CD:sdk.md`.
 - **Security first (review B1):** the scaffold defaults `host=0.0.0.0` and `cors_origin=*` (`internal/config/config.go:40,45`). Prompting means `bash`, so:
   - Agent methods bind to loopback by default.
@@ -667,15 +683,16 @@ Rules behind this order:
   The [isolated resize plan](../261007-1156-inline-resize-fix/plan.md) records independent passing headless checks, the separate Ghostty capacity limit, and unchanged root dependencies.
   T0 is accepted and D14 is closed after user-reported Terminal.app/iTerm2 acceptance.
   Exact manual artifacts remain unavailable; the known engine limits remain.
+- **Note (user, 2026-10-12):** the inline decision of this gate is reversed for the interactive TUI (D15). The product runs on the alternate screen and has no inline commit or replay path. The T0 evidence and the scratch module stay as the record of what was measured.
 
 ### T1: TUI core
 
 - **Waits on:** T0, H13a, H13b, D14, D15, D8 for T1a.
   T1b waits on each feature's owning phase, not the whole H13 gateway.
-- **T1a: test the completed harness through the local TUI.**
+- **T1a: test the completed harness through the local TUI.** Plan: [`261009-2239-t1a-local-tui`](../261009-2239-t1a-local-tui/plan.md), with the approved [design](../261009-2239-t1a-local-tui/design.md). T-LAY-09, T-MD-10 and T-CMD-08 move to T1b with H5 (user, 2026-10-09).
   - Build the inline editor, transcript, live markdown stream, status, provider/model selector, error display and terminal restoration.
   - Connect through `ConnectOrSpawn`: TUI → Leader Unix socket → ACP adapter → agent.
-    On this acceptance path, a connection failure is visible and must not trigger a silent direct fallback.
+    If the leader connect fails at startup, the TUI falls back to an in-process agent and shows `in-process` in its footer, as Grok does (user, 2026-10-10; replaces the earlier no-fallback rule). Acceptance tests assert the leader path by its footer, so a fallback cannot hide a leader failure.
   - Use H7a credentials and profiles on the inference host, including refresh and readiness errors.
     Keep full TUI login dialogs in M2; use the completed headless auth commands for login.
   - Expose current model switching, input queues, input removal, cancellation, retry, usage and follow updates through ACP.
@@ -688,12 +705,22 @@ Rules behind this order:
   - Run acceptance with a built `ask`, its actual Unix socket and real providers.
     Verify terminal restoration after normal exit, errors and signals.
     Protocol and local HTTP tests support acceptance but do not replace the real-provider check.
+- **T1c: provider setup in the TUI.** Plan: [`261010-1424-t1c-provider-setup`](../261010-1424-t1c-provider-setup/plan.md), with the approved [design](../261010-1424-t1c-provider-setup-design/design.md). Follows T1a (user, 2026-10-10).
+  - `/providers` lists seven login options and signs in by API key, browser URL, copy-code or device code; removal asks for confirmation. The leader runs each sign-in on its host over the owner-only socket and checks an API key before it saves it (the Alibaba Token Plan key cannot be checked and is saved as it is).
+  - `/model` lists only the models of usable providers and saves the choice as the default in `settings.json`. With no usable provider a session has no model: the footer shows `no model` and a prompt is not sent.
+  - The faux provider is opt-in with `ASK_FAUX=1` on the leader, `ask acp` and the in-process TUI agent; `ask -p` keeps faux as its default.
+  - Overlap with M2 (user, 2026-10-10): this is the local part of the H17 rows H-SLASH-10 (`/login`, `/logout`) and H-AUTH-10 (transport over the local leader), and of the T2 login and logout dialogs. The gateway transport and the breadth of providers stay in H17 and T2.
+  - Real-provider run: [report](../reports/real-provider-acceptance-2026-10-10-t1c-providers.md).
 - **T1b: complete the remaining M1 TUI scope.**
   - Connect H5 builtin tools, H6 settings/trust, H7 catalog, H8 durable resume, H9 remaining overflow/usage, H10 compaction, H11 extensions and H12 observability as each phase completes.
   - Connect H14 session tree, H15 commands/resources and X1 extension tools within their M1 scope.
+  - Moved from T1a with H5 builtin tools (user, 2026-10-09): T-LAY-09 tool output expand, T-MD-10 tool output truncation display, T-CMD-08 `/copy`. T1a draws a tool call as one line with its result status only.
+  - H5 delivered the tools, the typed `ToolResultDetails` and `protocol.IsSystemReminder` (2026-10-11). Slice N1 is done (2026-10-12, [plan](../261012-0155-t1b-job-notices/plan.md)): notice messages and their queue rows are hidden, a finished job is a job line, and the rail shows the running jobs.
+  - Slice T-LAY-09, T-MD-10 and T-CMD-08 was implemented (2026-10-12, [plan](../261012-0226-t1b-tool-output/plan.md)) with an inline preview and a `ctrl+o` transcript view. The Grok-style slice below replaced that screen model: the preview, the hint and `ctrl+o` are gone. What stays: the model-side truncation row, the diff rows and `/copy` (a native command first, then OSC 52, with the real result). Open: hand check on Terminal.app, iTerm2 and kitty.
+  - Slice Grok-style alternate screen (D15; user, 2026-10-12; [plan](../261012-1337-t1b-grok-style-altscreen/plan.md), [design](../261012-1337-t1b-grok-style-altscreen/design.md)) is implemented: the interactive TUI runs on the alternate screen with a header row, a virtual block pane that follows new output, compact step rows with three fold modes, focus and keys for the block list, a one-block viewer, mouse (wheel, click, hover, drag-copy), hook rows, the bottom marker and the exit line `ask: session <id>`. Hook rows are built from fixtures until H11 delivers the hook event; the protocol need list is in design section 3.4. The Bubble Tea copy keeps only the resize guard. The built-`ask` end-to-end scenarios are the remaining step of that plan.
   - Each phase exit includes its real TUI → Leader ACP flow.
 - **Build (T1a and T1b together):** the P0 rows of `inventory-tui.md`:
-  - the scrollback committer and the live area;
+  - the block pane and the screen layout (the inline scrollback committer was replaced by the alternate screen, D15);
   - the custom editor core with undo, kill ring and paste markers;
   - markdown and syntax highlighting;
   - footer and status;
@@ -701,8 +728,8 @@ Rules behind this order:
   - keybindings;
   - themes;
   - width and Unicode handling.
-- **Harness rows that T1 commands need:** H-SESS-18 (H13), H-SESS-20 (H14) and the H-SESS-10 picker (built in T1), H7/H7a model/auth readiness. `/session` and `/resume` are enabled when their phase is done. Full TUI `/login` remains M2 (H17 transport, T2 dialogs); M1 can use H7a headless login on the inference host or environment API keys. Show provider, model, auth method and readiness without assuming entitlement.
-- **Constraint:** the TUI uses one `AgentClient` interface: `remote` (ACP to the leader, or to a remote agent) and `direct` (in-process Go API, the fallback when no leader is reachable). Headless mode uses `direct` (D5).
+- **Harness rows that T1 commands need:** H-SESS-18 (H13), H-SESS-20 (H14) and the H-SESS-10 picker (built in T1), H7/H7a model/auth readiness. `/session` and `/resume` are enabled when their phase is done. Full TUI `/login` over the gateway remains M2 (H17 transport, T2 dialogs); the local leader path has `/providers` since T1c, and H7a headless login or environment API keys still work. Show provider, model, auth method and readiness without assuming entitlement.
+- **Constraint:** the TUI uses one `AgentClient` interface: `remote` (ACP to the leader, or to a remote agent) and `direct` (in-process agent, the fallback when the leader connect fails at startup; never after a successful start, where the TUI reconnects). Headless mode uses `direct` (D5). User decision 2026-10-10.
 - **Tests:** E§24#23 to #27.
 - **Exit (T1a):** the completed H4, H7a and lifecycle behavior works from the terminal through Leader ACP.
 - **Exit (full T1):** a full session in the terminal works: prompt, stream, steer, abort, compact, and resume.
@@ -713,7 +740,6 @@ Rules behind this order:
 - **Waits on:** D12 (decided), D15. Needs W1 (the shared stage table) and X1 (the extension UI subset).
 - **Build:**
   - Overlays, images (Kitty placeholders), extension UI and full login/logout dialogs using H7a operations through H17 gateway transport. Scoped/favorite cycling uses H17; tool/MCP contracts stay with their owners.
-  - Optional alt-screen mode (D15).
   - The "Watch it think" TUI inspector: a view over the gateway event feed with the same stage table as W1.
 - **Exit:** the inspector and the web dashboard show the same run with the same stages.
 

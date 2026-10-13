@@ -1,11 +1,25 @@
 ---
 phase: 6
 title: "Reverse requests, shutdown, regressions, docs"
-status: pending
+status: completed
 priority: P1
 effort: "1d"
 dependencies: [2, 3, 5]
 ---
+
+
+## Current repair state (2026-10-09)
+
+[module_leader.go](../../internal/app/module_leader.go) starts native auth cleanup in parallel with Agent drain after the router and link close.
+Graceful stop joins both operations.
+[leader.go](../../cmd/tui/leader.go) keeps startup-failure cleanup but lets a second signal return without joining the active runtime drain again.
+The forced path reports incomplete cleanup and the signal exit code.
+[leader_lifecycle_test.go](../../internal/app/leader_lifecycle_test.go) checks parallel cleanup and driver-loss question cancellation while a real host run remains active.
+A late answer from the old generation cannot resolve a new generation question.
+The question is issued through the real SDK connection with a controlled fixture; no product tool owns this reverse call yet.
+[leader_regression_test.go](../../cmd/tui/leader_regression_test.go) checks the complete command lifecycle with a held started tool and two signals.
+The focused app race checks passed in 36.182 s.
+The final exit gates passed; the [repair report](../reports/pm-261009-h13b-repairs.md) records their evidence and accepted limits.
 
 # Phase 6: Reverse requests, shutdown, regressions, docs
 
@@ -88,3 +102,35 @@ Stop must close every owned pipe/socket and join its reader, writer and liveness
 Artifact cleanup checks instance and inode while the flock is still held.
 On a second signal, report incomplete cleanup and return the signal exit code; never claim a drained host.
 Update the existing command guide and `AGENTS.md` or its owning source only after behavior exists; do not change auto-generated files.
+
+## Historical review (2026-10-08)
+
+### What was built
+
+- **`internal/leader/reverse.go`** (moved out of `router.go`, reworked). The agent's calls to clients go through one table. Each recipient gets an id that the router made and never uses twice; the agent's own id stays in the table, so an answer can never reach a later question that reuses an agent id. An answer counts only from the client that got the id, for an open call. A permission answer must select an offered option or say cancelled; a result with an error, an unknown outcome, a missing outcome or both result and error does not resolve. When a valid answer wins, the other recipients get `$/cancel_request` with their own ids. Late, repeated, foreign, invalid and detached answers are ignored. Replay on attach, cancel, driver loss and take share the same transitions, and there is no second cache.
+- **Terminals.** A terminal belongs to the client that made it (`terminal/create` answer), in the driver generation of that call. Later calls about it go to that client only. A take, a detach or a loss of the driver ends the terminals of that generation, so a new driver cannot use or release an old terminal and the agent gets a safe error. Releasing a terminal removes it.
+- **Shutdown.** `runUntilSignal` in `cmd/tui/leader.go` carries the signal rules: the first signal cancels the context so the stop runs in order; a second signal reports "cleanup did not drain; forced exit" with the exit code of the signal and never success. `LeaderRuntime.Stop` and the command's deferred cleanup give this order: router stops and tells the clients, link closes, host disposes and waits for started tool bodies, credential refresh drains, the owned socket is removed (only if it is still ours), the owner record is cleared and the lock is released.
+- **Docs** (impact: major): `internal/leader/README.md` (rewritten), `internal/acp/README.md` (route context, SDK copy, leader link), `internal/app/README.md`, `pkg/protocol/README.md`, architecture section 7.3, README, CLAUDE.md, AGENTS.md, roadmap revision 17 and the D17 note, and `docs/adr/0004-leader-drivers-output-and-sdk-copy.md`.
+
+### Evidence
+
+| Check | Result |
+|---|---|
+| `internal/leader` reverse tests (shared question, first answer wins, per-recipient ids, guessed or foreign ids, invalid answers, replay, eviction, reused agent id, driver loss, detach, take, agent cancel fan-out, files, no-driver errors, terminals) | pass with `-race` |
+| `TestRunUntilSignal*` (clean end, error, first signal, second signal) | pass |
+| `TestLeaderShutdownOrder` (real host, a tool body that ignores the cancel: the listener closes and the client is disconnected first, `Serve` returns only after the body ends) | pass |
+| `TestLeaderE2EForegroundLeaderSIGTERM` (built binary, exit 143, socket removed, lock free, owner cleared) | pass |
+| `TestLeaderE2EHeadlessStartsNoLeader`, the existing `TestACPE2ENoListener` and all H13a E2E tests | pass |
+| `golangci-lint run ./...`, `go vet ./...` | clean |
+| Documentation links (all relative links of the edited files) | no broken link |
+
+### Changes from the outline
+
+- The reverse work was built in Phase 2 and finished here, so Phase 6 is the re-proof against the real parts plus the items above.
+- `TestReverse*` names became `TestRouter*` in `router_reverse_test.go`, next to the other router tests.
+- No product part issues a reverse call yet, so the reverse tests use a scripted agent (a disclosed transport fixture, not tool E2E). A question in the built binary cannot be produced.
+
+### Known limits
+
+- The reverse paths are proven at the transport; the real owners (file tools, terminal tool, permission policy) do not exist yet.
+- The terminal table keeps an entry until a release, a take, a detach or a loss.

@@ -121,7 +121,8 @@ The H4 report is a cross-phase decision record, not an H4 implementation checkli
 
 ## Next execution priority (2026-10-06)
 
-Use [roadmap revision 16](./roadmap.md#3-dependency-order): T0 → H13a → H13b → T1a.
+Use [roadmap revision 17](./roadmap.md#3-dependency-order): T0 → H13a → H13b → T1a.
+H13b is complete; its [repair and final gate record](../261008-1033-h13b-leader-unix-socket/plan.md#repair-checks-2026-10-09) links the passed checks and accepted evidence limits.
 The [T0 deep TDD plan](../261006-1649-t0-inline-prototype-gate/plan.md) defines the isolated gate and iTerm2 evidence; it does not mark T0 complete.
 The local acceptance path is TUI → Leader → ACP → agent.
 [H7a](../261006-0157-h7a-subscription-auth/plan.md#current-execution-record) and [lifecycle](../261006-0933-lifecycle-event-pipeline-redesign/plan.md) record completed implementation.

@@ -200,7 +200,12 @@ func TestACPConformanceVersionSchema(t *testing.T) {
 	v, err := os.ReadFile(filepath.Join(dir, "schema", "version"))
 	require.NoError(t, err)
 	require.Equal(t, pinSchemaTag, strings.TrimSpace(string(v)))
-	require.True(t, strings.HasSuffix(dir, "@"+pinSDKVersion), dir)
+	// The repository holds an Ask copy of the SDK (third_party/acp-go-sdk) with one
+	// scanner limit raised. The copy must still be the pinned upstream version.
+	ver, err := os.ReadFile(filepath.Join(dir, "version"))
+	require.NoError(t, err)
+	require.Equal(t, strings.TrimPrefix(pinSDKVersion, "v"), strings.TrimSpace(string(ver)), dir)
+	require.True(t, strings.HasSuffix(dir, filepath.Join("third_party", "acp-go-sdk")) || strings.HasSuffix(dir, "@"+pinSDKVersion), dir)
 
 	meta, err := os.ReadFile(filepath.Join(dir, "schema", "meta.json"))
 	require.NoError(t, err)

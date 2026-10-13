@@ -65,16 +65,21 @@ func (n *native) chatGPTLogin(ctx context.Context, r LoginRequest, old settings.
 	if e != nil {
 		return c, e
 	}
-	subject, e := v.Verify(ctx, t.IDToken, a.client, nonce)
+	id, e := v.verifyLogin(ctx, t.IDToken, a.client, nonce)
 	if e != nil {
 		return settings.Credential{}, errors.New("auth: identity verification failed")
 	}
-	if returning && subject != old.OAuth.Subject {
+	if returning && id.subject != old.OAuth.Subject {
 		return settings.Credential{}, errors.New("auth: account changed; use new-account")
 	}
 	c.OAuth.ClientID = a.client
-	c.OAuth.Subject = subject
+	c.OAuth.Subject = id.subject
 	c.OAuth.Issuer = chatGPTIssuer
+	if strings.TrimSpace(id.email) != "" {
+		reportAccount(r, id.email)
+	} else {
+		reportAccount(r, id.name)
+	}
 	return c, nil
 }
 func (n *native) chatGPTCredential(t tokenResponse, old settings.Credential) (settings.Credential, error) {

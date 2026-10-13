@@ -72,6 +72,11 @@ type Config struct {
 	// Clock stamps the event envelope and the run-failure message. Nil
 	// means time.Now.
 	Clock func() time.Time
+	// Release frees what the owner created for this Agent, such as the
+	// background jobs of its tools. Dispose calls it once, after the active run
+	// and its started tools have drained and before the session log closes, and
+	// joins its error into the result of Dispose. It may block. Nil means none.
+	Release func() error
 }
 
 // State is a snapshot of an Agent.
@@ -80,4 +85,8 @@ type State struct {
 	Messages      []protocol.Message
 	Model         providers.Model
 	ThinkingLevel protocol.ThinkingLevel
+	// Steering and FollowUp are the texts of the queued inputs, read from the
+	// queue itself: a change shows here before listeners get its queue_update.
+	Steering []string
+	FollowUp []string
 }
