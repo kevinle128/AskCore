@@ -439,6 +439,18 @@ func TestConnectOrSpawnNoSpawnForUnsafeHome(t *testing.T) {
 	require.ErrorIs(t, err, ErrUnsafeEndpoint)
 }
 
+func TestConnectOrSpawnNoSpawnForRegularFileAtSocketPath(t *testing.T) {
+	p := testPaths(t)
+	require.NoError(t, os.WriteFile(p.Socket, []byte("not a socket"), 0o600))
+	cfg := connectConfig(p)
+	cfg.StartFn = func(StartConfig) (*Child, error) { t.Error("must not start"); return nil, errors.New("no") }
+	_, err := ConnectOrSpawn(context.Background(), cfg)
+	require.ErrorIs(t, err, ErrUnsafeEndpoint)
+	data, rerr := os.ReadFile(p.Socket)
+	require.NoError(t, rerr)
+	require.Equal(t, "not a socket", string(data), "the file is untouched")
+}
+
 func TestConnectOrSpawnNoSpawnForOtherUserEndpoint(t *testing.T) {
 	h := startHarness(t, harnessOpts{edit: func(c *Config) {
 		other := uint32(os.Geteuid()) + 1
