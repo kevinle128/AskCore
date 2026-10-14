@@ -39,5 +39,6 @@ The format follows [Keep a Changelog 1.1.0](https://keepachangelog.com/en/1.1.0/
 
 ### Fixed
 
+- **Leader:** On Linux, a file that is not a socket at the leader socket path now stops the client with an unsafe-endpoint error. Before, the client tried to start a leader three times and then failed.
 - **Providers:** A model that the account cannot use is reported as its own error, not as a generic failure.
 - **TUI:** Rows use the full terminal width. A reconnect to a session no longer races on the session state.
