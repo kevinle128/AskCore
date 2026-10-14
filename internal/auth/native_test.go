@@ -174,6 +174,9 @@ func TestBrowserCallbackBoundAndCleanup(t *testing.T) {
 	methods := NativeMethods(NativeOptions{HTTPClient: &http.Client{Transport: nativeRT(func(*http.Request) (*http.Response, error) {
 		return nativeResponse(200, `{"access_token":"access","refresh_token":"refresh","expires_in":3600}`), nil
 	})}})
+	// Each attempt starts a new callback server that closes its connections when it
+	// ends. A pooled connection of an earlier attempt would be dead on Linux.
+	client := &http.Client{Transport: &http.Transport{DisableKeepAlives: true}}
 	for attempt := 0; attempt < 2; attempt++ {
 		_, e := methods[0].Login(context.Background(), LoginRequest{Interaction: "browser", Notify: func(_ context.Context, n LoginNotice) error {
 			u, e := url.Parse(n.URL)
@@ -183,7 +186,7 @@ func TestBrowserCallbackBoundAndCleanup(t *testing.T) {
 			redirect := u.Query().Get("redirect_uri")
 			state := u.Query().Get("state")
 			for _, suffix := range []string{"?code=" + strings.Repeat("x", 17000) + "&state=" + state, "?code=private&state=wrong", "?code=private&state=" + state} {
-				resp, e := http.Get(redirect + suffix)
+				resp, e := client.Get(redirect + suffix)
 				if e != nil {
 					return e
 				}
