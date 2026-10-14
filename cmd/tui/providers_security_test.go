@@ -115,6 +115,10 @@ func TestInteractiveSecretNeverOnScreen(t *testing.T) {
 	a.waitRow("key", "(hidden)")
 	a.requireNoSecret(key)
 
+	// The terminal gives no sign that the program read the typed bytes. On a
+	// loaded Linux host the program can read them after the check ended, and then
+	// the typing would clear the refusal. Give the program time to read them first.
+	time.Sleep(500 * time.Millisecond)
 	release()
 	a.waitText("openai refused the key: invalid_api_key (HTTP 401)")
 	a.requireNoSecret(key)
