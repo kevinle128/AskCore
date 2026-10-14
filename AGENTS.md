@@ -1,6 +1,6 @@
 # AskCore
 
-This file provides context about the project for AI assistants.
+This file provides context about the project for AI assistants. Claude Code reads it through `CLAUDE.md`, which only imports this file.
 
 ## Project Overview
 
@@ -8,12 +8,14 @@ This file provides context about the project for AI assistants.
 
 ## Tech Stack
 
+Version authority is `go.mod`.
+
 - Web Framework: echo
 - Database: gorm
 - API: grpc-go
 - CLI: bubbletea
 - Logging: zap
-- Testing: gomock, testcontainers, testify, goleak
+- Testing: gomock, testcontainers, testify, goleak, go-vcr (LLM cassettes)
 - Messaging: asynq
 - Observability: opentelemetry
 - Validation: validator
@@ -23,6 +25,10 @@ This file provides context about the project for AI assistants.
 - Dependency Injection: fx
 - ACP: `github.com/coder/acp-go-sdk` v0.13.5 (stable schema 0.13.5, wire v1); conformance evidence in `plans/reports/conformance-261007-h13a-sdk.md`
 - Native auth identity: `github.com/coreos/go-oidc/v3`; installed version authority is `go.mod`
+- Model wire layer: `charm.land/fantasy` (see `internal/providers/fantasykit`)
+- Local patched copies: `third_party/acp-go-sdk` and `third_party/bubbletea` (see the `replace` lines in `go.mod`)
+
+Some stack items are not composed in the running server yet (asynq, opentelemetry, validator, Redis cache, centrifuge). The package exists; `internal/app` does not wire it.
 
 ## Architecture
 
@@ -30,40 +36,57 @@ Ask (this repository) is an agent harness that runs as a local daemon or as a re
 
 - `docs/ask-architecture-reference.md`: design, import rules, "where to put new code"
 - `internal/README.md`: package map
-- `README.md` in each package: what belongs there, file names, allowed imports
+- `README.md` in each package: what belongs there, file names, allowed imports. A few packages with Go code have no README yet (for example `internal/tuiclient` and some `internal/providers/*` adapters).
 
-The users/posts demo is the reference example for a new entity (see design section 11). Front-end and web UI for chat and control are out of scope. One exception: a read-only local monitoring dashboard ("Watch it think"). The daemon serves it as embedded static files, bound to localhost with a token. It only reads the harness event stream.
+The users/posts demo is the reference example for a new entity (see design section 11). Front-end and web UI for chat and control are out of scope. One exception is planned: a read-only local monitoring dashboard ("Watch it think"). The daemon would serve it as embedded static files, bound to localhost with a token, and it would only read the harness event stream. It is not built yet. The WebSocket endpoint and the daemon as an ACP client of the leader are also design targets, not code.
 
 ## Project Structure
 
 ```
 AskCore/
 ├── cmd/
-│   ├── server/            # Daemon: HTTP/gRPC/WS gateway, dashboard; ACP client of the leader; `-migrate` applies migrations and exits
-│   └── tui/               # `ask` binary: TUI (ACP client of the leader), headless `ask -p` (agent in process), `ask leader`. See docs section 7.3
-├── internal/
+│   ├── server/            # Daemon: HTTP + gRPC today; `-migrate` applies migrations and exits
+│   └── tui/               # `ask` binary: TUI, headless `ask -p`, `ask auth`, `ask acp`, `ask leader`, `ask connect`, `ask version`. See docs section 7.3
+├── internal/              # Package map: internal/README.md (the owner)
 │   ├── app/               # Composition root (fx)
 │   ├── config/  logs/     # Config (viper) and zap logger
-│   ├── gateway/           # HTTP (echo) and gRPC servers, gRPC services; methods/ for WS RPC
+│   ├── gateway/           # HTTP (echo) and gRPC servers, gRPC services; methods/ for WS RPC (not built)
 │   ├── http/              # REST handlers (import alias httpapi)
-│   ├── agent/ pipeline/ scheduler/ bus/ sessions/ workspace/ cron/   # Runtime core and planned capabilities
-│   ├── auth/ providers/ tools/ mcp/ skills/ memory/ bootstrap/ hooks/ # Capabilities
-│   ├── permissions/ sandbox/ crypto/ channels/ tracing/              # (scaffold)
+│   ├── agent/ pipeline/ sessions/ bus/ workspace/    # Runtime core (implemented; workspace in part)
+│   ├── scheduler/ cron/                              # Runtime core (scaffold)
+│   ├── auth/ settings/ providers/ tools/ sandbox/ jobs/   # Capabilities (implemented); sandbox = process runner, jobs = per-session job table
+│   ├── acp/ leader/       # Process model: ACP adapter, local router
+│   ├── tui/ tuiclient/ tuiext/   # Terminal UI, its client implementation, extension host (tuiext is a scaffold)
+│   ├── mcp/ skills/ memory/ bootstrap/ hooks/ permissions/ crypto/ channels/ tracing/   # Scaffold or parked
 │   ├── store/             # Models + store interfaces; gormstore/ = GORM implementation
 │   ├── migrations/        # Migration runner
 │   └── cache/ messaging/ realtime/ validation/ testsupport/
 ├── migrations/            # SQL files (SQLite), embedded into the binary
-├── pkg/protocol/          # WS wire contract
+├── pkg/protocol/          # Wire contract
+├── pkg/askui/             # Public UI author API (scaffold)
 ├── proto/                 # gRPC definitions and bindings
+├── third_party/           # Patched copies of acp-go-sdk and bubbletea
 ├── e2e/tui/               # Independent terminal E2E runner
+├── .claude/skills/        # Project skills
 └── docs/  plans/
 ```
 
 ## TUI extension boundary
 
 Before adding TUI components or UI extensions, read [docs/tui-architecture.md](docs/tui-architecture.md) and the owning package README.
-Keep terminal rendering in `internal/tui`, client-local UI child lifecycle in `internal/tuiext`, public UI author APIs in `pkg/askui`, and shared wire data in `pkg/protocol`.
+Keep terminal rendering in `internal/tui`, the `tui.Client` implementation in `internal/tuiclient`, client-local UI child lifecycle in `internal/tuiext`, public UI author APIs in `pkg/askui`, and shared wire data in `pkg/protocol`. `internal/tuiext` and `pkg/askui` are scaffolds today.
 Do not expose internal or Bubble Tea types in the public UI SDK.
+For TUI design files, follow the skill `.claude/skills/ask-tui-design`.
+
+## Documentation
+
+- `docs/README.md` is the index of all documents and says who each one is for.
+- `docs/reference/` is generated from code (built-in tools and providers). Do not edit it by hand. After a change to a tool or the provider catalog, run `ASK_UPDATE_DOCS=1 go test -run '^TestReferenceDocs$' ./cmd/tui`. The test fails when the files drift.
+- `docs/cli.md` is hand-written. Update it when a subcommand, flag, environment variable, exit code, or TUI command changes.
+- Every user-visible change adds one line under `[Unreleased]` in `CHANGELOG.md`.
+- After a feature, run the `ask-docs-sync` skill (`.claude/skills/ask-docs-sync`). It updates the owning docs and the changelog.
+- Write docs in ASD-STE100 Simplified Technical English. See `CONTRIBUTING.md`.
+- CI (`.github/workflows/ci.yml`, GitHub-hosted `ubuntu-latest`) runs `go vet`, `go test` (including the drift test), and lint on every pull request and push to `master`.
 
 ## Common Commands
 
@@ -71,30 +94,42 @@ Do not expose internal or Bubble Tea types in the public UI SDK.
 - `go run ./cmd/server` - Start the server (applies pending migrations first)
 - `go run ./cmd/server -migrate` - Apply migrations and exit
 - `go test ./...` - Run tests
-- `python3 e2e/tui/run.py` - Run terminal E2E tests; follow [setup and results](e2e/tui/README.md).
-  Keep this runner outside the production Go module.
-  Headless terminal results do not certify Terminal.app or iTerm2.
-- `FSFAULT_ENGINE=docker internal/testsupport/fsfault/run-tests.sh` - Run optional Linux filesystem fault tests; follow the [fixture setup](internal/testsupport/README.md#filesystem-fault-tests).
+- `go vet ./...` - Run static analysis
 - `go run github.com/golangci/golangci-lint/v2/cmd/golangci-lint run ./...` - Lint, including the depguard import rules
 - `go fmt ./...` - Format code
-- `go run ./cmd/tui acp` - Serve ACP v1 over stdio (`ask acp`).
+- `go run github.com/bufbuild/buf/cmd/buf generate` - Regenerate protobuf code after a `.proto` change
+- `ASK_RECORD=1 go test -run '^TestX$' ./cmd/tui` - Re-record the LLM cassette of one test. `ASK_CAPTURE=<dir> ask -p ...` records a real run to a cassette. See `docs/testing-llm-cassettes.md`
+- `python3 e2e/tui/run.py` - Run terminal E2E checks of the built `ask` on real terminal engines (Alacritty, Ghostty); follow [setup and results](e2e/tui/README.md). `--backend` selects an engine and `--case` selects cases.
+  Keep this runner outside the production Go module.
+  Headless terminal results do not certify Terminal.app, iTerm2, or kitty.
+- `python3 e2e/tui/real_provider_scenarios.py acceptance` - By hand only: the provider-setup run of the built `ask` against real providers (`OPENAI_API_KEY` in the environment, a copy of an OAuth home, one short prompt). The runner removes every credential variable from the child and scans its output for key values. See `e2e/tui/README.md`
+- `FSFAULT_ENGINE=docker internal/testsupport/fsfault/run-tests.sh` - Run optional Linux filesystem fault tests; follow the [fixture setup](internal/testsupport/README.md#filesystem-fault-tests).
+
+### The `ask` binary
+
+The leader flows need a binary named `ask`. A client starts the leader from a binary named `ask` that is next to the caller or on the `PATH` (`internal/leader/spawn.go`). `go run ./cmd/tui` makes a binary named `tui`, so the TUI falls back to the in-process agent and `/providers` is refused. Build a named binary for the TUI, `connect`, and `leader`: `go build -o ask ./cmd/tui`. `ask -p`, `ask auth`, `ask version`, and `ask acp` need no leader and work with `go run ./cmd/tui`. The full CLI reference is `docs/cli.md`.
+
+- `ask` (no arguments, on a terminal) - Open the full-screen TUI on the alternate screen. It connects to the local leader and starts one when none runs. Only when that connect fails at startup does it run an agent in process; the header row then shows `in-process`. With no usable provider the session has no model: use `/providers` to sign in. Keys, folding, mouse, `/copy`, and `TEA_TRACE` are in `internal/tui/README.md` and `docs/cli.md`.
+- `ask acp` (`go run ./cmd/tui acp`) - Serve ACP v1 over stdio. One Agent per session.
   It dispatches before prompt and mode parsing and takes no other argument.
   It uses `internal/app.ACPModule` with the shared native auth composition: no listener, no database, no leader, and no credential input on the protocol connection.
-  Sign in on the host with `ask auth login`; `authenticate` only checks readiness.
-  Exit codes: 0 input ended, 1 error or lost output, 130 SIGINT, 143 SIGTERM, 129 SIGHUP.
-- `go run ./cmd/tui leader` - Run the local leader (`ask leader`): one agent for all local clients on `<ASK_HOME>/leader.sock`, owner only.
+  Sign in on the host with `ask auth login`; `authenticate` only checks readiness. It serves no provider-setup methods, and `faux` needs `ASK_FAUX=1`.
+  Exit codes: 0 input ended, 1 error or lost output, 130 SIGINT, 143 SIGTERM, 129 SIGHUP. See [the ACP owner](internal/acp/README.md#stdio-server).
+- `ask leader` - Run the local leader: one agent for all local clients on `<ASK_HOME>/leader.sock`, owner only.
   `ask leader status|list|stop` never start a leader. Clients start it on demand through `leader.ConnectOrSpawn`.
+  A client of a newer build replaces an older leader that a client started, also when it is busy (its sessions and background jobs end). For `go run` builds the binary written last wins unless its bytes are the same. On Linux a leader that holds the lock without a socket is stopped.
   See [the leader owner](internal/leader/README.md).
-- `go run ./cmd/tui connect` - Line-oriented leader client (`ask connect --help`). It never falls back to an agent of its own.
-- `go run ./cmd/tui version --json` - Build and protocol versions on one line.
-- `go run ./cmd/tui -p "hello"` - Run a headless prompt in process.
-  `--mode json` writes each agent event as one JSON line.
-  `faux` remains the default provider.
+- `ask connect` - Line-oriented leader client (`ask connect --help`). It starts the leader when none runs and never falls back to an agent of its own.
+- `ask version --json` - Build, protocol versions and `commitTime` (or `devStamp` for a build without a VCS stamp) on one line; a client reads it before it starts a leader from that binary.
+- `ask -p "hello"` - Run a headless prompt in process and print the reply.
+  `--mode json` writes each agent event as one JSON line instead.
+  `faux` is the default provider (no `ASK_FAUX` needed), a scripted demo: `echo <text>` calls the echo tool, `fail <text>` ends in an assistant error, anything else is said back. `ASK_FAUX_TPS` paces it in tokens per second. `--provider` also takes `alibaba-token-plan`, `anthropic`, `openai`, and `xai`.
   Use [native auth and headless guidance](README.md#native-auth-and-headless-prompts) for provider login, host selection, and local logout.
   Auth and headless composition must not start a database or leader.
   Reuse `internal/app.NewNativeAuth` and `BindAuth`; do not add a command-specific auth service.
   Keep the private auth HTTP client outside inference capture.
-  Exit codes are 0 for completion, 1 for error, 130 for SIGINT, 143 for SIGTERM, and 129 for SIGHUP.
+  Every agent (print mode, leader, `ask acp`, in-process TUI) has the built-in tools `read`, `write`, `edit`, `ls`, `grep` (needs `rg`), `find`, `bash`, `job_output`, `job_kill`, `job_list`, and `monitor`, plus the demo tool `echo`; see `docs/reference/tools.md` and `internal/tools/README.md`. A `bash` call that runs past its wait budget (default 120 s, maximum 600 s) continues as a background job, and a finished job sends the model a `<system-reminder>` notice. Background jobs end when the session ends: `ask -p` stops the jobs that still run after the last reply. `ASK_COMMAND_GUARD=1` blocks a short list of destructive commands (`rm -rf /`, `mkfs`, a fork bomb); it is off by default and is not a security boundary.
+  Exit codes: 0 done, 1 error (print mode also on an assistant error; `--mode json` exits 0 on an assistant error), 130 SIGINT, 143 SIGTERM, 129 SIGHUP.
 
 ## Better Fullstack project context
 
@@ -136,6 +171,7 @@ User code outside an explicit Better Fullstack managed region is not generator-o
 
 <!-- </better-fullstack:recipes> -->
 
+
 ## Maintenance
 
 Keep AGENTS.md updated when:
@@ -144,5 +180,6 @@ Keep AGENTS.md updated when:
 - Changing project structure
 - Adding new features or services
 - Modifying build/dev workflows
+- Making a user-visible change (also add a line to CHANGELOG.md)
 
 AI assistants should suggest updates to this file when they notice relevant changes.
