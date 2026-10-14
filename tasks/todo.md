@@ -1,5 +1,7 @@
 # Todo
 
+- [x] Standardize docs and changelog: plan at `plans/261013-1309-docs-changelog-standardization/plan.md` (done 2026-10-13; review section in the plan)
+
 - [ ] LLM cassette testing: plan at `plans/261005-2132-llm-cassette-testing/plan.md` (waiting for approval)
 
 ## Independent review: lifecycle Event Pipeline report (2026-10-06)
