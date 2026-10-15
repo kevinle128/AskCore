@@ -16,8 +16,8 @@ import (
 // terminal. The copy is its own module, so its guard tests run from here.
 const (
 	pinBubbleTea   = "v2.0.10"
-	pinUltraviolet = "v0.0.0-20260703014108-f5a850f9c2b7"
-	pinLipgloss    = "v2.0.5"
+	pinUltraviolet = "v0.0.0-20260811164956-006e29f97886"
+	pinLipgloss    = "v2.0.6"
 	// Markdown and syntax highlighting. Glamour v2.0.1 needs lipgloss v2.0.4 and
 	// an older Ultraviolet, so it must not move the two pins above.
 	pinGlamour = "v2.0.1"

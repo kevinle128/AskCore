@@ -615,6 +615,7 @@ func Stop(ctx context.Context, cfg ConnectConfig, wait time.Duration) (StopResul
 	if oerr != nil {
 		return res, oerr
 	}
+	//nolint:staticcheck // The stub of a platform without process handles always fails; Linux does not.
 	if err := signalLeaderProcess(p, owner); err != nil {
 		return res, fmt.Errorf("leader: signal: %w", err)
 	}
