@@ -501,10 +501,25 @@ func TestAdapterFailStopsRunsAndClosesOutput(t *testing.T) {
 		}
 	}
 	require.Equal(t, []string{"aborted/output"}, causes, "the cycle ends with the output cause")
-	require.Equal(t, -1, p.responseIndex(id), "no success after lost output")
-	f := p.a.Failure()
+	// A failed adapter closes its output. The error answer of the stopped
+	// prompt may leave before the close or not at all, and the test cannot
+	// order it. Read until the output ends, then check that no success came.
+	select {
+	case <-p.outDone:
+	case <-time.After(peerWait):
+		t.Fatal("output not closed after failure")
+	}
+	p.mu.Lock()
+	for _, fr := range p.frames {
+		if isID(fr, id) {
+			require.Nil(t, fr.Result, "no success after lost output")
+			require.NotNil(t, fr.Error)
+		}
+	}
+	p.mu.Unlock()
+	first := p.a.Failure()
 	p.a.Fail(errors.New("second failure"))
-	require.Equal(t, f, p.a.Failure(), "the first failure stays")
+	require.Equal(t, first, p.a.Failure(), "the first failure stays")
 }
 
 func TestAdapterCloseSessionDisposesTheSession(t *testing.T) {

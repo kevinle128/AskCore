@@ -642,9 +642,6 @@ func TestACPE2EContinue(t *testing.T) {
 func TestACPE2ECancel(t *testing.T) {
 	p := startE2E(t, e2eOptions{env: busyEnv()})
 	sid := p.start()
-	// A cancel with nothing to cancel, or for an unknown session, is harmless.
-	p.notify("session/cancel", e2eSession(sid))
-	p.notify("session/cancel", e2eSession("sess_missing"))
 	id := p.send("session/prompt", e2ePrompt(sid, longPromptText))
 	p.waitRunning(sid)
 	p.notify("session/cancel", e2eSession(sid))
@@ -657,6 +654,15 @@ func TestACPE2ECancel(t *testing.T) {
 	var st struct {
 		Running bool `json:"running"`
 	}
+	p.ok("_ask/session/state", e2eSession(sid), &st)
+	require.False(t, st.Running)
+
+	// A cancel with nothing to cancel, or for an unknown session, is harmless.
+	// It goes after the run because the server handles a notification and a
+	// later request on separate goroutines. A cancel sent before a prompt could
+	// reach the session after the prompt was admitted and stop that run.
+	p.notify("session/cancel", e2eSession(sid))
+	p.notify("session/cancel", e2eSession("sess_missing"))
 	p.ok("_ask/session/state", e2eSession(sid), &st)
 	require.False(t, st.Running)
 }

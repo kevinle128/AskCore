@@ -9,6 +9,7 @@ import (
 	"encoding/base64"
 	"encoding/hex"
 	"encoding/json"
+	"fmt"
 	"io"
 	"net/http"
 	"net/url"
@@ -350,6 +351,20 @@ func (a *askTerm) resize(cols, rows int) {
 	a.emu.Resize(cols, rows)
 	a.mu.Unlock()
 	require.NoError(a.t, a.cmd.Process.Signal(syscall.SIGWINCH))
+}
+
+// reportSize changes the size of the virtual terminal and tells the program
+// the new size in the input stream, as a terminal that reports size changes in
+// band does. The report is read in order with the keys written before it, so
+// a test can wait for the redraw to know that the program has handled them. The
+// window change signal is not sent: it reaches the program by another path that
+// has no order with the input.
+func (a *askTerm) reportSize(cols, rows int) {
+	a.t.Helper()
+	a.mu.Lock()
+	a.emu.Resize(cols, rows)
+	a.mu.Unlock()
+	a.write(fmt.Sprintf("\x1b[8;%d;%dt", rows, cols))
 }
 
 // ---- first run ----
