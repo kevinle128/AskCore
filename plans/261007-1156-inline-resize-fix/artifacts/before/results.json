@@ -1,0 +1,21 @@
+{
+  "cli_version": "tui-test 0.1.0-beta.2",
+  "headless_only": true,
+  "d14_ready": false,
+  "cases": [
+    {
+      "backend": "alacritty",
+      "scenario": "g3",
+      "session": "askcore-e2e-0e3f3aa23a-alacritty-g3",
+      "result": "fail",
+      "error": "duplicate or missing editor row: {'bell_count': 0, 'cols': 13, 'cursor': {'x': 3, 'y': 3}, 'cwd': None, 'exited': None, 'last_command': None, 'last_exit': None, 'ready': False, 'rows': 6, 'session_shell': None, 'text': 'G1[1999]\\neditor> abc\u754c\\neditor> abc\u754c\\n\ud83d\ude00Z\\ntail 2000\\nShift/Ctrl/Al', 'timeouts': {'command': 30000, 'exit': 30000, 'idle': 5000, 'ready': 30000, 'text': 5000}, 'title': None}"
+    },
+    {
+      "backend": "ghostty",
+      "scenario": "g3",
+      "session": "askcore-e2e-0e3f3aa23a-ghostty-g3",
+      "result": "fail",
+      "error": "duplicate or missing editor row: {'bell_count': 0, 'cols': 13, 'cursor': {'x': 3, 'y': 2}, 'cwd': None, 'exited': None, 'last_command': None, 'last_exit': None, 'ready': False, 'rows': 6, 'session_shell': None, 'text': 'editor> abc\u754c\\neditor> abc\u754c\\n\ud83d\ude00Z\\ntail 2000\\nShift/Ctrl/Al', 'timeouts': {'command': 30000, 'exit': 30000, 'idle': 5000, 'ready': 30000, 'text': 5000}, 'title': None}"
+    }
+  ]
+}

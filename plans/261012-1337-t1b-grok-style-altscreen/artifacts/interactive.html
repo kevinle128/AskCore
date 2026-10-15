@@ -1,0 +1,454 @@
+<!doctype html>
+<html lang="vi"><head><meta charset="utf-8">
+<title>Ask alt-screen TUI: interactive prototype (draft)</title>
+<style>
+body{margin:0;background:#0b0c11;color:#cfd2e3;font-family:system-ui,sans-serif;padding:20px 28px}
+h1{font-size:18px;margin:0 0 6px}.note{color:#8b8fa8;font-size:13px;max-width:1000px;margin:0 0 12px}
+.tools button{background:#1d1f2b;color:#d9dbe8;border:1px solid #3a3d55;border-radius:6px;padding:4px 10px;margin-right:6px;cursor:pointer}
+.tools button.on{border-color:#f472b6;color:#f472b6}
+#term{background:#13141c;color:#d9dbe8;font:13.5px/1.42 "JetBrains Mono","SF Mono",Menlo,monospace;padding:12px 14px;border-radius:12px;
+ border:1px solid #23253a;box-shadow:0 10px 40px rgba(0,0,0,.5);outline:none;margin-top:10px;display:inline-block;user-select:text;cursor:default}
+#term:focus{border-color:#4c4f66}
+.r{white-space:pre;height:1.42em;overflow:hidden}
+.muted{color:#6f7390}.dim{color:#4c4f66}.border{color:#4c4f66}.accent{color:#f472b6}.assistant{color:#a78bfa}.tool{color:#2dd4bf}
+.success{color:#4ade80}.warning{color:#facc15}.error{color:#f87171}.thinking{color:#8f95b3;font-style:italic}.hook{color:#56c2c2}
+.b{font-weight:700}.it{font-style:italic}.panel{background:#1d1f2b}.sel{background:#2d3150}
+.logo{background:linear-gradient(90deg,#a78bfa,#f472b6,#fb923c);-webkit-background-clip:text;background-clip:text;color:transparent;font-weight:700}
+.cur{color:#f472b6;animation:bl 1s steps(1) infinite}@keyframes bl{50%{opacity:0}}
+.w2{display:inline-block;width:2ch}
+.mk{cursor:pointer}.hd{cursor:pointer}
+::selection{background:#2d3150}
+.legend{font-size:13px;color:#aeb2c9;max-width:1000px;margin-top:14px;line-height:1.7}
+kbd{background:#252838;border:1px solid #3a3d55;border-radius:4px;padding:0 5px;font-size:12px}
+</style></head><body>
+<h1>Ask alt-screen TUI: interactive prototype (draft)</h1>
+<p class="note">Mô phỏng thiết kế <code>design.md</code> (Grok-style, alternate screen). Nội dung terminal bằng tiếng Anh như bản thiết kế. Không có mạng; agent là kịch bản giả lập.</p>
+<div class="tools">
+ <button id="s80" class="on">80×24</button><button id="s120">120×40</button>
+ <button id="bexit">Exit</button><button id="breset">Reset</button>
+</div>
+<div id="term" tabindex="0"></div>
+<div class="legend">
+<b>Phím</b> — <kbd>Tab</kbd> chuyển ô nhập ↔ danh sách block ·
+<kbd>j</kbd>/<kbd>k</kbd> hoặc <kbd>↑</kbd><kbd>↓</kbd> chọn block · <kbd>e</kbd> gập/mở block đang chọn (Collapsed → Truncated → Expanded) ·
+<kbd>→</kbd>/<kbd>l</kbd> mở hẳn block đang chọn (Expanded) · <kbd>←</kbd>/<kbd>h</kbd> gập lại (ở ô nhập, mũi tên vẫn di chuyển con trỏ) · khi chọn hoặc rê chuột lên một block gập được, ký hiệu đổi thành <code>›</code> (đang gập, mở được) hoặc <code>⌄</code> (đang mở hết) · <kbd>E</kbd> mở/gập tất cả · <kbd>ctrl+e</kbd> mọi thinking (chỉ khi ở danh sách; ở ô nhập ctrl+e là về cuối dòng) ·
+<kbd>ctrl+t</kbd> mọi thinking (mọi nơi) · <kbd>Enter</kbd> xem block toàn màn hình, <kbd>Esc</kbd> quay về ·
+<kbd>End</kbd>/<kbd>G</kbd> xuống cuối (ở danh sách), <kbd>ctrl+End</kbd> xuống cuối từ ô nhập ·
+gõ một chữ khi đang ở danh sách thì chuyển về ô nhập và gõ chữ đó · <kbd>Esc</kbd> ở ô nhập khi agent đang chạy = dừng ·
+gõ <code>/copy</code> rồi Enter để copy câu trả lời cuối.<br>
+<b>Chuột</b> — lăn chuột cuộn danh sách (cuộn lên thì tắt "follow") · click một block để chọn ·
+click dòng đầu của tool / thinking / hook để mở toàn màn hình · click <code>← back</code> để quay về ·
+bôi đen chữ rồi thả chuột là tự copy · click dấu <code>▼ End</code> / <code>▼ 12 new lines · End</code> để xuống cuối và bật lại follow ·
+click ô nhập để gõ.<br>
+<b>Thử</b> — gõ một câu hỏi rồi Enter: agent giả lập sẽ stream thinking, bash, read, hook, edit, hook bị chặn, test lỗi và câu trả lời. Trong lúc chạy hãy cuộn lên để thấy dấu "new output".
+</div>
+<script>
+(() => {
+const SID = '3f2a9c1e', MODEL = 'claude-sonnet-5-5', SPIN = '⠋⠙⠹⠸⠼⠴⠦⠧⠇⠏';
+const S = {W: 80, H: 24, blocks: [], sel: -1, focus: 'prompt', viewer: null, vtop: 0, vscroll: 0, follow: true, newOut: false,
+  draft: '', notice: null, running: false, timers: [], spin: 0, exited: false, cost: 0.01, pct: 12, runStart: 0};
+const T = document.getElementById('term');
+const esc = s => s.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+const cw = s => [...s].reduce((n, c) => n + (c === '⚓' ? 2 : 1), 0);
+const sg = (t, c = '') => ({t, c});
+function trunc(s, n) { if (cw(s) <= n) return s; let o = ''; for (const c of s) { if (cw(o + c) > n - 1) break; o += c; } return o + '…'; }
+function wrap(text, n) { const out = []; let cur = ''; for (const w of text.split(/\s+/).filter(Boolean)) {
+  if (cur && cw(cur + ' ' + w) > n) { out.push(cur); cur = w; } else cur = cur ? cur + ' ' + w : w; } out.push(cur); return out; }
+function chunks(s, n) { const o = []; let c = ''; for (const ch of s) { if (cw(c + ch) > n) { o.push(c); c = ''; } c += ch; } o.push(c); return o; }
+function segHTML(x) { const t = x.t.includes('⚓') ? esc(x.t).replace('⚓', '<span class="w2">⚓</span>') : esc(x.t);
+  return x.c ? `<span class="${x.c}">${t}</span>` : t; }
+// A row: left segments, right segments, fill class; attrs for click targets.
+function R(left, right = [], fill = '', attrs = {}) {
+  const used = left.concat(right).reduce((n, x) => n + cw(x.t), 0);
+  const gap = Math.max(0, S.W - used);
+  return {left, right, fill, gap, attrs};
+}
+function rowHTML(r, extra = '') {
+  const a = Object.entries(r.attrs || {}).map(([k, v]) => ` data-${k}="${v}"`).join('');
+  const cls = (r.attrs && r.attrs.selrow) ? ' sel' : '';
+  return `<div class="r${cls}${r.fill ? ' ' + r.fill : ''}"${a}${extra}>` + r.left.map(segHTML).join('') +
+    ' '.repeat(r.gap) + r.right.map(segHTML).join('') + '</div>';
+}
+const blank = () => R([]);
+const body = (line, c = '') => R([sg('    '), sg(trunc(line, S.W - 4), c)]);
+const full = (line, c = '') => chunks(line, S.W - 4).map(p => R([sg('    '), sg(p, c)]));
+
+// ------------------------------------------------------------ content
+const SEQ = Array.from({length: 40}, (_, i) => String(i + 1));
+const PARSER = ['package parser', '', 'import "strings"', '', '// Count returns the number of fields.', 'func Count(s string) int {',
+  '    fields := strings.Split(s, ",")', '    n := 0', '    for _, f := range fields {', '        n++', '    }', '    return n', '}'];
+const DIFF = [[' ', 9, '    for _, f := range fields {'], ['-', 10, '        n++'], ['+', 10, '        if f != "" {'],
+  ['+', 11, '            n++'], ['+', 12, '        }'], [' ', 13, '    }']];
+const TEST_OUT = ['=== RUN   TestCount', '--- FAIL: TestCount (0.00s)', '    parser_test.go:12: want 2, got 3', '=== RUN   TestCountEmpty',
+  '--- PASS: TestCountEmpty (0.00s)', '=== RUN   TestCountOne', '--- PASS: TestCountOne (0.00s)', 'FAIL',
+  'FAIL    example.com/p/parser    0.012s', 'FAIL'];
+const THINK = ['The user wants the command first, then a read of parser.go.', 'The bug is probably in the count of empty fields.',
+  'Split on "," gives an empty string for "a,,b".', 'So the loop must skip f == "".'];
+const HOOK_OK = {event: 'PreToolUse', scope: 'project', name: 'lint-guard', target: 'edit parser.go', ok: true, secs: '0.1s',
+  desc: 'Runs gofmt on the file before the agent edits it', matcher: 'tool edit, write · file *.go', source: '.ask/hooks.json (project)',
+  command: './scripts/lint-guard.sh · timeout 5s', result: 'allowed · exit 0 · 0.1s', out: ['lint-guard: parser.go is formatted']};
+const HOOK_NO = {event: 'PreToolUse', scope: 'global', name: 'no-rm', target: 'bash rm -rf build', ok: false, secs: '0.0s',
+  desc: 'Blocks recursive removal (rm -rf) inside the repo', matcher: 'tool bash', source: '~/.ask/hooks.json (global)',
+  command: 'ask-hook-no-rm · timeout 5s', result: 'blocked · exit 2 · 0.0s', reason: 'recursive removal is not allowed in this repo',
+  out: ['no-rm: blocked "rm -rf build"']};
+const now = () => { const d = new Date(); return String(d.getHours()).padStart(2, '0') + ':' + String(d.getMinutes()).padStart(2, '0'); };
+
+function seed() {
+  S.blocks = [
+    {k: 'user', text: 'what does the parser package do?', at: '15:02'},
+    {k: 'think', title: 'Thought', secs: '0.8s', body: ['Look at the package files first.', 'parser.go has one function.'], mode: 0, done: true},
+    {k: 'tool', tool: 'ls', verb: 'Listed', what: 'parser/', out: ['parser.go', 'parser_test.go', 'doc.go'], mode: 0, state: 'ok'},
+    {k: 'tool', tool: 'read', verb: 'Read', what: 'parser/parser.go', out: PARSER, mode: 0, state: 'ok'},
+    {k: 'reply', text: ['The parser package has one function, Count, that splits a string on commas and returns the number of fields.',
+      'It has no state and no other exported names.'], meta: '4.1s · ↑3.9k ↓120 · $0.003'},
+    {k: 'user', text: 'run seq 1 40, then read parser.go and fix the count of empty fields', at: '15:20'},
+    {k: 'think', title: 'Thought', secs: '0.5s', body: THINK, mode: 0, done: true},
+    {k: 'tool', tool: 'bash', verb: 'Ran', what: 'seq 1 40', cmd: 'seq 1 40', out: SEQ, mode: 0, state: 'ok', secs: '0.0s'},
+    {k: 'tool', tool: 'read', verb: 'Read', what: 'parser.go', out: PARSER, mode: 0, state: 'ok'},
+    Object.assign({k: 'hook', mode: 0, state: 'done'}, HOOK_OK),
+    {k: 'tool', tool: 'edit', verb: 'Edited', what: 'parser.go', add: 3, rem: 1, diff: DIFF, out: DIFF.map(d => d[0] + ' ' + d[2]), mode: 0, state: 'ok'},
+    Object.assign({k: 'hook', mode: 0, state: 'done'}, HOOK_NO),
+    {k: 'tool', tool: 'bash', verb: 'Ran', what: 'go test ./...', cmd: 'go test ./...', out: TEST_OUT, mode: 0, state: 'fail', reason: 'exit 1'},
+    {k: 'reply', text: ['Count now skips empty fields. The hook no-rm blocked the removal of the build directory.',
+      'TestCount still fails because it expects the old value; shall I fix it?'], meta: '6.2s · ↑8.1k ↓320 · $0.006'},
+  ];
+  S.sel = S.blocks.length - 1; S.focus = 'prompt'; S.viewer = null; S.follow = true; S.newOut = false; S.draft = ''; S.notice = null;
+  S.exited = false; S.running = false; S.timers.forEach(clearTimeout); S.timers = [];
+}
+const foldable = b => b && (b.k === 'tool' || b.k === 'hook' || b.k === 'think' || (b.k === 'user' && userRows(b).length > 3));
+const MODES = ['collapsed', 'truncated', 'expanded'];
+function userRows(b) { return wrap(b.text, S.W - 12); }
+
+// ------------------------------------------------------------ block rows
+function hint(n) { const t = S.W >= 60 ? `⋮ ${n} more lines · e to expand · Enter full screen` : `⋮ ${n} more lines · e`;
+  return R([sg('    ' + trunc(t, S.W - 4), 'muted')]); }
+function grok(lines, c = '') { if (lines.length <= 6) return lines.map(l => body(l, c));
+  return lines.slice(0, 3).map(l => body(l, c)).concat([hint(lines.length - 6)], lines.slice(-3).map(l => body(l, c))); }
+function step(glyph, gcls, verb, desc, right, extra = []) {
+  const left = [sg('  '), sg(glyph + ' ', gcls), sg(verb, 'b')];
+  const rgt = right.concat([sg(' ')]);
+  const room = S.W - left.concat(rgt, extra).reduce((n, x) => n + cw(x.t), 0) - 2;
+  if (desc && room >= 2) left.push(sg(' ' + trunc(desc, room)));
+  return R(left.concat(extra), rgt);
+}
+const ING = {Ran: 'Running', Read: 'Reading', Edited: 'Editing', Listed: 'Listing', Wrote: 'Writing'};
+function toolHead(b) {
+  const sp = SPIN[S.spin % SPIN.length];
+  if (b.state === 'run') return step('◆', 'warning', ING[b.verb] || b.verb, b.what, [sg(`${sp} ${b.el || 0}s`, 'warning')]);
+  const extra = b.add != null ? [sg('  +' + b.add, 'success'), sg(' -' + b.rem, 'error')] : [];
+  if (b.state === 'fail') return step('◆', 'error', b.verb, b.what, [sg('✗ ' + b.reason, 'error')], extra);
+  if (b.state === 'cancel') return step('◆', 'muted', b.verb, b.what, [sg('⊘ cancelled', 'muted')], extra);
+  return step('◆', 'tool', b.verb, b.what, [], extra);
+}
+function diffRows(b) { return b.diff.map(([s, n, t]) => { const c = {'+': 'success', '-': 'error', ' ': 'muted'}[s];
+  return R([sg('    '), sg(String(n).padStart(4) + ' ', 'dim'), sg(s + ' ', c), sg(trunc(t, S.W - 11), s === ' ' ? '' : c)]); }); }
+function hookDetail(b) {
+  const f = [['Event', b.event], ['Matcher', b.matcher], ['Does', b.desc], ['Source', b.source], ['Command', b.command], ['Result', b.result]];
+  if (b.reason) f.push(['Reason', b.reason]);
+  return f.map(([k, v]) => R([sg('    '), sg(k.padEnd(9), 'muted'), sg(trunc(v, S.W - 13), k === 'Reason' ? 'error' : '')]))
+    .concat([R([sg('    '), sg('── output ──', 'dim')])], b.out.map(l => body(l)));
+}
+function blockRows(b) {
+  const o = [];
+  if (b.k === 'user') {
+    const rows = userRows(b); const fold = rows.length > 3 && (b.mode == null || b.mode < 2);
+    const shown = fold ? rows.slice(0, 3) : rows;
+    o.push(R([sg('  ', 'panel'), sg('❯ ', 'accent b'), sg(shown[0], 'b')], [sg(b.at + '  ', 'dim')], 'panel'));
+    shown.slice(1).forEach(r => o.push(R([sg('    '), sg(r, 'b')], [], 'panel')));
+    if (fold) o.push(R([sg('    ' + trunc(`… +${rows.length - 3} lines · e to expand`, S.W - 4), 'muted')], [], 'panel'));
+    o.push(blank());
+  } else if (b.k === 'reply') {
+    b.text.forEach(t => wrap(t, S.W - 2).forEach(r => o.push(R([sg('  ' + r)]))));
+    if (b.meta) o.push(R([sg('  ' + trunc(MODEL + ' · ' + b.meta, S.W - 2), 'dim')]));
+    o.push(blank());
+  } else if (b.k === 'note') {
+    o.push(R([sg('  ⊘ ', 'muted'), sg(b.text, 'muted')]));
+  } else if (b.k === 'think') {
+    if (!b.done) {
+      o.push(step('◆', 'thinking', 'Thinking…', (b.el || 0) + 's', [sg(SPIN[S.spin % SPIN.length], 'accent')]));
+      const lines = b.mode === 2 ? b.body : b.body.slice(-2);
+      if (b.mode !== 2 && b.body.length > 2) o.push(R([sg('  ┃ ', 'thinking'), sg('…', 'thinking')]));
+      lines.forEach(t => o.push(R([sg('  ┃ ', 'thinking'), sg(trunc(t, S.W - 4), 'thinking')])));
+    } else {
+      o.push(step('◆', 'thinking', 'Thought', 'for ' + b.secs, []));
+      if (b.mode === 1) { if (b.body.length > 2) o.push(R([sg('  ┃ ', 'thinking'), sg('…', 'thinking')]));
+        b.body.slice(-2).forEach(t => o.push(R([sg('  ┃ ', 'thinking'), sg(trunc(t, S.W - 4), 'thinking')]))); }
+      if (b.mode === 2) b.body.forEach(t => chunks(t, S.W - 4).forEach(p => o.push(R([sg('  ┃ ', 'thinking'), sg(p, 'thinking')]))));
+    }
+  } else if (b.k === 'tool') {
+    o.push(toolHead(b));
+    if (b.mode === 1) o.push(...(b.diff ? grok([]).concat(diffRows(b)) : grok(b.out)));
+    if (b.mode === 2) { if (b.cmd) o.push(body('$ ' + b.cmd, 'dim'));
+      if (b.diff) o.push(...diffRows(b)); else b.out.forEach(l => o.push(...full(l))); }
+  } else if (b.k === 'hook') {
+    const res = b.state === 'run' ? [sg(SPIN[S.spin % SPIN.length], 'warning')] :
+      [sg(b.ok ? `✓ allowed ${b.secs}` : `✗ blocked ${b.secs}`, b.ok ? 'success' : 'error')];
+    o.push(step('⚓', 'hook', `${b.event} hook`, `(${b.scope}/${b.name}) · ${b.target}`, res));
+    o.push(R([sg('    ' + trunc(b.desc || b.command, S.W - 4), 'muted')]));
+    if (b.mode === 1) o.push(...grok(b.out));
+    if (b.mode === 2) o.push(...hookDetail(b));
+  }
+  return o;
+}
+// Steps sit next to each other; a blank row before a reply that follows a step.
+// Expand indicator: a selected or hovered foldable step at its minimum fold shows ›, Expanded shows ⌄.
+const isStep = b => b.k === 'tool' || b.k === 'hook' || b.k === 'think';
+const minMode = b => (b.k === 'think' && !b.done) ? 1 : 0;
+function indicate(r, b) {
+  if (!isStep(b)) return; const gi = r.left.findIndex(x => /^[◆⚓] $/.test(x.t)); if (gi < 0) return; const g = r.left[gi];
+  const m = b.mode || 0; let c = null;
+  if (m === minMode(b)) c = '›'; else if (m === 2) c = '⌄';
+  if (c) r.left[gi] = sg(c + ' ' + (g.t[0] === '⚓' ? ' ' : ''), 'accent b');
+}
+function expandSel(b) { if (b && isStep(b)) b.mode = 2; else if (b && foldable(b)) b.mode = 2; }
+function collapseSel(b) { if (b && isStep(b)) b.mode = minMode(b); else if (b && foldable(b)) b.mode = 0; }
+function gutter(r) {
+  if (r.left.length && r.left[0].t[0] === ' ') r.left[0] = sg(r.left[0].t.slice(1), r.left[0].c);
+  else if (!r.left.length) r.gap -= 1; else return;
+  r.left.unshift(sg('┃', 'accent'));
+}
+function allRows() {
+  const rows = [], start = [];
+  S.blocks.forEach((b, i) => {
+    if (b.k === 'reply' && i > 0 && S.blocks[i - 1].k !== 'user' && S.blocks[i - 1].k !== 'reply') rows.push(blank());
+    start[i] = rows.length;
+    const br = blockRows(b); const selected = i === S.sel && S.focus === 'list';
+    const shade = selected && isStep(b) && (b.mode || 0) === 0;  // Collapsed step: background on its rows
+    br.forEach((r, j) => { r.attrs = Object.assign({b: i}, j === 0 && b.k !== 'user' && b.k !== 'reply' && b.k !== 'note' ? {hd: 1} : {});
+      if (shade && (j === 0 || (b.k === 'hook' && j === 1))) r.attrs.selrow = 1;
+      // Any other selected block: `┃` in the gutter on every row; the trailing separator row of a prompt or reply stays blank.
+      if (selected && !shade && !(j === br.length - 1 && (b.k === 'user' || b.k === 'reply'))) gutter(r);
+      if (j === 0 && ((i === S.sel && S.focus === 'list') || i === S.hover)) indicate(r, b);
+      rows.push(r); });
+  });
+  return {rows, start};
+}
+
+// ------------------------------------------------------------ frame
+function header() {
+  if (S.W < 60) return R([sg('◢◤ ask', 'logo'), sg(' ● ', 'success'), sg('7c1e', 'muted')], [sg('sonnet-5-5', 'assistant b'), sg(` ${S.pct}% `, 'muted')]);
+  const full = Math.round(S.pct / 100 * 8);
+  return R([sg('◢◤ ask', 'logo'), sg('  ● ', 'success'), sg('leader 7c1e', 'muted'), sg('  ⌂ ~/src/p', 'muted')],
+    [sg(MODEL, 'assistant b'), sg('  '), sg('▰'.repeat(full) + '▱'.repeat(8 - full), 'accent'), sg(` ${S.pct}%`, 'muted'), sg(`  $${S.cost.toFixed(2)} `, 'muted')]);
+}
+const rule = () => R([sg('─'.repeat(S.W), 'border')]);
+function bar() {
+  let t;
+  if (S.viewer != null) t = S.W >= 60 ? '↑↓ scroll · PgUp PgDn page · Home End · Esc back' : '↑↓ PgUp PgDn · Esc back';
+  else if (S.focus === 'prompt') t = S.W >= 60 ? 'Tab blocks · ctrl+t thinking · ctrl+l model · / commands' : 'Tab blocks · / commands';
+  else { const b = S.blocks[S.sel]; const m = foldable(b) ? ': ' + MODES[b.mode || 0] : '';
+    t = S.W >= 60 ? `j/k select · e fold${m} · E all · Enter open · Tab prompt` : 'j/k · e fold · Enter open'; }
+  return R([sg(' ' + t, 'dim')]);
+}
+function promptRows() {
+  const ph = S.W >= 60 ? 'Ask anything  ·  / commands  ·  ctrl+l model' : 'Ask anything';
+  const pf = S.focus === 'prompt' && S.viewer == null;
+  if (!S.draft) return [R([sg(' ❯ ', 'accent b')].concat(pf ? [sg('▌', 'cur')] : [], [sg(ph, 'dim it')]), [], '', {prompt: 1})];
+  const lines = S.draft.split('\n').flatMap(p => p ? chunks(p, S.W - 4) : ['']);
+  const max = Math.floor(S.H / 2); const vis = lines.slice(-max);
+  return vis.map((l, k) => R([sg(k === 0 ? ' ❯ ' : '   ', 'accent b'), sg(l)].concat(k === vis.length - 1 && pf ? [sg('▌', 'cur')] : []), [], '', {prompt: 1}));
+}
+function statusRow() {
+  if (S.notice) return R([sg('┊ ', 'dim')].concat(S.notice.ok ? [sg('✓ ', 'success')] : [], [sg(trunc(S.notice.text, S.W - 4), S.notice.err ? 'error' : 'dim')]));
+  if (S.running) { const el = Math.floor((Date.now() - S.runStart) / 1000);
+    return R([sg('┊ ', 'dim'), sg('◌ ', 'accent'), sg('Working…', 'accent b'), sg(` ${el}s · ` + (S.W >= 60 ? 'esc to interrupt' : 'esc'), 'muted')]); }
+  return null;
+}
+let paneInfo = {h: 0, max: 0};
+function draw() {
+  if (S.down) return; // keep a drag selection; draw after release
+  if (S.exited) return drawExit();
+  const out = [];
+  if (S.viewer != null) {
+    const b = S.blocks[S.viewer]; const content = viewerRows(b); const pane = S.H - 4;
+    S.vscroll = Math.max(0, Math.min(S.vscroll, Math.max(0, content.length - pane)));
+    const win = content.slice(S.vscroll, S.vscroll + pane); while (win.length < pane) win.push(blank());
+    const head = toolTitle(b);
+    const rgt = head.right.concat([sg(' ')]);
+    const room = S.W - cw(' ← back  ') - rgt.reduce((n, x) => n + cw(x.t), 0) - 1;
+    out.push(R([sg(' ← back', 'accent b'), sg('  '), sg(trunc(head.title, room), 'b')], rgt, '', {back: 1}), rule(), ...win, rule());
+    const pos = `${S.vscroll + 1}–${Math.min(S.vscroll + pane, content.length)} of ${content.length} `;
+    const kb = bar(); out.push(S.W >= 60 ? R(kb.left, [sg(pos, 'dim')]) : kb);
+  } else {
+    const prompt = promptRows(); const st = statusRow();
+    const paneH = S.H - 5 - prompt.length - (st ? 1 : 0);
+    const {rows, start} = allRows();
+    const max = Math.max(0, rows.length - paneH);
+    if (S.follow) S.vtop = max;
+    S.vtop = Math.max(0, Math.min(S.vtop, max));
+    if (S.vtop >= max) { S.follow = true; S.newOut = false; }
+    paneInfo = {h: paneH, max, start, rows};
+    const win = rows.slice(S.vtop, S.vtop + paneH); while (win.length < paneH) win.push(blank());
+    if (!S.follow) { const below = max - S.vtop;
+      const t = !S.newOut ? '▼ End' : (S.W < 30 ? '▼ ' + below + ' · End' : '▼ ' + below + ' new lines · End');
+      const tt = t; const padL = Math.max(0, Math.floor((S.W - tt.length) / 2));
+      win[paneH - 1] = R([sg(' '.repeat(padL), ''), sg(tt, S.newOut ? 'accent b mk' : 'tool b mk')], [], '', {marker: 1}); }
+    out.push(header(), rule(), ...win); if (st) out.push(st); out.push(rule(), ...prompt, rule(), bar());
+  }
+  T.style.width = S.W + 'ch';
+  T.innerHTML = out.map(r => rowHTML(r)).join('');
+}
+function toolTitle(b) {
+  if (b.k === 'hook') return {title: `${b.event} hook (${b.scope}/${b.name}) · ${b.target}`,
+    right: [sg(b.ok ? `✓ allowed ${b.secs}` : `✗ blocked ${b.secs}`, b.ok ? 'success' : 'error')]};
+  if (b.k === 'think') return {title: b.done ? `Thought for ${b.secs}` : 'Thinking…', right: []};
+  return {title: `${b.verb} ${b.what}`, right: b.state === 'fail' ? [sg('✗ ' + b.reason, 'error')] : b.state === 'run' ? [sg('running', 'warning')] : [sg(b.secs || '0.1s', 'dim')]};
+}
+function viewerRows(b) {
+  if (b.k === 'hook') return hookDetail(b).map(r => r);
+  if (b.k === 'think') return b.body.flatMap(t => chunks(t, S.W - 4).map(p => R([sg('  ┃ ', 'thinking'), sg(p, 'thinking')])));
+  const o = []; if (b.cmd) o.push(body('$ ' + b.cmd, 'dim'), blank());
+  if (b.diff) o.push(...diffRows(b)); else b.out.forEach(l => o.push(...full(l)));
+  return o;
+}
+function drawExit() {
+  const lines = ['~/src/p $ ask', `ask: session ${SID} · ${S.blocks.filter(b => b.k === 'user').length} turns · resume: ask --resume ${SID}`];
+  T.style.width = S.W + 'ch';
+  T.innerHTML = lines.map(l => `<div class="r">${esc(trunc(l, S.W))}</div>`).join('') +
+    `<div class="r">~/src/p $ <span class="cur">▌</span></div>` + '<div class="r"></div>'.repeat(S.H - 3);
+}
+
+// ------------------------------------------------------------ actions
+function changed() { if (!S.follow) S.newOut = true; draw(); }
+function scrollBy(d) { S.vtop += d; if (d < 0) S.follow = false; draw(); }
+function toBottom() { S.follow = true; S.newOut = false; draw(); }
+function cycle(b) { if (foldable(b)) b.mode = ((b.mode || 0) + 1) % 3; }
+function allFold() { const f = S.blocks.filter(b => b.k === 'tool' || b.k === 'hook' || b.k === 'think');
+  const any = f.some(b => !b.mode); f.forEach(b => b.mode = any ? 2 : 0); }
+function allThinking() { const f = S.blocks.filter(b => b.k === 'think'); const any = f.some(b => !b.mode); f.forEach(b => b.mode = any ? 2 : 0); }
+function selectInView() { const {start, h} = paneInfo; if (!start) return; const s0 = start[S.sel];
+  if (s0 < S.vtop) { S.vtop = s0; S.follow = false; } else if (s0 >= S.vtop + h) S.vtop = s0 - h + 1; }
+function openViewer(i) { const b = S.blocks[i]; if (!b || !(b.k === 'tool' || b.k === 'hook' || b.k === 'think')) return; S.viewer = i; S.vscroll = 0; }
+function notice(text, ok, err) { S.notice = {text, ok, err}; clearTimeout(S.nt); S.nt = setTimeout(() => { S.notice = null; draw(); }, 3000); }
+function copyText(t) {
+  if (navigator.clipboard && navigator.clipboard.writeText) navigator.clipboard.writeText(t).then(() => { notice('Copied', true); draw(); },
+    () => { notice('Sent to the terminal clipboard'); draw(); });
+  else notice('Sent to the terminal clipboard');
+}
+function submit() {
+  const text = S.draft.trim(); S.draft = '';
+  if (!text) return;
+  if (text === '/copy') { const r = [...S.blocks].reverse().find(b => b.k === 'reply' && b.done !== false);
+    if (r) copyText(r.text.join('\n\n')); else notice('Nothing to copy'); return; }
+  if (text === '/quit') { S.exited = true; return; }
+  if (S.running) { notice('Not sent: a run is in progress'); return; }
+  runAgent(text);
+}
+function at(ms, fn) { S.timers.push(setTimeout(() => { fn(); changed(); }, ms)); }
+function runAgent(text) {
+  S.running = true; S.runStart = Date.now();
+  S.blocks.push({k: 'user', text, at: now()}); S.follow = true; changed();
+  const th = {k: 'think', title: 'Thinking', body: [], mode: 1, done: false, el: 0}; let t = 300;
+  at(t, () => S.blocks.push(th));
+  THINK.forEach((l, i) => at(t += 500, () => { th.body.push(l); th.el = i + 1; }));
+  at(t += 400, () => { th.done = true; th.secs = '2.1s'; th.mode = 0; });
+  const sh = {k: 'tool', tool: 'bash', verb: 'Ran', what: 'seq 1 40', cmd: 'seq 1 40', out: [], mode: 0, state: 'run', el: 0};
+  at(t += 300, () => S.blocks.push(sh));
+  for (let i = 1; i <= 40; i++) at(t += 60, () => { sh.out.push(String(i)); sh.el = Math.floor(i / 16); });
+  at(t += 200, () => { sh.state = 'ok'; sh.secs = '2.4s'; });
+  const rd = {k: 'tool', tool: 'read', verb: 'Read', what: 'parser.go', out: [], mode: 0, state: 'run', el: 0};
+  at(t += 300, () => S.blocks.push(rd)); at(t += 500, () => { rd.out = PARSER.slice(); rd.state = 'ok'; });
+  const h1 = Object.assign({k: 'hook', mode: 0, state: 'run'}, HOOK_OK);
+  at(t += 300, () => S.blocks.push(h1)); at(t += 400, () => { h1.state = 'done'; });
+  const ed = {k: 'tool', tool: 'edit', verb: 'Edited', what: 'parser.go', add: 3, rem: 1, diff: DIFF, out: DIFF.map(d => d[0] + ' ' + d[2]), mode: 0, state: 'run'};
+  at(t += 300, () => S.blocks.push(ed)); at(t += 500, () => { ed.state = 'ok'; });
+  const h2 = Object.assign({k: 'hook', mode: 0, state: 'run'}, HOOK_NO);
+  at(t += 400, () => S.blocks.push(h2)); at(t += 400, () => { h2.state = 'done'; });
+  const ts = {k: 'tool', tool: 'bash', verb: 'Ran', what: 'go test ./...', cmd: 'go test ./...', out: [], mode: 0, state: 'run', el: 0};
+  at(t += 300, () => S.blocks.push(ts));
+  TEST_OUT.forEach((l, i) => at(t += 250, () => { ts.out.push(l); ts.el = Math.floor(i / 4); }));
+  at(t += 300, () => { ts.state = 'fail'; ts.reason = 'exit 1'; });
+  const rp = {k: 'reply', text: [''], done: false};
+  at(t += 300, () => S.blocks.push(rp));
+  const words = ('Count now skips empty fields. The hook no-rm blocked the removal of the build directory. ' +
+    'TestCount still fails because it expects the old value; shall I fix it?').split(' ');
+  words.forEach(w => at(t += 70, () => { rp.text[0] += (rp.text[0] ? ' ' : '') + w; }));
+  at(t += 200, () => { rp.done = true; rp.meta = '9.8s · ↑8.6k ↓310 · $0.006'; S.running = false; S.cost += 0.006; S.pct = Math.min(99, S.pct + 3); });
+}
+function interrupt() {
+  if (!S.running) return; S.timers.forEach(clearTimeout); S.timers = []; S.running = false;
+  S.blocks.forEach(b => { if (b.state === 'run') { b.state = 'cancel'; } if (b.k === 'think' && !b.done) { b.done = true; b.secs = '1.0s'; b.mode = 0; } });
+  S.blocks.push({k: 'note', text: 'Interrupted'}); changed();
+}
+
+// ------------------------------------------------------------ keys
+function keyName(e) { let k = e.key; if (k === ' ') k = 'space';
+  if (e.ctrlKey && k.length === 1) return 'ctrl+' + k.toLowerCase(); if (e.ctrlKey) return 'ctrl+' + k; return k; }
+T.addEventListener('keydown', e => {
+  if (S.exited) return;
+  const k = keyName(e); let handled = true;
+  if (k === 'ctrl+c') { if (S.viewer != null) S.viewer = null; else if (S.draft) S.draft = ''; else S.exited = true; }
+  else if (S.viewer != null) {
+    if (k === 'Escape') S.viewer = null;
+    else if (k === 'ArrowDown' || k === 'j') S.vscroll++;
+    else if (k === 'ArrowUp' || k === 'k') S.vscroll--;
+    else if (k === 'PageDown' || k === 'space') S.vscroll += S.H - 5;
+    else if (k === 'PageUp' || k === 'b') S.vscroll -= S.H - 5;
+    else if (k === 'Home' || k === 'g') S.vscroll = 0;
+    else if (k === 'End' || k === 'G') S.vscroll = 1e9;
+  }
+  else if (k === 'ctrl+t') allThinking();
+  else if (k === 'ctrl+End') toBottom();
+  else if (S.focus === 'prompt') {
+    if (k === 'Tab') { S.focus = 'list'; S.sel = S.blocks.length - 1; }
+    else if (k === 'Enter' && e.shiftKey) S.draft += '\n';
+    else if (k === 'Enter') submit();
+    else if (k === 'Backspace') S.draft = S.draft.slice(0, -1);
+    else if (k === 'Escape') interrupt();
+    else if (k === 'ctrl+e' || k === 'ctrl+a') { /* editor: line end / start */ }
+    else if (e.key.length === 1 && !e.ctrlKey && !e.metaKey) S.draft += e.key;
+    else handled = false;
+  } else {
+    const b = S.blocks[S.sel];
+    if (k === 'Tab' || k === 'Escape') S.focus = 'prompt';
+    else if (k === 'j' || k === 'ArrowDown') { S.sel = Math.min(S.blocks.length - 1, S.sel + 1); draw(); selectInView(); }
+    else if (k === 'k' || k === 'ArrowUp') { S.sel = Math.max(0, S.sel - 1); draw(); selectInView(); }
+    else if (k === 'e') cycle(b);
+    else if (k === 'ArrowRight' || k === 'l') expandSel(b);
+    else if (k === 'ArrowLeft' || k === 'h') collapseSel(b);
+    else if (k === 'E') allFold();
+    else if (k === 'ctrl+e') allThinking();
+    else if (k === 'Enter') openViewer(S.sel);
+    else if (k === 'End' || k === 'G') { S.sel = S.blocks.length - 1; toBottom(); }
+    else if (k === 'Home' || k === 'g') { S.sel = 0; S.vtop = 0; S.follow = false; }
+    else if (k === 'PageDown') scrollBy(paneInfo.h);
+    else if (k === 'PageUp') scrollBy(-paneInfo.h);
+    else if (e.key.length === 1 && !e.ctrlKey && !e.metaKey && !'jkeEgGblh'.includes(e.key) && k !== 'space') { S.focus = 'prompt'; S.draft += e.key; }
+    else handled = false;
+  }
+  if (handled) e.preventDefault();
+  draw();
+});
+
+// ------------------------------------------------------------ mouse
+T.addEventListener('wheel', e => { e.preventDefault(); if (S.exited) return; const d = Math.sign(e.deltaY) * 3;
+  if (S.viewer != null) { S.vscroll += d; draw(); } else scrollBy(d); }, {passive: false});
+T.addEventListener('mouseup', e => {
+  S.down = false;
+  if (S.exited) return;
+  const sel = window.getSelection(); const txt = sel ? sel.toString() : '';
+  if (txt.trim()) { copyText(txt.split('\n').map(l => l.replace(/\s+$/, '')).join('\n').replace(/\n+$/, '')); draw(); return; }
+  const row = e.target.closest('.r'); if (!row) return; const d = row.dataset;
+  if (S.viewer != null) { if (d.back) { S.viewer = null; } draw(); return; }
+  if (d.marker) { toBottom(); return; }
+  if (d.prompt) { S.focus = 'prompt'; draw(); return; }
+  if (d.b !== undefined) { const i = +d.b; S.sel = i; S.focus = 'list'; if (d.hd) openViewer(i); draw(); }
+});
+T.addEventListener('mousedown', () => { T.focus(); S.down = true; });
+T.addEventListener('mousemove', e => { if (S.down || S.viewer != null) return; const row = e.target.closest('.r');
+  const h = row && row.dataset.b !== undefined ? +row.dataset.b : null; if (h !== S.hover) { S.hover = h; draw(); } });
+T.addEventListener('mouseleave', () => { if (S.hover != null) { S.hover = null; draw(); } });
+document.addEventListener('mouseup', () => { if (S.down) { S.down = false; draw(); } });
+
+document.getElementById('s80').onclick = () => setSize(80, 24);
+document.getElementById('s120').onclick = () => setSize(120, 40);
+document.getElementById('bexit').onclick = () => { S.exited = true; draw(); };
+document.getElementById('breset').onclick = () => { seed(); draw(); T.focus(); };
+function setSize(w, h) { S.W = w; S.H = h; document.getElementById('s80').className = w === 80 ? 'on' : '';
+  document.getElementById('s120').className = w === 120 ? 'on' : ''; draw(); T.focus(); }
+setInterval(() => { if (S.running) { S.spin++; draw(); } }, 120);
+window.askProto = {state: S, draw};
+seed(); draw(); T.focus();
+})();
+</script>
+</body></html>

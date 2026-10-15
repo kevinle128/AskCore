@@ -1,0 +1,52 @@
+{
+  "commands": {
+    "narrow": {
+      "command": "go test -v -run 'TestEvidence|TestScratchBoundary|TestManualPasteReport|TestOptionalCapabilities' -count=1 -timeout 60s ./...",
+      "exit": 0
+    },
+    "race": {
+      "command": "go test -race -v -count=1 -timeout 60s ./...",
+      "exit": 0
+    },
+    "vet": {
+      "command": "go vet ./...",
+      "exit": 0
+    },
+    "build": {
+      "command": "go build -o /private/tmp/askcore-t0-tester-phase5-wly3m2_w/tester-fixture .",
+      "exit": 0
+    },
+    "format": {
+      "command": "gofmt -l *.go",
+      "exit": 0
+    },
+    "package": {
+      "command": "go run . --scenario all --evidence evidence",
+      "exit": 0
+    },
+    "validation": {
+      "command": "go test -v -run 'TestEvidenceRequiredRecords|TestEvidenceValidationControls|TestScratchBoundary|TestOptionalCapabilities' -count=1 -timeout 60s ./...",
+      "exit": 0
+    }
+  },
+  "test_context": "/private/tmp/askcore-t0-tester-phase5-wly3m2_w",
+  "context_removed_after_checks": true,
+  "narrow_top_level_passes": 6,
+  "narrow_subtest_passes": 14,
+  "race_top_level_passes": 39,
+  "race_subtest_passes": 44,
+  "capability_subtest_skips": 6,
+  "validation_top_level_passes": 4,
+  "manifest_artifact_refs_verified_before_and_after": 10,
+  "archive_counts": [
+    34,
+    79,
+    130,
+    155,
+    179
+  ],
+  "frozen_files_verified": 24,
+  "product_hashes_verified": 27,
+  "renderer_fix_classes": 0,
+  "D14Ready": false
+}

@@ -1,0 +1,69 @@
+--- a/terminal_renderer.go
++++ b/terminal_renderer.go
+@@ -129,6 +129,9 @@
+ // The renderer is not thread-safe, the caller must protect the renderer when
+ // using it from multiple goroutines.
+ type TerminalRenderer struct {
++	resizeBuffer     *Buffer
++	resizeCursor     Position
++	inlineReflow     bool
+ 	w                io.Writer
+ 	buf              *bytes.Buffer // buffer for writing to the screen
+ 	curbuf           *RenderBuffer // the current buffer
+@@ -1301,7 +1304,43 @@
+ 
+ // Resize updates the terminal screen tab stops. This is used to calculate
+ // terminal tab stops for hard tab optimizations.
+-func (s *TerminalRenderer) Resize(width, _ int) {
++func (s *TerminalRenderer) Resize(width, height int) {
++	if s.inlineReflow && s.flags.Contains(tRelativeCursor) && s.curbuf != nil && width > 0 && (s.resizeBuffer != nil || s.curbuf.Width() != width) {
++		if s.resizeBuffer == nil {
++			s.resizeBuffer = s.curbuf.Buffer.Clone()
++			s.resizeCursor = s.cur.Position
++		}
++		x, y := 0, 0
++		for row := 0; row <= s.resizeCursor.Y && row < s.resizeBuffer.Height(); row++ {
++			line := s.resizeBuffer.Line(row)
++			end := len(line)
++			if row == s.resizeCursor.Y {
++				end = min(end, max(0, s.resizeCursor.X))
++			} else {
++				for end > 0 && (line[end-1].Content == "" || line[end-1].Content == " ") {
++					end--
++				}
++			}
++			x = 0
++			for col := 0; col < end; col++ {
++				c := line[col]
++				if c.Width == 0 {
++					continue
++				}
++				if x+c.Width > width {
++					x = 0
++					y++
++				}
++				x += c.Width
++			}
++			if row < s.resizeCursor.Y {
++				y++
++			}
++		}
++		s.cur.X, s.cur.Y = x, min(y, max(0, height-1))
++		s.atPhantom = false
++	}
++
+ 	if s.tabs != nil {
+ 		s.tabs.Resize(width)
+ 	}
+@@ -1637,3 +1676,11 @@
+ 
+ 	return v
+ }
++
++// SetInlineReflow declares that the terminal reflows inline cells on resize.
++// This must describe the terminal, not the desired application layout.
++func (s *TerminalRenderer) SetInlineReflow(enabled bool) { s.inlineReflow = enabled }
++
++// ConfirmInlineFrame commits the cursor and cells after the owner writes them.
++// An unpainted resize burst must keep its original rendered baseline.
++func (s *TerminalRenderer) ConfirmInlineFrame() { s.resizeBuffer = nil }

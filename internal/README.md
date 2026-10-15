@@ -11,14 +11,15 @@ Full design: [docs/ask-architecture-reference.md](../docs/ask-architecture-refer
 | Composition root | `app` (fx), `config`, `logs` |
 | Files under `~/.ask` | `settings` (`auth.json`, `settings.json`) |
 | Transport | `gateway` (+ `methods`), `http`, `channels` |
-| Runtime core | `agent` (two-level loop, queues), `pipeline` (hook points of one turn), `sessions` (entry tree), `scheduler` (lanes), `bus` (event fan-out), `workspace` (cwd, project root, trust), `cron` |
+| Runtime core | `agent` (two-level loop, queues), `pipeline` (typed control points), `sessions` (typed in-memory log; persistent tree planned), `scheduler` (planned lanes), `bus` (replay ring and followers), `workspace` (path resolution today; cwd, project root, trust planned), `cron` |
+| Terminal UI | [tui](tui/README.md) (implemented state and components), `tuiclient` (the `tui.Client` implementation), [tuiext](tuiext/README.md) (planned client-local UI extension host); see [TUI architecture](../docs/tui-architecture.md) |
 | Process model | `leader` (local router and client), `acp` (ACP adapter over the agent) |
-| Capabilities | `providers` (+ `acp`: subprocess agents), `tools`, `mcp`, `skills`, `bootstrap`, `hooks` (+ `handlers`), `permissions` (gateway RBAC), `sandbox`, `tracing` (+ `otelexport`). Parked: `memory`, `crypto` |
+| Capabilities | [auth](auth/README.md) (native credentials), `providers` (+ `acp`: subprocess agents), `tools`, `mcp`, `skills`, `bootstrap`, `hooks` (+ `handlers`), `permissions` (gateway RBAC), `sandbox` (process runner), `jobs` (per-session job table), `tracing` (+ `otelexport`). Parked: `memory`, `crypto` |
 | Storage | `store` (models + interfaces), `store/gormstore` (GORM implementation), `migrations` (runner) |
 | Infrastructure clients | `cache` (Redis), `messaging` (asynq), `realtime` (centrifuge), `validation` |
 | Tests | `testsupport` |
 
-Wire contract: `pkg/protocol` (WS) and `proto/` (gRPC, generated code only).
+Wire contract: `pkg/protocol` (the WS endpoint is planned, not built) and `proto/` (gRPC, generated code only).
 
 ## Import rules
 
@@ -26,10 +27,12 @@ Wire contract: `pkg/protocol` (WS) and `proto/` (gRPC, generated code only).
 
 | Rule | Detail |
 |---|---|
-| Core does not import `agent` | `tools`, `pipeline`, `providers`, `store` must not import `agent` |
-| Core does not import transport | `agent`, `pipeline`, `tools`, `providers`, `store` must not import `gateway`, `http`, `channels/<vendor>` |
-| Core does not import adapters | `agent`, `pipeline`, `tools`, `providers`, `store`, `sessions`, `hooks`, `bus` must not import `acp`, `leader` |
+| Core does not import `agent` | `tools`, `sandbox`, `jobs`, `workspace`, `pipeline`, `providers`, `store` must not import `agent` |
+| Core does not import transport | `agent`, `pipeline`, `tools`, `sandbox`, `jobs`, `workspace`, `providers`, `store` must not import `gateway`, `http`, `channels/<vendor>` |
+| Core does not import adapters | `agent`, `pipeline`, `tools`, `sandbox`, `jobs`, `workspace`, `providers`, `store`, `sessions`, `hooks`, `bus` must not import `acp`, `leader` |
 | `providers` does not import `tools` | `tools` may import `providers` |
+| Providers receive resolved credentials | Providers must not import auth or settings |
+| Settings uses standard library only | Settings must not import other internal packages or dependencies |
 | `store` does not import `store/gormstore` | Interfaces never depend on their implementation |
 | Handlers call store interfaces only | `http`, `gateway`, `gateway/methods` must not import `store/gormstore`, `gorm.io`, `database/sql` |
 | One composition root | Only `app` and `cmd/server` import `store/gormstore` |
@@ -39,14 +42,16 @@ Wire contract: `pkg/protocol` (WS) and `proto/` (gRPC, generated code only).
 
 | You are adding | Put it in |
 |---|---|
-| A builtin tool | `tools/<family>_*.go` |
+| A builtin tool | `tools/<family>_*.go` (`file_*`, `search_*`, `shell_*`) |
+| A process or job rule (kill, output buffer, environment, job states, notices) | `sandbox/` or `jobs/` |
 | A tool backend by vendor | `tools/<tool>_<vendor>.go` |
 | An LLM vendor | `providers/<vendor>*.go` |
 | A chat platform | `channels/<vendor>/` |
-| A hook-point step of a turn | `pipeline/<name>_step.go` |
+| A typed control handler | `pipeline/<name>.go`; register it with `pipeline.Registry` |
 | A session entry type | `sessions/entry.go` |
-| An event type | `pkg/protocol` (publisher in `bus`, sync dispatch in `hooks`) |
+| An event type | `pkg/protocol`; agent publishes lifecycle events and bus owns replay/follow |
 | A user setting or the credentials file | `settings/` |
+| Native login, refresh, or account access | [auth/](auth/README.md), composed in [app](app/README.md) |
 | An ACP method or `session/update` mapping | `acp/` (types in `pkg/protocol`) |
 | Leader socket, lock or spawn code | `leader/` |
 | Project trust or cwd rules | `workspace/` |

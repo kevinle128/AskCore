@@ -1,0 +1,11 @@
+--- /private/tmp/askcore-resize-mod-cache/charm.land/bubbletea/v2@v2.0.10/input.go	2026-10-07 11:57:45
++++ bubbletea/input.go	2026-10-07 12:55:03
+@@ -40,7 +40,7 @@
+ 	case uv.PasteEndEvent:
+ 		return PasteEndMsg(e)
+ 	case uv.WindowSizeEvent:
+-		return WindowSizeMsg(e)
++		return WindowSizeMsg{Width: e.Width, Height: e.Height}
+ 	case uv.CapabilityEvent:
+ 		return CapabilityMsg(e)
+ 	case uv.TerminalVersionEvent:

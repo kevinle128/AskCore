@@ -1,0 +1,153 @@
+--- a/tea.go
++++ b/tea.go
+@@ -432,6 +432,7 @@
+ 
+ // Program is a terminal user interface.
+ type Program struct {
++	inlineReflow bool
+ 	// disableInput disables all input. This is useful for programs that
+ 	// don't need input, like a progress bar or a spinner.
+ 	disableInput bool
+@@ -1074,6 +1075,8 @@
+ 			)
+ 			r.setLogger(p.logger)
+ 			r.setNoInput(p.disableInput)
++			r.inlineReflow = p.inlineReflow
++			r.scr.SetInlineReflow(p.inlineReflow)
+ 			// XXX: This breaks many things especially when we want the output
+ 			// to be compatible with terminals that are not necessary a TTY.
+ 			// This was originally done to work around a Wish emulated-pty
+--- a/options.go
++++ b/options.go
+@@ -173,3 +173,9 @@
+ 		p.height = height
+ 	}
+ }
++
++// WithInlineReflow declares native inline reflow during terminal resize.
++// Leave this disabled for terminals that resize without reflowing cells.
++func WithInlineReflow(enabled bool) ProgramOption {
++	return func(p *Program) { p.inlineReflow = enabled }
++}
+--- a/cursed_renderer.go
++++ b/cursed_renderer.go
+@@ -16,25 +16,27 @@
+ )
+ 
+ type cursedRenderer struct {
+-	w             io.Writer
+-	buf           bytes.Buffer // updates buffer to be flushed to [w]
+-	scr           *uv.TerminalRenderer
+-	cellbuf       uv.ScreenBuffer
+-	lastView      *View
+-	env           []string
+-	term          string // the terminal type $TERM
+-	width, height int
+-	mu            sync.Mutex
+-	profile       colorprofile.Profile
+-	logger        uv.Logger
+-	view          View
+-	hardTabs      bool // whether to use hard tabs to optimize cursor movements
+-	backspace     bool // whether to use backspace to optimize cursor movements
+-	mapnl         bool
+-	syncdUpdates  bool // whether to use synchronized output mode for updates
+-	starting      bool // indicates whether the renderer is starting after being stopped
+-	pendingErase  bool // an scr.Erase() is pending and hasn't been drained by flush yet
+-	noInput       bool // whether input is disabled, in which case keyboard enhancement queries are pointless
++	awaitingSizedView bool
++	w                 io.Writer
++	buf               bytes.Buffer // updates buffer to be flushed to [w]
++	scr               *uv.TerminalRenderer
++	cellbuf           uv.ScreenBuffer
++	lastView          *View
++	env               []string
++	term              string // the terminal type $TERM
++	width, height     int
++	mu                sync.Mutex
++	profile           colorprofile.Profile
++	logger            uv.Logger
++	view              View
++	hardTabs          bool // whether to use hard tabs to optimize cursor movements
++	backspace         bool // whether to use backspace to optimize cursor movements
++	mapnl             bool
++	syncdUpdates      bool // whether to use synchronized output mode for updates
++	starting          bool // indicates whether the renderer is starting after being stopped
++	pendingErase      bool // an scr.Erase() is pending and hasn't been drained by flush yet
++	inlineReflow      bool
++	noInput           bool // whether input is disabled, in which case keyboard enhancement queries are pointless
+ }
+ 
+ var _ renderer = &cursedRenderer{}
+@@ -291,6 +293,9 @@
+ 	s.mu.Lock()
+ 	defer s.mu.Unlock()
+ 
++	if s.awaitingSizedView && !closing {
++		return nil
++	}
+ 	view := s.view
+ 	frameArea := uv.Rect(0, 0, s.width, s.height)
+ 	if len(view.Content) == 0 {
+@@ -618,6 +623,7 @@
+ 		}
+ 	}
+ 
++	s.scr.ConfirmInlineFrame()
+ 	s.lastView = &view
+ 
+ 	return nil
+@@ -629,6 +635,7 @@
+ 	defer s.mu.Unlock()
+ 
+ 	s.view = v
++	s.awaitingSizedView = false
+ }
+ 
+ // reset implements renderer.
+@@ -642,6 +649,7 @@
+ 	s.buf.Reset()
+ 	scr := uv.NewTerminalRenderer(&s.buf, s.env)
+ 	scr.SetColorProfile(s.profile)
++	scr.SetInlineReflow(s.inlineReflow)
+ 	scr.SetRelativeCursor(true) // Always start in inline mode
+ 	scr.SetFullscreen(false)    // Always start in inline mode
+ 	if s.hardTabs {
+@@ -666,6 +674,7 @@
+ // resize implements renderer.
+ func (s *cursedRenderer) resize(w, h int) {
+ 	s.mu.Lock()
++	s.awaitingSizedView = true
+ 	// We need to mark the screen for clear to force a redraw. However, we
+ 	// only do so if we're using alt screen or the width has changed.
+ 	// That's because redrawing is expensive and we can avoid it if the
+@@ -712,6 +721,7 @@
+ 
+ func exitAltScreen(s *cursedRenderer, write bool) {
+ 	s.scr.Erase()
++	s.scr.SetInlineReflow(s.inlineReflow)
+ 	s.scr.SetRelativeCursor(true)
+ 	s.scr.SetFullscreen(false)
+ 	if write {
+@@ -755,6 +765,14 @@
+ 
+ // insertAbove implements renderer.
+ func (s *cursedRenderer) insertAbove(str string) error {
++	s.mu.Lock()
++	pending := s.pendingErase && s.inlineReflow && s.lastView != nil
++	s.mu.Unlock()
++	if pending {
++		if err := s.flush(false); err != nil {
++			return err
++		}
++	}
+ 	s.mu.Lock()
+ 	defer s.mu.Unlock()
+ 
+@@ -809,6 +827,7 @@
+ 		return fmt.Errorf("bubbletea: error writing insert above to the writer: %w", err)
+ 	}
+ 
++	s.scr.ConfirmInlineFrame()
+ 	return nil
+ }
+ 

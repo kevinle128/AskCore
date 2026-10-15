@@ -1,0 +1,48 @@
+package acp
+
+import (
+	"AskCore/internal/providers"
+	"AskCore/pkg/protocol"
+	"context"
+	"github.com/stretchr/testify/require"
+	"testing"
+)
+
+func TestReviewTakeFencesInFlightModelChange(t *testing.T) {
+	entered, release := make(chan struct{}), make(chan struct{})
+	cfg := testConfig(says("ok"), nil)
+	cfg.RequireRoute = true
+	cfg.ModelAuth = func(context.Context, providers.Model, string) error { close(entered); <-release; return nil }
+	p := newAdapterPeer(t, cfg, nil)
+	p.ok("initialize", map[string]any{"protocolVersion": 1}, nil)
+	sid := p.newRouted("c1", "")
+	target := providers.AnthropicSonnet46()
+	result := make(chan rpcFrame, 1)
+	go func() {
+		result <- p.call(protocol.ACPSetModel, withRoute(map[string]any{"sessionId": sid, "modelId": modelID(target), "authMethodId": "api-key"}, route("c1", 1, true, "")))
+	}()
+	<-entered
+	// The old driver leaves while its model auth check is in flight.
+	gen := p.takeGen(sid, "c2", false, "")
+	require.Equal(t, uint64(2), gen)
+	close(release)
+	f := <-result
+	s, _ := p.a.Session(sid)
+	t.Logf("after take: generation=%d model=%s old mutation error=%v", s.Gen(), modelID(s.Agent().State().Model), f.Error)
+	require.NotNil(t, f.Error, "the former driver's model change committed after take returned")
+}
+
+func TestReviewIdleShutdownWaitsForAuthenticate(t *testing.T) {
+	entered, release := make(chan struct{}), make(chan struct{})
+	cfg := testConfig(says("ok"), nil)
+	cfg.Authenticate = func(context.Context, string) error { close(entered); <-release; return nil }
+	p := newAdapterPeer(t, cfg, nil)
+	p.ok("initialize", map[string]any{"protocolVersion": 1}, nil)
+	done := make(chan rpcFrame, 1)
+	go func() { done <- p.call("authenticate", map[string]any{"methodId": "api-key"}) }()
+	<-entered
+	idle := p.a.QuiesceIfIdle()
+	close(release)
+	<-done
+	require.False(t, idle, "idle shutdown was admitted during an auth operation")
+}

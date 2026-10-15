@@ -1,0 +1,14 @@
+=== RUN   TestOracle
+=== RUN   TestOracle/history
+=== RUN   TestOracle/wrap
+=== RUN   TestOracle/erase-motion
+=== RUN   TestOracle/alt
+=== RUN   TestOracle/active-alt
+--- PASS: TestOracle (0.00s)
+    --- PASS: TestOracle/history (0.00s)
+    --- PASS: TestOracle/wrap (0.00s)
+    --- PASS: TestOracle/erase-motion (0.00s)
+    --- PASS: TestOracle/alt (0.00s)
+    --- PASS: TestOracle/active-alt (0.00s)
+PASS
+ok  	askcore-t0-inline	0.474s

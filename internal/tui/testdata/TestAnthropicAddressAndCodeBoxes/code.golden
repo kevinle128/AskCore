@@ -1,0 +1,24 @@
+◢◤ ask  ● leader 7c1e  ⌂ ~/src/askcore deepseek-v4.1-flash  ▰▱▱▱▱▱▱▱ 18%  $0.04
+────────────────────────────────────────────────────────────────────────────────
+  The leader removes the stale socket after the lock probe, and the probe can
+  take 1.2 s.
+
+  go
+  deadline := 5 * time.Second
+  deepseek-v4.1-flash · 4.2s · ↑12.4k ↓1.8k · $0.004
+
+┊ ◌ Waiting for a code… 0s
+────────────────────────────────────────────────────────────────────────────────
+╭─ Claude Pro/Max sign-in ─────────────────────────────────────────────────────╮
+│  The callback port is busy, so this sign-in uses a code instead.             │
+│  Open this URL, approve, then paste the code that the page shows.            │
+│                                                                              │
+│  https://auth.example.test/oauth/authorize?response_type=code&client_id=ask- │
+│  cli&redirect_uri=http%3A%2F%2F127.0.0.1%3A1455%2Fcallback&scope=openid+prof │
+│  ile&state=Zk3pQ9xT&code_challenge=Vt8f0aLm2sQe&code_challenge_method=S256   │
+│                                                                              │
+│  code  paste the code; it stays hidden                                       │
+╰──────────────────────────────────────────────────────────────────────────────╯
+   enter send code  ·  ctrl+y copy URL  ·  esc cancel
+────────────────────────────────────────────────────────────────────────────────
+ Tab blocks · ctrl+t thinking · ctrl+l model · / commands

@@ -1,0 +1,40 @@
+################ lane 6 epipe: json | head -n1
+$ ./ask --mode json "$(cat big300k.txt)" | head -n1 | cut -c1-80; echo "ask_exit=${PIPESTATUS[0]}"
+--- stdout
+{"seq":1,"ts":1791030406428,"sessionId":"","runId":"c0e2085a06598566e27456fe491c
+ask_exit=1
+--- stderr
+--- exit 0
+
+################ epipe: text 300 KB | head -c1, trunk
+$ ./ask-trunk -p "$(cat big300k.txt)" | head -c1; s=${PIPESTATUS[0]}; echo; echo "ask_exit=$s"
+--- stdout
+a
+ask_exit=141
+--- stderr
+--- exit 0
+
+################ epipe: text 300 KB | head -c1, head
+$ ./ask -p "$(cat big300k.txt)" | head -c1; s=${PIPESTATUS[0]}; echo; echo "ask_exit=$s"
+--- stdout
+a
+ask_exit=1
+--- stderr
+--- exit 0
+
+################ epipe: json 300 KB | head -c1, head
+$ ./ask --mode json "$(cat big300k.txt)" | head -c1; s=${PIPESTATUS[0]}; echo; echo "ask_exit=$s"
+--- stdout
+{
+ask_exit=1
+--- stderr
+--- exit 0
+
+################ epipe: paced json | head -c1, head
+$ ASK_FAUX_TPS=50 ./ask --mode json "$LONG" | head -c1; s=${PIPESTATUS[0]}; echo; echo "ask_exit=$s"
+--- stdout
+{
+ask_exit=1
+--- stderr
+--- exit 0
+

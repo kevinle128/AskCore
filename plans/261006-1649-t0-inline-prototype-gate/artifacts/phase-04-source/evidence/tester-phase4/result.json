@@ -1,0 +1,39 @@
+{
+  "commands": {
+    "narrow": {
+      "command": "go test -v -run 'TestLayout|TestSelector|TestG2|TestG3' -count=1 -timeout 90s ./...",
+      "exit": 0
+    },
+    "race": {
+      "command": "go test -race -v -count=1 -timeout 90s ./...",
+      "exit": 0
+    },
+    "vet": {
+      "command": "go vet ./...",
+      "exit": 0
+    },
+    "build": {
+      "command": "go build -o evidence/tester-phase4/g2 .",
+      "exit": 0
+    },
+    "format": {
+      "command": "gofmt -l *.go",
+      "exit": 0
+    }
+  },
+  "narrow_top_level_passes": 6,
+  "race_top_level_passes": 33,
+  "race_subtests": 30,
+  "archive_hashes_verified": {
+    "phase1": 34,
+    "phase2": 79,
+    "phase3": 130,
+    "phase4": 148
+  },
+  "frozen_files_verified": 20,
+  "product_hashes_verified": 27,
+  "real_iTerm2": "pending",
+  "complete_G2_G3": "not_claimed",
+  "source_freeze_sha": "0757f201a34add8b09db37517dfc937086584176a41350fe34c2495a9180883d",
+  "archive_manifest_sha": "18f3497a109efb823e1406ecbf2932edb5be012c7bf8c9282fc828bca90d4b78"
+}

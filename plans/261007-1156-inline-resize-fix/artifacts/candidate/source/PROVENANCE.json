@@ -1,0 +1,22 @@
+{
+  "bubbletea": "charm.land/bubbletea/v2@v2.0.10",
+  "ultraviolet": "github.com/charmbracelet/ultraviolet@v0.0.0-20260703014108-f5a850f9c2b7",
+  "patches": [
+    "patches/bubbletea.diff",
+    "patches/ultraviolet.diff"
+  ],
+  "status": "partial-not-accepted",
+  "renderer_fix_classes": 1,
+  "original_native_cases": "8 pass",
+  "strong_native_cases": {
+    "alacritty": "4 fail",
+    "ghostty": "4 pass"
+  },
+  "old_archives_modified": false,
+  "root_product_modified": false,
+  "pending_write_resize": {
+    "alacritty": "pass",
+    "ghostty": "fail:1098 retained;2000 unique output"
+  },
+  "go_toolchain": "go1.27.0 darwin/arm64"
+}

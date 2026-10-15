@@ -1,0 +1,6 @@
+=== 2 echo tool: ./ask -p 'echo hi'
+$ /tmp/h2-H2-D-1/ask -p echo hi
+stdout: hi
+stderr: ''
+exit: 0
+

@@ -1,0 +1,23 @@
+Caught panic:
+
+fixture command panic
+
+Restoring terminal...
+
+program was killed: program experienced a panic
+goroutine 65 [running]:
+runtime/debug.Stack()
+	/opt/homebrew/Cellar/go/1.26.0/libexec/src/runtime/debug/stack.go:26 +0x64
+charm.land/bubbletea/v2.(*Program).recoverFromPanic(0x25df85d84780, {0x104e26a80, 0x104e69420})
+	/private/tmp/askcore-t0-mod-cache/charm.land/bubbletea/v2@v2.0.10/tea.go:1304 +0xec
+charm.land/bubbletea/v2.(*Program).handleCommands.func1.1.1()
+	/private/tmp/askcore-t0-mod-cache/charm.land/bubbletea/v2@v2.0.10/tea.go:734 +0x38
+panic({0x104e26a80?, 0x104e69420?})
+	/opt/homebrew/Cellar/go/1.26.0/libexec/src/runtime/panic.go:860 +0x12c
+main.model.Update.func1()
+	/private/tmp/askcore-t0-09kf6w9r/model.go:119 +0x2c
+charm.land/bubbletea/v2.(*Program).handleCommands.func1.1()
+	/private/tmp/askcore-t0-mod-cache/charm.land/bubbletea/v2@v2.0.10/tea.go:739 +0x5c
+created by charm.land/bubbletea/v2.(*Program).handleCommands.func1 in goroutine 29
+	/private/tmp/askcore-t0-mod-cache/charm.land/bubbletea/v2@v2.0.10/tea.go:729 +0xf8
+

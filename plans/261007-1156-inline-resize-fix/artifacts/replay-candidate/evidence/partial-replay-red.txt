@@ -1,0 +1,6 @@
+--- FAIL: TestReplayPartialWriteRestoresTerminal (5.69s)
+    replay_test.go:59: owned child pid=99397 /var/folders/84/5njq4pvs747b3zzntvtgtpl80000gn/T/TestReplayPartialWriteRestoresTerminal3861148487/001/replay-fault --scenario g6 support=true
+    replay_test.go:66: status predicate timeout raw="\r\x1b[12B\n\x1b[12A\x1b[LT0 startup\x1b[K\r\n\x1b[?2026$p\x1b[?2027$p\x1b[?5W\x1b[?2004h\x1b[>4;2m\x1b[>3u\x1b[?u\x1b[1 q\x1b[Jeditor>\r\nAlt+Enter: newline; Enter: submit\x1b[A\x1b[4Z\x1b[?25h\x1b[?2026h\r\x1b[Jeditor>\r\nShift/Ctrl/Al\r\x1b[A\x1b[8C\x1b[?2026l\x1b[?2026h\x1b[2J\x1b[3J\x1b[H\x1b[0mT0 startup\r\n\x1b[?25l\r\x1b[Jeditor>\r\nShift/Ctrl/Al\r\x1b[A\x1b[8C\x1b[?25h\x1b[?2026l"
+FAIL
+exit status 1
+FAIL	askcore-t0-inline	6.158s

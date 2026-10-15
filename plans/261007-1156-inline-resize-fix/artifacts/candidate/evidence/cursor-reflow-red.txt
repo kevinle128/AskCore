@@ -1,0 +1,6 @@
+--- FAIL: TestInlineResizeCursorReflow (0.00s)
+    resize_origin_test.go:11: resize width 13: cursor 16,0; native reflow requires 3,1
+    resize_origin_test.go:11: resize width 12: cursor 16,0; native reflow requires 5,1
+FAIL
+exit status 1
+FAIL	github.com/charmbracelet/ultraviolet	0.265s

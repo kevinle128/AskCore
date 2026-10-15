@@ -1,0 +1,43 @@
+<!doctype html>
+<html lang="vi"><head><meta charset="utf-8"><title>Nút cuộn xuống cuối: 4 phiên bản</title>
+<style>
+body{background:#14151c;color:#ddd;font-family:-apple-system,sans-serif;margin:24px}
+h1{font-size:20px}h2{font-size:16px;margin:22px 0 4px}.note{color:#aab;font-size:14px;margin:2px 0 8px}
+.row{display:flex;gap:20px;flex-wrap:wrap}
+.cap{font-size:12px;color:#889;margin:4px 0}
+.term{background:#0f1017;border:1px solid #2a2c3a;border-radius:8px;padding:6px 10px;font:13px/1.45 "SF Mono",Menlo,monospace;white-space:pre;width:80ch}
+.muted{color:#6f7390}.dim{color:#4c4f66}.accent{color:#f472b6}.tool{color:#2dd4bf}.ok{color:#34d399}.err{color:#f87171}
+.b{font-weight:700}.sel{background:#2d3150}
+.inv-a{background:#f472b6;color:#0f1017;font-weight:700}.inv-t{background:#2dd4bf;color:#0f1017;font-weight:700}
+.btn{cursor:pointer}.btn:hover{filter:brightness(1.25)}
+</style></head><body>
+<h1>Nút cuộn xuống cuối: 4 phiên bản</h1>
+<div class="note">Mỗi phiên bản có 2 trạng thái: <b>trái</b> là đã cuộn lên, không có gì mới; <b>phải</b> là đã cuộn lên và agent vừa có output mới. Rê chuột vào nút để thấy hiệu ứng click.</div>
+<div id="out"></div>
+<script>
+const W=80;
+const pane=[
+'  ◆ <b>Ran</b> <span class="muted">seq 1 40</span>',
+'  ◆ <b>Read</b> <span class="muted">parser.go</span>',
+'  <span class="tool">⚓</span> <b>PreToolUse hook</b> <span class="muted">(project/lint-guard) · edit parser.go</span>      <span class="ok">✓ allowed 0.1s</span>',
+'    <span class="muted">Runs gofmt on the file before the agent edits it</span>',
+'  ◆ <b>Edited</b> <span class="muted">parser.go</span>  <span class="ok">+3</span> <span class="err">-1</span>',
+'  <span class="err">◆</span> <b>Ran</b> <span class="muted">go test ./...</span>                                              <span class="err">✗ exit 1</span>',
+''];
+const center=(html,len)=>' '.repeat(Math.max(0,Math.floor((W-len)/2)))+html;
+const rule='<span class="dim">'+'─'.repeat(W)+'</span>';
+const tail=[rule,'<span class="accent">❯</span> ▌<span class="muted">Ask anything  ·  / commands</span>',rule];
+const V=[
+ {name:'1. Chữ đậm trên nền tô (bản hiện tại)',why:'Nổi vừa phải, giữ được cảm giác gọn. Nền tô giống block đang chọn.',
+  mk:n=>{const t=n?' ↓ new output · End ':' ↓ bottom · End ';return center('<span class="btn sel b '+(n?'accent':'tool')+'">'+t+'</span>',t.length);}},
+ {name:'2. Đường kẻ ngang có nhãn ở giữa',why:'Rất dễ thấy vì chạy hết chiều ngang, như một mốc "còn nữa bên dưới". Tốn cả một dòng.',
+  mk:n=>{const t=n?' ↓ new output · End ':' ↓ bottom · End ';const side=Math.floor((W-t.length)/2);
+   const c=n?'accent':'tool';return '<span class="'+c+'">'+'─'.repeat(side)+'</span><span class="btn b '+c+'">'+t+'</span><span class="'+c+'">'+'─'.repeat(W-side-t.length)+'</span>';}},
+ {name:'3. Nút đặc (nền màu, chữ tối)',why:'Nổi nhất, trông rõ là một nút bấm. Có thể hơi "chói" với giao diện tối.',
+  mk:n=>{const t=n?' ↓ New output · End ':' ↓ Jump to bottom · End ';return center('<span class="btn '+(n?'inv-a':'inv-t')+'">'+t+'</span>',t.length);}},
+ {name:'4. Kiểu Grok: mũi tên ▼ kèm số dòng mới',why:'Gọn nhất, gần Grok nhất. Khi có output mới thì hiện số lượng và đổi màu.',
+  mk:n=>{const t=n?'▼ 12 new lines · End':'▼ End';return center('<span class="btn b '+(n?'accent':'tool')+'">'+t+'</span>',t.length);}},
+];
+document.getElementById('out').innerHTML=V.map(v=>'<h2>'+v.name+'</h2><div class="note">'+v.why+'</div><div class="row">'+
+ [0,1].map(n=>'<div><div class="cap">'+(n?'Có output mới':'Không có gì mới')+'</div><div class="term">'+[...pane,v.mk(n),...tail].join('\n')+'</div></div>').join('')+'</div>').join('');
+</script></body></html>

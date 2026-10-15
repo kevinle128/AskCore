@@ -1,0 +1,6 @@
+=== 3 assistant error: ./ask -p 'fail boom'
+$ /tmp/h2-H2-D-1/ask -p fail boom
+stdout: ''
+stderr: boom
+exit: 1
+

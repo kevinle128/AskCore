@@ -1,0 +1,4 @@
+go: downloading github.com/charmbracelet/x/exp/golden v0.0.0-20241212170349-ad4b7ae0f25f
+# charm.land/bubbletea/v2
+screen_test.go:9:2: github.com/charmbracelet/x/exp/golden@v0.0.0-20241212170349-ad4b7ae0f25f: Get "https://proxy.golang.org/github.com/charmbracelet/x/exp/golden/@v/v0.0.0-20241212170349-ad4b7ae0f25f.zip": dial tcp: lookup proxy.golang.org: no such host
+FAIL	charm.land/bubbletea/v2 [setup failed]

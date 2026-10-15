@@ -1,0 +1,27 @@
+Caught panic:
+
+fixture model panic
+
+Restoring terminal...
+
+goroutine 1 [running]:
+runtime/debug.Stack()
+	/opt/homebrew/Cellar/go/1.26.0/libexec/src/runtime/debug/stack.go:26 +0x64
+charm.land/bubbletea/v2.(*Program).recoverFromPanic(0x4313f3c850e0, {0x102a46720, 0x102a887e8})
+	/private/tmp/askcore-t0-mod-cache/charm.land/bubbletea/v2@v2.0.10/tea.go:1304 +0xec
+charm.land/bubbletea/v2.(*Program).Run.func2()
+	/private/tmp/askcore-t0-mod-cache/charm.land/bubbletea/v2@v2.0.10/tea.go:1038 +0xec
+panic({0x102a46720?, 0x102a887e8?})
+	/opt/homebrew/Cellar/go/1.26.0/libexec/src/runtime/panic.go:860 +0x12c
+main.model.Update({0x4313f3c82090, 0x28, 0xc, {0x4313f3d7a4d8, 0x2}, 0x2, 0x0, 0x0, 0x1, 0x0, ...}, ...)
+	/private/tmp/askcore-t0-09kf6w9r/model.go:54 +0x80c
+charm.land/bubbletea/v2.(*Program).eventLoop(0x4313f3c850e0, {0x102a8a440?, 0x4313f3cec0f0?}, 0x4313f3c92540)
+	/private/tmp/askcore-t0-mod-cache/charm.land/bubbletea/v2@v2.0.10/tea.go:880 +0xb78
+charm.land/bubbletea/v2.(*Program).Run(0x4313f3c850e0)
+	/private/tmp/askcore-t0-mod-cache/charm.land/bubbletea/v2@v2.0.10/tea.go:1153 +0x7a8
+main.run()
+	/private/tmp/askcore-t0-09kf6w9r/main.go:83 +0x624
+main.main()
+	/private/tmp/askcore-t0-09kf6w9r/main.go:16 +0x1c
+
+program was killed: program experienced a panic

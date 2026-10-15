@@ -1,0 +1,27 @@
+################ lane 1 regression: trunk
+$ ./ask-trunk --mode json hi | jq -c .type; echo "PIPESTATUS=${PIPESTATUS[*]}"
+--- stdout
+PIPESTATUS=1 0
+--- stderr
+Error: --mode json is not implemented yet
+--- exit 0
+
+################ lane 1 regression: head
+$ ./ask --mode json hi | jq -c .type; echo "PIPESTATUS=${PIPESTATUS[*]}"
+--- stdout
+"agent_start"
+"turn_start"
+"message_start"
+"message_end"
+"message_start"
+"message_update"
+"message_update"
+"message_update"
+"message_end"
+"turn_end"
+"agent_end"
+"agent_settled"
+PIPESTATUS=0 0
+--- stderr
+--- exit 0
+

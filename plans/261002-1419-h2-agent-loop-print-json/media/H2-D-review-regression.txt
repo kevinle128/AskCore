@@ -1,0 +1,13 @@
+=== 1 regression: trunk vs head, ./ask -p hello
+-- trunk (4b6c193), no TTY:
+$ perl -e alarm 3; exec @ARGV /tmp/h2-H2-D-trunk/ask -p hello
+stdout: Error\ running\ program:\ could\ not\ open\ a\ new\ TTY:\ open\ /dev/tty:\ device\ not\ configured
+stderr: ''
+exit: 1
+(perl alarm 3s guard; exit 142 would mean the trunk binary hung and was killed by SIGALRM)
+-- head:
+$ /tmp/h2-H2-D-1/ask -p hello
+stdout: hello
+stderr: ''
+exit: 0
+

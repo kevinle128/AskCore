@@ -41,7 +41,7 @@ go.work.sum
 
 # Logs
 *.log
-logs/
+/logs/
 
 # OS generated files
 .DS_Store

@@ -1,0 +1,13 @@
+{
+  "cli_version": "tui-test 0.1.0-beta.2",
+  "headless_only": true,
+  "d14_ready": false,
+  "cases": [
+    {
+      "backend": "ghostty",
+      "scenario": "g3-capacity",
+      "result": "fail",
+      "error": "ordered transcript differs: retained=1097, expected=2000"
+    }
+  ]
+}

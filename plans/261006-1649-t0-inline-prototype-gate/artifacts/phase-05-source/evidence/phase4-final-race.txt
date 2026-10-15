@@ -1,0 +1,249 @@
+=== RUN   TestCommitStringObservation
+--- PASS: TestCommitStringObservation (0.00s)
+=== RUN   TestCommitUnderlyingFailureLatch
+--- PASS: TestCommitUnderlyingFailureLatch (0.00s)
+=== RUN   TestCommitFaultPrefixes
+=== RUN   TestCommitFaultPrefixes/zero
+=== RUN   TestCommitFaultPrefixes/partial
+=== RUN   TestCommitFaultPrefixes/short
+=== RUN   TestCommitFaultPrefixes/permanent
+--- PASS: TestCommitFaultPrefixes (0.00s)
+    --- PASS: TestCommitFaultPrefixes/zero (0.00s)
+    --- PASS: TestCommitFaultPrefixes/partial (0.00s)
+    --- PASS: TestCommitFaultPrefixes/short (0.00s)
+    --- PASS: TestCommitFaultPrefixes/permanent (0.00s)
+=== RUN   TestCommitFrameIsNotInsertion
+--- PASS: TestCommitFrameIsNotInsertion (0.00s)
+=== RUN   TestCommitRejectUnsafeCleanup
+--- PASS: TestCommitRejectUnsafeCleanup (0.00s)
+=== RUN   TestEditorCellCursor
+--- PASS: TestEditorCellCursor (0.00s)
+=== RUN   TestEditorViewBounds
+--- PASS: TestEditorViewBounds (0.00s)
+=== RUN   TestG1Stock
+=== RUN   TestG1Stock/oversized
+    g1_test.go:26: owned child pid=35326 /var/folders/84/5njq4pvs747b3zzntvtgtpl80000gn/T/TestG1Stock3821670659/001/g1 --scenario g6 support=true
+    g1_test.go:68: restore termios exact, final cursor=(0,11) mode map=map[25:true 2004:false 2026:false]
+=== RUN   TestG1Stock/ordered2000
+    g1_test.go:26: owned child pid=35451 /var/folders/84/5njq4pvs747b3zzntvtgtpl80000gn/T/TestG1Stock3821670659/001/g1 --scenario g6 support=true
+    g1_test.go:68: restore termios exact, final cursor=(0,11) mode map=map[25:true 2004:false 2026:false]
+=== RUN   TestG1Stock/shrink
+    g1_test.go:26: owned child pid=35452 /var/folders/84/5njq4pvs747b3zzntvtgtpl80000gn/T/TestG1Stock3821670659/001/g1 --scenario g6 support=true
+    g1_test.go:68: restore termios exact, final cursor=(0,9) mode map=map[25:true 2004:false 2026:false]
+--- PASS: TestG1Stock (0.91s)
+    --- PASS: TestG1Stock/oversized (0.21s)
+    --- PASS: TestG1Stock/ordered2000 (0.16s)
+    --- PASS: TestG1Stock/shrink (0.06s)
+=== RUN   TestG1ReadyOrder
+    g1_test.go:78: owned child pid=35477 /var/folders/84/5njq4pvs747b3zzntvtgtpl80000gn/T/TestG1ReadyOrder1478018995/001/g1 --scenario g6 support=true
+    g1_test.go:97: restore termios exact, final cursor=(0,5) mode map=map[25:true 2004:false 2026:false]
+--- PASS: TestG1ReadyOrder (0.38s)
+=== RUN   TestG1StreamingEditor
+    g1_test.go:104: owned child pid=35483 /var/folders/84/5njq4pvs747b3zzntvtgtpl80000gn/T/TestG1StreamingEditor175658176/001/g1 --scenario g6 support=true
+    g1_test.go:147: restore termios exact, final cursor=(0,11) mode map=map[25:true 2004:false 2026:false]
+--- PASS: TestG1StreamingEditor (0.60s)
+=== RUN   TestG1WriterFailures
+=== RUN   TestG1WriterFailures/zero
+    g1_test.go:157: owned child pid=35493 /var/folders/84/5njq4pvs747b3zzntvtgtpl80000gn/T/TestG1WriterFailures2295475210/001/g1 --scenario g6 support=true
+    g1_test.go:205: restore termios exact, final cursor=(8,1) mode map=map[25:true 2004:false 2026:false]
+    terminal_test.go:380: separate child stderr: fixture zero insertion write failure
+=== RUN   TestG1WriterFailures/partial
+    g1_test.go:157: owned child pid=35494 /var/folders/84/5njq4pvs747b3zzntvtgtpl80000gn/T/TestG1WriterFailures2295475210/001/g1 --scenario g6 support=true
+    g1_test.go:205: restore termios exact, final cursor=(2,1) mode map=map[25:true 2004:false 2026:false]
+    terminal_test.go:380: separate child stderr: fixture partial insertion write failure
+=== RUN   TestG1WriterFailures/short
+    g1_test.go:157: owned child pid=35495 /var/folders/84/5njq4pvs747b3zzntvtgtpl80000gn/T/TestG1WriterFailures2295475210/001/g1 --scenario g6 support=true
+    g1_test.go:205: restore termios exact, final cursor=(2,1) mode map=map[25:true 2004:false 2026:false]
+    terminal_test.go:380: separate child stderr: short write
+=== RUN   TestG1WriterFailures/permanent
+    g1_test.go:157: owned child pid=35496 /var/folders/84/5njq4pvs747b3zzntvtgtpl80000gn/T/TestG1WriterFailures2295475210/001/g1 --scenario g6 support=true
+    g1_test.go:205: terminal byte restoration unavailable; termios restored
+    terminal_test.go:380: separate child stderr: terminal byte restoration unavailable: output stopped after failure
+        fixture permanent insertion write failure
+--- PASS: TestG1WriterFailures (0.48s)
+    --- PASS: TestG1WriterFailures/zero (0.20s)
+    --- PASS: TestG1WriterFailures/partial (0.03s)
+    --- PASS: TestG1WriterFailures/short (0.02s)
+    --- PASS: TestG1WriterFailures/permanent (0.03s)
+=== RUN   TestG1PendingResize
+    g1_test.go:215: owned child pid=35512 /var/folders/84/5njq4pvs747b3zzntvtgtpl80000gn/T/TestG1PendingResize1070444921/001/g1 --scenario g6 support=true
+    g1_test.go:256: restore termios exact, final cursor=(0,14) mode map=map[25:true 2004:false 2026:false]
+--- PASS: TestG1PendingResize (0.51s)
+=== RUN   TestG1OutputFragments
+=== RUN   TestG1OutputFragments/byte
+    g1_test.go:265: owned child pid=35555 /var/folders/84/5njq4pvs747b3zzntvtgtpl80000gn/T/TestG1OutputFragments1784043311/001/g1 --scenario g6 support=true
+    g1_test.go:283: restore termios exact, final cursor=(0,11) mode map=map[25:true 2004:false 2026:false]
+=== RUN   TestG1OutputFragments/random
+    g1_test.go:265: owned child pid=35559 /var/folders/84/5njq4pvs747b3zzntvtgtpl80000gn/T/TestG1OutputFragments1784043311/001/g1 --scenario g6 support=true
+    g1_test.go:283: restore termios exact, final cursor=(0,11) mode map=map[25:true 2004:false 2026:false]
+--- PASS: TestG1OutputFragments (0.64s)
+    --- PASS: TestG1OutputFragments/byte (0.32s)
+    --- PASS: TestG1OutputFragments/random (0.15s)
+=== RUN   TestG1SyncFailure
+    g1_test.go:293: owned child pid=35565 /var/folders/84/5njq4pvs747b3zzntvtgtpl80000gn/T/TestG1SyncFailure2694460405/001/g1 --scenario g6 support=true
+    g1_test.go:298: restore termios exact, final cursor=(8,1) mode map=map[25:true 2004:false 2026:false]
+    terminal_test.go:380: separate child stderr: fixture partial output write failure after 8 bytes
+--- PASS: TestG1SyncFailure (0.39s)
+=== RUN   TestG2Selector
+    g2_g3_test.go:17: owned child pid=35636 /var/folders/84/5njq4pvs747b3zzntvtgtpl80000gn/T/TestG2Selector1053528131/001/selector --scenario g6 support=true
+    g2_g3_test.go:111: restore termios exact, final cursor=(0,3) mode map=map[25:true 2004:false 2026:false]
+--- PASS: TestG2Selector (0.57s)
+=== RUN   TestG3UnicodeResize
+    g2_g3_test.go:132: owned child pid=35652 /var/folders/84/5njq4pvs747b3zzntvtgtpl80000gn/T/TestG3UnicodeResize1947804370/001/resize --scenario g6 support=true
+    g2_g3_test.go:183: restore termios exact, final cursor=(0,1) mode map=map[25:true 2004:false 2026:false]
+--- PASS: TestG3UnicodeResize (0.45s)
+=== RUN   TestG3ResizeDuringStream
+    g2_g3_test.go:191: owned child pid=35697 /var/folders/84/5njq4pvs747b3zzntvtgtpl80000gn/T/TestG3ResizeDuringStream2765926266/001/stream --scenario g6 support=true
+    g2_g3_test.go:229: restore termios exact, final cursor=(0,11) mode map=map[25:true 2004:false 2026:false]
+--- PASS: TestG3ResizeDuringStream (0.57s)
+=== RUN   TestG6Input
+=== RUN   TestG6Input/false
+    g6_test.go:359: owned child pid=35703 /var/folders/84/5njq4pvs747b3zzntvtgtpl80000gn/T/TestG6Input741384722/001/g6 --scenario g6 support=false
+    g6_test.go:391: restore termios exact, final cursor=(0,4) mode map=map[25:true 2004:false 2026:false]
+=== RUN   TestG6Input/true
+    g6_test.go:359: owned child pid=35708 /var/folders/84/5njq4pvs747b3zzntvtgtpl80000gn/T/TestG6Input741384722/001/g6 --scenario g6 support=true
+    g6_test.go:391: restore termios exact, final cursor=(0,4) mode map=map[25:true 2004:false 2026:false]
+--- PASS: TestG6Input (0.60s)
+    --- PASS: TestG6Input/false (0.30s)
+    --- PASS: TestG6Input/true (0.13s)
+=== RUN   TestRestoreRoutes
+=== RUN   TestRestoreRoutes/normal
+    g6_test.go:408: owned child pid=35714 /var/folders/84/5njq4pvs747b3zzntvtgtpl80000gn/T/TestRestoreRoutes4138485283/001/g6 --scenario g6 support=true
+    g6_test.go:411: restore termios exact, final cursor=(0,2) mode map=map[25:true 2004:false 2026:false]
+=== RUN   TestRestoreRoutes/context
+    g6_test.go:408: owned child pid=35743 /var/folders/84/5njq4pvs747b3zzntvtgtpl80000gn/T/TestRestoreRoutes4138485283/001/g6 --scenario g6 support=true
+    g6_test.go:411: restore termios exact, final cursor=(0,2) mode map=map[25:true 2004:false]
+    terminal_test.go:380: separate child stderr: program was killed: context canceled
+=== RUN   TestRestoreRoutes/output-error
+    g6_test.go:408: owned child pid=35745 /var/folders/84/5njq4pvs747b3zzntvtgtpl80000gn/T/TestRestoreRoutes4138485283/001/g6 --scenario g6 support=true
+    g6_test.go:411: restore termios exact, final cursor=(8,1) mode map=map[25:true 2004:false 2026:false]
+    terminal_test.go:380: separate child stderr: fixture partial output write failure after 8 bytes
+=== RUN   TestRestoreRoutes/output-permanent
+    g6_test.go:408: owned child pid=35746 /var/folders/84/5njq4pvs747b3zzntvtgtpl80000gn/T/TestRestoreRoutes4138485283/001/g6 --scenario g6 support=true
+    g6_test.go:411: terminal byte restoration unavailable; termios restored
+    terminal_test.go:380: separate child stderr: terminal byte restoration unavailable: output stopped after failure
+        fixture partial output write failure after 8 bytes
+=== RUN   TestRestoreRoutes/SIGINT
+    g6_test.go:408: owned child pid=35750 /var/folders/84/5njq4pvs747b3zzntvtgtpl80000gn/T/TestRestoreRoutes4138485283/001/g6 --scenario g6 support=true
+    g6_test.go:411: restore termios exact, final cursor=(0,2) mode map=map[25:true 2004:false]
+    terminal_test.go:380: separate child stderr: program was killed: context canceled
+=== RUN   TestRestoreRoutes/SIGTERM
+    g6_test.go:408: owned child pid=35752 /var/folders/84/5njq4pvs747b3zzntvtgtpl80000gn/T/TestRestoreRoutes4138485283/001/g6 --scenario g6 support=true
+    g6_test.go:411: restore termios exact, final cursor=(0,2) mode map=map[25:true 2004:false]
+    terminal_test.go:380: separate child stderr: program was killed: context canceled
+=== RUN   TestRestoreRoutes/SIGHUP
+    g6_test.go:408: owned child pid=35771 /var/folders/84/5njq4pvs747b3zzntvtgtpl80000gn/T/TestRestoreRoutes4138485283/001/g6 --scenario g6 support=true
+    g6_test.go:411: restore termios exact, final cursor=(0,2) mode map=map[25:true 2004:false]
+    terminal_test.go:380: separate child stderr: program was killed: context canceled
+=== RUN   TestRestoreRoutes/model-panic
+    g6_test.go:408: owned child pid=35772 /var/folders/84/5njq4pvs747b3zzntvtgtpl80000gn/T/TestRestoreRoutes4138485283/001/g6 --scenario g6 support=true
+    g6_test.go:411: restore termios exact, final cursor=(0,2) mode map=map[25:true 2004:false]
+    terminal_test.go:380: separate child stderr: Caught panic:
+        
+        fixture model panic
+        
+        Restoring terminal...
+        
+        goroutine 1 [running]:
+        runtime/debug.Stack()
+        	/opt/homebrew/Cellar/go/1.26.0/libexec/src/runtime/debug/stack.go:26 +0x64
+        charm.land/bubbletea/v2.(*Program).recoverFromPanic(0x73d079f301e0, {0x102f3aa80, 0x102f7d410})
+        	/private/tmp/askcore-t0-mod-cache/charm.land/bubbletea/v2@v2.0.10/tea.go:1304 +0xec
+        charm.land/bubbletea/v2.(*Program).Run.func2()
+        	/private/tmp/askcore-t0-mod-cache/charm.land/bubbletea/v2@v2.0.10/tea.go:1038 +0xec
+        panic({0x102f3aa80?, 0x102f7d410?})
+        	/opt/homebrew/Cellar/go/1.26.0/libexec/src/runtime/panic.go:860 +0x12c
+        main.model.Update({0x73d079dbe0b0, 0x28, 0xc, {0x73d079e9e218, 0x1}, 0x1, 0x0, 0x0, 0x1, 0x0, ...}, ...)
+        	/private/tmp/askcore-t0-09kf6w9r/model.go:117 +0x1848
+        charm.land/bubbletea/v2.(*Program).eventLoop(0x73d079f301e0, {0x102f7f080?, 0x73d079f040c0?}, 0x73d079dea690)
+        	/private/tmp/askcore-t0-mod-cache/charm.land/bubbletea/v2@v2.0.10/tea.go:880 +0xb78
+        charm.land/bubbletea/v2.(*Program).Run(0x73d079f301e0)
+        	/private/tmp/askcore-t0-mod-cache/charm.land/bubbletea/v2@v2.0.10/tea.go:1153 +0x7a8
+        main.run()
+        	/private/tmp/askcore-t0-09kf6w9r/main.go:126 +0x8b4
+        main.main()
+        	/private/tmp/askcore-t0-09kf6w9r/main.go:17 +0x1c
+        
+        program was killed: program experienced a panic
+=== RUN   TestRestoreRoutes/command-panic
+    g6_test.go:408: owned child pid=35773 /var/folders/84/5njq4pvs747b3zzntvtgtpl80000gn/T/TestRestoreRoutes4138485283/001/g6 --scenario g6 support=true
+    g6_test.go:411: restore termios exact, final cursor=(0,2) mode map=map[25:true 2004:false]
+    terminal_test.go:380: separate child stderr: Caught panic:
+        
+        fixture command panic
+        
+        Restoring terminal...
+        
+        program was killed: program experienced a panic
+        goroutine 21 [running]:
+        runtime/debug.Stack()
+        	/opt/homebrew/Cellar/go/1.26.0/libexec/src/runtime/debug/stack.go:26 +0x64
+        charm.land/bubbletea/v2.(*Program).recoverFromPanic(0x1c34690bda40, {0x100c96a80, 0x100cd9420})
+        	/private/tmp/askcore-t0-mod-cache/charm.land/bubbletea/v2@v2.0.10/tea.go:1304 +0xec
+        charm.land/bubbletea/v2.(*Program).handleCommands.func1.1.1()
+        	/private/tmp/askcore-t0-mod-cache/charm.land/bubbletea/v2@v2.0.10/tea.go:734 +0x38
+        panic({0x100c96a80?, 0x100cd9420?})
+        	/opt/homebrew/Cellar/go/1.26.0/libexec/src/runtime/panic.go:860 +0x12c
+        main.model.Update.func1()
+        	/private/tmp/askcore-t0-09kf6w9r/model.go:119 +0x2c
+        charm.land/bubbletea/v2.(*Program).handleCommands.func1.1()
+        	/private/tmp/askcore-t0-mod-cache/charm.land/bubbletea/v2@v2.0.10/tea.go:739 +0x5c
+        created by charm.land/bubbletea/v2.(*Program).handleCommands.func1 in goroutine 16
+        	/private/tmp/askcore-t0-mod-cache/charm.land/bubbletea/v2@v2.0.10/tea.go:729 +0xf8
+        
+--- PASS: TestRestoreRoutes (1.11s)
+    --- PASS: TestRestoreRoutes/normal (0.69s)
+    --- PASS: TestRestoreRoutes/context (0.03s)
+    --- PASS: TestRestoreRoutes/output-error (0.04s)
+    --- PASS: TestRestoreRoutes/output-permanent (0.04s)
+    --- PASS: TestRestoreRoutes/SIGINT (0.03s)
+    --- PASS: TestRestoreRoutes/SIGTERM (0.02s)
+    --- PASS: TestRestoreRoutes/SIGHUP (0.02s)
+    --- PASS: TestRestoreRoutes/model-panic (0.02s)
+    --- PASS: TestRestoreRoutes/command-panic (0.03s)
+=== RUN   TestInputPaste
+--- PASS: TestInputPaste (0.00s)
+=== RUN   TestInputAltEnter
+--- PASS: TestInputAltEnter (0.00s)
+=== RUN   TestOracle
+=== RUN   TestOracle/history
+=== RUN   TestOracle/wrap
+=== RUN   TestOracle/erase-motion
+=== RUN   TestOracle/alt
+=== RUN   TestOracle/active-alt
+--- PASS: TestOracle (0.00s)
+    --- PASS: TestOracle/history (0.00s)
+    --- PASS: TestOracle/wrap (0.00s)
+    --- PASS: TestOracle/erase-motion (0.00s)
+    --- PASS: TestOracle/alt (0.00s)
+    --- PASS: TestOracle/active-alt (0.00s)
+=== RUN   TestOracleQuery
+--- PASS: TestOracleQuery (0.00s)
+=== RUN   TestOracleUnicodeByteSplit
+--- PASS: TestOracleUnicodeByteSplit (0.00s)
+=== RUN   TestOracleFinalNegativeControls
+--- PASS: TestOracleFinalNegativeControls (0.00s)
+=== RUN   TestSelectorRouting
+--- PASS: TestSelectorRouting (0.00s)
+=== RUN   TestLayoutBoundedLiveRegion
+--- PASS: TestLayoutBoundedLiveRegion (0.00s)
+=== RUN   TestSelectorBoundaryGeometry
+--- PASS: TestSelectorBoundaryGeometry (0.00s)
+=== RUN   TestStartupNormalExit
+    terminal_test.go:66: child pid=35779 command=/var/folders/84/5njq4pvs747b3zzntvtgtpl80000gn/T/TestStartupNormalExit2596529556/001/smoke --scenario smoke
+    terminal_test.go:171: raw termios before=&term.State{state:term.state{Termios:unix.Termios{Iflag:0x2b02, Oflag:0x3, Cflag:0x4b00, Lflag:0x5cb, Cc:[20]uint8{0x4, 0xff, 0xff, 0x7f, 0x17, 0x15, 0x12, 0xff, 0x3, 0x1c, 0x1a, 0x19, 0x11, 0x13, 0x16, 0xf, 0x1, 0x0, 0x14, 0xff}, Ispeed:0x2580, Ospeed:0x2580}}} during=&term.State{state:term.state{Termios:unix.Termios{Iflag:0x2800, Oflag:0x2, Cflag:0x4b00, Lflag:0x43, Cc:[20]uint8{0x4, 0xff, 0xff, 0x7f, 0x17, 0x15, 0x12, 0xff, 0x3, 0x1c, 0x1a, 0x19, 0x11, 0x13, 0x16, 0xf, 0x1, 0x0, 0x14, 0xff}, Ispeed:0x2580, Ospeed:0x2580}}} modes=map[25:true 2004:true] cursor=(13,1)
+    terminal_test.go:266: final modes=map[25:true 2004:false] visible=true termios=&term.State{state:term.state{Termios:unix.Termios{Iflag:0x2b02, Oflag:0x3, Cflag:0x4b00, Lflag:0x5cb, Cc:[20]uint8{0x4, 0xff, 0xff, 0x7f, 0x17, 0x15, 0x12, 0xff, 0x3, 0x1c, 0x1a, 0x19, 0x11, 0x13, 0x16, 0xf, 0x1, 0x0, 0x14, 0xff}, Ispeed:0x2580, Ospeed:0x2580}}}
+    terminal_test.go:275: restored termios; final terminal=main.snapshot{Rows:[]string{"T0 startup", "", "", "", "", "", "", "", "", "", "", "", "", "", ""}, History:[]string{""}, X:0, Y:1, Alt:false}
+--- PASS: TestStartupNormalExit (0.38s)
+=== RUN   TestChildCancellation
+    terminal_test.go:342: cancel owned child pid=35785 command=/var/folders/84/5njq4pvs747b3zzntvtgtpl80000gn/T/TestChildCancellation1968773684/001/smoke
+    terminal_test.go:380: separate child stderr: program was killed: context canceled
+--- PASS: TestChildCancellation (0.36s)
+=== RUN   TestTranscriptStart
+--- PASS: TestTranscriptStart (0.00s)
+=== RUN   TestTranscriptReadyPrefix
+--- PASS: TestTranscriptReadyPrefix (0.00s)
+=== RUN   TestManualTranscriptStart
+--- PASS: TestManualTranscriptStart (0.00s)
+PASS
+ok  	askcore-t0-inline	9.362s

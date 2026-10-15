@@ -1,0 +1,48 @@
+[12B
+[12A[LT0 startup[K
+[?2026$p[?2027$p[?5W[?2004h[>4;2m[>3u[?u[1 q[Jeditor>
+Alt+Enter: newline; Enter: submit[A[4Z[?25h[B
+[2A[LG1[0000][K
+[B
+[2A[LG1[0001][K
+[B
+[2A[LG1[0002][K
+[B
+[2A[LG1[0003][K
+[B
+[2A[LG1[0004][K
+[B
+[2A[LG1[0005][K
+[B
+[2A[LG1[0006][K
+[B
+[2A[LG1[0007][K
+[B
+[2A[LG1[0008][K
+[B
+[2A[LG1[0009][K
+[?2026h[J> item 01
+  item 02
+  item 03[K
+tail 0010 ..........[K
+Shift/Ctrl/Alt+Enter: newline[K[4A[?2026l[?2026h  item 10
+11
+> item 12[?2026l[?2026h[2A[J  item 10
+  item 11
+> item 12
+tail 0010 ..........
+Shift/Ctrl/Alt+Enter: newline[2A[?2026l[?2026h[2A[Jeditor> draft
+tail 0010 ..........
+Shift/Ctrl/Alt+Enter: newline[2A[10C[?2026l[?2026h[J  item 10
+  item 11
+> item 12
+tail 0010 ..........[K
+Shift/Ctrl/Alt+Enter: newline[K[2A[?2026l[?2026h[2A[J  item 10
+  item 11
+> item 12
+tail 0010M[?2026l[?2026h[2Aeditor> dr
+aft[K
+tail 0010
+Shift/Ctrl[2A[?2026l[>4m[<1u
+
+[J[?2004l

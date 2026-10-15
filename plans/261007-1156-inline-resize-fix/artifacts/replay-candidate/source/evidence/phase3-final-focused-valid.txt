@@ -1,0 +1,9 @@
+=== RUN   TestG1SyncFailure
+    g1_test.go:293: owned child pid=251 /var/folders/84/5njq4pvs747b3zzntvtgtpl80000gn/T/TestG1SyncFailure2054213542/001/g1 --scenario g6 support=true
+    g1_test.go:298: restore termios exact, final cursor=(8,1) mode map=map[25:true 2004:false 2026:false]
+    terminal_test.go:380: separate child stderr: fixture partial output write failure after 8 bytes
+--- PASS: TestG1SyncFailure (0.71s)
+=== RUN   TestManualTranscriptStart
+--- PASS: TestManualTranscriptStart (0.00s)
+PASS
+ok  	askcore-t0-inline	0.867s

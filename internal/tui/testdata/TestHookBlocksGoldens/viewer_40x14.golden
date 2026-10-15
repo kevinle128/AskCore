@@ -1,0 +1,14 @@
+ ← back  PreToolUse hoo… ✗ blocked 0.0s
+────────────────────────────────────────
+    Event    PreToolUse
+    Matcher  tool bash
+    Does     Blocks recursive removal
+             (rm -rf) inside the repo
+    Source   ~/.ask/hooks.json (global)
+    Command  ask-hook-no-rm · timeout 5s
+    Result   blocked · exit 2 · 0.0s
+    Reason   recursive removal is not
+             allowed in this repo
+    ── output ──
+────────────────────────────────────────
+ ↑↓ PgUp PgDn · Esc back

@@ -1,0 +1,9 @@
+{"env":{"TERM":"xterm-256color"},"height":12,"timestamp":1791351368,"version":2,"width":40}
+[0.003425,"o","\r\u001b[12B\n\u001b[12A\u001b[LT0 startup\u001b[K\r\n"]
+[0.020811917,"o","\u001b[?2026$p\u001b[?2027$p"]
+[0.020868,"o","\u001b[?5W\u001b[?2004h\u001b[>4;2m\u001b[>3u\u001b[?u\u001b[1 q\u001b[Jeditor>\r\nAlt+Enter: newline; Enter: submit\u001b[A\u001b[4Z\u001b[?25h"]
+[0.037603834,"o","\u001b[?2026h\r\nShift/Ctrl/Alt+Enter: newline\u001b[K\u001b[A\u001b[3Z\u001b[?2026l"]
+[0.053265292,"o","\u001b[?2026h\r\u001b[Jeditor> abcdefghijklmnopqrstuvwxyz012345\r\n界😀Z\u001b[6G\r\nShift/Ctrl/Alt+Enter: newline\u001b[K\r\u001bM\u001b[5C\u001b[?2026l"]
+[0.060653209,"r","13x6"]
+[0.070791042,"o","\u001b[?2026h\r\u001b[A\u001b[Jfghijklmnopqr\r\nstuvwxyz01234\r\n5界😀Z\u001b[7G\r\nShift/Ctrl/Al\r\u001bM\u001b[6C\u001b[?2026l"]
+[0.181961209,"o","\u001b[?2026h\u001b[2J\u001b[3J\u001b[H\u001b[0mT0 startup\r\n\u001b[?2026h\r\u001b[Jfghijklmnopqr\r\nstuvwxyz01234\r\n5界😀Z\u001b[7G\r\nShift/Ctrl/Al\r\u001bM\u001b[6C\u001b[?2026l\u001b[?2026l"]

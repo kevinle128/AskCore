@@ -1,0 +1,2844 @@
+[
+  {
+    "command": [
+      "/Users/dale/.local/bin/tui-test",
+      "--session",
+      "askcore-e2e-7f9d4a1a76-ghostty-g3-draft-long",
+      "--json",
+      "daemon",
+      "status"
+    ],
+    "code": 3,
+    "stdout": "{\"pid\":null,\"running\":false,\"session\":\"askcore-e2e-7f9d4a1a76-ghostty-g3-draft-long\"}\n",
+    "stderr": ""
+  },
+  {
+    "command": [
+      "/Users/dale/.local/bin/tui-test",
+      "--session",
+      "askcore-e2e-7f9d4a1a76-ghostty-g3-draft-long",
+      "--json",
+      "--verbose",
+      "run",
+      "--backend",
+      "ghostty",
+      "--cols",
+      "40",
+      "--rows",
+      "12",
+      "--cwd",
+      "/var/folders/84/5njq4pvs747b3zzntvtgtpl80000gn/T/askcore-tui-e2e-fry1t6no",
+      "--env",
+      "TERM=xterm-256color",
+      "/private/tmp/askcore-inline-replay-candidate/candidate",
+      "--scenario",
+      "g6",
+      "--draft-report",
+      "/private/tmp/askcore-inline-replay-candidate/resize-evidence/native-first/ghostty/g3-draft-long/draft.json"
+    ],
+    "code": 0,
+    "stdout": "{\"ok\":true,\"data\":{\"pid\":82944,\"ready\":false,\"recording\":\"/Users/dale/Library/Caches/tui-test/askcore-e2e-7f9d4a1a76-ghostty-g3-draft-long.cast\",\"session\":\"askcore-e2e-7f9d4a1a76-ghostty-g3-draft-long\",\"shell_pid\":82945}}\n",
+    "stderr": "daemon logging to /Users/dale/.tui-test/askcore-e2e-7f9d4a1a76-ghostty-g3-draft-long.log\n"
+  },
+  {
+    "command": [
+      "/Users/dale/.local/bin/tui-test",
+      "--session",
+      "askcore-e2e-7f9d4a1a76-ghostty-g3-draft-long",
+      "--json",
+      "state"
+    ],
+    "code": 0,
+    "stdout": "{\"ok\":true,\"data\":{\"bell_count\":0,\"cols\":40,\"cursor\":{\"x\":0,\"y\":1},\"cwd\":null,\"exited\":null,\"last_command\":null,\"last_exit\":null,\"ready\":false,\"rows\":12,\"session_shell\":null,\"text\":\"T0 startup\",\"timeouts\":{\"command\":30000,\"exit\":30000,\"idle\":5000,\"ready\":30000,\"text\":5000},\"title\":null}}\n",
+    "stderr": ""
+  },
+  {
+    "command": [
+      "/Users/dale/.local/bin/tui-test",
+      "--session",
+      "askcore-e2e-7f9d4a1a76-ghostty-g3-draft-long",
+      "--json",
+      "state"
+    ],
+    "code": 0,
+    "stdout": "{\"ok\":true,\"data\":{\"bell_count\":0,\"cols\":40,\"cursor\":{\"x\":8,\"y\":1},\"cwd\":null,\"exited\":null,\"last_command\":null,\"last_exit\":null,\"ready\":false,\"rows\":12,\"session_shell\":null,\"text\":\"T0 startup\\neditor>\\nShift/Ctrl/Alt+Enter: newline\",\"timeouts\":{\"command\":30000,\"exit\":30000,\"idle\":5000,\"ready\":30000,\"text\":5000},\"title\":null}}\n",
+    "stderr": ""
+  },
+  {
+    "command": [
+      "/Users/dale/.local/bin/tui-test",
+      "--session",
+      "askcore-e2e-7f9d4a1a76-ghostty-g3-draft-long",
+      "--json",
+      "write",
+      "\u001b[200~abcdefghijklmnopqrstuvwxyz012345界😀Z\u001b[201~"
+    ],
+    "code": 0,
+    "stdout": "{\"ok\":true}\n",
+    "stderr": ""
+  },
+  {
+    "command": [
+      "/Users/dale/.local/bin/tui-test",
+      "--session",
+      "askcore-e2e-7f9d4a1a76-ghostty-g3-draft-long",
+      "--json",
+      "get-recording",
+      "askcore-e2e-7f9d4a1a76-ghostty-g3-draft-long"
+    ],
+    "code": 0,
+    "stdout": "{\"env\":{\"TERM\":\"xterm-256color\"},\"height\":12,\"timestamp\":1791351391,\"version\":2,\"width\":40}\n[0.003147584,\"o\",\"\\r\\u001b[12B\\n\\u001b[12A\\u001b[LT0 startup\\u001b[K\\r\\n\"]\n[0.020746167,\"o\",\"\\u001b[?2026$p\\u001b[?2027$p\"]\n[0.020792167,\"o\",\"\\u001b[?5W\\u001b[?2004h\\u001b[>4;2m\\u001b[>3u\\u001b[?u\\u001b[1 q\\u001b[Jeditor>\\r\\nAlt+Enter: newline; Enter: submit\\u001b[A\\u001b[4Z\\u001b[?25h\"]\n[0.037425667,\"o\",\"\\u001b[?2026h\\u001b[?2027h\\r\\nShift/Ctrl/Alt+Enter: newline\\u001b[K\\u001b[A\\u001b[3Z\\u001b[?2026l\"]\n",
+    "stderr": ""
+  },
+  {
+    "command": [
+      "/Users/dale/.local/bin/tui-test",
+      "--session",
+      "askcore-e2e-7f9d4a1a76-ghostty-g3-draft-long",
+      "--json",
+      "resize",
+      "13",
+      "6"
+    ],
+    "code": 0,
+    "stdout": "{\"ok\":true}\n",
+    "stderr": ""
+  },
+  {
+    "command": [
+      "/Users/dale/.local/bin/tui-test",
+      "--session",
+      "askcore-e2e-7f9d4a1a76-ghostty-g3-draft-long",
+      "--json",
+      "state"
+    ],
+    "code": 0,
+    "stdout": "{\"ok\":true,\"data\":{\"bell_count\":0,\"cols\":13,\"cursor\":{\"x\":8,\"y\":1},\"cwd\":null,\"exited\":null,\"last_command\":null,\"last_exit\":null,\"ready\":false,\"rows\":6,\"session_shell\":null,\"text\":\"T0 startup\\neditor>\\nShift/Ctrl/Al\\nt+Enter: newl\\nine\",\"timeouts\":{\"command\":30000,\"exit\":30000,\"idle\":5000,\"ready\":30000,\"text\":5000},\"title\":null}}\n",
+    "stderr": ""
+  },
+  {
+    "command": [
+      "/Users/dale/.local/bin/tui-test",
+      "--session",
+      "askcore-e2e-7f9d4a1a76-ghostty-g3-draft-long",
+      "--json",
+      "state"
+    ],
+    "code": 0,
+    "stdout": "{\"ok\":true,\"data\":{\"bell_count\":0,\"cols\":13,\"cursor\":{\"x\":6,\"y\":3},\"cwd\":null,\"exited\":null,\"last_command\":null,\"last_exit\":null,\"ready\":false,\"rows\":6,\"session_shell\":null,\"text\":\"T0 startup\\nfghijklmnopqr\\nstuvwxyz01234\\n5界😀Z\\nShift/Ctrl/Al\",\"timeouts\":{\"command\":30000,\"exit\":30000,\"idle\":5000,\"ready\":30000,\"text\":5000},\"title\":null}}\n",
+    "stderr": ""
+  },
+  {
+    "command": [
+      "/Users/dale/.local/bin/tui-test",
+      "--session",
+      "askcore-e2e-7f9d4a1a76-ghostty-g3-draft-long",
+      "--json",
+      "get-recording",
+      "askcore-e2e-7f9d4a1a76-ghostty-g3-draft-long"
+    ],
+    "code": 0,
+    "stdout": "{\"env\":{\"TERM\":\"xterm-256color\"},\"height\":12,\"timestamp\":1791351391,\"version\":2,\"width\":40}\n[0.003147584,\"o\",\"\\r\\u001b[12B\\n\\u001b[12A\\u001b[LT0 startup\\u001b[K\\r\\n\"]\n[0.020746167,\"o\",\"\\u001b[?2026$p\\u001b[?2027$p\"]\n[0.020792167,\"o\",\"\\u001b[?5W\\u001b[?2004h\\u001b[>4;2m\\u001b[>3u\\u001b[?u\\u001b[1 q\\u001b[Jeditor>\\r\\nAlt+Enter: newline; Enter: submit\\u001b[A\\u001b[4Z\\u001b[?25h\"]\n[0.037425667,\"o\",\"\\u001b[?2026h\\u001b[?2027h\\r\\nShift/Ctrl/Alt+Enter: newline\\u001b[K\\u001b[A\\u001b[3Z\\u001b[?2026l\"]\n[0.062441584,\"r\",\"13x6\"]\n[0.07077075,\"o\",\"\\u001b[?2026h\\r\\u001b[Jfghijklmnopqr\\r\\nstuvwxyz01234\\r\\n5界😀Z\\u001b[K\\u001b[7G\\r\\nShift/Ctrl/Al\\r\\u001bM\\u001b[6C\\u001b[?2026l\"]\n",
+    "stderr": ""
+  },
+  {
+    "command": [
+      "/Users/dale/.local/bin/tui-test",
+      "--session",
+      "askcore-e2e-7f9d4a1a76-ghostty-g3-draft-long",
+      "--json",
+      "state"
+    ],
+    "code": 0,
+    "stdout": "{\"ok\":true,\"data\":{\"bell_count\":0,\"cols\":13,\"cursor\":{\"x\":6,\"y\":3},\"cwd\":null,\"exited\":null,\"last_command\":null,\"last_exit\":null,\"ready\":false,\"rows\":6,\"session_shell\":null,\"text\":\"T0 startup\\nfghijklmnopqr\\nstuvwxyz01234\\n5界😀Z\\nShift/Ctrl/Al\",\"timeouts\":{\"command\":30000,\"exit\":30000,\"idle\":5000,\"ready\":30000,\"text\":5000},\"title\":null}}\n",
+    "stderr": ""
+  },
+  {
+    "command": [
+      "/Users/dale/.local/bin/tui-test",
+      "--session",
+      "askcore-e2e-7f9d4a1a76-ghostty-g3-draft-long",
+      "--json",
+      "get-recording",
+      "askcore-e2e-7f9d4a1a76-ghostty-g3-draft-long"
+    ],
+    "code": 0,
+    "stdout": "{\"env\":{\"TERM\":\"xterm-256color\"},\"height\":12,\"timestamp\":1791351391,\"version\":2,\"width\":40}\n[0.003147584,\"o\",\"\\r\\u001b[12B\\n\\u001b[12A\\u001b[LT0 startup\\u001b[K\\r\\n\"]\n[0.020746167,\"o\",\"\\u001b[?2026$p\\u001b[?2027$p\"]\n[0.020792167,\"o\",\"\\u001b[?5W\\u001b[?2004h\\u001b[>4;2m\\u001b[>3u\\u001b[?u\\u001b[1 q\\u001b[Jeditor>\\r\\nAlt+Enter: newline; Enter: submit\\u001b[A\\u001b[4Z\\u001b[?25h\"]\n[0.037425667,\"o\",\"\\u001b[?2026h\\u001b[?2027h\\r\\nShift/Ctrl/Alt+Enter: newline\\u001b[K\\u001b[A\\u001b[3Z\\u001b[?2026l\"]\n[0.062441584,\"r\",\"13x6\"]\n[0.07077075,\"o\",\"\\u001b[?2026h\\r\\u001b[Jfghijklmnopqr\\r\\nstuvwxyz01234\\r\\n5界😀Z\\u001b[K\\u001b[7G\\r\\nShift/Ctrl/Al\\r\\u001bM\\u001b[6C\\u001b[?2026l\"]\n",
+    "stderr": ""
+  },
+  {
+    "command": [
+      "/Users/dale/.local/bin/tui-test",
+      "--session",
+      "askcore-e2e-7f9d4a1a76-ghostty-g3-draft-long",
+      "--json",
+      "state"
+    ],
+    "code": 0,
+    "stdout": "{\"ok\":true,\"data\":{\"bell_count\":0,\"cols\":13,\"cursor\":{\"x\":6,\"y\":3},\"cwd\":null,\"exited\":null,\"last_command\":null,\"last_exit\":null,\"ready\":false,\"rows\":6,\"session_shell\":null,\"text\":\"T0 startup\\nfghijklmnopqr\\nstuvwxyz01234\\n5界😀Z\\nShift/Ctrl/Al\",\"timeouts\":{\"command\":30000,\"exit\":30000,\"idle\":5000,\"ready\":30000,\"text\":5000},\"title\":null}}\n",
+    "stderr": ""
+  },
+  {
+    "command": [
+      "/Users/dale/.local/bin/tui-test",
+      "--session",
+      "askcore-e2e-7f9d4a1a76-ghostty-g3-draft-long",
+      "--json",
+      "get-recording",
+      "askcore-e2e-7f9d4a1a76-ghostty-g3-draft-long"
+    ],
+    "code": 0,
+    "stdout": "{\"env\":{\"TERM\":\"xterm-256color\"},\"height\":12,\"timestamp\":1791351391,\"version\":2,\"width\":40}\n[0.003147584,\"o\",\"\\r\\u001b[12B\\n\\u001b[12A\\u001b[LT0 startup\\u001b[K\\r\\n\"]\n[0.020746167,\"o\",\"\\u001b[?2026$p\\u001b[?2027$p\"]\n[0.020792167,\"o\",\"\\u001b[?5W\\u001b[?2004h\\u001b[>4;2m\\u001b[>3u\\u001b[?u\\u001b[1 q\\u001b[Jeditor>\\r\\nAlt+Enter: newline; Enter: submit\\u001b[A\\u001b[4Z\\u001b[?25h\"]\n[0.037425667,\"o\",\"\\u001b[?2026h\\u001b[?2027h\\r\\nShift/Ctrl/Alt+Enter: newline\\u001b[K\\u001b[A\\u001b[3Z\\u001b[?2026l\"]\n[0.062441584,\"r\",\"13x6\"]\n[0.07077075,\"o\",\"\\u001b[?2026h\\r\\u001b[Jfghijklmnopqr\\r\\nstuvwxyz01234\\r\\n5界😀Z\\u001b[K\\u001b[7G\\r\\nShift/Ctrl/Al\\r\\u001bM\\u001b[6C\\u001b[?2026l\"]\n",
+    "stderr": ""
+  },
+  {
+    "command": [
+      "/Users/dale/.local/bin/tui-test",
+      "--session",
+      "askcore-e2e-7f9d4a1a76-ghostty-g3-draft-long",
+      "--json",
+      "state"
+    ],
+    "code": 0,
+    "stdout": "{\"ok\":true,\"data\":{\"bell_count\":0,\"cols\":13,\"cursor\":{\"x\":6,\"y\":3},\"cwd\":null,\"exited\":null,\"last_command\":null,\"last_exit\":null,\"ready\":false,\"rows\":6,\"session_shell\":null,\"text\":\"T0 startup\\nfghijklmnopqr\\nstuvwxyz01234\\n5界😀Z\\nShift/Ctrl/Al\",\"timeouts\":{\"command\":30000,\"exit\":30000,\"idle\":5000,\"ready\":30000,\"text\":5000},\"title\":null}}\n",
+    "stderr": ""
+  },
+  {
+    "command": [
+      "/Users/dale/.local/bin/tui-test",
+      "--session",
+      "askcore-e2e-7f9d4a1a76-ghostty-g3-draft-long",
+      "--json",
+      "get-recording",
+      "askcore-e2e-7f9d4a1a76-ghostty-g3-draft-long"
+    ],
+    "code": 0,
+    "stdout": "{\"env\":{\"TERM\":\"xterm-256color\"},\"height\":12,\"timestamp\":1791351391,\"version\":2,\"width\":40}\n[0.003147584,\"o\",\"\\r\\u001b[12B\\n\\u001b[12A\\u001b[LT0 startup\\u001b[K\\r\\n\"]\n[0.020746167,\"o\",\"\\u001b[?2026$p\\u001b[?2027$p\"]\n[0.020792167,\"o\",\"\\u001b[?5W\\u001b[?2004h\\u001b[>4;2m\\u001b[>3u\\u001b[?u\\u001b[1 q\\u001b[Jeditor>\\r\\nAlt+Enter: newline; Enter: submit\\u001b[A\\u001b[4Z\\u001b[?25h\"]\n[0.037425667,\"o\",\"\\u001b[?2026h\\u001b[?2027h\\r\\nShift/Ctrl/Alt+Enter: newline\\u001b[K\\u001b[A\\u001b[3Z\\u001b[?2026l\"]\n[0.062441584,\"r\",\"13x6\"]\n[0.07077075,\"o\",\"\\u001b[?2026h\\r\\u001b[Jfghijklmnopqr\\r\\nstuvwxyz01234\\r\\n5界😀Z\\u001b[K\\u001b[7G\\r\\nShift/Ctrl/Al\\r\\u001bM\\u001b[6C\\u001b[?2026l\"]\n[0.183750792,\"o\",\"\\u001b[?2026h\\u001b[2J\\u001b[3J\\u001b[H\\u001b[0mT0 startup\\r\\n\\u001b[?2026h\\r\\u001b[Jfghijklmnopqr\\r\\nstuvwxyz01234\\r\\n5界😀Z\\u001b[7G\\r\\nShift/Ctrl/Al\\r\\u001bM\\u001b[6C\\u001b[?2026l\\u001b[?2026l\"]\n",
+    "stderr": ""
+  },
+  {
+    "command": [
+      "/Users/dale/.local/bin/tui-test",
+      "--session",
+      "askcore-e2e-7f9d4a1a76-ghostty-g3-draft-long",
+      "--json",
+      "state"
+    ],
+    "code": 0,
+    "stdout": "{\"ok\":true,\"data\":{\"bell_count\":0,\"cols\":13,\"cursor\":{\"x\":6,\"y\":3},\"cwd\":null,\"exited\":null,\"last_command\":null,\"last_exit\":null,\"ready\":false,\"rows\":6,\"session_shell\":null,\"text\":\"T0 startup\\nfghijklmnopqr\\nstuvwxyz01234\\n5界😀Z\\nShift/Ctrl/Al\",\"timeouts\":{\"command\":30000,\"exit\":30000,\"idle\":5000,\"ready\":30000,\"text\":5000},\"title\":null}}\n",
+    "stderr": ""
+  },
+  {
+    "command": [
+      "/Users/dale/.local/bin/tui-test",
+      "--session",
+      "askcore-e2e-7f9d4a1a76-ghostty-g3-draft-long",
+      "--json",
+      "state"
+    ],
+    "code": 0,
+    "stdout": "{\"ok\":true,\"data\":{\"bell_count\":0,\"cols\":13,\"cursor\":{\"x\":6,\"y\":3},\"cwd\":null,\"exited\":null,\"last_command\":null,\"last_exit\":null,\"ready\":false,\"rows\":6,\"session_shell\":null,\"text\":\"T0 startup\\nfghijklmnopqr\\nstuvwxyz01234\\n5界😀Z\\nShift/Ctrl/Al\",\"timeouts\":{\"command\":30000,\"exit\":30000,\"idle\":5000,\"ready\":30000,\"text\":5000},\"title\":null}}\n",
+    "stderr": ""
+  },
+  {
+    "command": [
+      "/Users/dale/.local/bin/tui-test",
+      "--session",
+      "askcore-e2e-7f9d4a1a76-ghostty-g3-draft-long",
+      "--json",
+      "state"
+    ],
+    "code": 0,
+    "stdout": "{\"ok\":true,\"data\":{\"bell_count\":0,\"cols\":13,\"cursor\":{\"x\":6,\"y\":3},\"cwd\":null,\"exited\":null,\"last_command\":null,\"last_exit\":null,\"ready\":false,\"rows\":6,\"session_shell\":null,\"text\":\"T0 startup\\nfghijklmnopqr\\nstuvwxyz01234\\n5界😀Z\\nShift/Ctrl/Al\",\"timeouts\":{\"command\":30000,\"exit\":30000,\"idle\":5000,\"ready\":30000,\"text\":5000},\"title\":null}}\n",
+    "stderr": ""
+  },
+  {
+    "command": [
+      "/Users/dale/.local/bin/tui-test",
+      "--session",
+      "askcore-e2e-7f9d4a1a76-ghostty-g3-draft-long",
+      "--json",
+      "state"
+    ],
+    "code": 0,
+    "stdout": "{\"ok\":true,\"data\":{\"bell_count\":0,\"cols\":13,\"cursor\":{\"x\":6,\"y\":3},\"cwd\":null,\"exited\":null,\"last_command\":null,\"last_exit\":null,\"ready\":false,\"rows\":6,\"session_shell\":null,\"text\":\"T0 startup\\nfghijklmnopqr\\nstuvwxyz01234\\n5界😀Z\\nShift/Ctrl/Al\",\"timeouts\":{\"command\":30000,\"exit\":30000,\"idle\":5000,\"ready\":30000,\"text\":5000},\"title\":null}}\n",
+    "stderr": ""
+  },
+  {
+    "command": [
+      "/Users/dale/.local/bin/tui-test",
+      "--session",
+      "askcore-e2e-7f9d4a1a76-ghostty-g3-draft-long",
+      "--json",
+      "state"
+    ],
+    "code": 0,
+    "stdout": "{\"ok\":true,\"data\":{\"bell_count\":0,\"cols\":13,\"cursor\":{\"x\":6,\"y\":3},\"cwd\":null,\"exited\":null,\"last_command\":null,\"last_exit\":null,\"ready\":false,\"rows\":6,\"session_shell\":null,\"text\":\"T0 startup\\nfghijklmnopqr\\nstuvwxyz01234\\n5界😀Z\\nShift/Ctrl/Al\",\"timeouts\":{\"command\":30000,\"exit\":30000,\"idle\":5000,\"ready\":30000,\"text\":5000},\"title\":null}}\n",
+    "stderr": ""
+  },
+  {
+    "command": [
+      "/Users/dale/.local/bin/tui-test",
+      "--session",
+      "askcore-e2e-7f9d4a1a76-ghostty-g3-draft-long",
+      "--json",
+      "state"
+    ],
+    "code": 0,
+    "stdout": "{\"ok\":true,\"data\":{\"bell_count\":0,\"cols\":13,\"cursor\":{\"x\":6,\"y\":3},\"cwd\":null,\"exited\":null,\"last_command\":null,\"last_exit\":null,\"ready\":false,\"rows\":6,\"session_shell\":null,\"text\":\"T0 startup\\nfghijklmnopqr\\nstuvwxyz01234\\n5界😀Z\\nShift/Ctrl/Al\",\"timeouts\":{\"command\":30000,\"exit\":30000,\"idle\":5000,\"ready\":30000,\"text\":5000},\"title\":null}}\n",
+    "stderr": ""
+  },
+  {
+    "command": [
+      "/Users/dale/.local/bin/tui-test",
+      "--session",
+      "askcore-e2e-7f9d4a1a76-ghostty-g3-draft-long",
+      "--json",
+      "state"
+    ],
+    "code": 0,
+    "stdout": "{\"ok\":true,\"data\":{\"bell_count\":0,\"cols\":13,\"cursor\":{\"x\":6,\"y\":3},\"cwd\":null,\"exited\":null,\"last_command\":null,\"last_exit\":null,\"ready\":false,\"rows\":6,\"session_shell\":null,\"text\":\"T0 startup\\nfghijklmnopqr\\nstuvwxyz01234\\n5界😀Z\\nShift/Ctrl/Al\",\"timeouts\":{\"command\":30000,\"exit\":30000,\"idle\":5000,\"ready\":30000,\"text\":5000},\"title\":null}}\n",
+    "stderr": ""
+  },
+  {
+    "command": [
+      "/Users/dale/.local/bin/tui-test",
+      "--session",
+      "askcore-e2e-7f9d4a1a76-ghostty-g3-draft-long",
+      "--json",
+      "state"
+    ],
+    "code": 0,
+    "stdout": "{\"ok\":true,\"data\":{\"bell_count\":0,\"cols\":13,\"cursor\":{\"x\":6,\"y\":3},\"cwd\":null,\"exited\":null,\"last_command\":null,\"last_exit\":null,\"ready\":false,\"rows\":6,\"session_shell\":null,\"text\":\"T0 startup\\nfghijklmnopqr\\nstuvwxyz01234\\n5界😀Z\\nShift/Ctrl/Al\",\"timeouts\":{\"command\":30000,\"exit\":30000,\"idle\":5000,\"ready\":30000,\"text\":5000},\"title\":null}}\n",
+    "stderr": ""
+  },
+  {
+    "command": [
+      "/Users/dale/.local/bin/tui-test",
+      "--session",
+      "askcore-e2e-7f9d4a1a76-ghostty-g3-draft-long",
+      "--json",
+      "state"
+    ],
+    "code": 0,
+    "stdout": "{\"ok\":true,\"data\":{\"bell_count\":0,\"cols\":13,\"cursor\":{\"x\":6,\"y\":3},\"cwd\":null,\"exited\":null,\"last_command\":null,\"last_exit\":null,\"ready\":false,\"rows\":6,\"session_shell\":null,\"text\":\"T0 startup\\nfghijklmnopqr\\nstuvwxyz01234\\n5界😀Z\\nShift/Ctrl/Al\",\"timeouts\":{\"command\":30000,\"exit\":30000,\"idle\":5000,\"ready\":30000,\"text\":5000},\"title\":null}}\n",
+    "stderr": ""
+  },
+  {
+    "command": [
+      "/Users/dale/.local/bin/tui-test",
+      "--session",
+      "askcore-e2e-7f9d4a1a76-ghostty-g3-draft-long",
+      "--json",
+      "state"
+    ],
+    "code": 0,
+    "stdout": "{\"ok\":true,\"data\":{\"bell_count\":0,\"cols\":13,\"cursor\":{\"x\":6,\"y\":3},\"cwd\":null,\"exited\":null,\"last_command\":null,\"last_exit\":null,\"ready\":false,\"rows\":6,\"session_shell\":null,\"text\":\"T0 startup\\nfghijklmnopqr\\nstuvwxyz01234\\n5界😀Z\\nShift/Ctrl/Al\",\"timeouts\":{\"command\":30000,\"exit\":30000,\"idle\":5000,\"ready\":30000,\"text\":5000},\"title\":null}}\n",
+    "stderr": ""
+  },
+  {
+    "command": [
+      "/Users/dale/.local/bin/tui-test",
+      "--session",
+      "askcore-e2e-7f9d4a1a76-ghostty-g3-draft-long",
+      "--json",
+      "state"
+    ],
+    "code": 0,
+    "stdout": "{\"ok\":true,\"data\":{\"bell_count\":0,\"cols\":13,\"cursor\":{\"x\":6,\"y\":3},\"cwd\":null,\"exited\":null,\"last_command\":null,\"last_exit\":null,\"ready\":false,\"rows\":6,\"session_shell\":null,\"text\":\"T0 startup\\nfghijklmnopqr\\nstuvwxyz01234\\n5界😀Z\\nShift/Ctrl/Al\",\"timeouts\":{\"command\":30000,\"exit\":30000,\"idle\":5000,\"ready\":30000,\"text\":5000},\"title\":null}}\n",
+    "stderr": ""
+  },
+  {
+    "command": [
+      "/Users/dale/.local/bin/tui-test",
+      "--session",
+      "askcore-e2e-7f9d4a1a76-ghostty-g3-draft-long",
+      "--json",
+      "state"
+    ],
+    "code": 0,
+    "stdout": "{\"ok\":true,\"data\":{\"bell_count\":0,\"cols\":13,\"cursor\":{\"x\":6,\"y\":3},\"cwd\":null,\"exited\":null,\"last_command\":null,\"last_exit\":null,\"ready\":false,\"rows\":6,\"session_shell\":null,\"text\":\"T0 startup\\nfghijklmnopqr\\nstuvwxyz01234\\n5界😀Z\\nShift/Ctrl/Al\",\"timeouts\":{\"command\":30000,\"exit\":30000,\"idle\":5000,\"ready\":30000,\"text\":5000},\"title\":null}}\n",
+    "stderr": ""
+  },
+  {
+    "command": [
+      "/Users/dale/.local/bin/tui-test",
+      "--session",
+      "askcore-e2e-7f9d4a1a76-ghostty-g3-draft-long",
+      "--json",
+      "state"
+    ],
+    "code": 0,
+    "stdout": "{\"ok\":true,\"data\":{\"bell_count\":0,\"cols\":13,\"cursor\":{\"x\":6,\"y\":3},\"cwd\":null,\"exited\":null,\"last_command\":null,\"last_exit\":null,\"ready\":false,\"rows\":6,\"session_shell\":null,\"text\":\"T0 startup\\nfghijklmnopqr\\nstuvwxyz01234\\n5界😀Z\\nShift/Ctrl/Al\",\"timeouts\":{\"command\":30000,\"exit\":30000,\"idle\":5000,\"ready\":30000,\"text\":5000},\"title\":null}}\n",
+    "stderr": ""
+  },
+  {
+    "command": [
+      "/Users/dale/.local/bin/tui-test",
+      "--session",
+      "askcore-e2e-7f9d4a1a76-ghostty-g3-draft-long",
+      "--json",
+      "state"
+    ],
+    "code": 0,
+    "stdout": "{\"ok\":true,\"data\":{\"bell_count\":0,\"cols\":13,\"cursor\":{\"x\":6,\"y\":3},\"cwd\":null,\"exited\":null,\"last_command\":null,\"last_exit\":null,\"ready\":false,\"rows\":6,\"session_shell\":null,\"text\":\"T0 startup\\nfghijklmnopqr\\nstuvwxyz01234\\n5界😀Z\\nShift/Ctrl/Al\",\"timeouts\":{\"command\":30000,\"exit\":30000,\"idle\":5000,\"ready\":30000,\"text\":5000},\"title\":null}}\n",
+    "stderr": ""
+  },
+  {
+    "command": [
+      "/Users/dale/.local/bin/tui-test",
+      "--session",
+      "askcore-e2e-7f9d4a1a76-ghostty-g3-draft-long",
+      "--json",
+      "state"
+    ],
+    "code": 0,
+    "stdout": "{\"ok\":true,\"data\":{\"bell_count\":0,\"cols\":13,\"cursor\":{\"x\":6,\"y\":3},\"cwd\":null,\"exited\":null,\"last_command\":null,\"last_exit\":null,\"ready\":false,\"rows\":6,\"session_shell\":null,\"text\":\"T0 startup\\nfghijklmnopqr\\nstuvwxyz01234\\n5界😀Z\\nShift/Ctrl/Al\",\"timeouts\":{\"command\":30000,\"exit\":30000,\"idle\":5000,\"ready\":30000,\"text\":5000},\"title\":null}}\n",
+    "stderr": ""
+  },
+  {
+    "command": [
+      "/Users/dale/.local/bin/tui-test",
+      "--session",
+      "askcore-e2e-7f9d4a1a76-ghostty-g3-draft-long",
+      "--json",
+      "state"
+    ],
+    "code": 0,
+    "stdout": "{\"ok\":true,\"data\":{\"bell_count\":0,\"cols\":13,\"cursor\":{\"x\":6,\"y\":3},\"cwd\":null,\"exited\":null,\"last_command\":null,\"last_exit\":null,\"ready\":false,\"rows\":6,\"session_shell\":null,\"text\":\"T0 startup\\nfghijklmnopqr\\nstuvwxyz01234\\n5界😀Z\\nShift/Ctrl/Al\",\"timeouts\":{\"command\":30000,\"exit\":30000,\"idle\":5000,\"ready\":30000,\"text\":5000},\"title\":null}}\n",
+    "stderr": ""
+  },
+  {
+    "command": [
+      "/Users/dale/.local/bin/tui-test",
+      "--session",
+      "askcore-e2e-7f9d4a1a76-ghostty-g3-draft-long",
+      "--json",
+      "state"
+    ],
+    "code": 0,
+    "stdout": "{\"ok\":true,\"data\":{\"bell_count\":0,\"cols\":13,\"cursor\":{\"x\":6,\"y\":3},\"cwd\":null,\"exited\":null,\"last_command\":null,\"last_exit\":null,\"ready\":false,\"rows\":6,\"session_shell\":null,\"text\":\"T0 startup\\nfghijklmnopqr\\nstuvwxyz01234\\n5界😀Z\\nShift/Ctrl/Al\",\"timeouts\":{\"command\":30000,\"exit\":30000,\"idle\":5000,\"ready\":30000,\"text\":5000},\"title\":null}}\n",
+    "stderr": ""
+  },
+  {
+    "command": [
+      "/Users/dale/.local/bin/tui-test",
+      "--session",
+      "askcore-e2e-7f9d4a1a76-ghostty-g3-draft-long",
+      "--json",
+      "state"
+    ],
+    "code": 0,
+    "stdout": "{\"ok\":true,\"data\":{\"bell_count\":0,\"cols\":13,\"cursor\":{\"x\":6,\"y\":3},\"cwd\":null,\"exited\":null,\"last_command\":null,\"last_exit\":null,\"ready\":false,\"rows\":6,\"session_shell\":null,\"text\":\"T0 startup\\nfghijklmnopqr\\nstuvwxyz01234\\n5界😀Z\\nShift/Ctrl/Al\",\"timeouts\":{\"command\":30000,\"exit\":30000,\"idle\":5000,\"ready\":30000,\"text\":5000},\"title\":null}}\n",
+    "stderr": ""
+  },
+  {
+    "command": [
+      "/Users/dale/.local/bin/tui-test",
+      "--session",
+      "askcore-e2e-7f9d4a1a76-ghostty-g3-draft-long",
+      "--json",
+      "state"
+    ],
+    "code": 0,
+    "stdout": "{\"ok\":true,\"data\":{\"bell_count\":0,\"cols\":13,\"cursor\":{\"x\":6,\"y\":3},\"cwd\":null,\"exited\":null,\"last_command\":null,\"last_exit\":null,\"ready\":false,\"rows\":6,\"session_shell\":null,\"text\":\"T0 startup\\nfghijklmnopqr\\nstuvwxyz01234\\n5界😀Z\\nShift/Ctrl/Al\",\"timeouts\":{\"command\":30000,\"exit\":30000,\"idle\":5000,\"ready\":30000,\"text\":5000},\"title\":null}}\n",
+    "stderr": ""
+  },
+  {
+    "command": [
+      "/Users/dale/.local/bin/tui-test",
+      "--session",
+      "askcore-e2e-7f9d4a1a76-ghostty-g3-draft-long",
+      "--json",
+      "state"
+    ],
+    "code": 0,
+    "stdout": "{\"ok\":true,\"data\":{\"bell_count\":0,\"cols\":13,\"cursor\":{\"x\":6,\"y\":3},\"cwd\":null,\"exited\":null,\"last_command\":null,\"last_exit\":null,\"ready\":false,\"rows\":6,\"session_shell\":null,\"text\":\"T0 startup\\nfghijklmnopqr\\nstuvwxyz01234\\n5界😀Z\\nShift/Ctrl/Al\",\"timeouts\":{\"command\":30000,\"exit\":30000,\"idle\":5000,\"ready\":30000,\"text\":5000},\"title\":null}}\n",
+    "stderr": ""
+  },
+  {
+    "command": [
+      "/Users/dale/.local/bin/tui-test",
+      "--session",
+      "askcore-e2e-7f9d4a1a76-ghostty-g3-draft-long",
+      "--json",
+      "state"
+    ],
+    "code": 0,
+    "stdout": "{\"ok\":true,\"data\":{\"bell_count\":0,\"cols\":13,\"cursor\":{\"x\":6,\"y\":3},\"cwd\":null,\"exited\":null,\"last_command\":null,\"last_exit\":null,\"ready\":false,\"rows\":6,\"session_shell\":null,\"text\":\"T0 startup\\nfghijklmnopqr\\nstuvwxyz01234\\n5界😀Z\\nShift/Ctrl/Al\",\"timeouts\":{\"command\":30000,\"exit\":30000,\"idle\":5000,\"ready\":30000,\"text\":5000},\"title\":null}}\n",
+    "stderr": ""
+  },
+  {
+    "command": [
+      "/Users/dale/.local/bin/tui-test",
+      "--session",
+      "askcore-e2e-7f9d4a1a76-ghostty-g3-draft-long",
+      "--json",
+      "state"
+    ],
+    "code": 0,
+    "stdout": "{\"ok\":true,\"data\":{\"bell_count\":0,\"cols\":13,\"cursor\":{\"x\":6,\"y\":3},\"cwd\":null,\"exited\":null,\"last_command\":null,\"last_exit\":null,\"ready\":false,\"rows\":6,\"session_shell\":null,\"text\":\"T0 startup\\nfghijklmnopqr\\nstuvwxyz01234\\n5界😀Z\\nShift/Ctrl/Al\",\"timeouts\":{\"command\":30000,\"exit\":30000,\"idle\":5000,\"ready\":30000,\"text\":5000},\"title\":null}}\n",
+    "stderr": ""
+  },
+  {
+    "command": [
+      "/Users/dale/.local/bin/tui-test",
+      "--session",
+      "askcore-e2e-7f9d4a1a76-ghostty-g3-draft-long",
+      "--json",
+      "state"
+    ],
+    "code": 0,
+    "stdout": "{\"ok\":true,\"data\":{\"bell_count\":0,\"cols\":13,\"cursor\":{\"x\":6,\"y\":3},\"cwd\":null,\"exited\":null,\"last_command\":null,\"last_exit\":null,\"ready\":false,\"rows\":6,\"session_shell\":null,\"text\":\"T0 startup\\nfghijklmnopqr\\nstuvwxyz01234\\n5界😀Z\\nShift/Ctrl/Al\",\"timeouts\":{\"command\":30000,\"exit\":30000,\"idle\":5000,\"ready\":30000,\"text\":5000},\"title\":null}}\n",
+    "stderr": ""
+  },
+  {
+    "command": [
+      "/Users/dale/.local/bin/tui-test",
+      "--session",
+      "askcore-e2e-7f9d4a1a76-ghostty-g3-draft-long",
+      "--json",
+      "state"
+    ],
+    "code": 0,
+    "stdout": "{\"ok\":true,\"data\":{\"bell_count\":0,\"cols\":13,\"cursor\":{\"x\":6,\"y\":3},\"cwd\":null,\"exited\":null,\"last_command\":null,\"last_exit\":null,\"ready\":false,\"rows\":6,\"session_shell\":null,\"text\":\"T0 startup\\nfghijklmnopqr\\nstuvwxyz01234\\n5界😀Z\\nShift/Ctrl/Al\",\"timeouts\":{\"command\":30000,\"exit\":30000,\"idle\":5000,\"ready\":30000,\"text\":5000},\"title\":null}}\n",
+    "stderr": ""
+  },
+  {
+    "command": [
+      "/Users/dale/.local/bin/tui-test",
+      "--session",
+      "askcore-e2e-7f9d4a1a76-ghostty-g3-draft-long",
+      "--json",
+      "state"
+    ],
+    "code": 0,
+    "stdout": "{\"ok\":true,\"data\":{\"bell_count\":0,\"cols\":13,\"cursor\":{\"x\":6,\"y\":3},\"cwd\":null,\"exited\":null,\"last_command\":null,\"last_exit\":null,\"ready\":false,\"rows\":6,\"session_shell\":null,\"text\":\"T0 startup\\nfghijklmnopqr\\nstuvwxyz01234\\n5界😀Z\\nShift/Ctrl/Al\",\"timeouts\":{\"command\":30000,\"exit\":30000,\"idle\":5000,\"ready\":30000,\"text\":5000},\"title\":null}}\n",
+    "stderr": ""
+  },
+  {
+    "command": [
+      "/Users/dale/.local/bin/tui-test",
+      "--session",
+      "askcore-e2e-7f9d4a1a76-ghostty-g3-draft-long",
+      "--json",
+      "state"
+    ],
+    "code": 0,
+    "stdout": "{\"ok\":true,\"data\":{\"bell_count\":0,\"cols\":13,\"cursor\":{\"x\":6,\"y\":3},\"cwd\":null,\"exited\":null,\"last_command\":null,\"last_exit\":null,\"ready\":false,\"rows\":6,\"session_shell\":null,\"text\":\"T0 startup\\nfghijklmnopqr\\nstuvwxyz01234\\n5界😀Z\\nShift/Ctrl/Al\",\"timeouts\":{\"command\":30000,\"exit\":30000,\"idle\":5000,\"ready\":30000,\"text\":5000},\"title\":null}}\n",
+    "stderr": ""
+  },
+  {
+    "command": [
+      "/Users/dale/.local/bin/tui-test",
+      "--session",
+      "askcore-e2e-7f9d4a1a76-ghostty-g3-draft-long",
+      "--json",
+      "state"
+    ],
+    "code": 0,
+    "stdout": "{\"ok\":true,\"data\":{\"bell_count\":0,\"cols\":13,\"cursor\":{\"x\":6,\"y\":3},\"cwd\":null,\"exited\":null,\"last_command\":null,\"last_exit\":null,\"ready\":false,\"rows\":6,\"session_shell\":null,\"text\":\"T0 startup\\nfghijklmnopqr\\nstuvwxyz01234\\n5界😀Z\\nShift/Ctrl/Al\",\"timeouts\":{\"command\":30000,\"exit\":30000,\"idle\":5000,\"ready\":30000,\"text\":5000},\"title\":null}}\n",
+    "stderr": ""
+  },
+  {
+    "command": [
+      "/Users/dale/.local/bin/tui-test",
+      "--session",
+      "askcore-e2e-7f9d4a1a76-ghostty-g3-draft-long",
+      "--json",
+      "state"
+    ],
+    "code": 0,
+    "stdout": "{\"ok\":true,\"data\":{\"bell_count\":0,\"cols\":13,\"cursor\":{\"x\":6,\"y\":3},\"cwd\":null,\"exited\":null,\"last_command\":null,\"last_exit\":null,\"ready\":false,\"rows\":6,\"session_shell\":null,\"text\":\"T0 startup\\nfghijklmnopqr\\nstuvwxyz01234\\n5界😀Z\\nShift/Ctrl/Al\",\"timeouts\":{\"command\":30000,\"exit\":30000,\"idle\":5000,\"ready\":30000,\"text\":5000},\"title\":null}}\n",
+    "stderr": ""
+  },
+  {
+    "command": [
+      "/Users/dale/.local/bin/tui-test",
+      "--session",
+      "askcore-e2e-7f9d4a1a76-ghostty-g3-draft-long",
+      "--json",
+      "state"
+    ],
+    "code": 0,
+    "stdout": "{\"ok\":true,\"data\":{\"bell_count\":0,\"cols\":13,\"cursor\":{\"x\":6,\"y\":3},\"cwd\":null,\"exited\":null,\"last_command\":null,\"last_exit\":null,\"ready\":false,\"rows\":6,\"session_shell\":null,\"text\":\"T0 startup\\nfghijklmnopqr\\nstuvwxyz01234\\n5界😀Z\\nShift/Ctrl/Al\",\"timeouts\":{\"command\":30000,\"exit\":30000,\"idle\":5000,\"ready\":30000,\"text\":5000},\"title\":null}}\n",
+    "stderr": ""
+  },
+  {
+    "command": [
+      "/Users/dale/.local/bin/tui-test",
+      "--session",
+      "askcore-e2e-7f9d4a1a76-ghostty-g3-draft-long",
+      "--json",
+      "state"
+    ],
+    "code": 0,
+    "stdout": "{\"ok\":true,\"data\":{\"bell_count\":0,\"cols\":13,\"cursor\":{\"x\":6,\"y\":3},\"cwd\":null,\"exited\":null,\"last_command\":null,\"last_exit\":null,\"ready\":false,\"rows\":6,\"session_shell\":null,\"text\":\"T0 startup\\nfghijklmnopqr\\nstuvwxyz01234\\n5界😀Z\\nShift/Ctrl/Al\",\"timeouts\":{\"command\":30000,\"exit\":30000,\"idle\":5000,\"ready\":30000,\"text\":5000},\"title\":null}}\n",
+    "stderr": ""
+  },
+  {
+    "command": [
+      "/Users/dale/.local/bin/tui-test",
+      "--session",
+      "askcore-e2e-7f9d4a1a76-ghostty-g3-draft-long",
+      "--json",
+      "state"
+    ],
+    "code": 0,
+    "stdout": "{\"ok\":true,\"data\":{\"bell_count\":0,\"cols\":13,\"cursor\":{\"x\":6,\"y\":3},\"cwd\":null,\"exited\":null,\"last_command\":null,\"last_exit\":null,\"ready\":false,\"rows\":6,\"session_shell\":null,\"text\":\"T0 startup\\nfghijklmnopqr\\nstuvwxyz01234\\n5界😀Z\\nShift/Ctrl/Al\",\"timeouts\":{\"command\":30000,\"exit\":30000,\"idle\":5000,\"ready\":30000,\"text\":5000},\"title\":null}}\n",
+    "stderr": ""
+  },
+  {
+    "command": [
+      "/Users/dale/.local/bin/tui-test",
+      "--session",
+      "askcore-e2e-7f9d4a1a76-ghostty-g3-draft-long",
+      "--json",
+      "state"
+    ],
+    "code": 0,
+    "stdout": "{\"ok\":true,\"data\":{\"bell_count\":0,\"cols\":13,\"cursor\":{\"x\":6,\"y\":3},\"cwd\":null,\"exited\":null,\"last_command\":null,\"last_exit\":null,\"ready\":false,\"rows\":6,\"session_shell\":null,\"text\":\"T0 startup\\nfghijklmnopqr\\nstuvwxyz01234\\n5界😀Z\\nShift/Ctrl/Al\",\"timeouts\":{\"command\":30000,\"exit\":30000,\"idle\":5000,\"ready\":30000,\"text\":5000},\"title\":null}}\n",
+    "stderr": ""
+  },
+  {
+    "command": [
+      "/Users/dale/.local/bin/tui-test",
+      "--session",
+      "askcore-e2e-7f9d4a1a76-ghostty-g3-draft-long",
+      "--json",
+      "state"
+    ],
+    "code": 0,
+    "stdout": "{\"ok\":true,\"data\":{\"bell_count\":0,\"cols\":13,\"cursor\":{\"x\":6,\"y\":3},\"cwd\":null,\"exited\":null,\"last_command\":null,\"last_exit\":null,\"ready\":false,\"rows\":6,\"session_shell\":null,\"text\":\"T0 startup\\nfghijklmnopqr\\nstuvwxyz01234\\n5界😀Z\\nShift/Ctrl/Al\",\"timeouts\":{\"command\":30000,\"exit\":30000,\"idle\":5000,\"ready\":30000,\"text\":5000},\"title\":null}}\n",
+    "stderr": ""
+  },
+  {
+    "command": [
+      "/Users/dale/.local/bin/tui-test",
+      "--session",
+      "askcore-e2e-7f9d4a1a76-ghostty-g3-draft-long",
+      "--json",
+      "state"
+    ],
+    "code": 0,
+    "stdout": "{\"ok\":true,\"data\":{\"bell_count\":0,\"cols\":13,\"cursor\":{\"x\":6,\"y\":3},\"cwd\":null,\"exited\":null,\"last_command\":null,\"last_exit\":null,\"ready\":false,\"rows\":6,\"session_shell\":null,\"text\":\"T0 startup\\nfghijklmnopqr\\nstuvwxyz01234\\n5界😀Z\\nShift/Ctrl/Al\",\"timeouts\":{\"command\":30000,\"exit\":30000,\"idle\":5000,\"ready\":30000,\"text\":5000},\"title\":null}}\n",
+    "stderr": ""
+  },
+  {
+    "command": [
+      "/Users/dale/.local/bin/tui-test",
+      "--session",
+      "askcore-e2e-7f9d4a1a76-ghostty-g3-draft-long",
+      "--json",
+      "state"
+    ],
+    "code": 0,
+    "stdout": "{\"ok\":true,\"data\":{\"bell_count\":0,\"cols\":13,\"cursor\":{\"x\":6,\"y\":3},\"cwd\":null,\"exited\":null,\"last_command\":null,\"last_exit\":null,\"ready\":false,\"rows\":6,\"session_shell\":null,\"text\":\"T0 startup\\nfghijklmnopqr\\nstuvwxyz01234\\n5界😀Z\\nShift/Ctrl/Al\",\"timeouts\":{\"command\":30000,\"exit\":30000,\"idle\":5000,\"ready\":30000,\"text\":5000},\"title\":null}}\n",
+    "stderr": ""
+  },
+  {
+    "command": [
+      "/Users/dale/.local/bin/tui-test",
+      "--session",
+      "askcore-e2e-7f9d4a1a76-ghostty-g3-draft-long",
+      "--json",
+      "state"
+    ],
+    "code": 0,
+    "stdout": "{\"ok\":true,\"data\":{\"bell_count\":0,\"cols\":13,\"cursor\":{\"x\":6,\"y\":3},\"cwd\":null,\"exited\":null,\"last_command\":null,\"last_exit\":null,\"ready\":false,\"rows\":6,\"session_shell\":null,\"text\":\"T0 startup\\nfghijklmnopqr\\nstuvwxyz01234\\n5界😀Z\\nShift/Ctrl/Al\",\"timeouts\":{\"command\":30000,\"exit\":30000,\"idle\":5000,\"ready\":30000,\"text\":5000},\"title\":null}}\n",
+    "stderr": ""
+  },
+  {
+    "command": [
+      "/Users/dale/.local/bin/tui-test",
+      "--session",
+      "askcore-e2e-7f9d4a1a76-ghostty-g3-draft-long",
+      "--json",
+      "state"
+    ],
+    "code": 0,
+    "stdout": "{\"ok\":true,\"data\":{\"bell_count\":0,\"cols\":13,\"cursor\":{\"x\":6,\"y\":3},\"cwd\":null,\"exited\":null,\"last_command\":null,\"last_exit\":null,\"ready\":false,\"rows\":6,\"session_shell\":null,\"text\":\"T0 startup\\nfghijklmnopqr\\nstuvwxyz01234\\n5界😀Z\\nShift/Ctrl/Al\",\"timeouts\":{\"command\":30000,\"exit\":30000,\"idle\":5000,\"ready\":30000,\"text\":5000},\"title\":null}}\n",
+    "stderr": ""
+  },
+  {
+    "command": [
+      "/Users/dale/.local/bin/tui-test",
+      "--session",
+      "askcore-e2e-7f9d4a1a76-ghostty-g3-draft-long",
+      "--json",
+      "state"
+    ],
+    "code": 0,
+    "stdout": "{\"ok\":true,\"data\":{\"bell_count\":0,\"cols\":13,\"cursor\":{\"x\":6,\"y\":3},\"cwd\":null,\"exited\":null,\"last_command\":null,\"last_exit\":null,\"ready\":false,\"rows\":6,\"session_shell\":null,\"text\":\"T0 startup\\nfghijklmnopqr\\nstuvwxyz01234\\n5界😀Z\\nShift/Ctrl/Al\",\"timeouts\":{\"command\":30000,\"exit\":30000,\"idle\":5000,\"ready\":30000,\"text\":5000},\"title\":null}}\n",
+    "stderr": ""
+  },
+  {
+    "command": [
+      "/Users/dale/.local/bin/tui-test",
+      "--session",
+      "askcore-e2e-7f9d4a1a76-ghostty-g3-draft-long",
+      "--json",
+      "state"
+    ],
+    "code": 0,
+    "stdout": "{\"ok\":true,\"data\":{\"bell_count\":0,\"cols\":13,\"cursor\":{\"x\":6,\"y\":3},\"cwd\":null,\"exited\":null,\"last_command\":null,\"last_exit\":null,\"ready\":false,\"rows\":6,\"session_shell\":null,\"text\":\"T0 startup\\nfghijklmnopqr\\nstuvwxyz01234\\n5界😀Z\\nShift/Ctrl/Al\",\"timeouts\":{\"command\":30000,\"exit\":30000,\"idle\":5000,\"ready\":30000,\"text\":5000},\"title\":null}}\n",
+    "stderr": ""
+  },
+  {
+    "command": [
+      "/Users/dale/.local/bin/tui-test",
+      "--session",
+      "askcore-e2e-7f9d4a1a76-ghostty-g3-draft-long",
+      "--json",
+      "state"
+    ],
+    "code": 0,
+    "stdout": "{\"ok\":true,\"data\":{\"bell_count\":0,\"cols\":13,\"cursor\":{\"x\":6,\"y\":3},\"cwd\":null,\"exited\":null,\"last_command\":null,\"last_exit\":null,\"ready\":false,\"rows\":6,\"session_shell\":null,\"text\":\"T0 startup\\nfghijklmnopqr\\nstuvwxyz01234\\n5界😀Z\\nShift/Ctrl/Al\",\"timeouts\":{\"command\":30000,\"exit\":30000,\"idle\":5000,\"ready\":30000,\"text\":5000},\"title\":null}}\n",
+    "stderr": ""
+  },
+  {
+    "command": [
+      "/Users/dale/.local/bin/tui-test",
+      "--session",
+      "askcore-e2e-7f9d4a1a76-ghostty-g3-draft-long",
+      "--json",
+      "state"
+    ],
+    "code": 0,
+    "stdout": "{\"ok\":true,\"data\":{\"bell_count\":0,\"cols\":13,\"cursor\":{\"x\":6,\"y\":3},\"cwd\":null,\"exited\":null,\"last_command\":null,\"last_exit\":null,\"ready\":false,\"rows\":6,\"session_shell\":null,\"text\":\"T0 startup\\nfghijklmnopqr\\nstuvwxyz01234\\n5界😀Z\\nShift/Ctrl/Al\",\"timeouts\":{\"command\":30000,\"exit\":30000,\"idle\":5000,\"ready\":30000,\"text\":5000},\"title\":null}}\n",
+    "stderr": ""
+  },
+  {
+    "command": [
+      "/Users/dale/.local/bin/tui-test",
+      "--session",
+      "askcore-e2e-7f9d4a1a76-ghostty-g3-draft-long",
+      "--json",
+      "state"
+    ],
+    "code": 0,
+    "stdout": "{\"ok\":true,\"data\":{\"bell_count\":0,\"cols\":13,\"cursor\":{\"x\":6,\"y\":3},\"cwd\":null,\"exited\":null,\"last_command\":null,\"last_exit\":null,\"ready\":false,\"rows\":6,\"session_shell\":null,\"text\":\"T0 startup\\nfghijklmnopqr\\nstuvwxyz01234\\n5界😀Z\\nShift/Ctrl/Al\",\"timeouts\":{\"command\":30000,\"exit\":30000,\"idle\":5000,\"ready\":30000,\"text\":5000},\"title\":null}}\n",
+    "stderr": ""
+  },
+  {
+    "command": [
+      "/Users/dale/.local/bin/tui-test",
+      "--session",
+      "askcore-e2e-7f9d4a1a76-ghostty-g3-draft-long",
+      "--json",
+      "state"
+    ],
+    "code": 0,
+    "stdout": "{\"ok\":true,\"data\":{\"bell_count\":0,\"cols\":13,\"cursor\":{\"x\":6,\"y\":3},\"cwd\":null,\"exited\":null,\"last_command\":null,\"last_exit\":null,\"ready\":false,\"rows\":6,\"session_shell\":null,\"text\":\"T0 startup\\nfghijklmnopqr\\nstuvwxyz01234\\n5界😀Z\\nShift/Ctrl/Al\",\"timeouts\":{\"command\":30000,\"exit\":30000,\"idle\":5000,\"ready\":30000,\"text\":5000},\"title\":null}}\n",
+    "stderr": ""
+  },
+  {
+    "command": [
+      "/Users/dale/.local/bin/tui-test",
+      "--session",
+      "askcore-e2e-7f9d4a1a76-ghostty-g3-draft-long",
+      "--json",
+      "state"
+    ],
+    "code": 0,
+    "stdout": "{\"ok\":true,\"data\":{\"bell_count\":0,\"cols\":13,\"cursor\":{\"x\":6,\"y\":3},\"cwd\":null,\"exited\":null,\"last_command\":null,\"last_exit\":null,\"ready\":false,\"rows\":6,\"session_shell\":null,\"text\":\"T0 startup\\nfghijklmnopqr\\nstuvwxyz01234\\n5界😀Z\\nShift/Ctrl/Al\",\"timeouts\":{\"command\":30000,\"exit\":30000,\"idle\":5000,\"ready\":30000,\"text\":5000},\"title\":null}}\n",
+    "stderr": ""
+  },
+  {
+    "command": [
+      "/Users/dale/.local/bin/tui-test",
+      "--session",
+      "askcore-e2e-7f9d4a1a76-ghostty-g3-draft-long",
+      "--json",
+      "state"
+    ],
+    "code": 0,
+    "stdout": "{\"ok\":true,\"data\":{\"bell_count\":0,\"cols\":13,\"cursor\":{\"x\":6,\"y\":3},\"cwd\":null,\"exited\":null,\"last_command\":null,\"last_exit\":null,\"ready\":false,\"rows\":6,\"session_shell\":null,\"text\":\"T0 startup\\nfghijklmnopqr\\nstuvwxyz01234\\n5界😀Z\\nShift/Ctrl/Al\",\"timeouts\":{\"command\":30000,\"exit\":30000,\"idle\":5000,\"ready\":30000,\"text\":5000},\"title\":null}}\n",
+    "stderr": ""
+  },
+  {
+    "command": [
+      "/Users/dale/.local/bin/tui-test",
+      "--session",
+      "askcore-e2e-7f9d4a1a76-ghostty-g3-draft-long",
+      "--json",
+      "state"
+    ],
+    "code": 0,
+    "stdout": "{\"ok\":true,\"data\":{\"bell_count\":0,\"cols\":13,\"cursor\":{\"x\":6,\"y\":3},\"cwd\":null,\"exited\":null,\"last_command\":null,\"last_exit\":null,\"ready\":false,\"rows\":6,\"session_shell\":null,\"text\":\"T0 startup\\nfghijklmnopqr\\nstuvwxyz01234\\n5界😀Z\\nShift/Ctrl/Al\",\"timeouts\":{\"command\":30000,\"exit\":30000,\"idle\":5000,\"ready\":30000,\"text\":5000},\"title\":null}}\n",
+    "stderr": ""
+  },
+  {
+    "command": [
+      "/Users/dale/.local/bin/tui-test",
+      "--session",
+      "askcore-e2e-7f9d4a1a76-ghostty-g3-draft-long",
+      "--json",
+      "state"
+    ],
+    "code": 0,
+    "stdout": "{\"ok\":true,\"data\":{\"bell_count\":0,\"cols\":13,\"cursor\":{\"x\":6,\"y\":3},\"cwd\":null,\"exited\":null,\"last_command\":null,\"last_exit\":null,\"ready\":false,\"rows\":6,\"session_shell\":null,\"text\":\"T0 startup\\nfghijklmnopqr\\nstuvwxyz01234\\n5界😀Z\\nShift/Ctrl/Al\",\"timeouts\":{\"command\":30000,\"exit\":30000,\"idle\":5000,\"ready\":30000,\"text\":5000},\"title\":null}}\n",
+    "stderr": ""
+  },
+  {
+    "command": [
+      "/Users/dale/.local/bin/tui-test",
+      "--session",
+      "askcore-e2e-7f9d4a1a76-ghostty-g3-draft-long",
+      "--json",
+      "state"
+    ],
+    "code": 0,
+    "stdout": "{\"ok\":true,\"data\":{\"bell_count\":0,\"cols\":13,\"cursor\":{\"x\":6,\"y\":3},\"cwd\":null,\"exited\":null,\"last_command\":null,\"last_exit\":null,\"ready\":false,\"rows\":6,\"session_shell\":null,\"text\":\"T0 startup\\nfghijklmnopqr\\nstuvwxyz01234\\n5界😀Z\\nShift/Ctrl/Al\",\"timeouts\":{\"command\":30000,\"exit\":30000,\"idle\":5000,\"ready\":30000,\"text\":5000},\"title\":null}}\n",
+    "stderr": ""
+  },
+  {
+    "command": [
+      "/Users/dale/.local/bin/tui-test",
+      "--session",
+      "askcore-e2e-7f9d4a1a76-ghostty-g3-draft-long",
+      "--json",
+      "state"
+    ],
+    "code": 0,
+    "stdout": "{\"ok\":true,\"data\":{\"bell_count\":0,\"cols\":13,\"cursor\":{\"x\":6,\"y\":3},\"cwd\":null,\"exited\":null,\"last_command\":null,\"last_exit\":null,\"ready\":false,\"rows\":6,\"session_shell\":null,\"text\":\"T0 startup\\nfghijklmnopqr\\nstuvwxyz01234\\n5界😀Z\\nShift/Ctrl/Al\",\"timeouts\":{\"command\":30000,\"exit\":30000,\"idle\":5000,\"ready\":30000,\"text\":5000},\"title\":null}}\n",
+    "stderr": ""
+  },
+  {
+    "command": [
+      "/Users/dale/.local/bin/tui-test",
+      "--session",
+      "askcore-e2e-7f9d4a1a76-ghostty-g3-draft-long",
+      "--json",
+      "state"
+    ],
+    "code": 0,
+    "stdout": "{\"ok\":true,\"data\":{\"bell_count\":0,\"cols\":13,\"cursor\":{\"x\":6,\"y\":3},\"cwd\":null,\"exited\":null,\"last_command\":null,\"last_exit\":null,\"ready\":false,\"rows\":6,\"session_shell\":null,\"text\":\"T0 startup\\nfghijklmnopqr\\nstuvwxyz01234\\n5界😀Z\\nShift/Ctrl/Al\",\"timeouts\":{\"command\":30000,\"exit\":30000,\"idle\":5000,\"ready\":30000,\"text\":5000},\"title\":null}}\n",
+    "stderr": ""
+  },
+  {
+    "command": [
+      "/Users/dale/.local/bin/tui-test",
+      "--session",
+      "askcore-e2e-7f9d4a1a76-ghostty-g3-draft-long",
+      "--json",
+      "state"
+    ],
+    "code": 0,
+    "stdout": "{\"ok\":true,\"data\":{\"bell_count\":0,\"cols\":13,\"cursor\":{\"x\":6,\"y\":3},\"cwd\":null,\"exited\":null,\"last_command\":null,\"last_exit\":null,\"ready\":false,\"rows\":6,\"session_shell\":null,\"text\":\"T0 startup\\nfghijklmnopqr\\nstuvwxyz01234\\n5界😀Z\\nShift/Ctrl/Al\",\"timeouts\":{\"command\":30000,\"exit\":30000,\"idle\":5000,\"ready\":30000,\"text\":5000},\"title\":null}}\n",
+    "stderr": ""
+  },
+  {
+    "command": [
+      "/Users/dale/.local/bin/tui-test",
+      "--session",
+      "askcore-e2e-7f9d4a1a76-ghostty-g3-draft-long",
+      "--json",
+      "state"
+    ],
+    "code": 0,
+    "stdout": "{\"ok\":true,\"data\":{\"bell_count\":0,\"cols\":13,\"cursor\":{\"x\":6,\"y\":3},\"cwd\":null,\"exited\":null,\"last_command\":null,\"last_exit\":null,\"ready\":false,\"rows\":6,\"session_shell\":null,\"text\":\"T0 startup\\nfghijklmnopqr\\nstuvwxyz01234\\n5界😀Z\\nShift/Ctrl/Al\",\"timeouts\":{\"command\":30000,\"exit\":30000,\"idle\":5000,\"ready\":30000,\"text\":5000},\"title\":null}}\n",
+    "stderr": ""
+  },
+  {
+    "command": [
+      "/Users/dale/.local/bin/tui-test",
+      "--session",
+      "askcore-e2e-7f9d4a1a76-ghostty-g3-draft-long",
+      "--json",
+      "state"
+    ],
+    "code": 0,
+    "stdout": "{\"ok\":true,\"data\":{\"bell_count\":0,\"cols\":13,\"cursor\":{\"x\":6,\"y\":3},\"cwd\":null,\"exited\":null,\"last_command\":null,\"last_exit\":null,\"ready\":false,\"rows\":6,\"session_shell\":null,\"text\":\"T0 startup\\nfghijklmnopqr\\nstuvwxyz01234\\n5界😀Z\\nShift/Ctrl/Al\",\"timeouts\":{\"command\":30000,\"exit\":30000,\"idle\":5000,\"ready\":30000,\"text\":5000},\"title\":null}}\n",
+    "stderr": ""
+  },
+  {
+    "command": [
+      "/Users/dale/.local/bin/tui-test",
+      "--session",
+      "askcore-e2e-7f9d4a1a76-ghostty-g3-draft-long",
+      "--json",
+      "state"
+    ],
+    "code": 0,
+    "stdout": "{\"ok\":true,\"data\":{\"bell_count\":0,\"cols\":13,\"cursor\":{\"x\":6,\"y\":3},\"cwd\":null,\"exited\":null,\"last_command\":null,\"last_exit\":null,\"ready\":false,\"rows\":6,\"session_shell\":null,\"text\":\"T0 startup\\nfghijklmnopqr\\nstuvwxyz01234\\n5界😀Z\\nShift/Ctrl/Al\",\"timeouts\":{\"command\":30000,\"exit\":30000,\"idle\":5000,\"ready\":30000,\"text\":5000},\"title\":null}}\n",
+    "stderr": ""
+  },
+  {
+    "command": [
+      "/Users/dale/.local/bin/tui-test",
+      "--session",
+      "askcore-e2e-7f9d4a1a76-ghostty-g3-draft-long",
+      "--json",
+      "state"
+    ],
+    "code": 0,
+    "stdout": "{\"ok\":true,\"data\":{\"bell_count\":0,\"cols\":13,\"cursor\":{\"x\":6,\"y\":3},\"cwd\":null,\"exited\":null,\"last_command\":null,\"last_exit\":null,\"ready\":false,\"rows\":6,\"session_shell\":null,\"text\":\"T0 startup\\nfghijklmnopqr\\nstuvwxyz01234\\n5界😀Z\\nShift/Ctrl/Al\",\"timeouts\":{\"command\":30000,\"exit\":30000,\"idle\":5000,\"ready\":30000,\"text\":5000},\"title\":null}}\n",
+    "stderr": ""
+  },
+  {
+    "command": [
+      "/Users/dale/.local/bin/tui-test",
+      "--session",
+      "askcore-e2e-7f9d4a1a76-ghostty-g3-draft-long",
+      "--json",
+      "state"
+    ],
+    "code": 0,
+    "stdout": "{\"ok\":true,\"data\":{\"bell_count\":0,\"cols\":13,\"cursor\":{\"x\":6,\"y\":3},\"cwd\":null,\"exited\":null,\"last_command\":null,\"last_exit\":null,\"ready\":false,\"rows\":6,\"session_shell\":null,\"text\":\"T0 startup\\nfghijklmnopqr\\nstuvwxyz01234\\n5界😀Z\\nShift/Ctrl/Al\",\"timeouts\":{\"command\":30000,\"exit\":30000,\"idle\":5000,\"ready\":30000,\"text\":5000},\"title\":null}}\n",
+    "stderr": ""
+  },
+  {
+    "command": [
+      "/Users/dale/.local/bin/tui-test",
+      "--session",
+      "askcore-e2e-7f9d4a1a76-ghostty-g3-draft-long",
+      "--json",
+      "state"
+    ],
+    "code": 0,
+    "stdout": "{\"ok\":true,\"data\":{\"bell_count\":0,\"cols\":13,\"cursor\":{\"x\":6,\"y\":3},\"cwd\":null,\"exited\":null,\"last_command\":null,\"last_exit\":null,\"ready\":false,\"rows\":6,\"session_shell\":null,\"text\":\"T0 startup\\nfghijklmnopqr\\nstuvwxyz01234\\n5界😀Z\\nShift/Ctrl/Al\",\"timeouts\":{\"command\":30000,\"exit\":30000,\"idle\":5000,\"ready\":30000,\"text\":5000},\"title\":null}}\n",
+    "stderr": ""
+  },
+  {
+    "command": [
+      "/Users/dale/.local/bin/tui-test",
+      "--session",
+      "askcore-e2e-7f9d4a1a76-ghostty-g3-draft-long",
+      "--json",
+      "state"
+    ],
+    "code": 0,
+    "stdout": "{\"ok\":true,\"data\":{\"bell_count\":0,\"cols\":13,\"cursor\":{\"x\":6,\"y\":3},\"cwd\":null,\"exited\":null,\"last_command\":null,\"last_exit\":null,\"ready\":false,\"rows\":6,\"session_shell\":null,\"text\":\"T0 startup\\nfghijklmnopqr\\nstuvwxyz01234\\n5界😀Z\\nShift/Ctrl/Al\",\"timeouts\":{\"command\":30000,\"exit\":30000,\"idle\":5000,\"ready\":30000,\"text\":5000},\"title\":null}}\n",
+    "stderr": ""
+  },
+  {
+    "command": [
+      "/Users/dale/.local/bin/tui-test",
+      "--session",
+      "askcore-e2e-7f9d4a1a76-ghostty-g3-draft-long",
+      "--json",
+      "state"
+    ],
+    "code": 0,
+    "stdout": "{\"ok\":true,\"data\":{\"bell_count\":0,\"cols\":13,\"cursor\":{\"x\":6,\"y\":3},\"cwd\":null,\"exited\":null,\"last_command\":null,\"last_exit\":null,\"ready\":false,\"rows\":6,\"session_shell\":null,\"text\":\"T0 startup\\nfghijklmnopqr\\nstuvwxyz01234\\n5界😀Z\\nShift/Ctrl/Al\",\"timeouts\":{\"command\":30000,\"exit\":30000,\"idle\":5000,\"ready\":30000,\"text\":5000},\"title\":null}}\n",
+    "stderr": ""
+  },
+  {
+    "command": [
+      "/Users/dale/.local/bin/tui-test",
+      "--session",
+      "askcore-e2e-7f9d4a1a76-ghostty-g3-draft-long",
+      "--json",
+      "state"
+    ],
+    "code": 0,
+    "stdout": "{\"ok\":true,\"data\":{\"bell_count\":0,\"cols\":13,\"cursor\":{\"x\":6,\"y\":3},\"cwd\":null,\"exited\":null,\"last_command\":null,\"last_exit\":null,\"ready\":false,\"rows\":6,\"session_shell\":null,\"text\":\"T0 startup\\nfghijklmnopqr\\nstuvwxyz01234\\n5界😀Z\\nShift/Ctrl/Al\",\"timeouts\":{\"command\":30000,\"exit\":30000,\"idle\":5000,\"ready\":30000,\"text\":5000},\"title\":null}}\n",
+    "stderr": ""
+  },
+  {
+    "command": [
+      "/Users/dale/.local/bin/tui-test",
+      "--session",
+      "askcore-e2e-7f9d4a1a76-ghostty-g3-draft-long",
+      "--json",
+      "state"
+    ],
+    "code": 0,
+    "stdout": "{\"ok\":true,\"data\":{\"bell_count\":0,\"cols\":13,\"cursor\":{\"x\":6,\"y\":3},\"cwd\":null,\"exited\":null,\"last_command\":null,\"last_exit\":null,\"ready\":false,\"rows\":6,\"session_shell\":null,\"text\":\"T0 startup\\nfghijklmnopqr\\nstuvwxyz01234\\n5界😀Z\\nShift/Ctrl/Al\",\"timeouts\":{\"command\":30000,\"exit\":30000,\"idle\":5000,\"ready\":30000,\"text\":5000},\"title\":null}}\n",
+    "stderr": ""
+  },
+  {
+    "command": [
+      "/Users/dale/.local/bin/tui-test",
+      "--session",
+      "askcore-e2e-7f9d4a1a76-ghostty-g3-draft-long",
+      "--json",
+      "state"
+    ],
+    "code": 0,
+    "stdout": "{\"ok\":true,\"data\":{\"bell_count\":0,\"cols\":13,\"cursor\":{\"x\":6,\"y\":3},\"cwd\":null,\"exited\":null,\"last_command\":null,\"last_exit\":null,\"ready\":false,\"rows\":6,\"session_shell\":null,\"text\":\"T0 startup\\nfghijklmnopqr\\nstuvwxyz01234\\n5界😀Z\\nShift/Ctrl/Al\",\"timeouts\":{\"command\":30000,\"exit\":30000,\"idle\":5000,\"ready\":30000,\"text\":5000},\"title\":null}}\n",
+    "stderr": ""
+  },
+  {
+    "command": [
+      "/Users/dale/.local/bin/tui-test",
+      "--session",
+      "askcore-e2e-7f9d4a1a76-ghostty-g3-draft-long",
+      "--json",
+      "state"
+    ],
+    "code": 0,
+    "stdout": "{\"ok\":true,\"data\":{\"bell_count\":0,\"cols\":13,\"cursor\":{\"x\":6,\"y\":3},\"cwd\":null,\"exited\":null,\"last_command\":null,\"last_exit\":null,\"ready\":false,\"rows\":6,\"session_shell\":null,\"text\":\"T0 startup\\nfghijklmnopqr\\nstuvwxyz01234\\n5界😀Z\\nShift/Ctrl/Al\",\"timeouts\":{\"command\":30000,\"exit\":30000,\"idle\":5000,\"ready\":30000,\"text\":5000},\"title\":null}}\n",
+    "stderr": ""
+  },
+  {
+    "command": [
+      "/Users/dale/.local/bin/tui-test",
+      "--session",
+      "askcore-e2e-7f9d4a1a76-ghostty-g3-draft-long",
+      "--json",
+      "state"
+    ],
+    "code": 0,
+    "stdout": "{\"ok\":true,\"data\":{\"bell_count\":0,\"cols\":13,\"cursor\":{\"x\":6,\"y\":3},\"cwd\":null,\"exited\":null,\"last_command\":null,\"last_exit\":null,\"ready\":false,\"rows\":6,\"session_shell\":null,\"text\":\"T0 startup\\nfghijklmnopqr\\nstuvwxyz01234\\n5界😀Z\\nShift/Ctrl/Al\",\"timeouts\":{\"command\":30000,\"exit\":30000,\"idle\":5000,\"ready\":30000,\"text\":5000},\"title\":null}}\n",
+    "stderr": ""
+  },
+  {
+    "command": [
+      "/Users/dale/.local/bin/tui-test",
+      "--session",
+      "askcore-e2e-7f9d4a1a76-ghostty-g3-draft-long",
+      "--json",
+      "state"
+    ],
+    "code": 0,
+    "stdout": "{\"ok\":true,\"data\":{\"bell_count\":0,\"cols\":13,\"cursor\":{\"x\":6,\"y\":3},\"cwd\":null,\"exited\":null,\"last_command\":null,\"last_exit\":null,\"ready\":false,\"rows\":6,\"session_shell\":null,\"text\":\"T0 startup\\nfghijklmnopqr\\nstuvwxyz01234\\n5界😀Z\\nShift/Ctrl/Al\",\"timeouts\":{\"command\":30000,\"exit\":30000,\"idle\":5000,\"ready\":30000,\"text\":5000},\"title\":null}}\n",
+    "stderr": ""
+  },
+  {
+    "command": [
+      "/Users/dale/.local/bin/tui-test",
+      "--session",
+      "askcore-e2e-7f9d4a1a76-ghostty-g3-draft-long",
+      "--json",
+      "state"
+    ],
+    "code": 0,
+    "stdout": "{\"ok\":true,\"data\":{\"bell_count\":0,\"cols\":13,\"cursor\":{\"x\":6,\"y\":3},\"cwd\":null,\"exited\":null,\"last_command\":null,\"last_exit\":null,\"ready\":false,\"rows\":6,\"session_shell\":null,\"text\":\"T0 startup\\nfghijklmnopqr\\nstuvwxyz01234\\n5界😀Z\\nShift/Ctrl/Al\",\"timeouts\":{\"command\":30000,\"exit\":30000,\"idle\":5000,\"ready\":30000,\"text\":5000},\"title\":null}}\n",
+    "stderr": ""
+  },
+  {
+    "command": [
+      "/Users/dale/.local/bin/tui-test",
+      "--session",
+      "askcore-e2e-7f9d4a1a76-ghostty-g3-draft-long",
+      "--json",
+      "state"
+    ],
+    "code": 0,
+    "stdout": "{\"ok\":true,\"data\":{\"bell_count\":0,\"cols\":13,\"cursor\":{\"x\":6,\"y\":3},\"cwd\":null,\"exited\":null,\"last_command\":null,\"last_exit\":null,\"ready\":false,\"rows\":6,\"session_shell\":null,\"text\":\"T0 startup\\nfghijklmnopqr\\nstuvwxyz01234\\n5界😀Z\\nShift/Ctrl/Al\",\"timeouts\":{\"command\":30000,\"exit\":30000,\"idle\":5000,\"ready\":30000,\"text\":5000},\"title\":null}}\n",
+    "stderr": ""
+  },
+  {
+    "command": [
+      "/Users/dale/.local/bin/tui-test",
+      "--session",
+      "askcore-e2e-7f9d4a1a76-ghostty-g3-draft-long",
+      "--json",
+      "state"
+    ],
+    "code": 0,
+    "stdout": "{\"ok\":true,\"data\":{\"bell_count\":0,\"cols\":13,\"cursor\":{\"x\":6,\"y\":3},\"cwd\":null,\"exited\":null,\"last_command\":null,\"last_exit\":null,\"ready\":false,\"rows\":6,\"session_shell\":null,\"text\":\"T0 startup\\nfghijklmnopqr\\nstuvwxyz01234\\n5界😀Z\\nShift/Ctrl/Al\",\"timeouts\":{\"command\":30000,\"exit\":30000,\"idle\":5000,\"ready\":30000,\"text\":5000},\"title\":null}}\n",
+    "stderr": ""
+  },
+  {
+    "command": [
+      "/Users/dale/.local/bin/tui-test",
+      "--session",
+      "askcore-e2e-7f9d4a1a76-ghostty-g3-draft-long",
+      "--json",
+      "state"
+    ],
+    "code": 0,
+    "stdout": "{\"ok\":true,\"data\":{\"bell_count\":0,\"cols\":13,\"cursor\":{\"x\":6,\"y\":3},\"cwd\":null,\"exited\":null,\"last_command\":null,\"last_exit\":null,\"ready\":false,\"rows\":6,\"session_shell\":null,\"text\":\"T0 startup\\nfghijklmnopqr\\nstuvwxyz01234\\n5界😀Z\\nShift/Ctrl/Al\",\"timeouts\":{\"command\":30000,\"exit\":30000,\"idle\":5000,\"ready\":30000,\"text\":5000},\"title\":null}}\n",
+    "stderr": ""
+  },
+  {
+    "command": [
+      "/Users/dale/.local/bin/tui-test",
+      "--session",
+      "askcore-e2e-7f9d4a1a76-ghostty-g3-draft-long",
+      "--json",
+      "state"
+    ],
+    "code": 0,
+    "stdout": "{\"ok\":true,\"data\":{\"bell_count\":0,\"cols\":13,\"cursor\":{\"x\":6,\"y\":3},\"cwd\":null,\"exited\":null,\"last_command\":null,\"last_exit\":null,\"ready\":false,\"rows\":6,\"session_shell\":null,\"text\":\"T0 startup\\nfghijklmnopqr\\nstuvwxyz01234\\n5界😀Z\\nShift/Ctrl/Al\",\"timeouts\":{\"command\":30000,\"exit\":30000,\"idle\":5000,\"ready\":30000,\"text\":5000},\"title\":null}}\n",
+    "stderr": ""
+  },
+  {
+    "command": [
+      "/Users/dale/.local/bin/tui-test",
+      "--session",
+      "askcore-e2e-7f9d4a1a76-ghostty-g3-draft-long",
+      "--json",
+      "state"
+    ],
+    "code": 0,
+    "stdout": "{\"ok\":true,\"data\":{\"bell_count\":0,\"cols\":13,\"cursor\":{\"x\":6,\"y\":3},\"cwd\":null,\"exited\":null,\"last_command\":null,\"last_exit\":null,\"ready\":false,\"rows\":6,\"session_shell\":null,\"text\":\"T0 startup\\nfghijklmnopqr\\nstuvwxyz01234\\n5界😀Z\\nShift/Ctrl/Al\",\"timeouts\":{\"command\":30000,\"exit\":30000,\"idle\":5000,\"ready\":30000,\"text\":5000},\"title\":null}}\n",
+    "stderr": ""
+  },
+  {
+    "command": [
+      "/Users/dale/.local/bin/tui-test",
+      "--session",
+      "askcore-e2e-7f9d4a1a76-ghostty-g3-draft-long",
+      "--json",
+      "state"
+    ],
+    "code": 0,
+    "stdout": "{\"ok\":true,\"data\":{\"bell_count\":0,\"cols\":13,\"cursor\":{\"x\":6,\"y\":3},\"cwd\":null,\"exited\":null,\"last_command\":null,\"last_exit\":null,\"ready\":false,\"rows\":6,\"session_shell\":null,\"text\":\"T0 startup\\nfghijklmnopqr\\nstuvwxyz01234\\n5界😀Z\\nShift/Ctrl/Al\",\"timeouts\":{\"command\":30000,\"exit\":30000,\"idle\":5000,\"ready\":30000,\"text\":5000},\"title\":null}}\n",
+    "stderr": ""
+  },
+  {
+    "command": [
+      "/Users/dale/.local/bin/tui-test",
+      "--session",
+      "askcore-e2e-7f9d4a1a76-ghostty-g3-draft-long",
+      "--json",
+      "state"
+    ],
+    "code": 0,
+    "stdout": "{\"ok\":true,\"data\":{\"bell_count\":0,\"cols\":13,\"cursor\":{\"x\":6,\"y\":3},\"cwd\":null,\"exited\":null,\"last_command\":null,\"last_exit\":null,\"ready\":false,\"rows\":6,\"session_shell\":null,\"text\":\"T0 startup\\nfghijklmnopqr\\nstuvwxyz01234\\n5界😀Z\\nShift/Ctrl/Al\",\"timeouts\":{\"command\":30000,\"exit\":30000,\"idle\":5000,\"ready\":30000,\"text\":5000},\"title\":null}}\n",
+    "stderr": ""
+  },
+  {
+    "command": [
+      "/Users/dale/.local/bin/tui-test",
+      "--session",
+      "askcore-e2e-7f9d4a1a76-ghostty-g3-draft-long",
+      "--json",
+      "state"
+    ],
+    "code": 0,
+    "stdout": "{\"ok\":true,\"data\":{\"bell_count\":0,\"cols\":13,\"cursor\":{\"x\":6,\"y\":3},\"cwd\":null,\"exited\":null,\"last_command\":null,\"last_exit\":null,\"ready\":false,\"rows\":6,\"session_shell\":null,\"text\":\"T0 startup\\nfghijklmnopqr\\nstuvwxyz01234\\n5界😀Z\\nShift/Ctrl/Al\",\"timeouts\":{\"command\":30000,\"exit\":30000,\"idle\":5000,\"ready\":30000,\"text\":5000},\"title\":null}}\n",
+    "stderr": ""
+  },
+  {
+    "command": [
+      "/Users/dale/.local/bin/tui-test",
+      "--session",
+      "askcore-e2e-7f9d4a1a76-ghostty-g3-draft-long",
+      "--json",
+      "state"
+    ],
+    "code": 0,
+    "stdout": "{\"ok\":true,\"data\":{\"bell_count\":0,\"cols\":13,\"cursor\":{\"x\":6,\"y\":3},\"cwd\":null,\"exited\":null,\"last_command\":null,\"last_exit\":null,\"ready\":false,\"rows\":6,\"session_shell\":null,\"text\":\"T0 startup\\nfghijklmnopqr\\nstuvwxyz01234\\n5界😀Z\\nShift/Ctrl/Al\",\"timeouts\":{\"command\":30000,\"exit\":30000,\"idle\":5000,\"ready\":30000,\"text\":5000},\"title\":null}}\n",
+    "stderr": ""
+  },
+  {
+    "command": [
+      "/Users/dale/.local/bin/tui-test",
+      "--session",
+      "askcore-e2e-7f9d4a1a76-ghostty-g3-draft-long",
+      "--json",
+      "state"
+    ],
+    "code": 0,
+    "stdout": "{\"ok\":true,\"data\":{\"bell_count\":0,\"cols\":13,\"cursor\":{\"x\":6,\"y\":3},\"cwd\":null,\"exited\":null,\"last_command\":null,\"last_exit\":null,\"ready\":false,\"rows\":6,\"session_shell\":null,\"text\":\"T0 startup\\nfghijklmnopqr\\nstuvwxyz01234\\n5界😀Z\\nShift/Ctrl/Al\",\"timeouts\":{\"command\":30000,\"exit\":30000,\"idle\":5000,\"ready\":30000,\"text\":5000},\"title\":null}}\n",
+    "stderr": ""
+  },
+  {
+    "command": [
+      "/Users/dale/.local/bin/tui-test",
+      "--session",
+      "askcore-e2e-7f9d4a1a76-ghostty-g3-draft-long",
+      "--json",
+      "state"
+    ],
+    "code": 0,
+    "stdout": "{\"ok\":true,\"data\":{\"bell_count\":0,\"cols\":13,\"cursor\":{\"x\":6,\"y\":3},\"cwd\":null,\"exited\":null,\"last_command\":null,\"last_exit\":null,\"ready\":false,\"rows\":6,\"session_shell\":null,\"text\":\"T0 startup\\nfghijklmnopqr\\nstuvwxyz01234\\n5界😀Z\\nShift/Ctrl/Al\",\"timeouts\":{\"command\":30000,\"exit\":30000,\"idle\":5000,\"ready\":30000,\"text\":5000},\"title\":null}}\n",
+    "stderr": ""
+  },
+  {
+    "command": [
+      "/Users/dale/.local/bin/tui-test",
+      "--session",
+      "askcore-e2e-7f9d4a1a76-ghostty-g3-draft-long",
+      "--json",
+      "state"
+    ],
+    "code": 0,
+    "stdout": "{\"ok\":true,\"data\":{\"bell_count\":0,\"cols\":13,\"cursor\":{\"x\":6,\"y\":3},\"cwd\":null,\"exited\":null,\"last_command\":null,\"last_exit\":null,\"ready\":false,\"rows\":6,\"session_shell\":null,\"text\":\"T0 startup\\nfghijklmnopqr\\nstuvwxyz01234\\n5界😀Z\\nShift/Ctrl/Al\",\"timeouts\":{\"command\":30000,\"exit\":30000,\"idle\":5000,\"ready\":30000,\"text\":5000},\"title\":null}}\n",
+    "stderr": ""
+  },
+  {
+    "command": [
+      "/Users/dale/.local/bin/tui-test",
+      "--session",
+      "askcore-e2e-7f9d4a1a76-ghostty-g3-draft-long",
+      "--json",
+      "state"
+    ],
+    "code": 0,
+    "stdout": "{\"ok\":true,\"data\":{\"bell_count\":0,\"cols\":13,\"cursor\":{\"x\":6,\"y\":3},\"cwd\":null,\"exited\":null,\"last_command\":null,\"last_exit\":null,\"ready\":false,\"rows\":6,\"session_shell\":null,\"text\":\"T0 startup\\nfghijklmnopqr\\nstuvwxyz01234\\n5界😀Z\\nShift/Ctrl/Al\",\"timeouts\":{\"command\":30000,\"exit\":30000,\"idle\":5000,\"ready\":30000,\"text\":5000},\"title\":null}}\n",
+    "stderr": ""
+  },
+  {
+    "command": [
+      "/Users/dale/.local/bin/tui-test",
+      "--session",
+      "askcore-e2e-7f9d4a1a76-ghostty-g3-draft-long",
+      "--json",
+      "state"
+    ],
+    "code": 0,
+    "stdout": "{\"ok\":true,\"data\":{\"bell_count\":0,\"cols\":13,\"cursor\":{\"x\":6,\"y\":3},\"cwd\":null,\"exited\":null,\"last_command\":null,\"last_exit\":null,\"ready\":false,\"rows\":6,\"session_shell\":null,\"text\":\"T0 startup\\nfghijklmnopqr\\nstuvwxyz01234\\n5界😀Z\\nShift/Ctrl/Al\",\"timeouts\":{\"command\":30000,\"exit\":30000,\"idle\":5000,\"ready\":30000,\"text\":5000},\"title\":null}}\n",
+    "stderr": ""
+  },
+  {
+    "command": [
+      "/Users/dale/.local/bin/tui-test",
+      "--session",
+      "askcore-e2e-7f9d4a1a76-ghostty-g3-draft-long",
+      "--json",
+      "state"
+    ],
+    "code": 0,
+    "stdout": "{\"ok\":true,\"data\":{\"bell_count\":0,\"cols\":13,\"cursor\":{\"x\":6,\"y\":3},\"cwd\":null,\"exited\":null,\"last_command\":null,\"last_exit\":null,\"ready\":false,\"rows\":6,\"session_shell\":null,\"text\":\"T0 startup\\nfghijklmnopqr\\nstuvwxyz01234\\n5界😀Z\\nShift/Ctrl/Al\",\"timeouts\":{\"command\":30000,\"exit\":30000,\"idle\":5000,\"ready\":30000,\"text\":5000},\"title\":null}}\n",
+    "stderr": ""
+  },
+  {
+    "command": [
+      "/Users/dale/.local/bin/tui-test",
+      "--session",
+      "askcore-e2e-7f9d4a1a76-ghostty-g3-draft-long",
+      "--json",
+      "state"
+    ],
+    "code": 0,
+    "stdout": "{\"ok\":true,\"data\":{\"bell_count\":0,\"cols\":13,\"cursor\":{\"x\":6,\"y\":3},\"cwd\":null,\"exited\":null,\"last_command\":null,\"last_exit\":null,\"ready\":false,\"rows\":6,\"session_shell\":null,\"text\":\"T0 startup\\nfghijklmnopqr\\nstuvwxyz01234\\n5界😀Z\\nShift/Ctrl/Al\",\"timeouts\":{\"command\":30000,\"exit\":30000,\"idle\":5000,\"ready\":30000,\"text\":5000},\"title\":null}}\n",
+    "stderr": ""
+  },
+  {
+    "command": [
+      "/Users/dale/.local/bin/tui-test",
+      "--session",
+      "askcore-e2e-7f9d4a1a76-ghostty-g3-draft-long",
+      "--json",
+      "state"
+    ],
+    "code": 0,
+    "stdout": "{\"ok\":true,\"data\":{\"bell_count\":0,\"cols\":13,\"cursor\":{\"x\":6,\"y\":3},\"cwd\":null,\"exited\":null,\"last_command\":null,\"last_exit\":null,\"ready\":false,\"rows\":6,\"session_shell\":null,\"text\":\"T0 startup\\nfghijklmnopqr\\nstuvwxyz01234\\n5界😀Z\\nShift/Ctrl/Al\",\"timeouts\":{\"command\":30000,\"exit\":30000,\"idle\":5000,\"ready\":30000,\"text\":5000},\"title\":null}}\n",
+    "stderr": ""
+  },
+  {
+    "command": [
+      "/Users/dale/.local/bin/tui-test",
+      "--session",
+      "askcore-e2e-7f9d4a1a76-ghostty-g3-draft-long",
+      "--json",
+      "state"
+    ],
+    "code": 0,
+    "stdout": "{\"ok\":true,\"data\":{\"bell_count\":0,\"cols\":13,\"cursor\":{\"x\":6,\"y\":3},\"cwd\":null,\"exited\":null,\"last_command\":null,\"last_exit\":null,\"ready\":false,\"rows\":6,\"session_shell\":null,\"text\":\"T0 startup\\nfghijklmnopqr\\nstuvwxyz01234\\n5界😀Z\\nShift/Ctrl/Al\",\"timeouts\":{\"command\":30000,\"exit\":30000,\"idle\":5000,\"ready\":30000,\"text\":5000},\"title\":null}}\n",
+    "stderr": ""
+  },
+  {
+    "command": [
+      "/Users/dale/.local/bin/tui-test",
+      "--session",
+      "askcore-e2e-7f9d4a1a76-ghostty-g3-draft-long",
+      "--json",
+      "state"
+    ],
+    "code": 0,
+    "stdout": "{\"ok\":true,\"data\":{\"bell_count\":0,\"cols\":13,\"cursor\":{\"x\":6,\"y\":3},\"cwd\":null,\"exited\":null,\"last_command\":null,\"last_exit\":null,\"ready\":false,\"rows\":6,\"session_shell\":null,\"text\":\"T0 startup\\nfghijklmnopqr\\nstuvwxyz01234\\n5界😀Z\\nShift/Ctrl/Al\",\"timeouts\":{\"command\":30000,\"exit\":30000,\"idle\":5000,\"ready\":30000,\"text\":5000},\"title\":null}}\n",
+    "stderr": ""
+  },
+  {
+    "command": [
+      "/Users/dale/.local/bin/tui-test",
+      "--session",
+      "askcore-e2e-7f9d4a1a76-ghostty-g3-draft-long",
+      "--json",
+      "state"
+    ],
+    "code": 0,
+    "stdout": "{\"ok\":true,\"data\":{\"bell_count\":0,\"cols\":13,\"cursor\":{\"x\":6,\"y\":3},\"cwd\":null,\"exited\":null,\"last_command\":null,\"last_exit\":null,\"ready\":false,\"rows\":6,\"session_shell\":null,\"text\":\"T0 startup\\nfghijklmnopqr\\nstuvwxyz01234\\n5界😀Z\\nShift/Ctrl/Al\",\"timeouts\":{\"command\":30000,\"exit\":30000,\"idle\":5000,\"ready\":30000,\"text\":5000},\"title\":null}}\n",
+    "stderr": ""
+  },
+  {
+    "command": [
+      "/Users/dale/.local/bin/tui-test",
+      "--session",
+      "askcore-e2e-7f9d4a1a76-ghostty-g3-draft-long",
+      "--json",
+      "state"
+    ],
+    "code": 0,
+    "stdout": "{\"ok\":true,\"data\":{\"bell_count\":0,\"cols\":13,\"cursor\":{\"x\":6,\"y\":3},\"cwd\":null,\"exited\":null,\"last_command\":null,\"last_exit\":null,\"ready\":false,\"rows\":6,\"session_shell\":null,\"text\":\"T0 startup\\nfghijklmnopqr\\nstuvwxyz01234\\n5界😀Z\\nShift/Ctrl/Al\",\"timeouts\":{\"command\":30000,\"exit\":30000,\"idle\":5000,\"ready\":30000,\"text\":5000},\"title\":null}}\n",
+    "stderr": ""
+  },
+  {
+    "command": [
+      "/Users/dale/.local/bin/tui-test",
+      "--session",
+      "askcore-e2e-7f9d4a1a76-ghostty-g3-draft-long",
+      "--json",
+      "state"
+    ],
+    "code": 0,
+    "stdout": "{\"ok\":true,\"data\":{\"bell_count\":0,\"cols\":13,\"cursor\":{\"x\":6,\"y\":3},\"cwd\":null,\"exited\":null,\"last_command\":null,\"last_exit\":null,\"ready\":false,\"rows\":6,\"session_shell\":null,\"text\":\"T0 startup\\nfghijklmnopqr\\nstuvwxyz01234\\n5界😀Z\\nShift/Ctrl/Al\",\"timeouts\":{\"command\":30000,\"exit\":30000,\"idle\":5000,\"ready\":30000,\"text\":5000},\"title\":null}}\n",
+    "stderr": ""
+  },
+  {
+    "command": [
+      "/Users/dale/.local/bin/tui-test",
+      "--session",
+      "askcore-e2e-7f9d4a1a76-ghostty-g3-draft-long",
+      "--json",
+      "state"
+    ],
+    "code": 0,
+    "stdout": "{\"ok\":true,\"data\":{\"bell_count\":0,\"cols\":13,\"cursor\":{\"x\":6,\"y\":3},\"cwd\":null,\"exited\":null,\"last_command\":null,\"last_exit\":null,\"ready\":false,\"rows\":6,\"session_shell\":null,\"text\":\"T0 startup\\nfghijklmnopqr\\nstuvwxyz01234\\n5界😀Z\\nShift/Ctrl/Al\",\"timeouts\":{\"command\":30000,\"exit\":30000,\"idle\":5000,\"ready\":30000,\"text\":5000},\"title\":null}}\n",
+    "stderr": ""
+  },
+  {
+    "command": [
+      "/Users/dale/.local/bin/tui-test",
+      "--session",
+      "askcore-e2e-7f9d4a1a76-ghostty-g3-draft-long",
+      "--json",
+      "state"
+    ],
+    "code": 0,
+    "stdout": "{\"ok\":true,\"data\":{\"bell_count\":0,\"cols\":13,\"cursor\":{\"x\":6,\"y\":3},\"cwd\":null,\"exited\":null,\"last_command\":null,\"last_exit\":null,\"ready\":false,\"rows\":6,\"session_shell\":null,\"text\":\"T0 startup\\nfghijklmnopqr\\nstuvwxyz01234\\n5界😀Z\\nShift/Ctrl/Al\",\"timeouts\":{\"command\":30000,\"exit\":30000,\"idle\":5000,\"ready\":30000,\"text\":5000},\"title\":null}}\n",
+    "stderr": ""
+  },
+  {
+    "command": [
+      "/Users/dale/.local/bin/tui-test",
+      "--session",
+      "askcore-e2e-7f9d4a1a76-ghostty-g3-draft-long",
+      "--json",
+      "state"
+    ],
+    "code": 0,
+    "stdout": "{\"ok\":true,\"data\":{\"bell_count\":0,\"cols\":13,\"cursor\":{\"x\":6,\"y\":3},\"cwd\":null,\"exited\":null,\"last_command\":null,\"last_exit\":null,\"ready\":false,\"rows\":6,\"session_shell\":null,\"text\":\"T0 startup\\nfghijklmnopqr\\nstuvwxyz01234\\n5界😀Z\\nShift/Ctrl/Al\",\"timeouts\":{\"command\":30000,\"exit\":30000,\"idle\":5000,\"ready\":30000,\"text\":5000},\"title\":null}}\n",
+    "stderr": ""
+  },
+  {
+    "command": [
+      "/Users/dale/.local/bin/tui-test",
+      "--session",
+      "askcore-e2e-7f9d4a1a76-ghostty-g3-draft-long",
+      "--json",
+      "state"
+    ],
+    "code": 0,
+    "stdout": "{\"ok\":true,\"data\":{\"bell_count\":0,\"cols\":13,\"cursor\":{\"x\":6,\"y\":3},\"cwd\":null,\"exited\":null,\"last_command\":null,\"last_exit\":null,\"ready\":false,\"rows\":6,\"session_shell\":null,\"text\":\"T0 startup\\nfghijklmnopqr\\nstuvwxyz01234\\n5界😀Z\\nShift/Ctrl/Al\",\"timeouts\":{\"command\":30000,\"exit\":30000,\"idle\":5000,\"ready\":30000,\"text\":5000},\"title\":null}}\n",
+    "stderr": ""
+  },
+  {
+    "command": [
+      "/Users/dale/.local/bin/tui-test",
+      "--session",
+      "askcore-e2e-7f9d4a1a76-ghostty-g3-draft-long",
+      "--json",
+      "state"
+    ],
+    "code": 0,
+    "stdout": "{\"ok\":true,\"data\":{\"bell_count\":0,\"cols\":13,\"cursor\":{\"x\":6,\"y\":3},\"cwd\":null,\"exited\":null,\"last_command\":null,\"last_exit\":null,\"ready\":false,\"rows\":6,\"session_shell\":null,\"text\":\"T0 startup\\nfghijklmnopqr\\nstuvwxyz01234\\n5界😀Z\\nShift/Ctrl/Al\",\"timeouts\":{\"command\":30000,\"exit\":30000,\"idle\":5000,\"ready\":30000,\"text\":5000},\"title\":null}}\n",
+    "stderr": ""
+  },
+  {
+    "command": [
+      "/Users/dale/.local/bin/tui-test",
+      "--session",
+      "askcore-e2e-7f9d4a1a76-ghostty-g3-draft-long",
+      "--json",
+      "state"
+    ],
+    "code": 0,
+    "stdout": "{\"ok\":true,\"data\":{\"bell_count\":0,\"cols\":13,\"cursor\":{\"x\":6,\"y\":3},\"cwd\":null,\"exited\":null,\"last_command\":null,\"last_exit\":null,\"ready\":false,\"rows\":6,\"session_shell\":null,\"text\":\"T0 startup\\nfghijklmnopqr\\nstuvwxyz01234\\n5界😀Z\\nShift/Ctrl/Al\",\"timeouts\":{\"command\":30000,\"exit\":30000,\"idle\":5000,\"ready\":30000,\"text\":5000},\"title\":null}}\n",
+    "stderr": ""
+  },
+  {
+    "command": [
+      "/Users/dale/.local/bin/tui-test",
+      "--session",
+      "askcore-e2e-7f9d4a1a76-ghostty-g3-draft-long",
+      "--json",
+      "state"
+    ],
+    "code": 0,
+    "stdout": "{\"ok\":true,\"data\":{\"bell_count\":0,\"cols\":13,\"cursor\":{\"x\":6,\"y\":3},\"cwd\":null,\"exited\":null,\"last_command\":null,\"last_exit\":null,\"ready\":false,\"rows\":6,\"session_shell\":null,\"text\":\"T0 startup\\nfghijklmnopqr\\nstuvwxyz01234\\n5界😀Z\\nShift/Ctrl/Al\",\"timeouts\":{\"command\":30000,\"exit\":30000,\"idle\":5000,\"ready\":30000,\"text\":5000},\"title\":null}}\n",
+    "stderr": ""
+  },
+  {
+    "command": [
+      "/Users/dale/.local/bin/tui-test",
+      "--session",
+      "askcore-e2e-7f9d4a1a76-ghostty-g3-draft-long",
+      "--json",
+      "state"
+    ],
+    "code": 0,
+    "stdout": "{\"ok\":true,\"data\":{\"bell_count\":0,\"cols\":13,\"cursor\":{\"x\":6,\"y\":3},\"cwd\":null,\"exited\":null,\"last_command\":null,\"last_exit\":null,\"ready\":false,\"rows\":6,\"session_shell\":null,\"text\":\"T0 startup\\nfghijklmnopqr\\nstuvwxyz01234\\n5界😀Z\\nShift/Ctrl/Al\",\"timeouts\":{\"command\":30000,\"exit\":30000,\"idle\":5000,\"ready\":30000,\"text\":5000},\"title\":null}}\n",
+    "stderr": ""
+  },
+  {
+    "command": [
+      "/Users/dale/.local/bin/tui-test",
+      "--session",
+      "askcore-e2e-7f9d4a1a76-ghostty-g3-draft-long",
+      "--json",
+      "state"
+    ],
+    "code": 0,
+    "stdout": "{\"ok\":true,\"data\":{\"bell_count\":0,\"cols\":13,\"cursor\":{\"x\":6,\"y\":3},\"cwd\":null,\"exited\":null,\"last_command\":null,\"last_exit\":null,\"ready\":false,\"rows\":6,\"session_shell\":null,\"text\":\"T0 startup\\nfghijklmnopqr\\nstuvwxyz01234\\n5界😀Z\\nShift/Ctrl/Al\",\"timeouts\":{\"command\":30000,\"exit\":30000,\"idle\":5000,\"ready\":30000,\"text\":5000},\"title\":null}}\n",
+    "stderr": ""
+  },
+  {
+    "command": [
+      "/Users/dale/.local/bin/tui-test",
+      "--session",
+      "askcore-e2e-7f9d4a1a76-ghostty-g3-draft-long",
+      "--json",
+      "state"
+    ],
+    "code": 0,
+    "stdout": "{\"ok\":true,\"data\":{\"bell_count\":0,\"cols\":13,\"cursor\":{\"x\":6,\"y\":3},\"cwd\":null,\"exited\":null,\"last_command\":null,\"last_exit\":null,\"ready\":false,\"rows\":6,\"session_shell\":null,\"text\":\"T0 startup\\nfghijklmnopqr\\nstuvwxyz01234\\n5界😀Z\\nShift/Ctrl/Al\",\"timeouts\":{\"command\":30000,\"exit\":30000,\"idle\":5000,\"ready\":30000,\"text\":5000},\"title\":null}}\n",
+    "stderr": ""
+  },
+  {
+    "command": [
+      "/Users/dale/.local/bin/tui-test",
+      "--session",
+      "askcore-e2e-7f9d4a1a76-ghostty-g3-draft-long",
+      "--json",
+      "state"
+    ],
+    "code": 0,
+    "stdout": "{\"ok\":true,\"data\":{\"bell_count\":0,\"cols\":13,\"cursor\":{\"x\":6,\"y\":3},\"cwd\":null,\"exited\":null,\"last_command\":null,\"last_exit\":null,\"ready\":false,\"rows\":6,\"session_shell\":null,\"text\":\"T0 startup\\nfghijklmnopqr\\nstuvwxyz01234\\n5界😀Z\\nShift/Ctrl/Al\",\"timeouts\":{\"command\":30000,\"exit\":30000,\"idle\":5000,\"ready\":30000,\"text\":5000},\"title\":null}}\n",
+    "stderr": ""
+  },
+  {
+    "command": [
+      "/Users/dale/.local/bin/tui-test",
+      "--session",
+      "askcore-e2e-7f9d4a1a76-ghostty-g3-draft-long",
+      "--json",
+      "state"
+    ],
+    "code": 0,
+    "stdout": "{\"ok\":true,\"data\":{\"bell_count\":0,\"cols\":13,\"cursor\":{\"x\":6,\"y\":3},\"cwd\":null,\"exited\":null,\"last_command\":null,\"last_exit\":null,\"ready\":false,\"rows\":6,\"session_shell\":null,\"text\":\"T0 startup\\nfghijklmnopqr\\nstuvwxyz01234\\n5界😀Z\\nShift/Ctrl/Al\",\"timeouts\":{\"command\":30000,\"exit\":30000,\"idle\":5000,\"ready\":30000,\"text\":5000},\"title\":null}}\n",
+    "stderr": ""
+  },
+  {
+    "command": [
+      "/Users/dale/.local/bin/tui-test",
+      "--session",
+      "askcore-e2e-7f9d4a1a76-ghostty-g3-draft-long",
+      "--json",
+      "state"
+    ],
+    "code": 0,
+    "stdout": "{\"ok\":true,\"data\":{\"bell_count\":0,\"cols\":13,\"cursor\":{\"x\":6,\"y\":3},\"cwd\":null,\"exited\":null,\"last_command\":null,\"last_exit\":null,\"ready\":false,\"rows\":6,\"session_shell\":null,\"text\":\"T0 startup\\nfghijklmnopqr\\nstuvwxyz01234\\n5界😀Z\\nShift/Ctrl/Al\",\"timeouts\":{\"command\":30000,\"exit\":30000,\"idle\":5000,\"ready\":30000,\"text\":5000},\"title\":null}}\n",
+    "stderr": ""
+  },
+  {
+    "command": [
+      "/Users/dale/.local/bin/tui-test",
+      "--session",
+      "askcore-e2e-7f9d4a1a76-ghostty-g3-draft-long",
+      "--json",
+      "state"
+    ],
+    "code": 0,
+    "stdout": "{\"ok\":true,\"data\":{\"bell_count\":0,\"cols\":13,\"cursor\":{\"x\":6,\"y\":3},\"cwd\":null,\"exited\":null,\"last_command\":null,\"last_exit\":null,\"ready\":false,\"rows\":6,\"session_shell\":null,\"text\":\"T0 startup\\nfghijklmnopqr\\nstuvwxyz01234\\n5界😀Z\\nShift/Ctrl/Al\",\"timeouts\":{\"command\":30000,\"exit\":30000,\"idle\":5000,\"ready\":30000,\"text\":5000},\"title\":null}}\n",
+    "stderr": ""
+  },
+  {
+    "command": [
+      "/Users/dale/.local/bin/tui-test",
+      "--session",
+      "askcore-e2e-7f9d4a1a76-ghostty-g3-draft-long",
+      "--json",
+      "state"
+    ],
+    "code": 0,
+    "stdout": "{\"ok\":true,\"data\":{\"bell_count\":0,\"cols\":13,\"cursor\":{\"x\":6,\"y\":3},\"cwd\":null,\"exited\":null,\"last_command\":null,\"last_exit\":null,\"ready\":false,\"rows\":6,\"session_shell\":null,\"text\":\"T0 startup\\nfghijklmnopqr\\nstuvwxyz01234\\n5界😀Z\\nShift/Ctrl/Al\",\"timeouts\":{\"command\":30000,\"exit\":30000,\"idle\":5000,\"ready\":30000,\"text\":5000},\"title\":null}}\n",
+    "stderr": ""
+  },
+  {
+    "command": [
+      "/Users/dale/.local/bin/tui-test",
+      "--session",
+      "askcore-e2e-7f9d4a1a76-ghostty-g3-draft-long",
+      "--json",
+      "state"
+    ],
+    "code": 0,
+    "stdout": "{\"ok\":true,\"data\":{\"bell_count\":0,\"cols\":13,\"cursor\":{\"x\":6,\"y\":3},\"cwd\":null,\"exited\":null,\"last_command\":null,\"last_exit\":null,\"ready\":false,\"rows\":6,\"session_shell\":null,\"text\":\"T0 startup\\nfghijklmnopqr\\nstuvwxyz01234\\n5界😀Z\\nShift/Ctrl/Al\",\"timeouts\":{\"command\":30000,\"exit\":30000,\"idle\":5000,\"ready\":30000,\"text\":5000},\"title\":null}}\n",
+    "stderr": ""
+  },
+  {
+    "command": [
+      "/Users/dale/.local/bin/tui-test",
+      "--session",
+      "askcore-e2e-7f9d4a1a76-ghostty-g3-draft-long",
+      "--json",
+      "state"
+    ],
+    "code": 0,
+    "stdout": "{\"ok\":true,\"data\":{\"bell_count\":0,\"cols\":13,\"cursor\":{\"x\":6,\"y\":3},\"cwd\":null,\"exited\":null,\"last_command\":null,\"last_exit\":null,\"ready\":false,\"rows\":6,\"session_shell\":null,\"text\":\"T0 startup\\nfghijklmnopqr\\nstuvwxyz01234\\n5界😀Z\\nShift/Ctrl/Al\",\"timeouts\":{\"command\":30000,\"exit\":30000,\"idle\":5000,\"ready\":30000,\"text\":5000},\"title\":null}}\n",
+    "stderr": ""
+  },
+  {
+    "command": [
+      "/Users/dale/.local/bin/tui-test",
+      "--session",
+      "askcore-e2e-7f9d4a1a76-ghostty-g3-draft-long",
+      "--json",
+      "state"
+    ],
+    "code": 0,
+    "stdout": "{\"ok\":true,\"data\":{\"bell_count\":0,\"cols\":13,\"cursor\":{\"x\":6,\"y\":3},\"cwd\":null,\"exited\":null,\"last_command\":null,\"last_exit\":null,\"ready\":false,\"rows\":6,\"session_shell\":null,\"text\":\"T0 startup\\nfghijklmnopqr\\nstuvwxyz01234\\n5界😀Z\\nShift/Ctrl/Al\",\"timeouts\":{\"command\":30000,\"exit\":30000,\"idle\":5000,\"ready\":30000,\"text\":5000},\"title\":null}}\n",
+    "stderr": ""
+  },
+  {
+    "command": [
+      "/Users/dale/.local/bin/tui-test",
+      "--session",
+      "askcore-e2e-7f9d4a1a76-ghostty-g3-draft-long",
+      "--json",
+      "state"
+    ],
+    "code": 0,
+    "stdout": "{\"ok\":true,\"data\":{\"bell_count\":0,\"cols\":13,\"cursor\":{\"x\":6,\"y\":3},\"cwd\":null,\"exited\":null,\"last_command\":null,\"last_exit\":null,\"ready\":false,\"rows\":6,\"session_shell\":null,\"text\":\"T0 startup\\nfghijklmnopqr\\nstuvwxyz01234\\n5界😀Z\\nShift/Ctrl/Al\",\"timeouts\":{\"command\":30000,\"exit\":30000,\"idle\":5000,\"ready\":30000,\"text\":5000},\"title\":null}}\n",
+    "stderr": ""
+  },
+  {
+    "command": [
+      "/Users/dale/.local/bin/tui-test",
+      "--session",
+      "askcore-e2e-7f9d4a1a76-ghostty-g3-draft-long",
+      "--json",
+      "state"
+    ],
+    "code": 0,
+    "stdout": "{\"ok\":true,\"data\":{\"bell_count\":0,\"cols\":13,\"cursor\":{\"x\":6,\"y\":3},\"cwd\":null,\"exited\":null,\"last_command\":null,\"last_exit\":null,\"ready\":false,\"rows\":6,\"session_shell\":null,\"text\":\"T0 startup\\nfghijklmnopqr\\nstuvwxyz01234\\n5界😀Z\\nShift/Ctrl/Al\",\"timeouts\":{\"command\":30000,\"exit\":30000,\"idle\":5000,\"ready\":30000,\"text\":5000},\"title\":null}}\n",
+    "stderr": ""
+  },
+  {
+    "command": [
+      "/Users/dale/.local/bin/tui-test",
+      "--session",
+      "askcore-e2e-7f9d4a1a76-ghostty-g3-draft-long",
+      "--json",
+      "state"
+    ],
+    "code": 0,
+    "stdout": "{\"ok\":true,\"data\":{\"bell_count\":0,\"cols\":13,\"cursor\":{\"x\":6,\"y\":3},\"cwd\":null,\"exited\":null,\"last_command\":null,\"last_exit\":null,\"ready\":false,\"rows\":6,\"session_shell\":null,\"text\":\"T0 startup\\nfghijklmnopqr\\nstuvwxyz01234\\n5界😀Z\\nShift/Ctrl/Al\",\"timeouts\":{\"command\":30000,\"exit\":30000,\"idle\":5000,\"ready\":30000,\"text\":5000},\"title\":null}}\n",
+    "stderr": ""
+  },
+  {
+    "command": [
+      "/Users/dale/.local/bin/tui-test",
+      "--session",
+      "askcore-e2e-7f9d4a1a76-ghostty-g3-draft-long",
+      "--json",
+      "state"
+    ],
+    "code": 0,
+    "stdout": "{\"ok\":true,\"data\":{\"bell_count\":0,\"cols\":13,\"cursor\":{\"x\":6,\"y\":3},\"cwd\":null,\"exited\":null,\"last_command\":null,\"last_exit\":null,\"ready\":false,\"rows\":6,\"session_shell\":null,\"text\":\"T0 startup\\nfghijklmnopqr\\nstuvwxyz01234\\n5界😀Z\\nShift/Ctrl/Al\",\"timeouts\":{\"command\":30000,\"exit\":30000,\"idle\":5000,\"ready\":30000,\"text\":5000},\"title\":null}}\n",
+    "stderr": ""
+  },
+  {
+    "command": [
+      "/Users/dale/.local/bin/tui-test",
+      "--session",
+      "askcore-e2e-7f9d4a1a76-ghostty-g3-draft-long",
+      "--json",
+      "state"
+    ],
+    "code": 0,
+    "stdout": "{\"ok\":true,\"data\":{\"bell_count\":0,\"cols\":13,\"cursor\":{\"x\":6,\"y\":3},\"cwd\":null,\"exited\":null,\"last_command\":null,\"last_exit\":null,\"ready\":false,\"rows\":6,\"session_shell\":null,\"text\":\"T0 startup\\nfghijklmnopqr\\nstuvwxyz01234\\n5界😀Z\\nShift/Ctrl/Al\",\"timeouts\":{\"command\":30000,\"exit\":30000,\"idle\":5000,\"ready\":30000,\"text\":5000},\"title\":null}}\n",
+    "stderr": ""
+  },
+  {
+    "command": [
+      "/Users/dale/.local/bin/tui-test",
+      "--session",
+      "askcore-e2e-7f9d4a1a76-ghostty-g3-draft-long",
+      "--json",
+      "state"
+    ],
+    "code": 0,
+    "stdout": "{\"ok\":true,\"data\":{\"bell_count\":0,\"cols\":13,\"cursor\":{\"x\":6,\"y\":3},\"cwd\":null,\"exited\":null,\"last_command\":null,\"last_exit\":null,\"ready\":false,\"rows\":6,\"session_shell\":null,\"text\":\"T0 startup\\nfghijklmnopqr\\nstuvwxyz01234\\n5界😀Z\\nShift/Ctrl/Al\",\"timeouts\":{\"command\":30000,\"exit\":30000,\"idle\":5000,\"ready\":30000,\"text\":5000},\"title\":null}}\n",
+    "stderr": ""
+  },
+  {
+    "command": [
+      "/Users/dale/.local/bin/tui-test",
+      "--session",
+      "askcore-e2e-7f9d4a1a76-ghostty-g3-draft-long",
+      "--json",
+      "state"
+    ],
+    "code": 0,
+    "stdout": "{\"ok\":true,\"data\":{\"bell_count\":0,\"cols\":13,\"cursor\":{\"x\":6,\"y\":3},\"cwd\":null,\"exited\":null,\"last_command\":null,\"last_exit\":null,\"ready\":false,\"rows\":6,\"session_shell\":null,\"text\":\"T0 startup\\nfghijklmnopqr\\nstuvwxyz01234\\n5界😀Z\\nShift/Ctrl/Al\",\"timeouts\":{\"command\":30000,\"exit\":30000,\"idle\":5000,\"ready\":30000,\"text\":5000},\"title\":null}}\n",
+    "stderr": ""
+  },
+  {
+    "command": [
+      "/Users/dale/.local/bin/tui-test",
+      "--session",
+      "askcore-e2e-7f9d4a1a76-ghostty-g3-draft-long",
+      "--json",
+      "state"
+    ],
+    "code": 0,
+    "stdout": "{\"ok\":true,\"data\":{\"bell_count\":0,\"cols\":13,\"cursor\":{\"x\":6,\"y\":3},\"cwd\":null,\"exited\":null,\"last_command\":null,\"last_exit\":null,\"ready\":false,\"rows\":6,\"session_shell\":null,\"text\":\"T0 startup\\nfghijklmnopqr\\nstuvwxyz01234\\n5界😀Z\\nShift/Ctrl/Al\",\"timeouts\":{\"command\":30000,\"exit\":30000,\"idle\":5000,\"ready\":30000,\"text\":5000},\"title\":null}}\n",
+    "stderr": ""
+  },
+  {
+    "command": [
+      "/Users/dale/.local/bin/tui-test",
+      "--session",
+      "askcore-e2e-7f9d4a1a76-ghostty-g3-draft-long",
+      "--json",
+      "state"
+    ],
+    "code": 0,
+    "stdout": "{\"ok\":true,\"data\":{\"bell_count\":0,\"cols\":13,\"cursor\":{\"x\":6,\"y\":3},\"cwd\":null,\"exited\":null,\"last_command\":null,\"last_exit\":null,\"ready\":false,\"rows\":6,\"session_shell\":null,\"text\":\"T0 startup\\nfghijklmnopqr\\nstuvwxyz01234\\n5界😀Z\\nShift/Ctrl/Al\",\"timeouts\":{\"command\":30000,\"exit\":30000,\"idle\":5000,\"ready\":30000,\"text\":5000},\"title\":null}}\n",
+    "stderr": ""
+  },
+  {
+    "command": [
+      "/Users/dale/.local/bin/tui-test",
+      "--session",
+      "askcore-e2e-7f9d4a1a76-ghostty-g3-draft-long",
+      "--json",
+      "state"
+    ],
+    "code": 0,
+    "stdout": "{\"ok\":true,\"data\":{\"bell_count\":0,\"cols\":13,\"cursor\":{\"x\":6,\"y\":3},\"cwd\":null,\"exited\":null,\"last_command\":null,\"last_exit\":null,\"ready\":false,\"rows\":6,\"session_shell\":null,\"text\":\"T0 startup\\nfghijklmnopqr\\nstuvwxyz01234\\n5界😀Z\\nShift/Ctrl/Al\",\"timeouts\":{\"command\":30000,\"exit\":30000,\"idle\":5000,\"ready\":30000,\"text\":5000},\"title\":null}}\n",
+    "stderr": ""
+  },
+  {
+    "command": [
+      "/Users/dale/.local/bin/tui-test",
+      "--session",
+      "askcore-e2e-7f9d4a1a76-ghostty-g3-draft-long",
+      "--json",
+      "state"
+    ],
+    "code": 0,
+    "stdout": "{\"ok\":true,\"data\":{\"bell_count\":0,\"cols\":13,\"cursor\":{\"x\":6,\"y\":3},\"cwd\":null,\"exited\":null,\"last_command\":null,\"last_exit\":null,\"ready\":false,\"rows\":6,\"session_shell\":null,\"text\":\"T0 startup\\nfghijklmnopqr\\nstuvwxyz01234\\n5界😀Z\\nShift/Ctrl/Al\",\"timeouts\":{\"command\":30000,\"exit\":30000,\"idle\":5000,\"ready\":30000,\"text\":5000},\"title\":null}}\n",
+    "stderr": ""
+  },
+  {
+    "command": [
+      "/Users/dale/.local/bin/tui-test",
+      "--session",
+      "askcore-e2e-7f9d4a1a76-ghostty-g3-draft-long",
+      "--json",
+      "state"
+    ],
+    "code": 0,
+    "stdout": "{\"ok\":true,\"data\":{\"bell_count\":0,\"cols\":13,\"cursor\":{\"x\":6,\"y\":3},\"cwd\":null,\"exited\":null,\"last_command\":null,\"last_exit\":null,\"ready\":false,\"rows\":6,\"session_shell\":null,\"text\":\"T0 startup\\nfghijklmnopqr\\nstuvwxyz01234\\n5界😀Z\\nShift/Ctrl/Al\",\"timeouts\":{\"command\":30000,\"exit\":30000,\"idle\":5000,\"ready\":30000,\"text\":5000},\"title\":null}}\n",
+    "stderr": ""
+  },
+  {
+    "command": [
+      "/Users/dale/.local/bin/tui-test",
+      "--session",
+      "askcore-e2e-7f9d4a1a76-ghostty-g3-draft-long",
+      "--json",
+      "state"
+    ],
+    "code": 0,
+    "stdout": "{\"ok\":true,\"data\":{\"bell_count\":0,\"cols\":13,\"cursor\":{\"x\":6,\"y\":3},\"cwd\":null,\"exited\":null,\"last_command\":null,\"last_exit\":null,\"ready\":false,\"rows\":6,\"session_shell\":null,\"text\":\"T0 startup\\nfghijklmnopqr\\nstuvwxyz01234\\n5界😀Z\\nShift/Ctrl/Al\",\"timeouts\":{\"command\":30000,\"exit\":30000,\"idle\":5000,\"ready\":30000,\"text\":5000},\"title\":null}}\n",
+    "stderr": ""
+  },
+  {
+    "command": [
+      "/Users/dale/.local/bin/tui-test",
+      "--session",
+      "askcore-e2e-7f9d4a1a76-ghostty-g3-draft-long",
+      "--json",
+      "state"
+    ],
+    "code": 0,
+    "stdout": "{\"ok\":true,\"data\":{\"bell_count\":0,\"cols\":13,\"cursor\":{\"x\":6,\"y\":3},\"cwd\":null,\"exited\":null,\"last_command\":null,\"last_exit\":null,\"ready\":false,\"rows\":6,\"session_shell\":null,\"text\":\"T0 startup\\nfghijklmnopqr\\nstuvwxyz01234\\n5界😀Z\\nShift/Ctrl/Al\",\"timeouts\":{\"command\":30000,\"exit\":30000,\"idle\":5000,\"ready\":30000,\"text\":5000},\"title\":null}}\n",
+    "stderr": ""
+  },
+  {
+    "command": [
+      "/Users/dale/.local/bin/tui-test",
+      "--session",
+      "askcore-e2e-7f9d4a1a76-ghostty-g3-draft-long",
+      "--json",
+      "state"
+    ],
+    "code": 0,
+    "stdout": "{\"ok\":true,\"data\":{\"bell_count\":0,\"cols\":13,\"cursor\":{\"x\":6,\"y\":3},\"cwd\":null,\"exited\":null,\"last_command\":null,\"last_exit\":null,\"ready\":false,\"rows\":6,\"session_shell\":null,\"text\":\"T0 startup\\nfghijklmnopqr\\nstuvwxyz01234\\n5界😀Z\\nShift/Ctrl/Al\",\"timeouts\":{\"command\":30000,\"exit\":30000,\"idle\":5000,\"ready\":30000,\"text\":5000},\"title\":null}}\n",
+    "stderr": ""
+  },
+  {
+    "command": [
+      "/Users/dale/.local/bin/tui-test",
+      "--session",
+      "askcore-e2e-7f9d4a1a76-ghostty-g3-draft-long",
+      "--json",
+      "state"
+    ],
+    "code": 0,
+    "stdout": "{\"ok\":true,\"data\":{\"bell_count\":0,\"cols\":13,\"cursor\":{\"x\":6,\"y\":3},\"cwd\":null,\"exited\":null,\"last_command\":null,\"last_exit\":null,\"ready\":false,\"rows\":6,\"session_shell\":null,\"text\":\"T0 startup\\nfghijklmnopqr\\nstuvwxyz01234\\n5界😀Z\\nShift/Ctrl/Al\",\"timeouts\":{\"command\":30000,\"exit\":30000,\"idle\":5000,\"ready\":30000,\"text\":5000},\"title\":null}}\n",
+    "stderr": ""
+  },
+  {
+    "command": [
+      "/Users/dale/.local/bin/tui-test",
+      "--session",
+      "askcore-e2e-7f9d4a1a76-ghostty-g3-draft-long",
+      "--json",
+      "state"
+    ],
+    "code": 0,
+    "stdout": "{\"ok\":true,\"data\":{\"bell_count\":0,\"cols\":13,\"cursor\":{\"x\":6,\"y\":3},\"cwd\":null,\"exited\":null,\"last_command\":null,\"last_exit\":null,\"ready\":false,\"rows\":6,\"session_shell\":null,\"text\":\"T0 startup\\nfghijklmnopqr\\nstuvwxyz01234\\n5界😀Z\\nShift/Ctrl/Al\",\"timeouts\":{\"command\":30000,\"exit\":30000,\"idle\":5000,\"ready\":30000,\"text\":5000},\"title\":null}}\n",
+    "stderr": ""
+  },
+  {
+    "command": [
+      "/Users/dale/.local/bin/tui-test",
+      "--session",
+      "askcore-e2e-7f9d4a1a76-ghostty-g3-draft-long",
+      "--json",
+      "state"
+    ],
+    "code": 0,
+    "stdout": "{\"ok\":true,\"data\":{\"bell_count\":0,\"cols\":13,\"cursor\":{\"x\":6,\"y\":3},\"cwd\":null,\"exited\":null,\"last_command\":null,\"last_exit\":null,\"ready\":false,\"rows\":6,\"session_shell\":null,\"text\":\"T0 startup\\nfghijklmnopqr\\nstuvwxyz01234\\n5界😀Z\\nShift/Ctrl/Al\",\"timeouts\":{\"command\":30000,\"exit\":30000,\"idle\":5000,\"ready\":30000,\"text\":5000},\"title\":null}}\n",
+    "stderr": ""
+  },
+  {
+    "command": [
+      "/Users/dale/.local/bin/tui-test",
+      "--session",
+      "askcore-e2e-7f9d4a1a76-ghostty-g3-draft-long",
+      "--json",
+      "state"
+    ],
+    "code": 0,
+    "stdout": "{\"ok\":true,\"data\":{\"bell_count\":0,\"cols\":13,\"cursor\":{\"x\":6,\"y\":3},\"cwd\":null,\"exited\":null,\"last_command\":null,\"last_exit\":null,\"ready\":false,\"rows\":6,\"session_shell\":null,\"text\":\"T0 startup\\nfghijklmnopqr\\nstuvwxyz01234\\n5界😀Z\\nShift/Ctrl/Al\",\"timeouts\":{\"command\":30000,\"exit\":30000,\"idle\":5000,\"ready\":30000,\"text\":5000},\"title\":null}}\n",
+    "stderr": ""
+  },
+  {
+    "command": [
+      "/Users/dale/.local/bin/tui-test",
+      "--session",
+      "askcore-e2e-7f9d4a1a76-ghostty-g3-draft-long",
+      "--json",
+      "state"
+    ],
+    "code": 0,
+    "stdout": "{\"ok\":true,\"data\":{\"bell_count\":0,\"cols\":13,\"cursor\":{\"x\":6,\"y\":3},\"cwd\":null,\"exited\":null,\"last_command\":null,\"last_exit\":null,\"ready\":false,\"rows\":6,\"session_shell\":null,\"text\":\"T0 startup\\nfghijklmnopqr\\nstuvwxyz01234\\n5界😀Z\\nShift/Ctrl/Al\",\"timeouts\":{\"command\":30000,\"exit\":30000,\"idle\":5000,\"ready\":30000,\"text\":5000},\"title\":null}}\n",
+    "stderr": ""
+  },
+  {
+    "command": [
+      "/Users/dale/.local/bin/tui-test",
+      "--session",
+      "askcore-e2e-7f9d4a1a76-ghostty-g3-draft-long",
+      "--json",
+      "state"
+    ],
+    "code": 0,
+    "stdout": "{\"ok\":true,\"data\":{\"bell_count\":0,\"cols\":13,\"cursor\":{\"x\":6,\"y\":3},\"cwd\":null,\"exited\":null,\"last_command\":null,\"last_exit\":null,\"ready\":false,\"rows\":6,\"session_shell\":null,\"text\":\"T0 startup\\nfghijklmnopqr\\nstuvwxyz01234\\n5界😀Z\\nShift/Ctrl/Al\",\"timeouts\":{\"command\":30000,\"exit\":30000,\"idle\":5000,\"ready\":30000,\"text\":5000},\"title\":null}}\n",
+    "stderr": ""
+  },
+  {
+    "command": [
+      "/Users/dale/.local/bin/tui-test",
+      "--session",
+      "askcore-e2e-7f9d4a1a76-ghostty-g3-draft-long",
+      "--json",
+      "state"
+    ],
+    "code": 0,
+    "stdout": "{\"ok\":true,\"data\":{\"bell_count\":0,\"cols\":13,\"cursor\":{\"x\":6,\"y\":3},\"cwd\":null,\"exited\":null,\"last_command\":null,\"last_exit\":null,\"ready\":false,\"rows\":6,\"session_shell\":null,\"text\":\"T0 startup\\nfghijklmnopqr\\nstuvwxyz01234\\n5界😀Z\\nShift/Ctrl/Al\",\"timeouts\":{\"command\":30000,\"exit\":30000,\"idle\":5000,\"ready\":30000,\"text\":5000},\"title\":null}}\n",
+    "stderr": ""
+  },
+  {
+    "command": [
+      "/Users/dale/.local/bin/tui-test",
+      "--session",
+      "askcore-e2e-7f9d4a1a76-ghostty-g3-draft-long",
+      "--json",
+      "state"
+    ],
+    "code": 0,
+    "stdout": "{\"ok\":true,\"data\":{\"bell_count\":0,\"cols\":13,\"cursor\":{\"x\":6,\"y\":3},\"cwd\":null,\"exited\":null,\"last_command\":null,\"last_exit\":null,\"ready\":false,\"rows\":6,\"session_shell\":null,\"text\":\"T0 startup\\nfghijklmnopqr\\nstuvwxyz01234\\n5界😀Z\\nShift/Ctrl/Al\",\"timeouts\":{\"command\":30000,\"exit\":30000,\"idle\":5000,\"ready\":30000,\"text\":5000},\"title\":null}}\n",
+    "stderr": ""
+  },
+  {
+    "command": [
+      "/Users/dale/.local/bin/tui-test",
+      "--session",
+      "askcore-e2e-7f9d4a1a76-ghostty-g3-draft-long",
+      "--json",
+      "state"
+    ],
+    "code": 0,
+    "stdout": "{\"ok\":true,\"data\":{\"bell_count\":0,\"cols\":13,\"cursor\":{\"x\":6,\"y\":3},\"cwd\":null,\"exited\":null,\"last_command\":null,\"last_exit\":null,\"ready\":false,\"rows\":6,\"session_shell\":null,\"text\":\"T0 startup\\nfghijklmnopqr\\nstuvwxyz01234\\n5界😀Z\\nShift/Ctrl/Al\",\"timeouts\":{\"command\":30000,\"exit\":30000,\"idle\":5000,\"ready\":30000,\"text\":5000},\"title\":null}}\n",
+    "stderr": ""
+  },
+  {
+    "command": [
+      "/Users/dale/.local/bin/tui-test",
+      "--session",
+      "askcore-e2e-7f9d4a1a76-ghostty-g3-draft-long",
+      "--json",
+      "state"
+    ],
+    "code": 0,
+    "stdout": "{\"ok\":true,\"data\":{\"bell_count\":0,\"cols\":13,\"cursor\":{\"x\":6,\"y\":3},\"cwd\":null,\"exited\":null,\"last_command\":null,\"last_exit\":null,\"ready\":false,\"rows\":6,\"session_shell\":null,\"text\":\"T0 startup\\nfghijklmnopqr\\nstuvwxyz01234\\n5界😀Z\\nShift/Ctrl/Al\",\"timeouts\":{\"command\":30000,\"exit\":30000,\"idle\":5000,\"ready\":30000,\"text\":5000},\"title\":null}}\n",
+    "stderr": ""
+  },
+  {
+    "command": [
+      "/Users/dale/.local/bin/tui-test",
+      "--session",
+      "askcore-e2e-7f9d4a1a76-ghostty-g3-draft-long",
+      "--json",
+      "state"
+    ],
+    "code": 0,
+    "stdout": "{\"ok\":true,\"data\":{\"bell_count\":0,\"cols\":13,\"cursor\":{\"x\":6,\"y\":3},\"cwd\":null,\"exited\":null,\"last_command\":null,\"last_exit\":null,\"ready\":false,\"rows\":6,\"session_shell\":null,\"text\":\"T0 startup\\nfghijklmnopqr\\nstuvwxyz01234\\n5界😀Z\\nShift/Ctrl/Al\",\"timeouts\":{\"command\":30000,\"exit\":30000,\"idle\":5000,\"ready\":30000,\"text\":5000},\"title\":null}}\n",
+    "stderr": ""
+  },
+  {
+    "command": [
+      "/Users/dale/.local/bin/tui-test",
+      "--session",
+      "askcore-e2e-7f9d4a1a76-ghostty-g3-draft-long",
+      "--json",
+      "state"
+    ],
+    "code": 0,
+    "stdout": "{\"ok\":true,\"data\":{\"bell_count\":0,\"cols\":13,\"cursor\":{\"x\":6,\"y\":3},\"cwd\":null,\"exited\":null,\"last_command\":null,\"last_exit\":null,\"ready\":false,\"rows\":6,\"session_shell\":null,\"text\":\"T0 startup\\nfghijklmnopqr\\nstuvwxyz01234\\n5界😀Z\\nShift/Ctrl/Al\",\"timeouts\":{\"command\":30000,\"exit\":30000,\"idle\":5000,\"ready\":30000,\"text\":5000},\"title\":null}}\n",
+    "stderr": ""
+  },
+  {
+    "command": [
+      "/Users/dale/.local/bin/tui-test",
+      "--session",
+      "askcore-e2e-7f9d4a1a76-ghostty-g3-draft-long",
+      "--json",
+      "state"
+    ],
+    "code": 0,
+    "stdout": "{\"ok\":true,\"data\":{\"bell_count\":0,\"cols\":13,\"cursor\":{\"x\":6,\"y\":3},\"cwd\":null,\"exited\":null,\"last_command\":null,\"last_exit\":null,\"ready\":false,\"rows\":6,\"session_shell\":null,\"text\":\"T0 startup\\nfghijklmnopqr\\nstuvwxyz01234\\n5界😀Z\\nShift/Ctrl/Al\",\"timeouts\":{\"command\":30000,\"exit\":30000,\"idle\":5000,\"ready\":30000,\"text\":5000},\"title\":null}}\n",
+    "stderr": ""
+  },
+  {
+    "command": [
+      "/Users/dale/.local/bin/tui-test",
+      "--session",
+      "askcore-e2e-7f9d4a1a76-ghostty-g3-draft-long",
+      "--json",
+      "state"
+    ],
+    "code": 0,
+    "stdout": "{\"ok\":true,\"data\":{\"bell_count\":0,\"cols\":13,\"cursor\":{\"x\":6,\"y\":3},\"cwd\":null,\"exited\":null,\"last_command\":null,\"last_exit\":null,\"ready\":false,\"rows\":6,\"session_shell\":null,\"text\":\"T0 startup\\nfghijklmnopqr\\nstuvwxyz01234\\n5界😀Z\\nShift/Ctrl/Al\",\"timeouts\":{\"command\":30000,\"exit\":30000,\"idle\":5000,\"ready\":30000,\"text\":5000},\"title\":null}}\n",
+    "stderr": ""
+  },
+  {
+    "command": [
+      "/Users/dale/.local/bin/tui-test",
+      "--session",
+      "askcore-e2e-7f9d4a1a76-ghostty-g3-draft-long",
+      "--json",
+      "state"
+    ],
+    "code": 0,
+    "stdout": "{\"ok\":true,\"data\":{\"bell_count\":0,\"cols\":13,\"cursor\":{\"x\":6,\"y\":3},\"cwd\":null,\"exited\":null,\"last_command\":null,\"last_exit\":null,\"ready\":false,\"rows\":6,\"session_shell\":null,\"text\":\"T0 startup\\nfghijklmnopqr\\nstuvwxyz01234\\n5界😀Z\\nShift/Ctrl/Al\",\"timeouts\":{\"command\":30000,\"exit\":30000,\"idle\":5000,\"ready\":30000,\"text\":5000},\"title\":null}}\n",
+    "stderr": ""
+  },
+  {
+    "command": [
+      "/Users/dale/.local/bin/tui-test",
+      "--session",
+      "askcore-e2e-7f9d4a1a76-ghostty-g3-draft-long",
+      "--json",
+      "state"
+    ],
+    "code": 0,
+    "stdout": "{\"ok\":true,\"data\":{\"bell_count\":0,\"cols\":13,\"cursor\":{\"x\":6,\"y\":3},\"cwd\":null,\"exited\":null,\"last_command\":null,\"last_exit\":null,\"ready\":false,\"rows\":6,\"session_shell\":null,\"text\":\"T0 startup\\nfghijklmnopqr\\nstuvwxyz01234\\n5界😀Z\\nShift/Ctrl/Al\",\"timeouts\":{\"command\":30000,\"exit\":30000,\"idle\":5000,\"ready\":30000,\"text\":5000},\"title\":null}}\n",
+    "stderr": ""
+  },
+  {
+    "command": [
+      "/Users/dale/.local/bin/tui-test",
+      "--session",
+      "askcore-e2e-7f9d4a1a76-ghostty-g3-draft-long",
+      "--json",
+      "state"
+    ],
+    "code": 0,
+    "stdout": "{\"ok\":true,\"data\":{\"bell_count\":0,\"cols\":13,\"cursor\":{\"x\":6,\"y\":3},\"cwd\":null,\"exited\":null,\"last_command\":null,\"last_exit\":null,\"ready\":false,\"rows\":6,\"session_shell\":null,\"text\":\"T0 startup\\nfghijklmnopqr\\nstuvwxyz01234\\n5界😀Z\\nShift/Ctrl/Al\",\"timeouts\":{\"command\":30000,\"exit\":30000,\"idle\":5000,\"ready\":30000,\"text\":5000},\"title\":null}}\n",
+    "stderr": ""
+  },
+  {
+    "command": [
+      "/Users/dale/.local/bin/tui-test",
+      "--session",
+      "askcore-e2e-7f9d4a1a76-ghostty-g3-draft-long",
+      "--json",
+      "state"
+    ],
+    "code": 0,
+    "stdout": "{\"ok\":true,\"data\":{\"bell_count\":0,\"cols\":13,\"cursor\":{\"x\":6,\"y\":3},\"cwd\":null,\"exited\":null,\"last_command\":null,\"last_exit\":null,\"ready\":false,\"rows\":6,\"session_shell\":null,\"text\":\"T0 startup\\nfghijklmnopqr\\nstuvwxyz01234\\n5界😀Z\\nShift/Ctrl/Al\",\"timeouts\":{\"command\":30000,\"exit\":30000,\"idle\":5000,\"ready\":30000,\"text\":5000},\"title\":null}}\n",
+    "stderr": ""
+  },
+  {
+    "command": [
+      "/Users/dale/.local/bin/tui-test",
+      "--session",
+      "askcore-e2e-7f9d4a1a76-ghostty-g3-draft-long",
+      "--json",
+      "state"
+    ],
+    "code": 0,
+    "stdout": "{\"ok\":true,\"data\":{\"bell_count\":0,\"cols\":13,\"cursor\":{\"x\":6,\"y\":3},\"cwd\":null,\"exited\":null,\"last_command\":null,\"last_exit\":null,\"ready\":false,\"rows\":6,\"session_shell\":null,\"text\":\"T0 startup\\nfghijklmnopqr\\nstuvwxyz01234\\n5界😀Z\\nShift/Ctrl/Al\",\"timeouts\":{\"command\":30000,\"exit\":30000,\"idle\":5000,\"ready\":30000,\"text\":5000},\"title\":null}}\n",
+    "stderr": ""
+  },
+  {
+    "command": [
+      "/Users/dale/.local/bin/tui-test",
+      "--session",
+      "askcore-e2e-7f9d4a1a76-ghostty-g3-draft-long",
+      "--json",
+      "state"
+    ],
+    "code": 0,
+    "stdout": "{\"ok\":true,\"data\":{\"bell_count\":0,\"cols\":13,\"cursor\":{\"x\":6,\"y\":3},\"cwd\":null,\"exited\":null,\"last_command\":null,\"last_exit\":null,\"ready\":false,\"rows\":6,\"session_shell\":null,\"text\":\"T0 startup\\nfghijklmnopqr\\nstuvwxyz01234\\n5界😀Z\\nShift/Ctrl/Al\",\"timeouts\":{\"command\":30000,\"exit\":30000,\"idle\":5000,\"ready\":30000,\"text\":5000},\"title\":null}}\n",
+    "stderr": ""
+  },
+  {
+    "command": [
+      "/Users/dale/.local/bin/tui-test",
+      "--session",
+      "askcore-e2e-7f9d4a1a76-ghostty-g3-draft-long",
+      "--json",
+      "state"
+    ],
+    "code": 0,
+    "stdout": "{\"ok\":true,\"data\":{\"bell_count\":0,\"cols\":13,\"cursor\":{\"x\":6,\"y\":3},\"cwd\":null,\"exited\":null,\"last_command\":null,\"last_exit\":null,\"ready\":false,\"rows\":6,\"session_shell\":null,\"text\":\"T0 startup\\nfghijklmnopqr\\nstuvwxyz01234\\n5界😀Z\\nShift/Ctrl/Al\",\"timeouts\":{\"command\":30000,\"exit\":30000,\"idle\":5000,\"ready\":30000,\"text\":5000},\"title\":null}}\n",
+    "stderr": ""
+  },
+  {
+    "command": [
+      "/Users/dale/.local/bin/tui-test",
+      "--session",
+      "askcore-e2e-7f9d4a1a76-ghostty-g3-draft-long",
+      "--json",
+      "state"
+    ],
+    "code": 0,
+    "stdout": "{\"ok\":true,\"data\":{\"bell_count\":0,\"cols\":13,\"cursor\":{\"x\":6,\"y\":3},\"cwd\":null,\"exited\":null,\"last_command\":null,\"last_exit\":null,\"ready\":false,\"rows\":6,\"session_shell\":null,\"text\":\"T0 startup\\nfghijklmnopqr\\nstuvwxyz01234\\n5界😀Z\\nShift/Ctrl/Al\",\"timeouts\":{\"command\":30000,\"exit\":30000,\"idle\":5000,\"ready\":30000,\"text\":5000},\"title\":null}}\n",
+    "stderr": ""
+  },
+  {
+    "command": [
+      "/Users/dale/.local/bin/tui-test",
+      "--session",
+      "askcore-e2e-7f9d4a1a76-ghostty-g3-draft-long",
+      "--json",
+      "state"
+    ],
+    "code": 0,
+    "stdout": "{\"ok\":true,\"data\":{\"bell_count\":0,\"cols\":13,\"cursor\":{\"x\":6,\"y\":3},\"cwd\":null,\"exited\":null,\"last_command\":null,\"last_exit\":null,\"ready\":false,\"rows\":6,\"session_shell\":null,\"text\":\"T0 startup\\nfghijklmnopqr\\nstuvwxyz01234\\n5界😀Z\\nShift/Ctrl/Al\",\"timeouts\":{\"command\":30000,\"exit\":30000,\"idle\":5000,\"ready\":30000,\"text\":5000},\"title\":null}}\n",
+    "stderr": ""
+  },
+  {
+    "command": [
+      "/Users/dale/.local/bin/tui-test",
+      "--session",
+      "askcore-e2e-7f9d4a1a76-ghostty-g3-draft-long",
+      "--json",
+      "state"
+    ],
+    "code": 0,
+    "stdout": "{\"ok\":true,\"data\":{\"bell_count\":0,\"cols\":13,\"cursor\":{\"x\":6,\"y\":3},\"cwd\":null,\"exited\":null,\"last_command\":null,\"last_exit\":null,\"ready\":false,\"rows\":6,\"session_shell\":null,\"text\":\"T0 startup\\nfghijklmnopqr\\nstuvwxyz01234\\n5界😀Z\\nShift/Ctrl/Al\",\"timeouts\":{\"command\":30000,\"exit\":30000,\"idle\":5000,\"ready\":30000,\"text\":5000},\"title\":null}}\n",
+    "stderr": ""
+  },
+  {
+    "command": [
+      "/Users/dale/.local/bin/tui-test",
+      "--session",
+      "askcore-e2e-7f9d4a1a76-ghostty-g3-draft-long",
+      "--json",
+      "state"
+    ],
+    "code": 0,
+    "stdout": "{\"ok\":true,\"data\":{\"bell_count\":0,\"cols\":13,\"cursor\":{\"x\":6,\"y\":3},\"cwd\":null,\"exited\":null,\"last_command\":null,\"last_exit\":null,\"ready\":false,\"rows\":6,\"session_shell\":null,\"text\":\"T0 startup\\nfghijklmnopqr\\nstuvwxyz01234\\n5界😀Z\\nShift/Ctrl/Al\",\"timeouts\":{\"command\":30000,\"exit\":30000,\"idle\":5000,\"ready\":30000,\"text\":5000},\"title\":null}}\n",
+    "stderr": ""
+  },
+  {
+    "command": [
+      "/Users/dale/.local/bin/tui-test",
+      "--session",
+      "askcore-e2e-7f9d4a1a76-ghostty-g3-draft-long",
+      "--json",
+      "state"
+    ],
+    "code": 0,
+    "stdout": "{\"ok\":true,\"data\":{\"bell_count\":0,\"cols\":13,\"cursor\":{\"x\":6,\"y\":3},\"cwd\":null,\"exited\":null,\"last_command\":null,\"last_exit\":null,\"ready\":false,\"rows\":6,\"session_shell\":null,\"text\":\"T0 startup\\nfghijklmnopqr\\nstuvwxyz01234\\n5界😀Z\\nShift/Ctrl/Al\",\"timeouts\":{\"command\":30000,\"exit\":30000,\"idle\":5000,\"ready\":30000,\"text\":5000},\"title\":null}}\n",
+    "stderr": ""
+  },
+  {
+    "command": [
+      "/Users/dale/.local/bin/tui-test",
+      "--session",
+      "askcore-e2e-7f9d4a1a76-ghostty-g3-draft-long",
+      "--json",
+      "state"
+    ],
+    "code": 0,
+    "stdout": "{\"ok\":true,\"data\":{\"bell_count\":0,\"cols\":13,\"cursor\":{\"x\":6,\"y\":3},\"cwd\":null,\"exited\":null,\"last_command\":null,\"last_exit\":null,\"ready\":false,\"rows\":6,\"session_shell\":null,\"text\":\"T0 startup\\nfghijklmnopqr\\nstuvwxyz01234\\n5界😀Z\\nShift/Ctrl/Al\",\"timeouts\":{\"command\":30000,\"exit\":30000,\"idle\":5000,\"ready\":30000,\"text\":5000},\"title\":null}}\n",
+    "stderr": ""
+  },
+  {
+    "command": [
+      "/Users/dale/.local/bin/tui-test",
+      "--session",
+      "askcore-e2e-7f9d4a1a76-ghostty-g3-draft-long",
+      "--json",
+      "state"
+    ],
+    "code": 0,
+    "stdout": "{\"ok\":true,\"data\":{\"bell_count\":0,\"cols\":13,\"cursor\":{\"x\":6,\"y\":3},\"cwd\":null,\"exited\":null,\"last_command\":null,\"last_exit\":null,\"ready\":false,\"rows\":6,\"session_shell\":null,\"text\":\"T0 startup\\nfghijklmnopqr\\nstuvwxyz01234\\n5界😀Z\\nShift/Ctrl/Al\",\"timeouts\":{\"command\":30000,\"exit\":30000,\"idle\":5000,\"ready\":30000,\"text\":5000},\"title\":null}}\n",
+    "stderr": ""
+  },
+  {
+    "command": [
+      "/Users/dale/.local/bin/tui-test",
+      "--session",
+      "askcore-e2e-7f9d4a1a76-ghostty-g3-draft-long",
+      "--json",
+      "state"
+    ],
+    "code": 0,
+    "stdout": "{\"ok\":true,\"data\":{\"bell_count\":0,\"cols\":13,\"cursor\":{\"x\":6,\"y\":3},\"cwd\":null,\"exited\":null,\"last_command\":null,\"last_exit\":null,\"ready\":false,\"rows\":6,\"session_shell\":null,\"text\":\"T0 startup\\nfghijklmnopqr\\nstuvwxyz01234\\n5界😀Z\\nShift/Ctrl/Al\",\"timeouts\":{\"command\":30000,\"exit\":30000,\"idle\":5000,\"ready\":30000,\"text\":5000},\"title\":null}}\n",
+    "stderr": ""
+  },
+  {
+    "command": [
+      "/Users/dale/.local/bin/tui-test",
+      "--session",
+      "askcore-e2e-7f9d4a1a76-ghostty-g3-draft-long",
+      "--json",
+      "state"
+    ],
+    "code": 0,
+    "stdout": "{\"ok\":true,\"data\":{\"bell_count\":0,\"cols\":13,\"cursor\":{\"x\":6,\"y\":3},\"cwd\":null,\"exited\":null,\"last_command\":null,\"last_exit\":null,\"ready\":false,\"rows\":6,\"session_shell\":null,\"text\":\"T0 startup\\nfghijklmnopqr\\nstuvwxyz01234\\n5界😀Z\\nShift/Ctrl/Al\",\"timeouts\":{\"command\":30000,\"exit\":30000,\"idle\":5000,\"ready\":30000,\"text\":5000},\"title\":null}}\n",
+    "stderr": ""
+  },
+  {
+    "command": [
+      "/Users/dale/.local/bin/tui-test",
+      "--session",
+      "askcore-e2e-7f9d4a1a76-ghostty-g3-draft-long",
+      "--json",
+      "state"
+    ],
+    "code": 0,
+    "stdout": "{\"ok\":true,\"data\":{\"bell_count\":0,\"cols\":13,\"cursor\":{\"x\":6,\"y\":3},\"cwd\":null,\"exited\":null,\"last_command\":null,\"last_exit\":null,\"ready\":false,\"rows\":6,\"session_shell\":null,\"text\":\"T0 startup\\nfghijklmnopqr\\nstuvwxyz01234\\n5界😀Z\\nShift/Ctrl/Al\",\"timeouts\":{\"command\":30000,\"exit\":30000,\"idle\":5000,\"ready\":30000,\"text\":5000},\"title\":null}}\n",
+    "stderr": ""
+  },
+  {
+    "command": [
+      "/Users/dale/.local/bin/tui-test",
+      "--session",
+      "askcore-e2e-7f9d4a1a76-ghostty-g3-draft-long",
+      "--json",
+      "state"
+    ],
+    "code": 0,
+    "stdout": "{\"ok\":true,\"data\":{\"bell_count\":0,\"cols\":13,\"cursor\":{\"x\":6,\"y\":3},\"cwd\":null,\"exited\":null,\"last_command\":null,\"last_exit\":null,\"ready\":false,\"rows\":6,\"session_shell\":null,\"text\":\"T0 startup\\nfghijklmnopqr\\nstuvwxyz01234\\n5界😀Z\\nShift/Ctrl/Al\",\"timeouts\":{\"command\":30000,\"exit\":30000,\"idle\":5000,\"ready\":30000,\"text\":5000},\"title\":null}}\n",
+    "stderr": ""
+  },
+  {
+    "command": [
+      "/Users/dale/.local/bin/tui-test",
+      "--session",
+      "askcore-e2e-7f9d4a1a76-ghostty-g3-draft-long",
+      "--json",
+      "state"
+    ],
+    "code": 0,
+    "stdout": "{\"ok\":true,\"data\":{\"bell_count\":0,\"cols\":13,\"cursor\":{\"x\":6,\"y\":3},\"cwd\":null,\"exited\":null,\"last_command\":null,\"last_exit\":null,\"ready\":false,\"rows\":6,\"session_shell\":null,\"text\":\"T0 startup\\nfghijklmnopqr\\nstuvwxyz01234\\n5界😀Z\\nShift/Ctrl/Al\",\"timeouts\":{\"command\":30000,\"exit\":30000,\"idle\":5000,\"ready\":30000,\"text\":5000},\"title\":null}}\n",
+    "stderr": ""
+  },
+  {
+    "command": [
+      "/Users/dale/.local/bin/tui-test",
+      "--session",
+      "askcore-e2e-7f9d4a1a76-ghostty-g3-draft-long",
+      "--json",
+      "state"
+    ],
+    "code": 0,
+    "stdout": "{\"ok\":true,\"data\":{\"bell_count\":0,\"cols\":13,\"cursor\":{\"x\":6,\"y\":3},\"cwd\":null,\"exited\":null,\"last_command\":null,\"last_exit\":null,\"ready\":false,\"rows\":6,\"session_shell\":null,\"text\":\"T0 startup\\nfghijklmnopqr\\nstuvwxyz01234\\n5界😀Z\\nShift/Ctrl/Al\",\"timeouts\":{\"command\":30000,\"exit\":30000,\"idle\":5000,\"ready\":30000,\"text\":5000},\"title\":null}}\n",
+    "stderr": ""
+  },
+  {
+    "command": [
+      "/Users/dale/.local/bin/tui-test",
+      "--session",
+      "askcore-e2e-7f9d4a1a76-ghostty-g3-draft-long",
+      "--json",
+      "state"
+    ],
+    "code": 0,
+    "stdout": "{\"ok\":true,\"data\":{\"bell_count\":0,\"cols\":13,\"cursor\":{\"x\":6,\"y\":3},\"cwd\":null,\"exited\":null,\"last_command\":null,\"last_exit\":null,\"ready\":false,\"rows\":6,\"session_shell\":null,\"text\":\"T0 startup\\nfghijklmnopqr\\nstuvwxyz01234\\n5界😀Z\\nShift/Ctrl/Al\",\"timeouts\":{\"command\":30000,\"exit\":30000,\"idle\":5000,\"ready\":30000,\"text\":5000},\"title\":null}}\n",
+    "stderr": ""
+  },
+  {
+    "command": [
+      "/Users/dale/.local/bin/tui-test",
+      "--session",
+      "askcore-e2e-7f9d4a1a76-ghostty-g3-draft-long",
+      "--json",
+      "state"
+    ],
+    "code": 0,
+    "stdout": "{\"ok\":true,\"data\":{\"bell_count\":0,\"cols\":13,\"cursor\":{\"x\":6,\"y\":3},\"cwd\":null,\"exited\":null,\"last_command\":null,\"last_exit\":null,\"ready\":false,\"rows\":6,\"session_shell\":null,\"text\":\"T0 startup\\nfghijklmnopqr\\nstuvwxyz01234\\n5界😀Z\\nShift/Ctrl/Al\",\"timeouts\":{\"command\":30000,\"exit\":30000,\"idle\":5000,\"ready\":30000,\"text\":5000},\"title\":null}}\n",
+    "stderr": ""
+  },
+  {
+    "command": [
+      "/Users/dale/.local/bin/tui-test",
+      "--session",
+      "askcore-e2e-7f9d4a1a76-ghostty-g3-draft-long",
+      "--json",
+      "state"
+    ],
+    "code": 0,
+    "stdout": "{\"ok\":true,\"data\":{\"bell_count\":0,\"cols\":13,\"cursor\":{\"x\":6,\"y\":3},\"cwd\":null,\"exited\":null,\"last_command\":null,\"last_exit\":null,\"ready\":false,\"rows\":6,\"session_shell\":null,\"text\":\"T0 startup\\nfghijklmnopqr\\nstuvwxyz01234\\n5界😀Z\\nShift/Ctrl/Al\",\"timeouts\":{\"command\":30000,\"exit\":30000,\"idle\":5000,\"ready\":30000,\"text\":5000},\"title\":null}}\n",
+    "stderr": ""
+  },
+  {
+    "command": [
+      "/Users/dale/.local/bin/tui-test",
+      "--session",
+      "askcore-e2e-7f9d4a1a76-ghostty-g3-draft-long",
+      "--json",
+      "state"
+    ],
+    "code": 0,
+    "stdout": "{\"ok\":true,\"data\":{\"bell_count\":0,\"cols\":13,\"cursor\":{\"x\":6,\"y\":3},\"cwd\":null,\"exited\":null,\"last_command\":null,\"last_exit\":null,\"ready\":false,\"rows\":6,\"session_shell\":null,\"text\":\"T0 startup\\nfghijklmnopqr\\nstuvwxyz01234\\n5界😀Z\\nShift/Ctrl/Al\",\"timeouts\":{\"command\":30000,\"exit\":30000,\"idle\":5000,\"ready\":30000,\"text\":5000},\"title\":null}}\n",
+    "stderr": ""
+  },
+  {
+    "command": [
+      "/Users/dale/.local/bin/tui-test",
+      "--session",
+      "askcore-e2e-7f9d4a1a76-ghostty-g3-draft-long",
+      "--json",
+      "state"
+    ],
+    "code": 0,
+    "stdout": "{\"ok\":true,\"data\":{\"bell_count\":0,\"cols\":13,\"cursor\":{\"x\":6,\"y\":3},\"cwd\":null,\"exited\":null,\"last_command\":null,\"last_exit\":null,\"ready\":false,\"rows\":6,\"session_shell\":null,\"text\":\"T0 startup\\nfghijklmnopqr\\nstuvwxyz01234\\n5界😀Z\\nShift/Ctrl/Al\",\"timeouts\":{\"command\":30000,\"exit\":30000,\"idle\":5000,\"ready\":30000,\"text\":5000},\"title\":null}}\n",
+    "stderr": ""
+  },
+  {
+    "command": [
+      "/Users/dale/.local/bin/tui-test",
+      "--session",
+      "askcore-e2e-7f9d4a1a76-ghostty-g3-draft-long",
+      "--json",
+      "state"
+    ],
+    "code": 0,
+    "stdout": "{\"ok\":true,\"data\":{\"bell_count\":0,\"cols\":13,\"cursor\":{\"x\":6,\"y\":3},\"cwd\":null,\"exited\":null,\"last_command\":null,\"last_exit\":null,\"ready\":false,\"rows\":6,\"session_shell\":null,\"text\":\"T0 startup\\nfghijklmnopqr\\nstuvwxyz01234\\n5界😀Z\\nShift/Ctrl/Al\",\"timeouts\":{\"command\":30000,\"exit\":30000,\"idle\":5000,\"ready\":30000,\"text\":5000},\"title\":null}}\n",
+    "stderr": ""
+  },
+  {
+    "command": [
+      "/Users/dale/.local/bin/tui-test",
+      "--session",
+      "askcore-e2e-7f9d4a1a76-ghostty-g3-draft-long",
+      "--json",
+      "state"
+    ],
+    "code": 0,
+    "stdout": "{\"ok\":true,\"data\":{\"bell_count\":0,\"cols\":13,\"cursor\":{\"x\":6,\"y\":3},\"cwd\":null,\"exited\":null,\"last_command\":null,\"last_exit\":null,\"ready\":false,\"rows\":6,\"session_shell\":null,\"text\":\"T0 startup\\nfghijklmnopqr\\nstuvwxyz01234\\n5界😀Z\\nShift/Ctrl/Al\",\"timeouts\":{\"command\":30000,\"exit\":30000,\"idle\":5000,\"ready\":30000,\"text\":5000},\"title\":null}}\n",
+    "stderr": ""
+  },
+  {
+    "command": [
+      "/Users/dale/.local/bin/tui-test",
+      "--session",
+      "askcore-e2e-7f9d4a1a76-ghostty-g3-draft-long",
+      "--json",
+      "state"
+    ],
+    "code": 0,
+    "stdout": "{\"ok\":true,\"data\":{\"bell_count\":0,\"cols\":13,\"cursor\":{\"x\":6,\"y\":3},\"cwd\":null,\"exited\":null,\"last_command\":null,\"last_exit\":null,\"ready\":false,\"rows\":6,\"session_shell\":null,\"text\":\"T0 startup\\nfghijklmnopqr\\nstuvwxyz01234\\n5界😀Z\\nShift/Ctrl/Al\",\"timeouts\":{\"command\":30000,\"exit\":30000,\"idle\":5000,\"ready\":30000,\"text\":5000},\"title\":null}}\n",
+    "stderr": ""
+  },
+  {
+    "command": [
+      "/Users/dale/.local/bin/tui-test",
+      "--session",
+      "askcore-e2e-7f9d4a1a76-ghostty-g3-draft-long",
+      "--json",
+      "state"
+    ],
+    "code": 0,
+    "stdout": "{\"ok\":true,\"data\":{\"bell_count\":0,\"cols\":13,\"cursor\":{\"x\":6,\"y\":3},\"cwd\":null,\"exited\":null,\"last_command\":null,\"last_exit\":null,\"ready\":false,\"rows\":6,\"session_shell\":null,\"text\":\"T0 startup\\nfghijklmnopqr\\nstuvwxyz01234\\n5界😀Z\\nShift/Ctrl/Al\",\"timeouts\":{\"command\":30000,\"exit\":30000,\"idle\":5000,\"ready\":30000,\"text\":5000},\"title\":null}}\n",
+    "stderr": ""
+  },
+  {
+    "command": [
+      "/Users/dale/.local/bin/tui-test",
+      "--session",
+      "askcore-e2e-7f9d4a1a76-ghostty-g3-draft-long",
+      "--json",
+      "state"
+    ],
+    "code": 0,
+    "stdout": "{\"ok\":true,\"data\":{\"bell_count\":0,\"cols\":13,\"cursor\":{\"x\":6,\"y\":3},\"cwd\":null,\"exited\":null,\"last_command\":null,\"last_exit\":null,\"ready\":false,\"rows\":6,\"session_shell\":null,\"text\":\"T0 startup\\nfghijklmnopqr\\nstuvwxyz01234\\n5界😀Z\\nShift/Ctrl/Al\",\"timeouts\":{\"command\":30000,\"exit\":30000,\"idle\":5000,\"ready\":30000,\"text\":5000},\"title\":null}}\n",
+    "stderr": ""
+  },
+  {
+    "command": [
+      "/Users/dale/.local/bin/tui-test",
+      "--session",
+      "askcore-e2e-7f9d4a1a76-ghostty-g3-draft-long",
+      "--json",
+      "state"
+    ],
+    "code": 0,
+    "stdout": "{\"ok\":true,\"data\":{\"bell_count\":0,\"cols\":13,\"cursor\":{\"x\":6,\"y\":3},\"cwd\":null,\"exited\":null,\"last_command\":null,\"last_exit\":null,\"ready\":false,\"rows\":6,\"session_shell\":null,\"text\":\"T0 startup\\nfghijklmnopqr\\nstuvwxyz01234\\n5界😀Z\\nShift/Ctrl/Al\",\"timeouts\":{\"command\":30000,\"exit\":30000,\"idle\":5000,\"ready\":30000,\"text\":5000},\"title\":null}}\n",
+    "stderr": ""
+  },
+  {
+    "command": [
+      "/Users/dale/.local/bin/tui-test",
+      "--session",
+      "askcore-e2e-7f9d4a1a76-ghostty-g3-draft-long",
+      "--json",
+      "state"
+    ],
+    "code": 0,
+    "stdout": "{\"ok\":true,\"data\":{\"bell_count\":0,\"cols\":13,\"cursor\":{\"x\":6,\"y\":3},\"cwd\":null,\"exited\":null,\"last_command\":null,\"last_exit\":null,\"ready\":false,\"rows\":6,\"session_shell\":null,\"text\":\"T0 startup\\nfghijklmnopqr\\nstuvwxyz01234\\n5界😀Z\\nShift/Ctrl/Al\",\"timeouts\":{\"command\":30000,\"exit\":30000,\"idle\":5000,\"ready\":30000,\"text\":5000},\"title\":null}}\n",
+    "stderr": ""
+  },
+  {
+    "command": [
+      "/Users/dale/.local/bin/tui-test",
+      "--session",
+      "askcore-e2e-7f9d4a1a76-ghostty-g3-draft-long",
+      "--json",
+      "state"
+    ],
+    "code": 0,
+    "stdout": "{\"ok\":true,\"data\":{\"bell_count\":0,\"cols\":13,\"cursor\":{\"x\":6,\"y\":3},\"cwd\":null,\"exited\":null,\"last_command\":null,\"last_exit\":null,\"ready\":false,\"rows\":6,\"session_shell\":null,\"text\":\"T0 startup\\nfghijklmnopqr\\nstuvwxyz01234\\n5界😀Z\\nShift/Ctrl/Al\",\"timeouts\":{\"command\":30000,\"exit\":30000,\"idle\":5000,\"ready\":30000,\"text\":5000},\"title\":null}}\n",
+    "stderr": ""
+  },
+  {
+    "command": [
+      "/Users/dale/.local/bin/tui-test",
+      "--session",
+      "askcore-e2e-7f9d4a1a76-ghostty-g3-draft-long",
+      "--json",
+      "state"
+    ],
+    "code": 0,
+    "stdout": "{\"ok\":true,\"data\":{\"bell_count\":0,\"cols\":13,\"cursor\":{\"x\":6,\"y\":3},\"cwd\":null,\"exited\":null,\"last_command\":null,\"last_exit\":null,\"ready\":false,\"rows\":6,\"session_shell\":null,\"text\":\"T0 startup\\nfghijklmnopqr\\nstuvwxyz01234\\n5界😀Z\\nShift/Ctrl/Al\",\"timeouts\":{\"command\":30000,\"exit\":30000,\"idle\":5000,\"ready\":30000,\"text\":5000},\"title\":null}}\n",
+    "stderr": ""
+  },
+  {
+    "command": [
+      "/Users/dale/.local/bin/tui-test",
+      "--session",
+      "askcore-e2e-7f9d4a1a76-ghostty-g3-draft-long",
+      "--json",
+      "state"
+    ],
+    "code": 0,
+    "stdout": "{\"ok\":true,\"data\":{\"bell_count\":0,\"cols\":13,\"cursor\":{\"x\":6,\"y\":3},\"cwd\":null,\"exited\":null,\"last_command\":null,\"last_exit\":null,\"ready\":false,\"rows\":6,\"session_shell\":null,\"text\":\"T0 startup\\nfghijklmnopqr\\nstuvwxyz01234\\n5界😀Z\\nShift/Ctrl/Al\",\"timeouts\":{\"command\":30000,\"exit\":30000,\"idle\":5000,\"ready\":30000,\"text\":5000},\"title\":null}}\n",
+    "stderr": ""
+  },
+  {
+    "command": [
+      "/Users/dale/.local/bin/tui-test",
+      "--session",
+      "askcore-e2e-7f9d4a1a76-ghostty-g3-draft-long",
+      "--json",
+      "state"
+    ],
+    "code": 0,
+    "stdout": "{\"ok\":true,\"data\":{\"bell_count\":0,\"cols\":13,\"cursor\":{\"x\":6,\"y\":3},\"cwd\":null,\"exited\":null,\"last_command\":null,\"last_exit\":null,\"ready\":false,\"rows\":6,\"session_shell\":null,\"text\":\"T0 startup\\nfghijklmnopqr\\nstuvwxyz01234\\n5界😀Z\\nShift/Ctrl/Al\",\"timeouts\":{\"command\":30000,\"exit\":30000,\"idle\":5000,\"ready\":30000,\"text\":5000},\"title\":null}}\n",
+    "stderr": ""
+  },
+  {
+    "command": [
+      "/Users/dale/.local/bin/tui-test",
+      "--session",
+      "askcore-e2e-7f9d4a1a76-ghostty-g3-draft-long",
+      "--json",
+      "state"
+    ],
+    "code": 0,
+    "stdout": "{\"ok\":true,\"data\":{\"bell_count\":0,\"cols\":13,\"cursor\":{\"x\":6,\"y\":3},\"cwd\":null,\"exited\":null,\"last_command\":null,\"last_exit\":null,\"ready\":false,\"rows\":6,\"session_shell\":null,\"text\":\"T0 startup\\nfghijklmnopqr\\nstuvwxyz01234\\n5界😀Z\\nShift/Ctrl/Al\",\"timeouts\":{\"command\":30000,\"exit\":30000,\"idle\":5000,\"ready\":30000,\"text\":5000},\"title\":null}}\n",
+    "stderr": ""
+  },
+  {
+    "command": [
+      "/Users/dale/.local/bin/tui-test",
+      "--session",
+      "askcore-e2e-7f9d4a1a76-ghostty-g3-draft-long",
+      "--json",
+      "state"
+    ],
+    "code": 0,
+    "stdout": "{\"ok\":true,\"data\":{\"bell_count\":0,\"cols\":13,\"cursor\":{\"x\":6,\"y\":3},\"cwd\":null,\"exited\":null,\"last_command\":null,\"last_exit\":null,\"ready\":false,\"rows\":6,\"session_shell\":null,\"text\":\"T0 startup\\nfghijklmnopqr\\nstuvwxyz01234\\n5界😀Z\\nShift/Ctrl/Al\",\"timeouts\":{\"command\":30000,\"exit\":30000,\"idle\":5000,\"ready\":30000,\"text\":5000},\"title\":null}}\n",
+    "stderr": ""
+  },
+  {
+    "command": [
+      "/Users/dale/.local/bin/tui-test",
+      "--session",
+      "askcore-e2e-7f9d4a1a76-ghostty-g3-draft-long",
+      "--json",
+      "state"
+    ],
+    "code": 0,
+    "stdout": "{\"ok\":true,\"data\":{\"bell_count\":0,\"cols\":13,\"cursor\":{\"x\":6,\"y\":3},\"cwd\":null,\"exited\":null,\"last_command\":null,\"last_exit\":null,\"ready\":false,\"rows\":6,\"session_shell\":null,\"text\":\"T0 startup\\nfghijklmnopqr\\nstuvwxyz01234\\n5界😀Z\\nShift/Ctrl/Al\",\"timeouts\":{\"command\":30000,\"exit\":30000,\"idle\":5000,\"ready\":30000,\"text\":5000},\"title\":null}}\n",
+    "stderr": ""
+  },
+  {
+    "command": [
+      "/Users/dale/.local/bin/tui-test",
+      "--session",
+      "askcore-e2e-7f9d4a1a76-ghostty-g3-draft-long",
+      "--json",
+      "state"
+    ],
+    "code": 0,
+    "stdout": "{\"ok\":true,\"data\":{\"bell_count\":0,\"cols\":13,\"cursor\":{\"x\":6,\"y\":3},\"cwd\":null,\"exited\":null,\"last_command\":null,\"last_exit\":null,\"ready\":false,\"rows\":6,\"session_shell\":null,\"text\":\"T0 startup\\nfghijklmnopqr\\nstuvwxyz01234\\n5界😀Z\\nShift/Ctrl/Al\",\"timeouts\":{\"command\":30000,\"exit\":30000,\"idle\":5000,\"ready\":30000,\"text\":5000},\"title\":null}}\n",
+    "stderr": ""
+  },
+  {
+    "command": [
+      "/Users/dale/.local/bin/tui-test",
+      "--session",
+      "askcore-e2e-7f9d4a1a76-ghostty-g3-draft-long",
+      "--json",
+      "state"
+    ],
+    "code": 0,
+    "stdout": "{\"ok\":true,\"data\":{\"bell_count\":0,\"cols\":13,\"cursor\":{\"x\":6,\"y\":3},\"cwd\":null,\"exited\":null,\"last_command\":null,\"last_exit\":null,\"ready\":false,\"rows\":6,\"session_shell\":null,\"text\":\"T0 startup\\nfghijklmnopqr\\nstuvwxyz01234\\n5界😀Z\\nShift/Ctrl/Al\",\"timeouts\":{\"command\":30000,\"exit\":30000,\"idle\":5000,\"ready\":30000,\"text\":5000},\"title\":null}}\n",
+    "stderr": ""
+  },
+  {
+    "command": [
+      "/Users/dale/.local/bin/tui-test",
+      "--session",
+      "askcore-e2e-7f9d4a1a76-ghostty-g3-draft-long",
+      "--json",
+      "state"
+    ],
+    "code": 0,
+    "stdout": "{\"ok\":true,\"data\":{\"bell_count\":0,\"cols\":13,\"cursor\":{\"x\":6,\"y\":3},\"cwd\":null,\"exited\":null,\"last_command\":null,\"last_exit\":null,\"ready\":false,\"rows\":6,\"session_shell\":null,\"text\":\"T0 startup\\nfghijklmnopqr\\nstuvwxyz01234\\n5界😀Z\\nShift/Ctrl/Al\",\"timeouts\":{\"command\":30000,\"exit\":30000,\"idle\":5000,\"ready\":30000,\"text\":5000},\"title\":null}}\n",
+    "stderr": ""
+  },
+  {
+    "command": [
+      "/Users/dale/.local/bin/tui-test",
+      "--session",
+      "askcore-e2e-7f9d4a1a76-ghostty-g3-draft-long",
+      "--json",
+      "state"
+    ],
+    "code": 0,
+    "stdout": "{\"ok\":true,\"data\":{\"bell_count\":0,\"cols\":13,\"cursor\":{\"x\":6,\"y\":3},\"cwd\":null,\"exited\":null,\"last_command\":null,\"last_exit\":null,\"ready\":false,\"rows\":6,\"session_shell\":null,\"text\":\"T0 startup\\nfghijklmnopqr\\nstuvwxyz01234\\n5界😀Z\\nShift/Ctrl/Al\",\"timeouts\":{\"command\":30000,\"exit\":30000,\"idle\":5000,\"ready\":30000,\"text\":5000},\"title\":null}}\n",
+    "stderr": ""
+  },
+  {
+    "command": [
+      "/Users/dale/.local/bin/tui-test",
+      "--session",
+      "askcore-e2e-7f9d4a1a76-ghostty-g3-draft-long",
+      "--json",
+      "state"
+    ],
+    "code": 0,
+    "stdout": "{\"ok\":true,\"data\":{\"bell_count\":0,\"cols\":13,\"cursor\":{\"x\":6,\"y\":3},\"cwd\":null,\"exited\":null,\"last_command\":null,\"last_exit\":null,\"ready\":false,\"rows\":6,\"session_shell\":null,\"text\":\"T0 startup\\nfghijklmnopqr\\nstuvwxyz01234\\n5界😀Z\\nShift/Ctrl/Al\",\"timeouts\":{\"command\":30000,\"exit\":30000,\"idle\":5000,\"ready\":30000,\"text\":5000},\"title\":null}}\n",
+    "stderr": ""
+  },
+  {
+    "command": [
+      "/Users/dale/.local/bin/tui-test",
+      "--session",
+      "askcore-e2e-7f9d4a1a76-ghostty-g3-draft-long",
+      "--json",
+      "state"
+    ],
+    "code": 0,
+    "stdout": "{\"ok\":true,\"data\":{\"bell_count\":0,\"cols\":13,\"cursor\":{\"x\":6,\"y\":3},\"cwd\":null,\"exited\":null,\"last_command\":null,\"last_exit\":null,\"ready\":false,\"rows\":6,\"session_shell\":null,\"text\":\"T0 startup\\nfghijklmnopqr\\nstuvwxyz01234\\n5界😀Z\\nShift/Ctrl/Al\",\"timeouts\":{\"command\":30000,\"exit\":30000,\"idle\":5000,\"ready\":30000,\"text\":5000},\"title\":null}}\n",
+    "stderr": ""
+  },
+  {
+    "command": [
+      "/Users/dale/.local/bin/tui-test",
+      "--session",
+      "askcore-e2e-7f9d4a1a76-ghostty-g3-draft-long",
+      "--json",
+      "state"
+    ],
+    "code": 0,
+    "stdout": "{\"ok\":true,\"data\":{\"bell_count\":0,\"cols\":13,\"cursor\":{\"x\":6,\"y\":3},\"cwd\":null,\"exited\":null,\"last_command\":null,\"last_exit\":null,\"ready\":false,\"rows\":6,\"session_shell\":null,\"text\":\"T0 startup\\nfghijklmnopqr\\nstuvwxyz01234\\n5界😀Z\\nShift/Ctrl/Al\",\"timeouts\":{\"command\":30000,\"exit\":30000,\"idle\":5000,\"ready\":30000,\"text\":5000},\"title\":null}}\n",
+    "stderr": ""
+  },
+  {
+    "command": [
+      "/Users/dale/.local/bin/tui-test",
+      "--session",
+      "askcore-e2e-7f9d4a1a76-ghostty-g3-draft-long",
+      "--json",
+      "state"
+    ],
+    "code": 0,
+    "stdout": "{\"ok\":true,\"data\":{\"bell_count\":0,\"cols\":13,\"cursor\":{\"x\":6,\"y\":3},\"cwd\":null,\"exited\":null,\"last_command\":null,\"last_exit\":null,\"ready\":false,\"rows\":6,\"session_shell\":null,\"text\":\"T0 startup\\nfghijklmnopqr\\nstuvwxyz01234\\n5界😀Z\\nShift/Ctrl/Al\",\"timeouts\":{\"command\":30000,\"exit\":30000,\"idle\":5000,\"ready\":30000,\"text\":5000},\"title\":null}}\n",
+    "stderr": ""
+  },
+  {
+    "command": [
+      "/Users/dale/.local/bin/tui-test",
+      "--session",
+      "askcore-e2e-7f9d4a1a76-ghostty-g3-draft-long",
+      "--json",
+      "state"
+    ],
+    "code": 0,
+    "stdout": "{\"ok\":true,\"data\":{\"bell_count\":0,\"cols\":13,\"cursor\":{\"x\":6,\"y\":3},\"cwd\":null,\"exited\":null,\"last_command\":null,\"last_exit\":null,\"ready\":false,\"rows\":6,\"session_shell\":null,\"text\":\"T0 startup\\nfghijklmnopqr\\nstuvwxyz01234\\n5界😀Z\\nShift/Ctrl/Al\",\"timeouts\":{\"command\":30000,\"exit\":30000,\"idle\":5000,\"ready\":30000,\"text\":5000},\"title\":null}}\n",
+    "stderr": ""
+  },
+  {
+    "command": [
+      "/Users/dale/.local/bin/tui-test",
+      "--session",
+      "askcore-e2e-7f9d4a1a76-ghostty-g3-draft-long",
+      "--json",
+      "state"
+    ],
+    "code": 0,
+    "stdout": "{\"ok\":true,\"data\":{\"bell_count\":0,\"cols\":13,\"cursor\":{\"x\":6,\"y\":3},\"cwd\":null,\"exited\":null,\"last_command\":null,\"last_exit\":null,\"ready\":false,\"rows\":6,\"session_shell\":null,\"text\":\"T0 startup\\nfghijklmnopqr\\nstuvwxyz01234\\n5界😀Z\\nShift/Ctrl/Al\",\"timeouts\":{\"command\":30000,\"exit\":30000,\"idle\":5000,\"ready\":30000,\"text\":5000},\"title\":null}}\n",
+    "stderr": ""
+  },
+  {
+    "command": [
+      "/Users/dale/.local/bin/tui-test",
+      "--session",
+      "askcore-e2e-7f9d4a1a76-ghostty-g3-draft-long",
+      "--json",
+      "state"
+    ],
+    "code": 0,
+    "stdout": "{\"ok\":true,\"data\":{\"bell_count\":0,\"cols\":13,\"cursor\":{\"x\":6,\"y\":3},\"cwd\":null,\"exited\":null,\"last_command\":null,\"last_exit\":null,\"ready\":false,\"rows\":6,\"session_shell\":null,\"text\":\"T0 startup\\nfghijklmnopqr\\nstuvwxyz01234\\n5界😀Z\\nShift/Ctrl/Al\",\"timeouts\":{\"command\":30000,\"exit\":30000,\"idle\":5000,\"ready\":30000,\"text\":5000},\"title\":null}}\n",
+    "stderr": ""
+  },
+  {
+    "command": [
+      "/Users/dale/.local/bin/tui-test",
+      "--session",
+      "askcore-e2e-7f9d4a1a76-ghostty-g3-draft-long",
+      "--json",
+      "state"
+    ],
+    "code": 0,
+    "stdout": "{\"ok\":true,\"data\":{\"bell_count\":0,\"cols\":13,\"cursor\":{\"x\":6,\"y\":3},\"cwd\":null,\"exited\":null,\"last_command\":null,\"last_exit\":null,\"ready\":false,\"rows\":6,\"session_shell\":null,\"text\":\"T0 startup\\nfghijklmnopqr\\nstuvwxyz01234\\n5界😀Z\\nShift/Ctrl/Al\",\"timeouts\":{\"command\":30000,\"exit\":30000,\"idle\":5000,\"ready\":30000,\"text\":5000},\"title\":null}}\n",
+    "stderr": ""
+  },
+  {
+    "command": [
+      "/Users/dale/.local/bin/tui-test",
+      "--session",
+      "askcore-e2e-7f9d4a1a76-ghostty-g3-draft-long",
+      "--json",
+      "state"
+    ],
+    "code": 0,
+    "stdout": "{\"ok\":true,\"data\":{\"bell_count\":0,\"cols\":13,\"cursor\":{\"x\":6,\"y\":3},\"cwd\":null,\"exited\":null,\"last_command\":null,\"last_exit\":null,\"ready\":false,\"rows\":6,\"session_shell\":null,\"text\":\"T0 startup\\nfghijklmnopqr\\nstuvwxyz01234\\n5界😀Z\\nShift/Ctrl/Al\",\"timeouts\":{\"command\":30000,\"exit\":30000,\"idle\":5000,\"ready\":30000,\"text\":5000},\"title\":null}}\n",
+    "stderr": ""
+  },
+  {
+    "command": [
+      "/Users/dale/.local/bin/tui-test",
+      "--session",
+      "askcore-e2e-7f9d4a1a76-ghostty-g3-draft-long",
+      "--json",
+      "state"
+    ],
+    "code": 0,
+    "stdout": "{\"ok\":true,\"data\":{\"bell_count\":0,\"cols\":13,\"cursor\":{\"x\":6,\"y\":3},\"cwd\":null,\"exited\":null,\"last_command\":null,\"last_exit\":null,\"ready\":false,\"rows\":6,\"session_shell\":null,\"text\":\"T0 startup\\nfghijklmnopqr\\nstuvwxyz01234\\n5界😀Z\\nShift/Ctrl/Al\",\"timeouts\":{\"command\":30000,\"exit\":30000,\"idle\":5000,\"ready\":30000,\"text\":5000},\"title\":null}}\n",
+    "stderr": ""
+  },
+  {
+    "command": [
+      "/Users/dale/.local/bin/tui-test",
+      "--session",
+      "askcore-e2e-7f9d4a1a76-ghostty-g3-draft-long",
+      "--json",
+      "state"
+    ],
+    "code": 0,
+    "stdout": "{\"ok\":true,\"data\":{\"bell_count\":0,\"cols\":13,\"cursor\":{\"x\":6,\"y\":3},\"cwd\":null,\"exited\":null,\"last_command\":null,\"last_exit\":null,\"ready\":false,\"rows\":6,\"session_shell\":null,\"text\":\"T0 startup\\nfghijklmnopqr\\nstuvwxyz01234\\n5界😀Z\\nShift/Ctrl/Al\",\"timeouts\":{\"command\":30000,\"exit\":30000,\"idle\":5000,\"ready\":30000,\"text\":5000},\"title\":null}}\n",
+    "stderr": ""
+  },
+  {
+    "command": [
+      "/Users/dale/.local/bin/tui-test",
+      "--session",
+      "askcore-e2e-7f9d4a1a76-ghostty-g3-draft-long",
+      "--json",
+      "state"
+    ],
+    "code": 0,
+    "stdout": "{\"ok\":true,\"data\":{\"bell_count\":0,\"cols\":13,\"cursor\":{\"x\":6,\"y\":3},\"cwd\":null,\"exited\":null,\"last_command\":null,\"last_exit\":null,\"ready\":false,\"rows\":6,\"session_shell\":null,\"text\":\"T0 startup\\nfghijklmnopqr\\nstuvwxyz01234\\n5界😀Z\\nShift/Ctrl/Al\",\"timeouts\":{\"command\":30000,\"exit\":30000,\"idle\":5000,\"ready\":30000,\"text\":5000},\"title\":null}}\n",
+    "stderr": ""
+  },
+  {
+    "command": [
+      "/Users/dale/.local/bin/tui-test",
+      "--session",
+      "askcore-e2e-7f9d4a1a76-ghostty-g3-draft-long",
+      "--json",
+      "state"
+    ],
+    "code": 0,
+    "stdout": "{\"ok\":true,\"data\":{\"bell_count\":0,\"cols\":13,\"cursor\":{\"x\":6,\"y\":3},\"cwd\":null,\"exited\":null,\"last_command\":null,\"last_exit\":null,\"ready\":false,\"rows\":6,\"session_shell\":null,\"text\":\"T0 startup\\nfghijklmnopqr\\nstuvwxyz01234\\n5界😀Z\\nShift/Ctrl/Al\",\"timeouts\":{\"command\":30000,\"exit\":30000,\"idle\":5000,\"ready\":30000,\"text\":5000},\"title\":null}}\n",
+    "stderr": ""
+  },
+  {
+    "command": [
+      "/Users/dale/.local/bin/tui-test",
+      "--session",
+      "askcore-e2e-7f9d4a1a76-ghostty-g3-draft-long",
+      "--json",
+      "state"
+    ],
+    "code": 0,
+    "stdout": "{\"ok\":true,\"data\":{\"bell_count\":0,\"cols\":13,\"cursor\":{\"x\":6,\"y\":3},\"cwd\":null,\"exited\":null,\"last_command\":null,\"last_exit\":null,\"ready\":false,\"rows\":6,\"session_shell\":null,\"text\":\"T0 startup\\nfghijklmnopqr\\nstuvwxyz01234\\n5界😀Z\\nShift/Ctrl/Al\",\"timeouts\":{\"command\":30000,\"exit\":30000,\"idle\":5000,\"ready\":30000,\"text\":5000},\"title\":null}}\n",
+    "stderr": ""
+  },
+  {
+    "command": [
+      "/Users/dale/.local/bin/tui-test",
+      "--session",
+      "askcore-e2e-7f9d4a1a76-ghostty-g3-draft-long",
+      "--json",
+      "state"
+    ],
+    "code": 0,
+    "stdout": "{\"ok\":true,\"data\":{\"bell_count\":0,\"cols\":13,\"cursor\":{\"x\":6,\"y\":3},\"cwd\":null,\"exited\":null,\"last_command\":null,\"last_exit\":null,\"ready\":false,\"rows\":6,\"session_shell\":null,\"text\":\"T0 startup\\nfghijklmnopqr\\nstuvwxyz01234\\n5界😀Z\\nShift/Ctrl/Al\",\"timeouts\":{\"command\":30000,\"exit\":30000,\"idle\":5000,\"ready\":30000,\"text\":5000},\"title\":null}}\n",
+    "stderr": ""
+  },
+  {
+    "command": [
+      "/Users/dale/.local/bin/tui-test",
+      "--session",
+      "askcore-e2e-7f9d4a1a76-ghostty-g3-draft-long",
+      "--json",
+      "state"
+    ],
+    "code": 0,
+    "stdout": "{\"ok\":true,\"data\":{\"bell_count\":0,\"cols\":13,\"cursor\":{\"x\":6,\"y\":3},\"cwd\":null,\"exited\":null,\"last_command\":null,\"last_exit\":null,\"ready\":false,\"rows\":6,\"session_shell\":null,\"text\":\"T0 startup\\nfghijklmnopqr\\nstuvwxyz01234\\n5界😀Z\\nShift/Ctrl/Al\",\"timeouts\":{\"command\":30000,\"exit\":30000,\"idle\":5000,\"ready\":30000,\"text\":5000},\"title\":null}}\n",
+    "stderr": ""
+  },
+  {
+    "command": [
+      "/Users/dale/.local/bin/tui-test",
+      "--session",
+      "askcore-e2e-7f9d4a1a76-ghostty-g3-draft-long",
+      "--json",
+      "state"
+    ],
+    "code": 0,
+    "stdout": "{\"ok\":true,\"data\":{\"bell_count\":0,\"cols\":13,\"cursor\":{\"x\":6,\"y\":3},\"cwd\":null,\"exited\":null,\"last_command\":null,\"last_exit\":null,\"ready\":false,\"rows\":6,\"session_shell\":null,\"text\":\"T0 startup\\nfghijklmnopqr\\nstuvwxyz01234\\n5界😀Z\\nShift/Ctrl/Al\",\"timeouts\":{\"command\":30000,\"exit\":30000,\"idle\":5000,\"ready\":30000,\"text\":5000},\"title\":null}}\n",
+    "stderr": ""
+  },
+  {
+    "command": [
+      "/Users/dale/.local/bin/tui-test",
+      "--session",
+      "askcore-e2e-7f9d4a1a76-ghostty-g3-draft-long",
+      "--json",
+      "state"
+    ],
+    "code": 0,
+    "stdout": "{\"ok\":true,\"data\":{\"bell_count\":0,\"cols\":13,\"cursor\":{\"x\":6,\"y\":3},\"cwd\":null,\"exited\":null,\"last_command\":null,\"last_exit\":null,\"ready\":false,\"rows\":6,\"session_shell\":null,\"text\":\"T0 startup\\nfghijklmnopqr\\nstuvwxyz01234\\n5界😀Z\\nShift/Ctrl/Al\",\"timeouts\":{\"command\":30000,\"exit\":30000,\"idle\":5000,\"ready\":30000,\"text\":5000},\"title\":null}}\n",
+    "stderr": ""
+  },
+  {
+    "command": [
+      "/Users/dale/.local/bin/tui-test",
+      "--session",
+      "askcore-e2e-7f9d4a1a76-ghostty-g3-draft-long",
+      "--json",
+      "state"
+    ],
+    "code": 0,
+    "stdout": "{\"ok\":true,\"data\":{\"bell_count\":0,\"cols\":13,\"cursor\":{\"x\":6,\"y\":3},\"cwd\":null,\"exited\":null,\"last_command\":null,\"last_exit\":null,\"ready\":false,\"rows\":6,\"session_shell\":null,\"text\":\"T0 startup\\nfghijklmnopqr\\nstuvwxyz01234\\n5界😀Z\\nShift/Ctrl/Al\",\"timeouts\":{\"command\":30000,\"exit\":30000,\"idle\":5000,\"ready\":30000,\"text\":5000},\"title\":null}}\n",
+    "stderr": ""
+  },
+  {
+    "command": [
+      "/Users/dale/.local/bin/tui-test",
+      "--session",
+      "askcore-e2e-7f9d4a1a76-ghostty-g3-draft-long",
+      "--json",
+      "state"
+    ],
+    "code": 0,
+    "stdout": "{\"ok\":true,\"data\":{\"bell_count\":0,\"cols\":13,\"cursor\":{\"x\":6,\"y\":3},\"cwd\":null,\"exited\":null,\"last_command\":null,\"last_exit\":null,\"ready\":false,\"rows\":6,\"session_shell\":null,\"text\":\"T0 startup\\nfghijklmnopqr\\nstuvwxyz01234\\n5界😀Z\\nShift/Ctrl/Al\",\"timeouts\":{\"command\":30000,\"exit\":30000,\"idle\":5000,\"ready\":30000,\"text\":5000},\"title\":null}}\n",
+    "stderr": ""
+  },
+  {
+    "command": [
+      "/Users/dale/.local/bin/tui-test",
+      "--session",
+      "askcore-e2e-7f9d4a1a76-ghostty-g3-draft-long",
+      "--json",
+      "state"
+    ],
+    "code": 0,
+    "stdout": "{\"ok\":true,\"data\":{\"bell_count\":0,\"cols\":13,\"cursor\":{\"x\":6,\"y\":3},\"cwd\":null,\"exited\":null,\"last_command\":null,\"last_exit\":null,\"ready\":false,\"rows\":6,\"session_shell\":null,\"text\":\"T0 startup\\nfghijklmnopqr\\nstuvwxyz01234\\n5界😀Z\\nShift/Ctrl/Al\",\"timeouts\":{\"command\":30000,\"exit\":30000,\"idle\":5000,\"ready\":30000,\"text\":5000},\"title\":null}}\n",
+    "stderr": ""
+  },
+  {
+    "command": [
+      "/Users/dale/.local/bin/tui-test",
+      "--session",
+      "askcore-e2e-7f9d4a1a76-ghostty-g3-draft-long",
+      "--json",
+      "state"
+    ],
+    "code": 0,
+    "stdout": "{\"ok\":true,\"data\":{\"bell_count\":0,\"cols\":13,\"cursor\":{\"x\":6,\"y\":3},\"cwd\":null,\"exited\":null,\"last_command\":null,\"last_exit\":null,\"ready\":false,\"rows\":6,\"session_shell\":null,\"text\":\"T0 startup\\nfghijklmnopqr\\nstuvwxyz01234\\n5界😀Z\\nShift/Ctrl/Al\",\"timeouts\":{\"command\":30000,\"exit\":30000,\"idle\":5000,\"ready\":30000,\"text\":5000},\"title\":null}}\n",
+    "stderr": ""
+  },
+  {
+    "command": [
+      "/Users/dale/.local/bin/tui-test",
+      "--session",
+      "askcore-e2e-7f9d4a1a76-ghostty-g3-draft-long",
+      "--json",
+      "state"
+    ],
+    "code": 0,
+    "stdout": "{\"ok\":true,\"data\":{\"bell_count\":0,\"cols\":13,\"cursor\":{\"x\":6,\"y\":3},\"cwd\":null,\"exited\":null,\"last_command\":null,\"last_exit\":null,\"ready\":false,\"rows\":6,\"session_shell\":null,\"text\":\"T0 startup\\nfghijklmnopqr\\nstuvwxyz01234\\n5界😀Z\\nShift/Ctrl/Al\",\"timeouts\":{\"command\":30000,\"exit\":30000,\"idle\":5000,\"ready\":30000,\"text\":5000},\"title\":null}}\n",
+    "stderr": ""
+  },
+  {
+    "command": [
+      "/Users/dale/.local/bin/tui-test",
+      "--session",
+      "askcore-e2e-7f9d4a1a76-ghostty-g3-draft-long",
+      "--json",
+      "state"
+    ],
+    "code": 0,
+    "stdout": "{\"ok\":true,\"data\":{\"bell_count\":0,\"cols\":13,\"cursor\":{\"x\":6,\"y\":3},\"cwd\":null,\"exited\":null,\"last_command\":null,\"last_exit\":null,\"ready\":false,\"rows\":6,\"session_shell\":null,\"text\":\"T0 startup\\nfghijklmnopqr\\nstuvwxyz01234\\n5界😀Z\\nShift/Ctrl/Al\",\"timeouts\":{\"command\":30000,\"exit\":30000,\"idle\":5000,\"ready\":30000,\"text\":5000},\"title\":null}}\n",
+    "stderr": ""
+  },
+  {
+    "command": [
+      "/Users/dale/.local/bin/tui-test",
+      "--session",
+      "askcore-e2e-7f9d4a1a76-ghostty-g3-draft-long",
+      "--json",
+      "state"
+    ],
+    "code": 0,
+    "stdout": "{\"ok\":true,\"data\":{\"bell_count\":0,\"cols\":13,\"cursor\":{\"x\":6,\"y\":3},\"cwd\":null,\"exited\":null,\"last_command\":null,\"last_exit\":null,\"ready\":false,\"rows\":6,\"session_shell\":null,\"text\":\"T0 startup\\nfghijklmnopqr\\nstuvwxyz01234\\n5界😀Z\\nShift/Ctrl/Al\",\"timeouts\":{\"command\":30000,\"exit\":30000,\"idle\":5000,\"ready\":30000,\"text\":5000},\"title\":null}}\n",
+    "stderr": ""
+  },
+  {
+    "command": [
+      "/Users/dale/.local/bin/tui-test",
+      "--session",
+      "askcore-e2e-7f9d4a1a76-ghostty-g3-draft-long",
+      "--json",
+      "state"
+    ],
+    "code": 0,
+    "stdout": "{\"ok\":true,\"data\":{\"bell_count\":0,\"cols\":13,\"cursor\":{\"x\":6,\"y\":3},\"cwd\":null,\"exited\":null,\"last_command\":null,\"last_exit\":null,\"ready\":false,\"rows\":6,\"session_shell\":null,\"text\":\"T0 startup\\nfghijklmnopqr\\nstuvwxyz01234\\n5界😀Z\\nShift/Ctrl/Al\",\"timeouts\":{\"command\":30000,\"exit\":30000,\"idle\":5000,\"ready\":30000,\"text\":5000},\"title\":null}}\n",
+    "stderr": ""
+  },
+  {
+    "command": [
+      "/Users/dale/.local/bin/tui-test",
+      "--session",
+      "askcore-e2e-7f9d4a1a76-ghostty-g3-draft-long",
+      "--json",
+      "state"
+    ],
+    "code": 0,
+    "stdout": "{\"ok\":true,\"data\":{\"bell_count\":0,\"cols\":13,\"cursor\":{\"x\":6,\"y\":3},\"cwd\":null,\"exited\":null,\"last_command\":null,\"last_exit\":null,\"ready\":false,\"rows\":6,\"session_shell\":null,\"text\":\"T0 startup\\nfghijklmnopqr\\nstuvwxyz01234\\n5界😀Z\\nShift/Ctrl/Al\",\"timeouts\":{\"command\":30000,\"exit\":30000,\"idle\":5000,\"ready\":30000,\"text\":5000},\"title\":null}}\n",
+    "stderr": ""
+  },
+  {
+    "command": [
+      "/Users/dale/.local/bin/tui-test",
+      "--session",
+      "askcore-e2e-7f9d4a1a76-ghostty-g3-draft-long",
+      "--json",
+      "state"
+    ],
+    "code": 0,
+    "stdout": "{\"ok\":true,\"data\":{\"bell_count\":0,\"cols\":13,\"cursor\":{\"x\":6,\"y\":3},\"cwd\":null,\"exited\":null,\"last_command\":null,\"last_exit\":null,\"ready\":false,\"rows\":6,\"session_shell\":null,\"text\":\"T0 startup\\nfghijklmnopqr\\nstuvwxyz01234\\n5界😀Z\\nShift/Ctrl/Al\",\"timeouts\":{\"command\":30000,\"exit\":30000,\"idle\":5000,\"ready\":30000,\"text\":5000},\"title\":null}}\n",
+    "stderr": ""
+  },
+  {
+    "command": [
+      "/Users/dale/.local/bin/tui-test",
+      "--session",
+      "askcore-e2e-7f9d4a1a76-ghostty-g3-draft-long",
+      "--json",
+      "state"
+    ],
+    "code": 0,
+    "stdout": "{\"ok\":true,\"data\":{\"bell_count\":0,\"cols\":13,\"cursor\":{\"x\":6,\"y\":3},\"cwd\":null,\"exited\":null,\"last_command\":null,\"last_exit\":null,\"ready\":false,\"rows\":6,\"session_shell\":null,\"text\":\"T0 startup\\nfghijklmnopqr\\nstuvwxyz01234\\n5界😀Z\\nShift/Ctrl/Al\",\"timeouts\":{\"command\":30000,\"exit\":30000,\"idle\":5000,\"ready\":30000,\"text\":5000},\"title\":null}}\n",
+    "stderr": ""
+  },
+  {
+    "command": [
+      "/Users/dale/.local/bin/tui-test",
+      "--session",
+      "askcore-e2e-7f9d4a1a76-ghostty-g3-draft-long",
+      "--json",
+      "state"
+    ],
+    "code": 0,
+    "stdout": "{\"ok\":true,\"data\":{\"bell_count\":0,\"cols\":13,\"cursor\":{\"x\":6,\"y\":3},\"cwd\":null,\"exited\":null,\"last_command\":null,\"last_exit\":null,\"ready\":false,\"rows\":6,\"session_shell\":null,\"text\":\"T0 startup\\nfghijklmnopqr\\nstuvwxyz01234\\n5界😀Z\\nShift/Ctrl/Al\",\"timeouts\":{\"command\":30000,\"exit\":30000,\"idle\":5000,\"ready\":30000,\"text\":5000},\"title\":null}}\n",
+    "stderr": ""
+  },
+  {
+    "command": [
+      "/Users/dale/.local/bin/tui-test",
+      "--session",
+      "askcore-e2e-7f9d4a1a76-ghostty-g3-draft-long",
+      "--json",
+      "state"
+    ],
+    "code": 0,
+    "stdout": "{\"ok\":true,\"data\":{\"bell_count\":0,\"cols\":13,\"cursor\":{\"x\":6,\"y\":3},\"cwd\":null,\"exited\":null,\"last_command\":null,\"last_exit\":null,\"ready\":false,\"rows\":6,\"session_shell\":null,\"text\":\"T0 startup\\nfghijklmnopqr\\nstuvwxyz01234\\n5界😀Z\\nShift/Ctrl/Al\",\"timeouts\":{\"command\":30000,\"exit\":30000,\"idle\":5000,\"ready\":30000,\"text\":5000},\"title\":null}}\n",
+    "stderr": ""
+  },
+  {
+    "command": [
+      "/Users/dale/.local/bin/tui-test",
+      "--session",
+      "askcore-e2e-7f9d4a1a76-ghostty-g3-draft-long",
+      "--json",
+      "state"
+    ],
+    "code": 0,
+    "stdout": "{\"ok\":true,\"data\":{\"bell_count\":0,\"cols\":13,\"cursor\":{\"x\":6,\"y\":3},\"cwd\":null,\"exited\":null,\"last_command\":null,\"last_exit\":null,\"ready\":false,\"rows\":6,\"session_shell\":null,\"text\":\"T0 startup\\nfghijklmnopqr\\nstuvwxyz01234\\n5界😀Z\\nShift/Ctrl/Al\",\"timeouts\":{\"command\":30000,\"exit\":30000,\"idle\":5000,\"ready\":30000,\"text\":5000},\"title\":null}}\n",
+    "stderr": ""
+  },
+  {
+    "command": [
+      "/Users/dale/.local/bin/tui-test",
+      "--session",
+      "askcore-e2e-7f9d4a1a76-ghostty-g3-draft-long",
+      "--json",
+      "state"
+    ],
+    "code": 0,
+    "stdout": "{\"ok\":true,\"data\":{\"bell_count\":0,\"cols\":13,\"cursor\":{\"x\":6,\"y\":3},\"cwd\":null,\"exited\":null,\"last_command\":null,\"last_exit\":null,\"ready\":false,\"rows\":6,\"session_shell\":null,\"text\":\"T0 startup\\nfghijklmnopqr\\nstuvwxyz01234\\n5界😀Z\\nShift/Ctrl/Al\",\"timeouts\":{\"command\":30000,\"exit\":30000,\"idle\":5000,\"ready\":30000,\"text\":5000},\"title\":null}}\n",
+    "stderr": ""
+  },
+  {
+    "command": [
+      "/Users/dale/.local/bin/tui-test",
+      "--session",
+      "askcore-e2e-7f9d4a1a76-ghostty-g3-draft-long",
+      "--json",
+      "text",
+      "--full"
+    ],
+    "code": 0,
+    "stdout": "{\"ok\":true,\"data\":{\"text\":\"T0 startup\\nfghijklmnopqr\\nstuvwxyz01234\\n5界😀Z\\nShift/Ctrl/Al\"}}\n",
+    "stderr": ""
+  },
+  {
+    "command": [
+      "/Users/dale/.local/bin/tui-test",
+      "--session",
+      "askcore-e2e-7f9d4a1a76-ghostty-g3-draft-long",
+      "--json",
+      "cells",
+      "0",
+      "0",
+      "40",
+      "12"
+    ],
+    "code": 0,
+    "stdout": "{\"ok\":true,\"data\":{\"cells\":[{\"bg\":\"default\",\"blink\":false,\"bold\":false,\"char\":\"T\",\"dim\":false,\"fg\":\"default\",\"inverse\":false,\"invisible\":false,\"italic\":false,\"strike\":false,\"underline\":false,\"underline_color\":\"default\",\"underline_style\":\"none\",\"x\":0,\"y\":0},{\"bg\":\"default\",\"blink\":false,\"bold\":false,\"char\":\"0\",\"dim\":false,\"fg\":\"default\",\"inverse\":false,\"invisible\":false,\"italic\":false,\"strike\":false,\"underline\":false,\"underline_color\":\"default\",\"underline_style\":\"none\",\"x\":1,\"y\":0},{\"bg\":\"default\",\"blink\":false,\"bold\":false,\"char\":\" \",\"dim\":false,\"fg\":\"default\",\"inverse\":false,\"invisible\":false,\"italic\":false,\"strike\":false,\"underline\":false,\"underline_color\":\"default\",\"underline_style\":\"none\",\"x\":2,\"y\":0},{\"bg\":\"default\",\"blink\":false,\"bold\":false,\"char\":\"s\",\"dim\":false,\"fg\":\"default\",\"inverse\":false,\"invisible\":false,\"italic\":false,\"strike\":false,\"underline\":false,\"underline_color\":\"default\",\"underline_style\":\"none\",\"x\":3,\"y\":0},{\"bg\":\"default\",\"blink\":false,\"bold\":false,\"char\":\"t\",\"dim\":false,\"fg\":\"default\",\"inverse\":false,\"invisible\":false,\"italic\":false,\"strike\":false,\"underline\":false,\"underline_color\":\"default\",\"underline_style\":\"none\",\"x\":4,\"y\":0},{\"bg\":\"default\",\"blink\":false,\"bold\":false,\"char\":\"a\",\"dim\":false,\"fg\":\"default\",\"inverse\":false,\"invisible\":false,\"italic\":false,\"strike\":false,\"underline\":false,\"underline_color\":\"default\",\"underline_style\":\"none\",\"x\":5,\"y\":0},{\"bg\":\"default\",\"blink\":false,\"bold\":false,\"char\":\"r\",\"dim\":false,\"fg\":\"default\",\"inverse\":false,\"invisible\":false,\"italic\":false,\"strike\":false,\"underline\":false,\"underline_color\":\"default\",\"underline_style\":\"none\",\"x\":6,\"y\":0},{\"bg\":\"default\",\"blink\":false,\"bold\":false,\"char\":\"t\",\"dim\":false,\"fg\":\"default\",\"inverse\":false,\"invisible\":false,\"italic\":false,\"strike\":false,\"underline\":false,\"underline_color\":\"default\",\"underline_style\":\"none\",\"x\":7,\"y\":0},{\"bg\":\"default\",\"blink\":false,\"bold\":false,\"char\":\"u\",\"dim\":false,\"fg\":\"default\",\"inverse\":false,\"invisible\":false,\"italic\":false,\"strike\":false,\"underline\":false,\"underline_color\":\"default\",\"underline_style\":\"none\",\"x\":8,\"y\":0},{\"bg\":\"default\",\"blink\":false,\"bold\":false,\"char\":\"p\",\"dim\":false,\"fg\":\"default\",\"inverse\":false,\"invisible\":false,\"italic\":false,\"strike\":false,\"underline\":false,\"underline_color\":\"default\",\"underline_style\":\"none\",\"x\":9,\"y\":0},{\"bg\":\"default\",\"blink\":false,\"bold\":false,\"char\":\" \",\"dim\":false,\"fg\":\"default\",\"inverse\":false,\"invisible\":false,\"italic\":false,\"strike\":false,\"underline\":false,\"underline_color\":\"default\",\"underline_style\":\"none\",\"x\":10,\"y\":0},{\"bg\":\"default\",\"blink\":false,\"bold\":false,\"char\":\" \",\"dim\":false,\"fg\":\"default\",\"inverse\":false,\"invisible\":false,\"italic\":false,\"strike\":false,\"underline\":false,\"underline_color\":\"default\",\"underline_style\":\"none\",\"x\":11,\"y\":0},{\"bg\":\"default\",\"blink\":false,\"bold\":false,\"char\":\" \",\"dim\":false,\"fg\":\"default\",\"inverse\":false,\"invisible\":false,\"italic\":false,\"strike\":false,\"underline\":false,\"underline_color\":\"default\",\"underline_style\":\"none\",\"x\":12,\"y\":0},{\"bg\":\"default\",\"blink\":false,\"bold\":false,\"char\":\"f\",\"dim\":false,\"fg\":\"default\",\"inverse\":false,\"invisible\":false,\"italic\":false,\"strike\":false,\"underline\":false,\"underline_color\":\"default\",\"underline_style\":\"none\",\"x\":0,\"y\":1},{\"bg\":\"default\",\"blink\":false,\"bold\":false,\"char\":\"g\",\"dim\":false,\"fg\":\"default\",\"inverse\":false,\"invisible\":false,\"italic\":false,\"strike\":false,\"underline\":false,\"underline_color\":\"default\",\"underline_style\":\"none\",\"x\":1,\"y\":1},{\"bg\":\"default\",\"blink\":false,\"bold\":false,\"char\":\"h\",\"dim\":false,\"fg\":\"default\",\"inverse\":false,\"invisible\":false,\"italic\":false,\"strike\":false,\"underline\":false,\"underline_color\":\"default\",\"underline_style\":\"none\",\"x\":2,\"y\":1},{\"bg\":\"default\",\"blink\":false,\"bold\":false,\"char\":\"i\",\"dim\":false,\"fg\":\"default\",\"inverse\":false,\"invisible\":false,\"italic\":false,\"strike\":false,\"underline\":false,\"underline_color\":\"default\",\"underline_style\":\"none\",\"x\":3,\"y\":1},{\"bg\":\"default\",\"blink\":false,\"bold\":false,\"char\":\"j\",\"dim\":false,\"fg\":\"default\",\"inverse\":false,\"invisible\":false,\"italic\":false,\"strike\":false,\"underline\":false,\"underline_color\":\"default\",\"underline_style\":\"none\",\"x\":4,\"y\":1},{\"bg\":\"default\",\"blink\":false,\"bold\":false,\"char\":\"k\",\"dim\":false,\"fg\":\"default\",\"inverse\":false,\"invisible\":false,\"italic\":false,\"strike\":false,\"underline\":false,\"underline_color\":\"default\",\"underline_style\":\"none\",\"x\":5,\"y\":1},{\"bg\":\"default\",\"blink\":false,\"bold\":false,\"char\":\"l\",\"dim\":false,\"fg\":\"default\",\"inverse\":false,\"invisible\":false,\"italic\":false,\"strike\":false,\"underline\":false,\"underline_color\":\"default\",\"underline_style\":\"none\",\"x\":6,\"y\":1},{\"bg\":\"default\",\"blink\":false,\"bold\":false,\"char\":\"m\",\"dim\":false,\"fg\":\"default\",\"inverse\":false,\"invisible\":false,\"italic\":false,\"strike\":false,\"underline\":false,\"underline_color\":\"default\",\"underline_style\":\"none\",\"x\":7,\"y\":1},{\"bg\":\"default\",\"blink\":false,\"bold\":false,\"char\":\"n\",\"dim\":false,\"fg\":\"default\",\"inverse\":false,\"invisible\":false,\"italic\":false,\"strike\":false,\"underline\":false,\"underline_color\":\"default\",\"underline_style\":\"none\",\"x\":8,\"y\":1},{\"bg\":\"default\",\"blink\":false,\"bold\":false,\"char\":\"o\",\"dim\":false,\"fg\":\"default\",\"inverse\":false,\"invisible\":false,\"italic\":false,\"strike\":false,\"underline\":false,\"underline_color\":\"default\",\"underline_style\":\"none\",\"x\":9,\"y\":1},{\"bg\":\"default\",\"blink\":false,\"bold\":false,\"char\":\"p\",\"dim\":false,\"fg\":\"default\",\"inverse\":false,\"invisible\":false,\"italic\":false,\"strike\":false,\"underline\":false,\"underline_color\":\"default\",\"underline_style\":\"none\",\"x\":10,\"y\":1},{\"bg\":\"default\",\"blink\":false,\"bold\":false,\"char\":\"q\",\"dim\":false,\"fg\":\"default\",\"inverse\":false,\"invisible\":false,\"italic\":false,\"strike\":false,\"underline\":false,\"underline_color\":\"default\",\"underline_style\":\"none\",\"x\":11,\"y\":1},{\"bg\":\"default\",\"blink\":false,\"bold\":false,\"char\":\"r\",\"dim\":false,\"fg\":\"default\",\"inverse\":false,\"invisible\":false,\"italic\":false,\"strike\":false,\"underline\":false,\"underline_color\":\"default\",\"underline_style\":\"none\",\"x\":12,\"y\":1},{\"bg\":\"default\",\"blink\":false,\"bold\":false,\"char\":\"s\",\"dim\":false,\"fg\":\"default\",\"inverse\":false,\"invisible\":false,\"italic\":false,\"strike\":false,\"underline\":false,\"underline_color\":\"default\",\"underline_style\":\"none\",\"x\":0,\"y\":2},{\"bg\":\"default\",\"blink\":false,\"bold\":false,\"char\":\"t\",\"dim\":false,\"fg\":\"default\",\"inverse\":false,\"invisible\":false,\"italic\":false,\"strike\":false,\"underline\":false,\"underline_color\":\"default\",\"underline_style\":\"none\",\"x\":1,\"y\":2},{\"bg\":\"default\",\"blink\":false,\"bold\":false,\"char\":\"u\",\"dim\":false,\"fg\":\"default\",\"inverse\":false,\"invisible\":false,\"italic\":false,\"strike\":false,\"underline\":false,\"underline_color\":\"default\",\"underline_style\":\"none\",\"x\":2,\"y\":2},{\"bg\":\"default\",\"blink\":false,\"bold\":false,\"char\":\"v\",\"dim\":false,\"fg\":\"default\",\"inverse\":false,\"invisible\":false,\"italic\":false,\"strike\":false,\"underline\":false,\"underline_color\":\"default\",\"underline_style\":\"none\",\"x\":3,\"y\":2},{\"bg\":\"default\",\"blink\":false,\"bold\":false,\"char\":\"w\",\"dim\":false,\"fg\":\"default\",\"inverse\":false,\"invisible\":false,\"italic\":false,\"strike\":false,\"underline\":false,\"underline_color\":\"default\",\"underline_style\":\"none\",\"x\":4,\"y\":2},{\"bg\":\"default\",\"blink\":false,\"bold\":false,\"char\":\"x\",\"dim\":false,\"fg\":\"default\",\"inverse\":false,\"invisible\":false,\"italic\":false,\"strike\":false,\"underline\":false,\"underline_color\":\"default\",\"underline_style\":\"none\",\"x\":5,\"y\":2},{\"bg\":\"default\",\"blink\":false,\"bold\":false,\"char\":\"y\",\"dim\":false,\"fg\":\"default\",\"inverse\":false,\"invisible\":false,\"italic\":false,\"strike\":false,\"underline\":false,\"underline_color\":\"default\",\"underline_style\":\"none\",\"x\":6,\"y\":2},{\"bg\":\"default\",\"blink\":false,\"bold\":false,\"char\":\"z\",\"dim\":false,\"fg\":\"default\",\"inverse\":false,\"invisible\":false,\"italic\":false,\"strike\":false,\"underline\":false,\"underline_color\":\"default\",\"underline_style\":\"none\",\"x\":7,\"y\":2},{\"bg\":\"default\",\"blink\":false,\"bold\":false,\"char\":\"0\",\"dim\":false,\"fg\":\"default\",\"inverse\":false,\"invisible\":false,\"italic\":false,\"strike\":false,\"underline\":false,\"underline_color\":\"default\",\"underline_style\":\"none\",\"x\":8,\"y\":2},{\"bg\":\"default\",\"blink\":false,\"bold\":false,\"char\":\"1\",\"dim\":false,\"fg\":\"default\",\"inverse\":false,\"invisible\":false,\"italic\":false,\"strike\":false,\"underline\":false,\"underline_color\":\"default\",\"underline_style\":\"none\",\"x\":9,\"y\":2},{\"bg\":\"default\",\"blink\":false,\"bold\":false,\"char\":\"2\",\"dim\":false,\"fg\":\"default\",\"inverse\":false,\"invisible\":false,\"italic\":false,\"strike\":false,\"underline\":false,\"underline_color\":\"default\",\"underline_style\":\"none\",\"x\":10,\"y\":2},{\"bg\":\"default\",\"blink\":false,\"bold\":false,\"char\":\"3\",\"dim\":false,\"fg\":\"default\",\"inverse\":false,\"invisible\":false,\"italic\":false,\"strike\":false,\"underline\":false,\"underline_color\":\"default\",\"underline_style\":\"none\",\"x\":11,\"y\":2},{\"bg\":\"default\",\"blink\":false,\"bold\":false,\"char\":\"4\",\"dim\":false,\"fg\":\"default\",\"inverse\":false,\"invisible\":false,\"italic\":false,\"strike\":false,\"underline\":false,\"underline_color\":\"default\",\"underline_style\":\"none\",\"x\":12,\"y\":2},{\"bg\":\"default\",\"blink\":false,\"bold\":false,\"char\":\"5\",\"dim\":false,\"fg\":\"default\",\"inverse\":false,\"invisible\":false,\"italic\":false,\"strike\":false,\"underline\":false,\"underline_color\":\"default\",\"underline_style\":\"none\",\"x\":0,\"y\":3},{\"bg\":\"default\",\"blink\":false,\"bold\":false,\"char\":\"界\",\"dim\":false,\"fg\":\"default\",\"inverse\":false,\"invisible\":false,\"italic\":false,\"strike\":false,\"underline\":false,\"underline_color\":\"default\",\"underline_style\":\"none\",\"x\":1,\"y\":3},{\"bg\":\"default\",\"blink\":false,\"bold\":false,\"char\":\"\",\"dim\":false,\"fg\":\"default\",\"inverse\":false,\"invisible\":false,\"italic\":false,\"strike\":false,\"underline\":false,\"underline_color\":\"default\",\"underline_style\":\"none\",\"x\":2,\"y\":3},{\"bg\":\"default\",\"blink\":false,\"bold\":false,\"char\":\"😀\",\"dim\":false,\"fg\":\"default\",\"inverse\":false,\"invisible\":false,\"italic\":false,\"strike\":false,\"underline\":false,\"underline_color\":\"default\",\"underline_style\":\"none\",\"x\":3,\"y\":3},{\"bg\":\"default\",\"blink\":false,\"bold\":false,\"char\":\"\",\"dim\":false,\"fg\":\"default\",\"inverse\":false,\"invisible\":false,\"italic\":false,\"strike\":false,\"underline\":false,\"underline_color\":\"default\",\"underline_style\":\"none\",\"x\":4,\"y\":3},{\"bg\":\"default\",\"blink\":false,\"bold\":false,\"char\":\"Z\",\"dim\":false,\"fg\":\"default\",\"inverse\":false,\"invisible\":false,\"italic\":false,\"strike\":false,\"underline\":false,\"underline_color\":\"default\",\"underline_style\":\"none\",\"x\":5,\"y\":3},{\"bg\":\"default\",\"blink\":false,\"bold\":false,\"char\":\" \",\"dim\":false,\"fg\":\"default\",\"inverse\":false,\"invisible\":false,\"italic\":false,\"strike\":false,\"underline\":false,\"underline_color\":\"default\",\"underline_style\":\"none\",\"x\":6,\"y\":3},{\"bg\":\"default\",\"blink\":false,\"bold\":false,\"char\":\" \",\"dim\":false,\"fg\":\"default\",\"inverse\":false,\"invisible\":false,\"italic\":false,\"strike\":false,\"underline\":false,\"underline_color\":\"default\",\"underline_style\":\"none\",\"x\":7,\"y\":3},{\"bg\":\"default\",\"blink\":false,\"bold\":false,\"char\":\" \",\"dim\":false,\"fg\":\"default\",\"inverse\":false,\"invisible\":false,\"italic\":false,\"strike\":false,\"underline\":false,\"underline_color\":\"default\",\"underline_style\":\"none\",\"x\":8,\"y\":3},{\"bg\":\"default\",\"blink\":false,\"bold\":false,\"char\":\" \",\"dim\":false,\"fg\":\"default\",\"inverse\":false,\"invisible\":false,\"italic\":false,\"strike\":false,\"underline\":false,\"underline_color\":\"default\",\"underline_style\":\"none\",\"x\":9,\"y\":3},{\"bg\":\"default\",\"blink\":false,\"bold\":false,\"char\":\" \",\"dim\":false,\"fg\":\"default\",\"inverse\":false,\"invisible\":false,\"italic\":false,\"strike\":false,\"underline\":false,\"underline_color\":\"default\",\"underline_style\":\"none\",\"x\":10,\"y\":3},{\"bg\":\"default\",\"blink\":false,\"bold\":false,\"char\":\" \",\"dim\":false,\"fg\":\"default\",\"inverse\":false,\"invisible\":false,\"italic\":false,\"strike\":false,\"underline\":false,\"underline_color\":\"default\",\"underline_style\":\"none\",\"x\":11,\"y\":3},{\"bg\":\"default\",\"blink\":false,\"bold\":false,\"char\":\" \",\"dim\":false,\"fg\":\"default\",\"inverse\":false,\"invisible\":false,\"italic\":false,\"strike\":false,\"underline\":false,\"underline_color\":\"default\",\"underline_style\":\"none\",\"x\":12,\"y\":3},{\"bg\":\"default\",\"blink\":false,\"bold\":false,\"char\":\"S\",\"dim\":false,\"fg\":\"default\",\"inverse\":false,\"invisible\":false,\"italic\":false,\"strike\":false,\"underline\":false,\"underline_color\":\"default\",\"underline_style\":\"none\",\"x\":0,\"y\":4},{\"bg\":\"default\",\"blink\":false,\"bold\":false,\"char\":\"h\",\"dim\":false,\"fg\":\"default\",\"inverse\":false,\"invisible\":false,\"italic\":false,\"strike\":false,\"underline\":false,\"underline_color\":\"default\",\"underline_style\":\"none\",\"x\":1,\"y\":4},{\"bg\":\"default\",\"blink\":false,\"bold\":false,\"char\":\"i\",\"dim\":false,\"fg\":\"default\",\"inverse\":false,\"invisible\":false,\"italic\":false,\"strike\":false,\"underline\":false,\"underline_color\":\"default\",\"underline_style\":\"none\",\"x\":2,\"y\":4},{\"bg\":\"default\",\"blink\":false,\"bold\":false,\"char\":\"f\",\"dim\":false,\"fg\":\"default\",\"inverse\":false,\"invisible\":false,\"italic\":false,\"strike\":false,\"underline\":false,\"underline_color\":\"default\",\"underline_style\":\"none\",\"x\":3,\"y\":4},{\"bg\":\"default\",\"blink\":false,\"bold\":false,\"char\":\"t\",\"dim\":false,\"fg\":\"default\",\"inverse\":false,\"invisible\":false,\"italic\":false,\"strike\":false,\"underline\":false,\"underline_color\":\"default\",\"underline_style\":\"none\",\"x\":4,\"y\":4},{\"bg\":\"default\",\"blink\":false,\"bold\":false,\"char\":\"/\",\"dim\":false,\"fg\":\"default\",\"inverse\":false,\"invisible\":false,\"italic\":false,\"strike\":false,\"underline\":false,\"underline_color\":\"default\",\"underline_style\":\"none\",\"x\":5,\"y\":4},{\"bg\":\"default\",\"blink\":false,\"bold\":false,\"char\":\"C\",\"dim\":false,\"fg\":\"default\",\"inverse\":false,\"invisible\":false,\"italic\":false,\"strike\":false,\"underline\":false,\"underline_color\":\"default\",\"underline_style\":\"none\",\"x\":6,\"y\":4},{\"bg\":\"default\",\"blink\":false,\"bold\":false,\"char\":\"t\",\"dim\":false,\"fg\":\"default\",\"inverse\":false,\"invisible\":false,\"italic\":false,\"strike\":false,\"underline\":false,\"underline_color\":\"default\",\"underline_style\":\"none\",\"x\":7,\"y\":4},{\"bg\":\"default\",\"blink\":false,\"bold\":false,\"char\":\"r\",\"dim\":false,\"fg\":\"default\",\"inverse\":false,\"invisible\":false,\"italic\":false,\"strike\":false,\"underline\":false,\"underline_color\":\"default\",\"underline_style\":\"none\",\"x\":8,\"y\":4},{\"bg\":\"default\",\"blink\":false,\"bold\":false,\"char\":\"l\",\"dim\":false,\"fg\":\"default\",\"inverse\":false,\"invisible\":false,\"italic\":false,\"strike\":false,\"underline\":false,\"underline_color\":\"default\",\"underline_style\":\"none\",\"x\":9,\"y\":4},{\"bg\":\"default\",\"blink\":false,\"bold\":false,\"char\":\"/\",\"dim\":false,\"fg\":\"default\",\"inverse\":false,\"invisible\":false,\"italic\":false,\"strike\":false,\"underline\":false,\"underline_color\":\"default\",\"underline_style\":\"none\",\"x\":10,\"y\":4},{\"bg\":\"default\",\"blink\":false,\"bold\":false,\"char\":\"A\",\"dim\":false,\"fg\":\"default\",\"inverse\":false,\"invisible\":false,\"italic\":false,\"strike\":false,\"underline\":false,\"underline_color\":\"default\",\"underline_style\":\"none\",\"x\":11,\"y\":4},{\"bg\":\"default\",\"blink\":false,\"bold\":false,\"char\":\"l\",\"dim\":false,\"fg\":\"default\",\"inverse\":false,\"invisible\":false,\"italic\":false,\"strike\":false,\"underline\":false,\"underline_color\":\"default\",\"underline_style\":\"none\",\"x\":12,\"y\":4},{\"bg\":\"default\",\"blink\":false,\"bold\":false,\"char\":\" \",\"dim\":false,\"fg\":\"default\",\"inverse\":false,\"invisible\":false,\"italic\":false,\"strike\":false,\"underline\":false,\"underline_color\":\"default\",\"underline_style\":\"none\",\"x\":0,\"y\":5},{\"bg\":\"default\",\"blink\":false,\"bold\":false,\"char\":\" \",\"dim\":false,\"fg\":\"default\",\"inverse\":false,\"invisible\":false,\"italic\":false,\"strike\":false,\"underline\":false,\"underline_color\":\"default\",\"underline_style\":\"none\",\"x\":1,\"y\":5},{\"bg\":\"default\",\"blink\":false,\"bold\":false,\"char\":\" \",\"dim\":false,\"fg\":\"default\",\"inverse\":false,\"invisible\":false,\"italic\":false,\"strike\":false,\"underline\":false,\"underline_color\":\"default\",\"underline_style\":\"none\",\"x\":2,\"y\":5},{\"bg\":\"default\",\"blink\":false,\"bold\":false,\"char\":\" \",\"dim\":false,\"fg\":\"default\",\"inverse\":false,\"invisible\":false,\"italic\":false,\"strike\":false,\"underline\":false,\"underline_color\":\"default\",\"underline_style\":\"none\",\"x\":3,\"y\":5},{\"bg\":\"default\",\"blink\":false,\"bold\":false,\"char\":\" \",\"dim\":false,\"fg\":\"default\",\"inverse\":false,\"invisible\":false,\"italic\":false,\"strike\":false,\"underline\":false,\"underline_color\":\"default\",\"underline_style\":\"none\",\"x\":4,\"y\":5},{\"bg\":\"default\",\"blink\":false,\"bold\":false,\"char\":\" \",\"dim\":false,\"fg\":\"default\",\"inverse\":false,\"invisible\":false,\"italic\":false,\"strike\":false,\"underline\":false,\"underline_color\":\"default\",\"underline_style\":\"none\",\"x\":5,\"y\":5},{\"bg\":\"default\",\"blink\":false,\"bold\":false,\"char\":\" \",\"dim\":false,\"fg\":\"default\",\"inverse\":false,\"invisible\":false,\"italic\":false,\"strike\":false,\"underline\":false,\"underline_color\":\"default\",\"underline_style\":\"none\",\"x\":6,\"y\":5},{\"bg\":\"default\",\"blink\":false,\"bold\":false,\"char\":\" \",\"dim\":false,\"fg\":\"default\",\"inverse\":false,\"invisible\":false,\"italic\":false,\"strike\":false,\"underline\":false,\"underline_color\":\"default\",\"underline_style\":\"none\",\"x\":7,\"y\":5},{\"bg\":\"default\",\"blink\":false,\"bold\":false,\"char\":\" \",\"dim\":false,\"fg\":\"default\",\"inverse\":false,\"invisible\":false,\"italic\":false,\"strike\":false,\"underline\":false,\"underline_color\":\"default\",\"underline_style\":\"none\",\"x\":8,\"y\":5},{\"bg\":\"default\",\"blink\":false,\"bold\":false,\"char\":\" \",\"dim\":false,\"fg\":\"default\",\"inverse\":false,\"invisible\":false,\"italic\":false,\"strike\":false,\"underline\":false,\"underline_color\":\"default\",\"underline_style\":\"none\",\"x\":9,\"y\":5},{\"bg\":\"default\",\"blink\":false,\"bold\":false,\"char\":\" \",\"dim\":false,\"fg\":\"default\",\"inverse\":false,\"invisible\":false,\"italic\":false,\"strike\":false,\"underline\":false,\"underline_color\":\"default\",\"underline_style\":\"none\",\"x\":10,\"y\":5},{\"bg\":\"default\",\"blink\":false,\"bold\":false,\"char\":\" \",\"dim\":false,\"fg\":\"default\",\"inverse\":false,\"invisible\":false,\"italic\":false,\"strike\":false,\"underline\":false,\"underline_color\":\"default\",\"underline_style\":\"none\",\"x\":11,\"y\":5},{\"bg\":\"default\",\"blink\":false,\"bold\":false,\"char\":\" \",\"dim\":false,\"fg\":\"default\",\"inverse\":false,\"invisible\":false,\"italic\":false,\"strike\":false,\"underline\":false,\"underline_color\":\"default\",\"underline_style\":\"none\",\"x\":12,\"y\":5}]}}\n",
+    "stderr": ""
+  },
+  {
+    "command": [
+      "/Users/dale/.local/bin/tui-test",
+      "--session",
+      "askcore-e2e-7f9d4a1a76-ghostty-g3-draft-long",
+      "--json",
+      "screenshot",
+      "/private/tmp/askcore-inline-replay-candidate/resize-evidence/native-first/ghostty/g3-draft-long/failure.svg"
+    ],
+    "code": 0,
+    "stdout": "{\"ok\":true,\"data\":{\"path\":\"/private/tmp/askcore-inline-replay-candidate/resize-evidence/native-first/ghostty/g3-draft-long/failure.svg\"}}\n",
+    "stderr": ""
+  },
+  {
+    "command": [
+      "/Users/dale/.local/bin/tui-test",
+      "--session",
+      "askcore-e2e-7f9d4a1a76-ghostty-g3-draft-long",
+      "--json",
+      "get-recording",
+      "askcore-e2e-7f9d4a1a76-ghostty-g3-draft-long"
+    ],
+    "code": 0,
+    "stdout": "{\"env\":{\"TERM\":\"xterm-256color\"},\"height\":12,\"timestamp\":1791351391,\"version\":2,\"width\":40}\n[0.003147584,\"o\",\"\\r\\u001b[12B\\n\\u001b[12A\\u001b[LT0 startup\\u001b[K\\r\\n\"]\n[0.020746167,\"o\",\"\\u001b[?2026$p\\u001b[?2027$p\"]\n[0.020792167,\"o\",\"\\u001b[?5W\\u001b[?2004h\\u001b[>4;2m\\u001b[>3u\\u001b[?u\\u001b[1 q\\u001b[Jeditor>\\r\\nAlt+Enter: newline; Enter: submit\\u001b[A\\u001b[4Z\\u001b[?25h\"]\n[0.037425667,\"o\",\"\\u001b[?2026h\\u001b[?2027h\\r\\nShift/Ctrl/Alt+Enter: newline\\u001b[K\\u001b[A\\u001b[3Z\\u001b[?2026l\"]\n[0.062441584,\"r\",\"13x6\"]\n[0.07077075,\"o\",\"\\u001b[?2026h\\r\\u001b[Jfghijklmnopqr\\r\\nstuvwxyz01234\\r\\n5界😀Z\\u001b[K\\u001b[7G\\r\\nShift/Ctrl/Al\\r\\u001bM\\u001b[6C\\u001b[?2026l\"]\n[0.183750792,\"o\",\"\\u001b[?2026h\\u001b[2J\\u001b[3J\\u001b[H\\u001b[0mT0 startup\\r\\n\\u001b[?2026h\\r\\u001b[Jfghijklmnopqr\\r\\nstuvwxyz01234\\r\\n5界😀Z\\u001b[7G\\r\\nShift/Ctrl/Al\\r\\u001bM\\u001b[6C\\u001b[?2026l\\u001b[?2026l\"]\n",
+    "stderr": ""
+  },
+  {
+    "command": [
+      "/Users/dale/.local/bin/tui-test",
+      "--session",
+      "askcore-e2e-7f9d4a1a76-ghostty-g3-draft-long",
+      "--json",
+      "close"
+    ],
+    "code": 0,
+    "stdout": "{\"ok\":true}\n",
+    "stderr": ""
+  },
+  {
+    "command": [
+      "/Users/dale/.local/bin/tui-test",
+      "--session",
+      "askcore-e2e-7f9d4a1a76-ghostty-g3-draft-long",
+      "--json",
+      "daemon",
+      "stop"
+    ],
+    "code": 3,
+    "stdout": "",
+    "stderr": "no daemon running for session 'askcore-e2e-7f9d4a1a76-ghostty-g3-draft-long'\n"
+  },
+  {
+    "command": [
+      "/Users/dale/.local/bin/tui-test",
+      "--session",
+      "askcore-e2e-7f9d4a1a76-ghostty-g3-draft-long",
+      "--json",
+      "daemon",
+      "status"
+    ],
+    "code": 3,
+    "stdout": "{\"pid\":null,\"running\":false,\"session\":\"askcore-e2e-7f9d4a1a76-ghostty-g3-draft-long\"}\n",
+    "stderr": ""
+  }
+]

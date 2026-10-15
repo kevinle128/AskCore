@@ -1,0 +1,9 @@
+=== RUN   TestG6Input
+=== RUN   TestG6Input/false
+    g6_test.go:333: owned child pid=16837 /var/folders/84/5njq4pvs747b3zzntvtgtpl80000gn/T/TestG6Input1994157973/001/g6 --scenario g6 support=false
+    g6_test.go:361: visible cursor/frame predicate failed: main.snapshot{Rows:[]string{"T0 startup", "1997    界😀?[13;2u", "1998    界😀?[13;2u", "1999    界😀?[13;2u", "Alt+Enter: newline; Enter: submit", "", "", "", "", "", "", ""}, History:[]string{""}, X:19, Y:3, Alt:false}
+--- FAIL: TestG6Input (5.44s)
+    --- FAIL: TestG6Input/false (5.28s)
+FAIL
+FAIL	askcore-t0-inline	5.822s
+FAIL

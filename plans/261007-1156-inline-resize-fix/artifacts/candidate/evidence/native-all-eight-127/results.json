@@ -1,0 +1,69 @@
+{
+  "cli_version": "tui-test 0.1.0-beta.2",
+  "headless_only": true,
+  "d14_ready": false,
+  "cases": [
+    {
+      "backend": "alacritty",
+      "scenario": "g1",
+      "session": "askcore-e2e-730c2e5d2b-alacritty-g1",
+      "result": "pass",
+      "detail": null
+    },
+    {
+      "backend": "alacritty",
+      "scenario": "g2",
+      "session": "askcore-e2e-730c2e5d2b-alacritty-g2",
+      "result": "pass",
+      "detail": null
+    },
+    {
+      "backend": "alacritty",
+      "scenario": "g3",
+      "session": "askcore-e2e-730c2e5d2b-alacritty-g3",
+      "result": "pass",
+      "detail": null
+    },
+    {
+      "backend": "alacritty",
+      "scenario": "g6",
+      "session": "askcore-e2e-730c2e5d2b-alacritty-g6",
+      "result": "pass",
+      "detail": {
+        "negotiated_modified_keys": "pass",
+        "reason": null
+      }
+    },
+    {
+      "backend": "ghostty",
+      "scenario": "g1",
+      "session": "askcore-e2e-730c2e5d2b-ghostty-g1",
+      "result": "pass",
+      "detail": null
+    },
+    {
+      "backend": "ghostty",
+      "scenario": "g2",
+      "session": "askcore-e2e-730c2e5d2b-ghostty-g2",
+      "result": "pass",
+      "detail": null
+    },
+    {
+      "backend": "ghostty",
+      "scenario": "g3",
+      "session": "askcore-e2e-730c2e5d2b-ghostty-g3",
+      "result": "pass",
+      "detail": null
+    },
+    {
+      "backend": "ghostty",
+      "scenario": "g6",
+      "session": "askcore-e2e-730c2e5d2b-ghostty-g6",
+      "result": "pass",
+      "detail": {
+        "negotiated_modified_keys": "pass",
+        "reason": null
+      }
+    }
+  ]
+}

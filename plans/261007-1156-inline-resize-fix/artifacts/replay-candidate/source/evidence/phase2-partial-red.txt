@@ -1,0 +1,10 @@
+=== RUN   TestRestoreRoutes
+=== RUN   TestRestoreRoutes/output-error
+    g6_test.go:347: owned child pid=9859 /var/folders/84/5njq4pvs747b3zzntvtgtpl80000gn/T/TestRestoreRoutes115041062/001/g6 --scenario g6 support=true
+    g6_test.go:350: mode=2026 remains enabled
+    terminal_test.go:380: separate child stderr: fixture partial output write failure after 8 bytes
+--- FAIL: TestRestoreRoutes (0.39s)
+    --- FAIL: TestRestoreRoutes/output-error (0.21s)
+FAIL
+FAIL	askcore-t0-inline	0.769s
+FAIL

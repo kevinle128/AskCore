@@ -1,0 +1,24 @@
+ ← back  PreToolUse hook (global/no-rm) · bash rm -rf build      ✗ blocked 0.0s
+────────────────────────────────────────────────────────────────────────────────
+    Event    PreToolUse
+    Matcher  tool bash
+    Does     Blocks recursive removal (rm -rf) inside the repo
+    Source   ~/.ask/hooks.json (global)
+    Command  ask-hook-no-rm · timeout 5s
+    Result   blocked · exit 2 · 0.0s
+    Reason   recursive removal is not allowed in this repo
+    ── output ──
+    no-rm: blocked "rm -rf build"
+
+
+
+
+
+
+
+
+
+
+
+────────────────────────────────────────────────────────────────────────────────
+ ↑↓ scroll · PgUp PgDn page · Home End · Esc back                      1–9 of 9

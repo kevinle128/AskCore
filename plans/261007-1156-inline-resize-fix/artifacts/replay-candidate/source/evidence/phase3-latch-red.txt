@@ -1,0 +1,6 @@
+=== RUN   TestCommitUnderlyingFailureLatch
+    commit_test.go:29: actual output failure was not latched
+--- FAIL: TestCommitUnderlyingFailureLatch (0.00s)
+FAIL
+FAIL	askcore-t0-inline	0.440s
+FAIL

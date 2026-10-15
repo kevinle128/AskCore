@@ -1,0 +1,9 @@
+=== RUN   TestCommitFrameIsNotInsertion
+    commit_test.go:94: renderer frame falsely confirmed insertion
+--- FAIL: TestCommitFrameIsNotInsertion (0.00s)
+=== RUN   TestCommitRejectUnsafeCleanup
+    commit_test.go:95: clear screen accepted as mode cleanup
+--- FAIL: TestCommitRejectUnsafeCleanup (0.00s)
+FAIL
+FAIL	askcore-t0-inline	0.392s
+FAIL

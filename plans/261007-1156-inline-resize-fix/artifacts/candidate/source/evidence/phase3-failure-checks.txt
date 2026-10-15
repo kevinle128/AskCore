@@ -1,0 +1,25 @@
+=== RUN   TestG1WriterFailures
+=== RUN   TestG1WriterFailures/zero
+    g1_test.go:155: owned child pid=80391 /var/folders/84/5njq4pvs747b3zzntvtgtpl80000gn/T/TestG1WriterFailures2918146427/001/g1 --scenario g6 support=true
+    g1_test.go:203: restore termios exact, final cursor=(8,1) mode map=map[25:true 2004:false 2026:false]
+    terminal_test.go:380: separate child stderr: fixture zero insertion write failure
+=== RUN   TestG1WriterFailures/partial
+    g1_test.go:155: owned child pid=80393 /var/folders/84/5njq4pvs747b3zzntvtgtpl80000gn/T/TestG1WriterFailures2918146427/001/g1 --scenario g6 support=true
+    g1_test.go:203: restore termios exact, final cursor=(2,1) mode map=map[25:true 2004:false 2026:false]
+    terminal_test.go:380: separate child stderr: fixture partial insertion write failure
+=== RUN   TestG1WriterFailures/short
+    g1_test.go:155: owned child pid=80394 /var/folders/84/5njq4pvs747b3zzntvtgtpl80000gn/T/TestG1WriterFailures2918146427/001/g1 --scenario g6 support=true
+    g1_test.go:203: restore termios exact, final cursor=(2,1) mode map=map[25:true 2004:false 2026:false]
+    terminal_test.go:380: separate child stderr: short write
+=== RUN   TestG1WriterFailures/permanent
+    g1_test.go:155: owned child pid=80405 /var/folders/84/5njq4pvs747b3zzntvtgtpl80000gn/T/TestG1WriterFailures2918146427/001/g1 --scenario g6 support=true
+    g1_test.go:203: terminal byte restoration unavailable; termios restored
+    terminal_test.go:380: separate child stderr: terminal byte restoration unavailable: output stopped after failure
+        fixture permanent insertion write failure
+--- PASS: TestG1WriterFailures (0.71s)
+    --- PASS: TestG1WriterFailures/zero (0.41s)
+    --- PASS: TestG1WriterFailures/partial (0.02s)
+    --- PASS: TestG1WriterFailures/short (0.02s)
+    --- PASS: TestG1WriterFailures/permanent (0.02s)
+PASS
+ok  	askcore-t0-inline	1.154s

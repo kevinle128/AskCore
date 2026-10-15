@@ -1,0 +1,5 @@
+--- FAIL: TestInlineRepairPurgesAndReconstructs (0.00s)
+    replay_test.go:9: resize has no atomic purge/reconstruction: "\x1b[?2004h\x1b[>4;2m\x1b[>1u\x1b[?u\x1b[1 q\r\x1b[Jeditor> abc界\r\n😀Z\x1b[4G\x1b[?25h"
+FAIL
+exit status 1
+FAIL	charm.land/bubbletea/v2	0.479s

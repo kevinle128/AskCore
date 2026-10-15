@@ -1,0 +1,8 @@
+=== RUN   TestG3UnicodeResize
+    g2_g3_test.go:132: owned child pid=34467 /var/folders/84/5njq4pvs747b3zzntvtgtpl80000gn/T/TestG3UnicodeResize2105587974/001/resize --scenario g6 support=true
+    g2_g3_test.go:183: restore termios exact, final cursor=(0,1) mode map=map[25:true 2004:false 2026:false]
+--- PASS: TestG3UnicodeResize (0.42s)
+=== RUN   TestSelectorBoundaryGeometry
+--- PASS: TestSelectorBoundaryGeometry (0.00s)
+PASS
+ok  	askcore-t0-inline	0.807s

@@ -1,6 +1,6 @@
 # `internal/http`
 
-REST `/v1/*` handlers (and the demo `/api/users`, `/api/posts`). A handler receives store interfaces or core services through its constructor.
+REST `/api/*` handlers (the demo `/api/users` and `/api/posts`) and the `/health` route. A handler receives store interfaces or core services through its constructor.
 
 ## What belongs here
 

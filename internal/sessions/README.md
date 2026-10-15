@@ -1,40 +1,49 @@
 # `internal/sessions`
 
-The session log. A session is a tree of typed entries. Each entry has an `id` and a `parentId`. A fork starts a new branch at any entry. The model context is a projection of the log along one branch. It is not stored as its own copy.
+The typed log is the execution record.
+Model history is a projection of message entries, not a separately mutable Agent state.
+Current storage is in memory; SQLite persistence, lease ownership, resume, and a persistent entry tree remain roadmap work.
 
-## What belongs here
+## Source owners
 
-- The entry types and the entry tree: append, fork, branch and leaf pointer (`entry.go`, `tree.go`)
-- The context builder. It projects the path from a leaf to the root into the message list for the model, and it applies compaction entries (`context.go`)
-- The session manager: create, open, resume and list (`manager.go`)
-- The session id and the mapping from a channel key to a session id, when a channel needs it (`key.go`)
-
-## What does not belong here
-
-| Code | Put it in |
+| Responsibility | Owner |
 |---|---|
-| Session and entry rows at rest | `internal/store` (tables `session` and `session_entry`) |
-| The loop and its queues | `internal/agent` |
-| Compaction decisions and summaries | `internal/pipeline` |
+| Closed entry types and private copies | [entry.go](entry.go) |
+| Atomic append, commit positions, and sole-writer boundary | [writer.go](writer.go) |
+| Current in-memory implementation | [memory.go](memory.go) |
+| Exact model request reconstruction | [Agent request log](../agent/request_log.go) |
 
-## Main interfaces
+Lifecycle, input outcome, request delta, retry, and tool intent records are already implemented.
+They are log facts rather than ordinary model messages.
+Read entry.go for the machine contract; do not define duplicate fields in a persistence adapter.
 
-- None required
+## Decisions and constraints
 
-## File names
+The Agent driver is the sole writer.
+Observers read copies after commit and must not append lifecycle entries.
+An append is one atomic unit so a message and its associated acknowledgment cannot disagree.
 
-`entry.go`, `tree.go`, `context.go`, `manager.go`, `key.go`
+Request records contain safe effective preparation values, not credentials or account identity.
+This permits in-memory reconstruction without turning the log into a second credential store.
+The serving retry policy belongs to the captured request preparation.
 
-## Imports
+Tool intent identifies the requesting assistant entry and call ID.
+It proves intent, not body invocation; repair must preserve that distinction when an outcome is uncertain.
+Retry scheduling and retry start are separate facts because cancellation can occur during the wait.
 
-- Allowed: `store`, `providers` (message types only)
-- Denied: `internal/agent`; `internal/gateway`, `internal/http`, `internal/channels/<vendor>` (core packages do not import transport); `internal/acp`, `internal/leader` (adapters wrap the core, never the reverse); `internal/config`
+The planned entry tree must preserve append-only history and branch-specific projection.
+At-rest rows belong in store and its implementation; lease checks must share the write transaction.
+See [remaining session work](../../plans/260930-2254-pi-feature-inventory-go-roadmap/roadmap.md#h8-the-session-log).
 
-## Rules
+## Package boundaries
 
-- One model is shared everywhere. Add a DTO or a separate type with a mapper only when the data is really different (design section 6).
-- Receive dependencies and typed config through constructors. `internal/app` wires them with fx.
-- Create an interface only when there is a second implementation or a test seam.
-- The log is append-only. A fork adds entries. It never rewrites an old entry.
+Execution, queues, repair decisions, and request preparation order belong in agent.
+Compaction decisions belong in the control layer; sessions owns their record and projection.
+Receive dependencies through constructors and keep this package independent of Agent and transport.
 
-Design reference: [docs/ask-architecture-reference.md](../../docs/ask-architecture-reference.md)
+## File names and imports
+
+Use entry.go, writer.go, memory.go, and a topic file for a real persistence or projection boundary.
+Allowed imports are store and pkg/protocol.
+Do not import agent, gateway, http, channel vendors, acp, leader, or config.
+See [architecture](../../docs/ask-architecture-reference.md).

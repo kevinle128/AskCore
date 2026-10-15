@@ -1,0 +1,13 @@
+# github.com/charmbracelet/ultraviolet [github.com/charmbracelet/ultraviolet.test]
+./terminal_renderer.go:1306:95: s.resizeBuffer undefined (type *TerminalRenderer has no field or method resizeBuffer)
+./terminal_renderer.go:1307:8: s.resizeBuffer undefined (type *TerminalRenderer has no field or method resizeBuffer)
+./terminal_renderer.go:1308:6: s.resizeBuffer undefined (type *TerminalRenderer has no field or method resizeBuffer)
+./terminal_renderer.go:1309:6: s.resizeCursor undefined (type *TerminalRenderer has no field or method resizeCursor)
+./terminal_renderer.go:1312:26: s.resizeCursor undefined (type *TerminalRenderer has no field or method resizeCursor)
+./terminal_renderer.go:1312:52: s.resizeBuffer undefined (type *TerminalRenderer has no field or method resizeBuffer)
+./terminal_renderer.go:1313:14: s.resizeBuffer undefined (type *TerminalRenderer has no field or method resizeBuffer)
+./terminal_renderer.go:1315:16: s.resizeCursor undefined (type *TerminalRenderer has no field or method resizeCursor)
+./terminal_renderer.go:1316:29: s.resizeCursor undefined (type *TerminalRenderer has no field or method resizeCursor)
+./terminal_renderer.go:1334:15: s.resizeCursor undefined (type *TerminalRenderer has no field or method resizeCursor)
+./terminal_renderer.go:1334:15: too many errors
+FAIL	github.com/charmbracelet/ultraviolet [build failed]

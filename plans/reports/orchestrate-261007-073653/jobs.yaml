@@ -1,0 +1,117 @@
+version: 1
+concurrency: 1
+workspace_roots:
+  - /Users/dale/.paseo/worktrees/09kf6w9r/frail-panther
+defaults:
+  timeout: 90m
+  approval: inherit
+  capture: true
+jobs:
+  - id: phase-01-implement
+    runtime: claude
+    model: claude-sonnet-5-5
+    task: implement
+    importance: high
+    cwd: /Users/dale/.paseo/worktrees/09kf6w9r/frail-panther
+    prompt: Execute only H13a Phase 1 through ak-cook with --deep --tdd and no --yagni; implement, test, and report evidence without reviewing or committing.
+    effect: high-impact-write
+    isolation: worktree
+    timeout: 90m
+    expected_output: Phase 1 implementation report with changed files, RED/GREEN evidence, exact checks, and unresolved blockers.
+    authority: User explicitly requested Claude Code for implementation steps in plan H13a.
+    owned_paths:
+      - internal/acp/**
+      - pkg/protocol/**
+      - go.mod
+      - go.sum
+      - AGENTS.md
+
+  - id: phase-01-review
+    runtime: codex
+    model: gpt-6.1-sol
+    task: review
+    importance: high
+    cwd: /Users/dale/.paseo/worktrees/09kf6w9r/frail-panther
+    prompt: Independently review cumulative H13a changes through Phase 1 against the accepted plan and repository contracts; do not modify files.
+    effect: observe
+    isolation: none
+    timeout: 45m
+    expected_output: Evidence-backed findings ordered by severity, checks performed, and pass/fail verdict.
+    depends_on: [phase-01-implement]
+    authority: User explicitly requested Codex for review steps.
+
+  - id: phase-01-fix
+    runtime: claude
+    model: claude-sonnet-5-5
+    task: implement
+    importance: high
+    cwd: /Users/dale/.paseo/worktrees/09kf6w9r/frail-panther
+    prompt: Repair every supported Phase 1 Codex finding, rerun affected checks, and report evidence; no scope expansion.
+    effect: high-impact-write
+    isolation: worktree
+    timeout: 60m
+    expected_output: Finding-by-finding disposition, fixes, and rerun checks.
+    depends_on: [phase-01-review]
+    authority: User authorized in-scope review repairs by Claude.
+    owned_paths:
+      - internal/acp/**
+      - pkg/protocol/**
+      - go.mod
+      - go.sum
+      - AGENTS.md
+
+  - id: phase-01-rereview
+    runtime: codex
+    model: gpt-6.1-sol
+    task: review
+    importance: high
+    cwd: /Users/dale/.paseo/worktrees/09kf6w9r/frail-panther
+    prompt: Re-review Phase 1 after Claude repairs; do not modify files; issue an acceptance verdict.
+    effect: observe
+    isolation: none
+    timeout: 30m
+    expected_output: Pass/fail verdict with any remaining evidence-backed findings.
+    depends_on: [phase-01-fix]
+    authority: User explicitly requested Codex for review steps.
+
+  - id: phase-02-cycle
+    runtime: claude
+    model: claude-sonnet-5-5
+    task: implement
+    importance: high
+    cwd: /Users/dale/.paseo/worktrees/09kf6w9r/frail-panther
+    prompt: Execute Phase 2 only after Phase 1 is accepted; Codex review and repair jobs are dynamically inserted at its review checkpoint.
+    effect: high-impact-write
+    isolation: worktree
+    timeout: 90m
+    expected_output: Phase 2 implementation and verification evidence.
+    depends_on: [phase-01-rereview]
+    authority: User explicitly requested Claude implementation and Codex review per Cook checkpoint.
+
+  - id: phase-03-cycle
+    runtime: claude
+    model: claude-sonnet-5-5
+    task: implement
+    importance: high
+    cwd: /Users/dale/.paseo/worktrees/09kf6w9r/frail-panther
+    prompt: Execute Phase 3 only after Phase 2 is accepted; Codex review and repair jobs are dynamically inserted at its review checkpoint.
+    effect: high-impact-write
+    isolation: worktree
+    timeout: 90m
+    expected_output: Phase 3 implementation and verification evidence.
+    depends_on: [phase-02-cycle]
+    authority: User explicitly requested Claude implementation and Codex review per Cook checkpoint.
+
+  - id: phase-04-cycle
+    runtime: claude
+    model: claude-sonnet-5-5
+    task: implement
+    importance: high
+    cwd: /Users/dale/.paseo/worktrees/09kf6w9r/frail-panther
+    prompt: Execute Phase 4 only after Phase 3 is accepted; Codex review and repair jobs are dynamically inserted at its review checkpoint.
+    effect: high-impact-write
+    isolation: worktree
+    timeout: 120m
+    expected_output: Phase 4 implementation, full verification, and built-process evidence.
+    depends_on: [phase-03-cycle]
+    authority: User explicitly requested Claude implementation and Codex review per Cook checkpoint.

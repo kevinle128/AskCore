@@ -1,0 +1,27 @@
+Caught panic:
+
+fixture model panic
+
+Restoring terminal...
+
+goroutine 1 [running]:
+runtime/debug.Stack()
+	/Users/dale/Desktop/workspace/go/mobules/pkg/mod/golang.org/toolchain@v0.0.1-go1.27.0.darwin-arm64/src/runtime/debug/stack.go:26 +0x64
+charm.land/bubbletea/v2.(*Program).recoverFromPanic(0x1375a79050e0, {0x1026e40c8, 0x1026a4210})
+	/private/tmp/askcore-inline-replay-candidate/vendor/charm.land/bubbletea/v2/tea.go:1322 +0xec
+charm.land/bubbletea/v2.(*Program).Run.func2()
+	/private/tmp/askcore-inline-replay-candidate/vendor/charm.land/bubbletea/v2/tea.go:1056 +0xf4
+panic({0x1026e40c8?, 0x1026a4210?})
+	/Users/dale/Desktop/workspace/go/mobules/pkg/mod/golang.org/toolchain@v0.0.1-go1.27.0.darwin-arm64/src/runtime/panic.go:859 +0x120
+main.model.Update({0x1, 0x0, 0x0, 0x0, 0x1375a79020a0, 0x28, 0xc, {0x1375a77e6488, 0x2}, 0x2, ...}, ...)
+	/private/tmp/askcore-inline-replay-candidate/model.go:171 +0x21a0
+charm.land/bubbletea/v2.(*Program).eventLoop(0x1375a79050e0, {0x102712190?, 0x1375a7988000?}, 0x1375a7914690)
+	/private/tmp/askcore-inline-replay-candidate/vendor/charm.land/bubbletea/v2/tea.go:898 +0xbcc
+charm.land/bubbletea/v2.(*Program).Run(0x1375a79050e0)
+	/private/tmp/askcore-inline-replay-candidate/vendor/charm.land/bubbletea/v2/tea.go:1171 +0x7d4
+main.run()
+	/private/tmp/askcore-inline-replay-candidate/main.go:141 +0xa3c
+main.main()
+	/private/tmp/askcore-inline-replay-candidate/main.go:17 +0x1c
+
+program was killed: program experienced a panic

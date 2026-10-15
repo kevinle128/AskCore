@@ -1,0 +1,11 @@
+{"env":{"TERM":"xterm-256color"},"height":12,"timestamp":1791349904,"version":2,"width":40}
+[0.003601,"o","\r\u001b[12B\n\u001b[12A\u001b[LT0 startup\u001b[K\r\n"]
+[0.022047583,"o","\u001b[?2026$p\u001b[?2027$p"]
+[0.022111333,"o","\u001b[?5W\u001b[?2004h\u001b[>4;2m\u001b[>3u\u001b[?u\u001b[1 q\u001b[Jeditor>\r\nAlt+Enter: newline; Enter: submit\u001b[A\u001b[4Z\u001b[?25h"]
+[0.038753541,"o","\u001b[?2026h\r\nShift/Ctrl/Alt+Enter: newline\u001b[K\u001b[A\u001b[3Z\u001b[?2026l"]
+[0.061157041,"r","13x6"]
+[0.072068875,"o","\u001b[?2026h\r\u001b[Jeditor> abc界\r\n😀Z\u001b[4G\r\nsecond界😀Z\u001b[K\u001b[12G\r\nShift/Ctrl/Al\r\u001bM\u001b[8C\u001b[?2026l"]
+[0.123172583,"r","12x6"]
+[0.138746833,"o","\u001b[?2026h\r\u001b[3A\u001b[Jeditor> abc\r\n界😀Z\u001b[6G\r\nsecond界😀Z\u001b[12G\r\nShift/Ctrl/A\r\u001bM\u001b[8C\u001b[?2026l"]
+[0.1511025,"r","40x12"]
+[0.154431416,"o","\u001b[?2026h\r\u001b[2A\u001b[Jeditor> abc界😀Z\u001b[K\u001b[17G\r\nsecond界😀Z\u001b[K\u001b[12G\r\nShift/Ctrl/Alt+Enter: newline\u001b[K\r\u001bM\u001b[8C\u001b[?2026l"]

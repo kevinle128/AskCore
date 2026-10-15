@@ -1,0 +1,2 @@
+terminal byte restoration unavailable: fixture permanent output failure
+fixture partial output write failure after 8 bytes

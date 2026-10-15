@@ -1,39 +1,20 @@
 # `internal/scheduler`
 
-Lanes (`main`, `subagent`, `team`, `cron`) with bounded concurrency. The scheduler decides when a run may start. It does not decide what a run does.
+This package is the planned owner of run lanes and concurrency limits.
+The current package is a scaffold; see [doc.go](doc.go).
+A scheduler decides when a run may start, not what a run does.
 
-## What belongs here
+## Boundaries
 
-- `Scheduler`, lanes and concurrency limits
-- The start queue for runs that wait for a free lane
+Agent owns steering, follow-up, input claims, abort, and disposal.
+Run scheduling must not create another input queue contract or an interrupt delivery mode.
+A scheduled run is a callback so scheduler does not depend on Agent.
+Durable background jobs belong in messaging.
 
-## What does not belong here
+## Future source placement
 
-| Code | Put it in |
-|---|---|
-| The run itself | `internal/agent` |
-| Steer and follow-up queues of one session | `internal/agent` (`queue.go`) |
-| Abort of a running turn | `internal/agent` (a separate call on the `Agent`) |
-| Durable background jobs | `internal/messaging` (asynq) |
-
-## Main interfaces
-
-- `RunFunc` callback (dewee `internal/scheduler/scheduler.go:32`)
-
-## File names
-
-`scheduler.go`, `lanes.go`, `queue.go`
-
-## Imports
-
-- Allowed: standard library, `tracing`
-- Denied: `internal/agent` (receive a run function instead); `internal/gateway`, `internal/http`, `internal/channels/<vendor>` (core packages do not import transport); `internal/acp`, `internal/leader` (adapters wrap the core, never the reverse); `internal/config`
-
-## Rules
-
-- One model is shared everywhere. Add a DTO or a separate type with a mapper only when the data is really different (design section 6).
-- Receive dependencies and typed config through constructors. `internal/app` wires them with fx.
-- Create an interface only when there is a second implementation or a test seam.
-- There is no `interrupt` mode. To stop a run, the caller aborts it through the `Agent`.
-
-Design reference: [docs/ask-architecture-reference.md](../../docs/ask-architecture-reference.md)
+Use scheduler.go for the scheduler, lanes.go for lane limits, and queue.go only for waiting run slots.
+These files describe intended placement, not current implementations.
+Allowed imports are the standard library and tracing.
+Do not import agent, gateway, http, channel vendors, acp, leader, or config.
+See [architecture](../../docs/ask-architecture-reference.md).

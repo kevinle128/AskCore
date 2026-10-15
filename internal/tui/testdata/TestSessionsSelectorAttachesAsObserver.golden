@@ -1,0 +1,24 @@
+◢◤ ask  ● leader 7c1e  ⌂ ~/src/askcore deepseek-v4.1-flash  ▰▱▱▱▱▱▱▱ 18%  $0.04
+────────────────────────────────────────────────────────────────────────────────
+  model  alibaba/deepseek-v4.1-flash
+
+  ❯ why does TestLeaderStale fail on CI?                                 14:02
+
+  The test waits for the stale socket check, but CI runs it with a 1 s deadline.
+  The leader removes the stale socket after the lock probe, and the probe can
+  take 1.2 s.
+
+  go
+  deadline := 5 * time.Second
+  deepseek-v4.1-flash · 4.2s · ↑12.4k ↓1.8k · $0.004
+
+────────────────────────────────────────────────────────────────────────────────
+╭─ Live sessions ──────────────────────────────────────────────────────────────╮
+│  ⌕ type to filter                                                            │
+│ ❯ 3f2a  ~/src/askcore                                     this client drives │
+│   8d07  ~/src/askcore                                            driver busy │
+│   c1e9  ~/src/pi-notes                                             no driver │
+╰──────────────────────────────────────────────────────────────────────────────╯
+   enter watch  ·  esc close
+────────────────────────────────────────────────────────────────────────────────
+ Tab blocks · ctrl+t thinking · ctrl+l model · / commands

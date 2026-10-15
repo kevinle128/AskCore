@@ -1,0 +1,18 @@
+[
+  {
+    "backend": "alacritty",
+    "result": "pass",
+    "detail": {
+      "ordinary_commits": 2000,
+      "replay_snapshot_commits": [
+        1
+      ],
+      "real_pending_write_resize": "pass"
+    }
+  },
+  {
+    "backend": "ghostty",
+    "result": "fail",
+    "error": "AssertionError('ordered transcript differs: retained=1097, expected=2000')"
+  }
+]

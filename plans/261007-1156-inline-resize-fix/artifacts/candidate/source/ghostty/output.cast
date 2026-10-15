@@ -1,0 +1,4 @@
+{"env":{"TERM":"xterm-256color"},"height":12,"timestamp":1791349386,"version":2,"width":40}
+[0.019681541,"o","T0 startup\r\r\n\u001b7editor> abc界😀Z\r\u001b[11C"]
+[0.054608166,"r","13x6"]
+[0.05476675,"o","\u001b8\r\u001b[Jeditor> abc界😀Z\r\u001b[3C"]

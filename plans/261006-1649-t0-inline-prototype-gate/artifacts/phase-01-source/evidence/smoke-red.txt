@@ -1,0 +1,7 @@
+=== RUN   TestStartupNormalExit
+    terminal_test.go:64: child pid=40144 command=/var/folders/84/5njq4pvs747b3zzntvtgtpl80000gn/T/TestStartupNormalExit178028400/001/smoke --scenario smoke
+    terminal_test.go:147: live editor missing; terminal=main.snapshot{Rows:[]string{"stock baseline", "", "", "", "", "", "", "", "", "", "", ""}, History:[]string(nil), X:8, Y:0, Alt:false}
+--- FAIL: TestStartupNormalExit (5.19s)
+FAIL
+FAIL	askcore-t0-inline	5.562s
+FAIL

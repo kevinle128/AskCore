@@ -1,0 +1,40 @@
+--- a/cursed_renderer.go
++++ b/cursed_renderer.go
+@@ -35,6 +35,10 @@
+ 	starting      bool // indicates whether the renderer is starting after being stopped
+ 	pendingErase  bool // an scr.Erase() is pending and hasn't been drained by flush yet
+ 	noInput       bool // whether input is disabled, in which case keyboard enhancement queries are pointless
++
++	// awaitingSizedView is set by resize and cleared by render. While it is
++	// set, flush draws nothing, so the old view is never drawn at the new size.
++	awaitingSizedView bool
+ }
+ 
+ var _ renderer = &cursedRenderer{}
+@@ -290,6 +294,10 @@
+ func (s *cursedRenderer) flush(closing bool) error {
+ 	s.mu.Lock()
+ 	defer s.mu.Unlock()
++
++	if s.awaitingSizedView && !closing {
++		return nil
++	}
+ 
+ 	view := s.view
+ 	frameArea := uv.Rect(0, 0, s.width, s.height)
+@@ -629,6 +637,7 @@
+ 	defer s.mu.Unlock()
+ 
+ 	s.view = v
++	s.awaitingSizedView = false
+ }
+ 
+ // reset implements renderer.
+@@ -666,6 +675,7 @@
+ // resize implements renderer.
+ func (s *cursedRenderer) resize(w, h int) {
+ 	s.mu.Lock()
++	s.awaitingSizedView = true
+ 	// We need to mark the screen for clear to force a redraw. However, we
+ 	// only do so if we're using alt screen or the width has changed.
+ 	// That's because redrawing is expensive and we can avoid it if the

@@ -1,0 +1,115 @@
+=== RUN   TestEditorCellCursor
+--- PASS: TestEditorCellCursor (0.00s)
+=== RUN   TestEditorViewBounds
+--- PASS: TestEditorViewBounds (0.00s)
+=== RUN   TestG6Input
+=== RUN   TestG6Input/false
+    g6_test.go:333: owned child pid=46314 /var/folders/84/5njq4pvs747b3zzntvtgtpl80000gn/T/TestG6Input2240406529/001/g6 --scenario g6 support=false
+    g6_test.go:365: restore termios exact, final cursor=(0,4) mode map=map[25:true 2004:false 2026:false]
+=== RUN   TestG6Input/true
+    g6_test.go:333: owned child pid=46326 /var/folders/84/5njq4pvs747b3zzntvtgtpl80000gn/T/TestG6Input2240406529/001/g6 --scenario g6 support=true
+    g6_test.go:365: restore termios exact, final cursor=(0,4) mode map=map[25:true 2004:false 2026:false]
+--- PASS: TestG6Input (0.86s)
+    --- PASS: TestG6Input/false (0.49s)
+    --- PASS: TestG6Input/true (0.11s)
+=== RUN   TestRestoreRoutes
+=== RUN   TestRestoreRoutes/normal
+    g6_test.go:382: owned child pid=46332 /var/folders/84/5njq4pvs747b3zzntvtgtpl80000gn/T/TestRestoreRoutes2446949088/001/g6 --scenario g6 support=true
+    g6_test.go:385: restore termios exact, final cursor=(0,2) mode map=map[25:true 2004:false 2026:false]
+=== RUN   TestRestoreRoutes/context
+    g6_test.go:382: owned child pid=46333 /var/folders/84/5njq4pvs747b3zzntvtgtpl80000gn/T/TestRestoreRoutes2446949088/001/g6 --scenario g6 support=true
+    g6_test.go:385: restore termios exact, final cursor=(0,2) mode map=map[25:true 2004:false]
+    terminal_test.go:380: separate child stderr: program was killed: context canceled
+=== RUN   TestRestoreRoutes/output-error
+    g6_test.go:382: owned child pid=46334 /var/folders/84/5njq4pvs747b3zzntvtgtpl80000gn/T/TestRestoreRoutes2446949088/001/g6 --scenario g6 support=true
+    g6_test.go:385: restore termios exact, final cursor=(0,2) mode map=map[25:true 2004:false 2026:false]
+    terminal_test.go:380: separate child stderr: fixture partial output write failure after 8 bytes
+=== RUN   TestRestoreRoutes/output-permanent
+    g6_test.go:382: owned child pid=46335 /var/folders/84/5njq4pvs747b3zzntvtgtpl80000gn/T/TestRestoreRoutes2446949088/001/g6 --scenario g6 support=true
+    g6_test.go:385: terminal byte restoration unavailable; termios restored
+    terminal_test.go:380: separate child stderr: terminal byte restoration unavailable: fixture permanent output failure
+        fixture partial output write failure after 8 bytes
+=== RUN   TestRestoreRoutes/SIGINT
+    g6_test.go:382: owned child pid=46336 /var/folders/84/5njq4pvs747b3zzntvtgtpl80000gn/T/TestRestoreRoutes2446949088/001/g6 --scenario g6 support=true
+    g6_test.go:385: restore termios exact, final cursor=(0,2) mode map=map[25:true 2004:false]
+    terminal_test.go:380: separate child stderr: program was killed: context canceled
+=== RUN   TestRestoreRoutes/SIGTERM
+    g6_test.go:382: owned child pid=46337 /var/folders/84/5njq4pvs747b3zzntvtgtpl80000gn/T/TestRestoreRoutes2446949088/001/g6 --scenario g6 support=true
+    g6_test.go:385: restore termios exact, final cursor=(0,2) mode map=map[25:true 2004:false]
+    terminal_test.go:380: separate child stderr: program was killed: context canceled
+=== RUN   TestRestoreRoutes/SIGHUP
+    g6_test.go:382: owned child pid=46338 /var/folders/84/5njq4pvs747b3zzntvtgtpl80000gn/T/TestRestoreRoutes2446949088/001/g6 --scenario g6 support=true
+    g6_test.go:385: restore termios exact, final cursor=(0,2) mode map=map[25:true 2004:false]
+    terminal_test.go:380: separate child stderr: program was killed: context canceled
+=== RUN   TestRestoreRoutes/model-panic
+    g6_test.go:382: owned child pid=46339 /var/folders/84/5njq4pvs747b3zzntvtgtpl80000gn/T/TestRestoreRoutes2446949088/001/g6 --scenario g6 support=true
+    g6_test.go:385: restore termios exact, final cursor=(0,2) mode map=map[25:true 2004:false]
+    terminal_test.go:380: separate child stderr: Caught panic:
+        
+        fixture model panic
+        
+        Restoring terminal...
+        
+        goroutine 1 [running]:
+        runtime/debug.Stack()
+        	/opt/homebrew/Cellar/go/1.26.0/libexec/src/runtime/debug/stack.go:26 +0x64
+        charm.land/bubbletea/v2.(*Program).recoverFromPanic(0x282a934ce780, {0x1009d6720, 0x100a187e8})
+        	/private/tmp/askcore-t0-mod-cache/charm.land/bubbletea/v2@v2.0.10/tea.go:1304 +0xec
+        charm.land/bubbletea/v2.(*Program).Run.func2()
+        	/private/tmp/askcore-t0-mod-cache/charm.land/bubbletea/v2@v2.0.10/tea.go:1038 +0xec
+        panic({0x1009d6720?, 0x100a187e8?})
+        	/opt/homebrew/Cellar/go/1.26.0/libexec/src/runtime/panic.go:860 +0x12c
+        main.model.Update({0x282a9334e0b0, 0x28, 0xc, {0x0, 0x0}, 0x0, 0x0, 0x0, 0x1, 0x0, ...}, ...)
+        	/private/tmp/askcore-t0-09kf6w9r/model.go:54 +0x80c
+        charm.land/bubbletea/v2.(*Program).eventLoop(0x282a934ce780, {0x100a1a440?, 0x282a934aa0f0?}, 0x282a9337a5b0)
+        	/private/tmp/askcore-t0-mod-cache/charm.land/bubbletea/v2@v2.0.10/tea.go:880 +0xb78
+        charm.land/bubbletea/v2.(*Program).Run(0x282a934ce780)
+        	/private/tmp/askcore-t0-mod-cache/charm.land/bubbletea/v2@v2.0.10/tea.go:1153 +0x7a8
+        main.run()
+        	/private/tmp/askcore-t0-09kf6w9r/main.go:83 +0x624
+        main.main()
+        	/private/tmp/askcore-t0-09kf6w9r/main.go:16 +0x1c
+        
+        program was killed: program experienced a panic
+=== RUN   TestRestoreRoutes/command-panic
+    g6_test.go:382: owned child pid=46340 /var/folders/84/5njq4pvs747b3zzntvtgtpl80000gn/T/TestRestoreRoutes2446949088/001/g6 --scenario g6 support=true
+    g6_test.go:385: restore termios exact, final cursor=(0,2) mode map=map[25:true 2004:false]
+    terminal_test.go:380: separate child stderr: Caught panic:
+        
+        fixture command panic
+        
+        Restoring terminal...
+        
+        program was killed: program experienced a panic
+        goroutine 50 [running]:
+        runtime/debug.Stack()
+        	/opt/homebrew/Cellar/go/1.26.0/libexec/src/runtime/debug/stack.go:26 +0x64
+        charm.land/bubbletea/v2.(*Program).recoverFromPanic(0x40605e6054a0, {0x10320a720, 0x10324c7f8})
+        	/private/tmp/askcore-t0-mod-cache/charm.land/bubbletea/v2@v2.0.10/tea.go:1304 +0xec
+        charm.land/bubbletea/v2.(*Program).handleCommands.func1.1.1()
+        	/private/tmp/askcore-t0-mod-cache/charm.land/bubbletea/v2@v2.0.10/tea.go:734 +0x38
+        panic({0x10320a720?, 0x10324c7f8?})
+        	/opt/homebrew/Cellar/go/1.26.0/libexec/src/runtime/panic.go:860 +0x12c
+        main.model.Update.func1()
+        	/private/tmp/askcore-t0-09kf6w9r/model.go:56 +0x2c
+        charm.land/bubbletea/v2.(*Program).handleCommands.func1.1()
+        	/private/tmp/askcore-t0-mod-cache/charm.land/bubbletea/v2@v2.0.10/tea.go:739 +0x5c
+        created by charm.land/bubbletea/v2.(*Program).handleCommands.func1 in goroutine 31
+        	/private/tmp/askcore-t0-mod-cache/charm.land/bubbletea/v2@v2.0.10/tea.go:729 +0xf8
+        
+--- PASS: TestRestoreRoutes (1.10s)
+    --- PASS: TestRestoreRoutes/normal (0.70s)
+    --- PASS: TestRestoreRoutes/context (0.03s)
+    --- PASS: TestRestoreRoutes/output-error (0.04s)
+    --- PASS: TestRestoreRoutes/output-permanent (0.04s)
+    --- PASS: TestRestoreRoutes/SIGINT (0.02s)
+    --- PASS: TestRestoreRoutes/SIGTERM (0.02s)
+    --- PASS: TestRestoreRoutes/SIGHUP (0.02s)
+    --- PASS: TestRestoreRoutes/model-panic (0.02s)
+    --- PASS: TestRestoreRoutes/command-panic (0.02s)
+=== RUN   TestInputPaste
+--- PASS: TestInputPaste (0.00s)
+=== RUN   TestInputAltEnter
+--- PASS: TestInputAltEnter (0.00s)
+PASS
+ok  	askcore-t0-inline	2.450s

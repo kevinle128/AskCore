@@ -1,0 +1,21 @@
+{
+  "cli_version": "tui-test 0.1.0-beta.2",
+  "headless_only": true,
+  "d14_ready": false,
+  "cases": [
+    {
+      "backend": "alacritty",
+      "scenario": "g3",
+      "session": "askcore-e2e-8f7fee40e3-alacritty-g3",
+      "result": "pass",
+      "detail": null
+    },
+    {
+      "backend": "ghostty",
+      "scenario": "g3",
+      "session": "askcore-e2e-8f7fee40e3-ghostty-g3",
+      "result": "pass",
+      "detail": null
+    }
+  ]
+}

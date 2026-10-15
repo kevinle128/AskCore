@@ -1,40 +1,37 @@
 # `internal/bus`
 
-The event stream of the harness. The publisher sends each event to a bounded fan-out, so one slow watcher cannot block the agent. Watchers are the TUI inspector, the monitoring dashboard and the tracing export. The bus also carries inbound and outbound channel messages.
+This package owns bounded replay and followers for the harness event stream.
+The Agent owns publication and the consistent snapshot cut.
+This split lets slow remote observers resync without holding execution open.
 
-## What belongs here
+## Source owners
 
-- `MessageBus`, `InboundMessage`, `OutboundMessage`
-- The event publisher and the bounded fan-out to subscribers (`publisher.go`)
-- Dedup and debounce helpers
+[follow.go](follow.go) owns Ring, Follower, limits, cursor resume, epochs, and ErrResync.
+[follow_test.go](follow_test.go) owns size limits, gaps, and slow-follower checks.
+[Agent.Follow](../agent/follow.go) owns the snapshot and in-progress assistant baseline paired with the cursor.
+Event definitions and encoding belong in [protocol](../../pkg/protocol/README.md).
 
-## What does not belong here
+## Decisions and constraints
 
-| Code | Put it in |
-|---|---|
-| Event type definitions | `pkg/protocol` |
-| Synchronous dispatch to hooks | `internal/hooks` |
-| Durable jobs | `internal/messaging` |
-| Realtime push to clients | `internal/realtime` |
+Replay must not silently lose an event or provide a partial encoded event.
+An unavailable cursor or an oversized event requires an explicit resync.
+The caller then takes a new snapshot rather than resubmitting a command.
+Followers are bounded and must not block the publisher.
+This differs from synchronous local Agent listeners, which intentionally apply backpressure.
 
-## Main interfaces
+The current follow path is trusted in-process observation, not a dashboard redaction boundary.
+Dashboard previews, redaction policy, tracing, OTel export, and hang detection remain [observability work](../../plans/260930-2254-pi-feature-inventory-go-roadmap/roadmap.md#h12-observability-core-watch-it-think-part-1).
+Channel message routing and durable jobs are separate capabilities, not part of the ring.
 
-- `EventPublisher`, `MessageRouter` (dewee `internal/bus/types.go:203-231`)
+## Package boundaries
 
-## File names
+Event types belong in pkg/protocol; the consistent cut belongs in agent.
+The extension adapter belongs in hooks and durable jobs belong in messaging.
+Client transport belongs in gateway or realtime.
 
-`bus.go`, `types.go`, `publisher.go`, `dedupe.go`, `debounce.go`
+## File names and imports
 
-## Imports
-
-- Allowed: standard library, `pkg/protocol`
-- Denied: `internal/agent`; `internal/gateway`, `internal/http`, `internal/channels/<vendor>` (core packages do not import transport); `internal/acp`, `internal/leader` (adapters wrap the core, never the reverse)
-
-## Rules
-
-- One model is shared everywhere. Add a DTO or a separate type with a mapper only when the data is really different (design section 6).
-- Receive dependencies and typed config through constructors. `internal/app` wires them with fx.
-- Create an interface only when there is a second implementation or a test seam.
-- Event types live in `pkg/protocol`. The publisher and fan-out live here. Sync dispatch lives in `hooks`. Do not define an event type in two places.
-
-Design reference: [docs/ask-architecture-reference.md](../../docs/ask-architecture-reference.md)
+Use follow.go for the ring and a separate topic file only for a real routing boundary.
+Allowed imports are the standard library and pkg/protocol.
+Do not import agent, transport packages, acp, or leader.
+See [architecture](../../docs/ask-architecture-reference.md).

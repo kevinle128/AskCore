@@ -18,7 +18,8 @@ Note: the user CLAUDE.md asks for `tasks/todo.md`. The session hook allows markd
 
 ## Constraints
 
-- Source of truth: Pi at `/Users/dale/Desktop/workspace/opensources/pi`, commit `2bbfcca4`, version `0.99.1`. GitNexus repo name: `pi` (index is current).
+- Initial inventory reference: Pi at `/Users/dale/Desktop/workspace/opensources/pi`, commit `2bbfcca4`, version `0.99.1`.
+  Provider follow-up uses `4c6fb7cfe` (1.0.1), as recorded in roadmap revision 5 and the source audits.
 - Changelogs: `packages/coding-agent/CHANGELOG.md` (5979 lines, 281 releases, 0.10.0 on 2025-11-25 to 0.99.1), `packages/ai` (2203), `packages/tui` (1214), `packages/agent` (754), plus 8 small ones.
 - Prior research to reuse (verify, do not copy): `/Users/dale/Desktop/workspace/opensources/ask/plans/reports/researcher-260930-*.md` (12 reports, including Pi agent core, Pi extension system, Goose vs Pi).
 - Target stack: AskCore package map in `internal/README.md`; `go.mod` pins `bubbletea v1.3.10` + `lipgloss v1.1.0`, with `charm.land/lipgloss/v2` indirect (known conflict note in `go.mod`).
@@ -77,11 +78,20 @@ Each lane scans its area in rings. It goes to the next ring only after the curre
 | 2026-10-01 | Milestone M1 (must-have): Phase 0, H1-H13, H14 session tree, H15, W1 dashboard, X1 external Go extensions, T0, T1. M2 (nice-to-have): H16 MCP, X2 shell hooks, H17, T2, X3, Windows. The user picked W1 and H14 as must-have; MCP and shell hooks were not picked. |
 | 2026-10-01 | D3 changed again: no permission popups ("PI No permission popups, Chúng ta cũng sẽ chưa làm nhé") and no built-in policy handler in M1. To block a command, write an external extension. The policy handler moves to M2. |
 | 2026-10-01 | Codex review blocker B1: keep M1 small. `/login` (API key and OAuth) and extension UI dialogs are M2. In M1 the API key comes from an env var or `~/.ask/auth.json`; X1's M1 exit drops the `confirm` dialog. |
-| 2026-09-30 | The user's goal is to learn how to build a harness. The roadmap puts harness features first. Extension and TUI phases come after the harness core. Each harness phase must teach one harness concept and end with a working, testable result. |
+| 2026-10-01 | `transformMessages` = option C: the pure function, H-PROV-27 and the replay part of H-TOOL-21 move from H4 to H3, because the H3 Anthropic adapter is the first caller (`AI:api/anthropic-messages.ts:1057`). H4 keeps the per-vendor tool-call id rules and the cross-API replay tests. Source: `plans/261001-0836-h1-messages-events-faux/plan.md` section 6. |
+| 2026-10-05 | H4 port analysis (`plans/reports/xia-261005-1408-h4-more-wire-apis-pi-port-analysis.md`), one question per turn. Targets A: Token Plan `/compatible-mode/v1` for Completions (live probe run), OpenAI `gpt-5.5` for Responses. Patch fantasy ("sửa fantasy, chúng ta có source mà"); D22 stays; fork through a `go.mod` `replace` to `github.com/kevinle128/fantasy`. `OPENAI_API_KEY` only. Thinking level as Pi (clamped level only). Package shape: "fantasy là ở tầng infrastructure, các adapter sử dụng cái gì là việc của adapter": one adapter for each wire API, `fantasykit` for shared plumbing, vendors as data. No id-collision guard, as Pi. H4 renders mid-conversation system messages. Cost "làm giống PI" in H4. Switch shown by Go tests only. Pi reference moves to `4c6fb7cfe`. Roadmap revision 5, inventory section 19, providers README and architecture reference updated. |
+| 2026-10-06 | Distribute the provider interview across phases because H4 cannot deliver it all. H4 owns wire/replay; H5 Pi builtin contracts; H7 catalog/configuration and one-credential store; new H7a native Anthropic/ChatGPT/xAI auth, profiles and minimal headless login/logout after H7. H8/H9/H13 integrate persistence, retry and switching; H17/T2 retain breadth and full gateway/TUI auth. This supersedes Q1's H4 timing and the older API-key-only scope, not accepted behavior. |
+| 2026-09-30 | The user's goal is to learn how to build a harness. Each harness phase must teach one harness concept and end with a working, testable result. The original backend-first order is superseded by revision 16: test the completed harness through the local TUI now, then integrate each remaining feature at its runnable TUI exit. |
 
 ## Verified findings (lock)
 
 - The shipping session store is `SessionManager` JSONL v3. Verified by `pi/packages/coding-agent/src/core/session-manager.ts:41`. The v4 `AgentHarness` store is used only in `src/experimental`. That code is excluded from the build (`tsconfig.build.json:19`) and gated by `PI_EXPERIMENTAL=1` (`src/core/experimental.ts:1`).
+
+## Current provider planning
+
+[Roadmap revision 16](./roadmap.md#3-dependency-order) owns the current allocation: H7a subscription delivery is complete, and local Leader ACP plus TUI delivery comes next.
+[H7a execution detail](./phase-h7a-subscription-auth.md), its [deep TDD implementation plan](../261006-0157-h7a-subscription-auth/plan.md), and the [provider design](../261005-2139-provider-auth-design/plan.md) define subscription delivery.
+The H4 report is a cross-phase decision record, not an H4 implementation checklist.
 
 ## Acceptance criteria
 
@@ -108,3 +118,24 @@ Each lane scans its area in rings. It goes to the next ring only after the curre
 - A script checks the coverage: 110 of 110 P0 harness rows have an owner phase, and all 47 P1 rows are placed or deferred.
 - The user decides the next step, D1 to D15 in roadmap section 1, one per turn. A narrow re-check of revision 2 (review report, last section) found no blocker. Its consistency findings (decision order, "Waits on" lines, H14 to H17 content, forward uses) are fixed in revision 3. No code was written.
 - The acceptance criteria in this file are met. Exceptions: the "edge cases grouped by area" rows are keyword-based (lane C). The bubbletea inline behavior is not proven yet; the T0 gate proves it.
+
+## Next execution priority (2026-10-06)
+
+Use [roadmap revision 17](./roadmap.md#3-dependency-order): T0 → H13a → H13b → T1a.
+H13b is complete; its [repair and final gate record](../261008-1033-h13b-leader-unix-socket/plan.md#repair-checks-2026-10-09) links the passed checks and accepted evidence limits.
+The [T0 deep TDD plan](../261006-1649-t0-inline-prototype-gate/plan.md) defines the isolated gate and iTerm2 evidence; it does not mark T0 complete.
+The local acceptance path is TUI → Leader → ACP → agent.
+[H7a](../261006-0157-h7a-subscription-auth/plan.md#current-execution-record) and [lifecycle](../261006-0933-lifecycle-event-pipeline-redesign/plan.md) record completed implementation.
+H4 verification is recorded in `master-2/plans/261006-0130-h4-verification/plan.md` and its linked audit report in the sibling worktree.
+Use those completed implementations for T1a; do not infer missing implementation from the older master scaffold.
+Integrate the remaining harness phases through T1b at each phase exit.
+All M1 features and M2 boundaries stay in scope as recorded in the roadmap.
+
+## T0 and D14 decision checkpoint
+
+T0 is accepted and D14 is closed on 2026-10-07.
+The user reported Terminal.app/iTerm2 acceptance; exact terminal versions and independent physical captures were not supplied.
+The tested selection is Bubble Tea v2.0.10 with the minimal local renderer patch and exact unmodified upstream Ultraviolet, retaining Go 1.27.0.
+See the [D14 decision](../reports/pm-261007-1312-d14-tui-decision.md) for evidence and known limits.
+Root dependency migration and product patch packaging belong to T1.
+The earlier next-priority checkpoint is historical; H13a → H13b → T1a follows the accepted T0 gate.
