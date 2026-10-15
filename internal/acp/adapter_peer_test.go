@@ -53,6 +53,8 @@ type adapterPeer struct {
 	conn   *sdk.AgentSideConnection
 	in     *io.PipeWriter
 	nextID atomic.Int64
+	// outDone closes when the output of the adapter ended and every frame was read.
+	outDone chan struct{}
 
 	mu     sync.Mutex
 	lines  []string
@@ -119,6 +121,7 @@ func newAdapterPeer(t *testing.T, cfg Config, wrapOut func(io.Writer) io.Writer)
 	a.Bind(conn, cw, outW)
 	p := &adapterPeer{t: t, a: a, conn: conn, in: inW}
 	readerDone := make(chan struct{})
+	p.outDone = readerDone
 	go func() {
 		defer close(readerDone)
 		sc := bufio.NewScanner(outR)
