@@ -2,9 +2,11 @@
 
 All notable changes to this project are written in this file.
 
-The format follows [Keep a Changelog 1.1.0](https://keepachangelog.com/en/1.1.0/). This project aims to follow [Semantic Versioning](https://semver.org/spec/v2.0.0.html). No version is released yet.
+The format follows [Keep a Changelog 1.1.0](https://keepachangelog.com/en/1.1.0/). This project aims to follow [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
+
+## [0.1.0] - 2026-10-15
 
 ### Added
 
@@ -42,3 +44,6 @@ The format follows [Keep a Changelog 1.1.0](https://keepachangelog.com/en/1.1.0/
 - **Leader:** On Linux, a file that is not a socket at the leader socket path now stops the client with an unsafe-endpoint error. Before, the client tried to start a leader three times and then failed.
 - **Providers:** A model that the account cannot use is reported as its own error, not as a generic failure.
 - **TUI:** Rows use the full terminal width. A reconnect to a session no longer races on the session state.
+
+[Unreleased]: https://github.com/kevinle128/AskCore/compare/v0.1.0...HEAD
+[0.1.0]: https://github.com/kevinle128/AskCore/releases/tag/v0.1.0
