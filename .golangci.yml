@@ -101,6 +101,27 @@ linters:
               desc: core packages must not depend on terminal components or UI extension hosts
             - pkg: AskCore/internal/tuiclient
               desc: core packages must not depend on the terminal client of the agent
+        tasks-minimal-imports:
+          list-mode: strict
+          files:
+            - "**/internal/tasks/**"
+            - "!$test"
+          allow:
+            - $gostd
+            - AskCore/pkg/protocol
+            - AskCore/internal/tracing
+        tasks-test-imports:
+          list-mode: strict
+          files:
+            - "**/internal/tasks/**_test.go"
+          allow:
+            - $gostd
+            - AskCore/pkg/protocol
+            - AskCore/internal/tracing
+            # The external test package imports the package under test.
+            - AskCore/internal/tasks
+            - github.com/stretchr/testify
+            - go.uber.org/goleak
         settings-stdlib-only:
           list-mode: strict
           files:
