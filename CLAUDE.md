@@ -27,6 +27,7 @@ This file provides context about the project for AI assistants.
 Ask (this repository) is an agent harness that runs as a local daemon or as a remote agent in the cloud. It follows the dewee package model (one package for each capability) plus the Ask import rules. Read these before you add code:
 
 - `docs/ask-architecture-reference.md`: design, import rules, "where to put new code"
+- `docs/async-task-runtime.md`: background work and its notices (task registry, `Agent.Notify`, no sleep or polling)
 - `internal/README.md`: package map
 - `README.md` in each package: what belongs there, file names, allowed imports
 
@@ -45,6 +46,7 @@ AskCore/
 │   ├── gateway/           # HTTP (echo) and gRPC servers, gRPC services; methods/ for WS RPC
 │   ├── http/              # REST handlers (import alias httpapi)
 │   ├── agent/ pipeline/ scheduler/ bus/ sessions/ workspace/ cron/   # Runtime core (scaffold)
+│   ├── tasks/             # Per-Agent async task registry; completions wake the agent by push (docs/async-task-runtime.md)
 │   ├── providers/ tools/ mcp/ skills/ memory/ bootstrap/ hooks/      # Capabilities (scaffold)
 │   ├── permissions/ sandbox/ jobs/ crypto/ channels/ tracing/        # sandbox = process runner, jobs = per-session job table (implemented); the rest scaffold
 │   ├── store/             # Models + store interfaces; gormstore/ = GORM implementation
