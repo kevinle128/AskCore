@@ -16,6 +16,7 @@ const (
 	RoleUser       = "user"
 	RoleAssistant  = "assistant"
 	RoleToolResult = "toolResult"
+	RoleCustom     = "custom"
 )
 
 // StopReason tells why an assistant response ended.
@@ -56,8 +57,8 @@ const (
 )
 
 // Message is one entry of the message log. The built-in implementations are
-// SystemMessage, UserMessage, AssistantMessage, ToolResultMessage and
-// RawMessage (a role that has no registered decoder).
+// SystemMessage, UserMessage, AssistantMessage, ToolResultMessage,
+// CustomMessage and RawMessage (a role that has no registered decoder).
 type Message interface{ Role() string }
 
 // Section is one named part of a system prompt. A nil Value removes the
@@ -433,7 +434,7 @@ func (r *ToolExecutionResult) UnmarshalJSON(b []byte) error {
 	return nil
 }
 
-// --- JSON codec of the four built-in messages ---
+// --- JSON codec of the built-in messages ---
 
 // checkRole returns an error when the decoded role is not the wanted one.
 func checkRole(got, want string) error {
@@ -613,6 +614,76 @@ func (m *ToolResultMessage) UnmarshalJSON(b []byte) error {
 	return nil
 }
 
+// CustomMessage is an application message, such as a task notice. It is not
+// human input: the UI and hooks can tell it apart by CustomType, and the model
+// sees it as a user message with the same content.
+type CustomMessage struct {
+	// CustomType names the kind of message, for example "task-notification".
+	// It must not be empty.
+	CustomType string
+	Content    []UserBlock
+	// Display tells a UI whether to show the message.
+	Display bool
+	// Details is a JSON object or absent. It must not hold credentials.
+	Details   json.RawMessage
+	Timestamp int64
+}
+
+// Role returns "custom".
+func (CustomMessage) Role() string { return RoleCustom }
+
+type customWire struct {
+	Role       string          `json:"role"`
+	CustomType string          `json:"customType"`
+	Content    json.RawMessage `json:"content"`
+	Display    bool            `json:"display"`
+	Details    json.RawMessage `json:"details,omitempty"`
+	Timestamp  int64           `json:"timestamp"`
+}
+
+// MarshalJSON encodes the message with role "custom". The custom type must not
+// be empty and details must be a JSON object or absent.
+func (m CustomMessage) MarshalJSON() ([]byte, error) {
+	if m.CustomType == "" {
+		return nil, errors.New("protocol: custom message has no customType")
+	}
+	if len(m.Details) > 0 && !isJSONObject(m.Details) {
+		return nil, errors.New("protocol: custom message details are not a JSON object")
+	}
+	content, err := marshalBlocks(m.Content)
+	if err != nil {
+		return nil, err
+	}
+	return marshalJSON(customWire{RoleCustom, m.CustomType, content, m.Display, m.Details, m.Timestamp})
+}
+
+// UnmarshalJSON decodes a custom message. String content becomes one text
+// block. A missing custom type and details that are not a JSON object are
+// errors; null details are absent.
+func (m *CustomMessage) UnmarshalJSON(b []byte) error {
+	var w customWire
+	if err := json.Unmarshal(b, &w); err != nil {
+		return err
+	}
+	if err := checkRole(w.Role, RoleCustom); err != nil {
+		return err
+	}
+	if w.CustomType == "" {
+		return errors.New("protocol: custom message has no customType")
+	}
+	if isJSONNull(w.Details) {
+		w.Details = nil
+	} else if !isJSONObject(w.Details) {
+		return errors.New("protocol: custom message details are not a JSON object")
+	}
+	content, err := decodeUserBlocks(w.Content, true)
+	if err != nil {
+		return err
+	}
+	*m = CustomMessage{w.CustomType, content, w.Display, w.Details, w.Timestamp}
+	return nil
+}
+
 // --- role registry ---
 
 var roles = struct {
@@ -622,7 +693,7 @@ var roles = struct {
 
 func reservedRole(name string) bool {
 	switch name {
-	case RoleSystem, RoleUser, RoleAssistant, RoleToolResult:
+	case RoleSystem, RoleUser, RoleAssistant, RoleToolResult, RoleCustom:
 		return true
 	}
 	return false
@@ -674,6 +745,10 @@ func MarshalMessage(m Message) ([]byte, error) {
 		return v.MarshalJSON()
 	case *ToolResultMessage:
 		return v.MarshalJSON()
+	case CustomMessage:
+		return v.MarshalJSON()
+	case *CustomMessage:
+		return v.MarshalJSON()
 	case RawMessage:
 		return marshalRawMessage(v)
 	case *RawMessage:
@@ -724,6 +799,12 @@ func UnmarshalMessage(data []byte) (Message, error) {
 		return m, nil
 	case RoleToolResult:
 		var m ToolResultMessage
+		if err := m.UnmarshalJSON(data); err != nil {
+			return nil, err
+		}
+		return m, nil
+	case RoleCustom:
+		var m CustomMessage
 		if err := m.UnmarshalJSON(data); err != nil {
 			return nil, err
 		}
@@ -832,6 +913,14 @@ func CloneMessage(m Message) Message {
 		}
 		c := v.clone()
 		return &c
+	case CustomMessage:
+		return v.clone()
+	case *CustomMessage:
+		if v == nil {
+			return m
+		}
+		c := v.clone()
+		return &c
 	case RawMessage:
 		v.Data = cloneRaw(v.Data)
 		return v
@@ -878,5 +967,11 @@ func (m ToolResultMessage) clone() ToolResultMessage {
 		m.Usage = &u
 	}
 	m.NestedCalls = cloneNestedCalls(m.NestedCalls)
+	return m
+}
+
+func (m CustomMessage) clone() CustomMessage {
+	m.Content = cloneUserBlocks(m.Content)
+	m.Details = cloneRaw(m.Details)
 	return m
 }
