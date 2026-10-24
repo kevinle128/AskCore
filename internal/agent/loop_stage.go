@@ -279,8 +279,10 @@ func (decideStage) run(l *loop) (flow, error) {
 		return flowEndRun, nil
 	}
 	// The turn boundary takes all steering messages, after the whole tool
-	// batch. A cancelled run takes none.
-	l.pending = append(l.pending, l.takeSteering()...)
+	// batch. Context items ride with it only after tool work: a context item
+	// alone, such as the notice of a quiet task, must not start a request that
+	// nothing else asks for. A cancelled run takes none.
+	l.pending = append(l.pending, l.takeSteering(ts.ranTool)...)
 	if ts.moreTools || len(l.pending) > 0 {
 		return flowNextTurn, nil
 	}
@@ -299,7 +301,7 @@ func (decideStage) run(l *loop) (flow, error) {
 	if stop == pipeline.End {
 		return flowEndRun, nil
 	}
-	l.pending = append(l.pending, l.takeSteering()...)
+	l.pending = append(l.pending, l.takeSteering(ts.ranTool)...)
 	if len(l.pending) > 0 {
 		return flowNextTurn, nil
 	}

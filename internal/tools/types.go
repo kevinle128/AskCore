@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 
+	"AskCore/internal/tasks"
 	"AskCore/pkg/protocol"
 )
 
@@ -35,4 +36,7 @@ type Context struct {
 	CallID string
 	Cwd    string
 	Update func(partial protocol.ToolExecutionResult)
+	// Tasks starts and stops background work of the Agent. It is nil when the
+	// caller of the tool has no task registry.
+	Tasks tasks.Control
 }

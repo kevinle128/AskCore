@@ -10,6 +10,7 @@ import (
 	"AskCore/internal/pipeline"
 	"AskCore/internal/providers"
 	"AskCore/internal/sessions"
+	"AskCore/internal/tasks"
 	"AskCore/pkg/protocol"
 )
 
@@ -57,6 +58,8 @@ type LoopConfig struct {
 	// ConvertToLLM maps the log to model messages. Nil means
 	// providers.ConvertToLLM.
 	ConvertToLLM func(msgs []protocol.Message) ([]protocol.Message, error)
+	// Tasks is given to every tool call. The Agent sets it for each run.
+	Tasks tasks.Control
 }
 
 // Emit receives every event of a run, in order, on the goroutine that called
@@ -81,8 +84,9 @@ type driver struct {
 // messages from the queue and gives them to the loop. Both claims return
 // nothing once the run is cancelled.
 type inputSource interface {
-	// claimSteering takes all steering messages.
-	claimSteering() []input
+	// claimSteering takes all steering messages. With withContext it takes the
+	// queued context items too.
+	claimSteering(withContext bool) []input
 	// claimCycle takes all steering messages and one follow-up message. When
 	// it finds nothing and ending is set, the run is closing: input that
 	// arrives later waits for the next run.
@@ -259,7 +263,7 @@ func (l *loop) start(first []input, kind claimKind) error {
 	if kind == claimCycle {
 		l.pending = append(l.pending, l.takeCycle(false)...)
 	} else {
-		l.pending = append(l.pending, l.takeSteering()...)
+		l.pending = append(l.pending, l.takeSteering(true)...)
 	}
 	return nil
 }
@@ -279,14 +283,14 @@ func (l *loop) promptInputs(msgs []protocol.Message) []input {
 
 // takeSteering and takeCycle are the only callers of the queue claims. A loop
 // without queues, and a run that was cancelled, claim nothing.
-func (l *loop) takeSteering() []input {
+func (l *loop) takeSteering(withContext bool) []input {
 	if l.ctx.Err() != nil {
 		return nil
 	}
 	got := l.toolContext
 	l.toolContext = nil
 	if l.in != nil {
-		got = append(got, l.in.claimSteering()...)
+		got = append(got, l.in.claimSteering(withContext)...)
 	}
 	return got
 }

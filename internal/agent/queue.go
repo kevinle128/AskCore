@@ -2,9 +2,11 @@ package agent
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"strconv"
 	"strings"
+	"unicode/utf8"
 
 	"AskCore/pkg/protocol"
 )
@@ -24,11 +26,21 @@ var (
 	ErrNoInput = errors.New("agent: no message to queue")
 )
 
+// origin tells where an input came from. Abort drops human input and keeps
+// the notices of background tasks.
+type origin uint8
+
+const (
+	originHuman origin = iota
+	originTask
+)
+
 // input is one message with the ID that the Agent gave it. The ID names the
 // message in queue_update removal and in the acknowledgment of a rejection.
 type input struct {
-	id  string
-	msg protocol.Message
+	id     string
+	msg    protocol.Message
+	origin origin
 }
 
 // inbox holds the two queues of an Agent: steering, which a turn boundary
@@ -45,6 +57,21 @@ type inbox struct {
 
 func (q *inbox) len() int { return len(q.steering) + len(q.followUp) }
 
+// humanLen counts the queued inputs that count toward the queue bound. Notices
+// of tasks do not count: a full queue must never drop a notice, and notices
+// must not take the slots of the human.
+func (q *inbox) humanLen() int {
+	n := 0
+	for _, list := range [][]input{q.steering, q.followUp} {
+		for _, in := range list {
+			if in.origin == originHuman {
+				n++
+			}
+		}
+	}
+	return n
+}
+
 // nextID returns an ID that no earlier input of the Agent has.
 func (q *inbox) nextID() string {
 	q.seq++
@@ -53,7 +80,12 @@ func (q *inbox) nextID() string {
 
 // add appends msg to a queue and returns its ID.
 func (q *inbox) add(followUp bool, msg protocol.Message) string {
-	in := input{id: q.nextID(), msg: msg}
+	return q.addFrom(originHuman, followUp, msg)
+}
+
+// addFrom is add with the origin of the input.
+func (q *inbox) addFrom(o origin, followUp bool, msg protocol.Message) string {
+	in := input{id: q.nextID(), msg: msg, origin: o}
 	if followUp {
 		q.followUp = append(q.followUp, in)
 	} else {
@@ -76,10 +108,17 @@ func (q *inbox) remove(id string) bool {
 	return false
 }
 
-// claimSteering takes all steering messages.
-func (q *inbox) claimSteering() []input {
-	got := append(q.context, q.steering...)
-	q.context = nil
+// claimSteering takes all steering messages. With withContext it takes the
+// context items first, which ride with the messages. Without it the context
+// items stay: they ask for no model request, so they must not be the only
+// reason for one.
+func (q *inbox) claimSteering(withContext bool) []input {
+	var got []input
+	if withContext {
+		got = q.context
+		q.context = nil
+	}
+	got = append(got, q.steering...)
 	q.steering = nil
 	return got
 }
@@ -87,7 +126,7 @@ func (q *inbox) claimSteering() []input {
 // claimCycle takes all steering messages and one follow-up message, in that
 // order.
 func (q *inbox) claimCycle() []input {
-	got := q.claimSteering()
+	got := q.claimSteering(true)
 	if len(q.followUp) > 0 {
 		got = append(got, q.followUp[0])
 		q.followUp = q.followUp[1:]
@@ -99,6 +138,23 @@ func (q *inbox) claimCycle() []input {
 func (q *inbox) clear() bool {
 	had := q.len() > 0 || len(q.context) > 0
 	q.context, q.steering, q.followUp = nil, nil, nil
+	return had
+}
+
+// abort drops the human input and the tool context. It moves the notices of
+// tasks to the context queue, which rides with the next input and wakes
+// nothing. It reports whether anything was queued.
+func (q *inbox) abort() bool {
+	had := q.len() > 0 || len(q.context) > 0
+	var keep []input
+	for _, list := range [][]input{q.context, q.steering, q.followUp} {
+		for _, in := range list {
+			if in.origin == originTask {
+				keep = append(keep, in)
+			}
+		}
+	}
+	q.context, q.steering, q.followUp = keep, nil, nil
 	return had
 }
 
@@ -115,13 +171,34 @@ func textsOf(list []input) []string {
 	return out
 }
 
-// messageText is the text of the text blocks of a user message. Other
-// messages and blocks give no text.
+// maxPreviewBytes bounds the text that queue_update shows for a custom
+// message. A notice can hold a long output tail, and the event must stay far
+// below the size limit of the event bus.
+const maxPreviewBytes = 200
+
+// messageText is the text of the text blocks of a user message, and a short
+// preview of a custom message. Other messages and blocks give no text.
 func messageText(m protocol.Message) string {
-	u, ok := m.(protocol.UserMessage)
-	if !ok {
-		return ""
+	switch v := m.(type) {
+	case protocol.UserMessage:
+		return userText(v)
+	case *protocol.UserMessage:
+		if v == nil {
+			return ""
+		}
+		return userText(*v)
+	case protocol.CustomMessage:
+		return customPreview(v)
+	case *protocol.CustomMessage:
+		if v == nil {
+			return ""
+		}
+		return customPreview(*v)
 	}
+	return ""
+}
+
+func userText(u protocol.UserMessage) string {
 	var b strings.Builder
 	for _, blk := range u.Content {
 		if t, ok := blk.(protocol.Text); ok {
@@ -129,6 +206,68 @@ func messageText(m protocol.Message) string {
 		}
 	}
 	return b.String()
+}
+
+// customPreview is the queue_update text of a custom message, cut to
+// maxPreviewBytes on a rune boundary. A task notice reads as
+// "task <id> <status>: <title>" from its details, so the UI shows what ended
+// and not the full output. Other messages, and notices whose details hold none
+// of the three fields, show the start of their text blocks.
+func customPreview(c protocol.CustomMessage) string {
+	if c.CustomType == "task-notification" {
+		if s := taskNoticeLine(c.Details); s != "" {
+			return cutOnRune(s, maxPreviewBytes)
+		}
+	}
+	var b strings.Builder
+	for _, blk := range c.Content {
+		if b.Len() >= maxPreviewBytes {
+			break
+		}
+		if t, ok := blk.(protocol.Text); ok {
+			b.WriteString(t.Text)
+		}
+	}
+	return cutOnRune(b.String(), maxPreviewBytes)
+}
+
+// taskNoticeLine builds "task <id> <status>: <title>" from the details of a
+// task notice. A missing field is skipped. It returns "" when details cannot be
+// read or hold none of the fields.
+func taskNoticeLine(details json.RawMessage) string {
+	var d struct {
+		TaskID string `json:"taskId"`
+		Status string `json:"status"`
+		Title  string `json:"title"`
+	}
+	if len(details) == 0 || json.Unmarshal(details, &d) != nil {
+		return ""
+	}
+	if d.TaskID == "" && d.Status == "" && d.Title == "" {
+		return ""
+	}
+	line := "task"
+	if d.TaskID != "" {
+		line += " " + d.TaskID
+	}
+	if d.Status != "" {
+		line += " " + d.Status
+	}
+	if d.Title != "" {
+		line += ": " + d.Title
+	}
+	return line
+}
+
+// cutOnRune returns s cut to at most n bytes without splitting a rune.
+func cutOnRune(s string, n int) string {
+	if len(s) <= n {
+		return s
+	}
+	for n > 0 && !utf8.RuneStart(s[n]) {
+		n--
+	}
+	return s[:n]
 }
 
 // messagesOf returns the messages of list.
@@ -173,7 +312,7 @@ func (a *Agent) enqueue(msg protocol.Message, followUp bool) (string, error) {
 		a.mu.Unlock()
 		return "", ErrDisposed
 	}
-	if a.in.len() >= a.maxQueued() {
+	if a.in.humanLen() >= a.maxQueued() {
 		a.mu.Unlock()
 		return "", ErrQueueFull
 	}
@@ -191,6 +330,7 @@ func (a *Agent) enqueue(msg protocol.Message, followUp bool) (string, error) {
 		a.wake = true
 	}
 	id := a.in.add(followUp, msg)
+	a.work++
 	a.postLocked(a.in.update())
 	a.mu.Unlock()
 	if started != nil {
@@ -230,15 +370,16 @@ type runInputs struct {
 	r *run
 }
 
-// claimSteering takes all steering messages. A cancelled run claims nothing.
-func (s runInputs) claimSteering() []input {
+// claimSteering takes all steering messages and, with withContext, the context
+// items. A cancelled run claims nothing.
+func (s runInputs) claimSteering(withContext bool) []input {
 	a := s.a
 	a.mu.Lock()
 	if s.r.ctx.Err() != nil {
 		a.mu.Unlock()
 		return nil
 	}
-	got := a.in.claimSteering()
+	got := a.in.claimSteering(withContext)
 	if len(got) > 0 {
 		a.postLocked(a.in.update())
 	}
@@ -249,13 +390,21 @@ func (s runInputs) claimSteering() []input {
 // claimCycle takes the input of the next cycle: all steering messages and one
 // follow-up message. When nothing is queued and the run ends, the same critical
 // section marks the run as closing, so a message that arrives after this point
-// goes to the run after it. A run that goes on is not closing. A cancelled run
-// claims nothing and needs no mark: its context already routes new messages to
-// the next run.
+// goes to the run after it. When the run ends and only context items are
+// queued, it claims nothing: they stay for the next admission. A run that goes
+// on is not closing. A cancelled run claims nothing and needs no mark: its
+// context already routes new messages to the next run.
 func (s runInputs) claimCycle(ending bool) []input {
 	a := s.a
 	a.mu.Lock()
 	if s.r.ctx.Err() != nil {
+		a.mu.Unlock()
+		return nil
+	}
+	if ending && len(a.in.steering) == 0 && len(a.in.followUp) == 0 {
+		// Only context items are queued, and they ask for no request. They stay
+		// for the next admission, and the run closes.
+		s.r.closing = true
 		a.mu.Unlock()
 		return nil
 	}

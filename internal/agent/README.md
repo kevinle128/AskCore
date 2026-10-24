@@ -39,6 +39,7 @@ Input uses claims rather than delivery modes.
 Steering is claimed at a turn boundary; a cycle claim also takes one follow-up.
 AfterTool context uses the same staged admission path without waking an idle Agent.
 Abort and disposal are separate operations because stopping current work must not always end the session.
+The Agent owns one task registry ([tasks.go](tasks.go)) on a lifetime context that only disposal cancels. `Notify` is the only entry for task notices. Abort keeps tasks running and moves queued notices to the context queue. Reset stops the old tasks and refuses their late notices and events. Disposal stops and waits for every task, including the old tasks that a concurrent Reset is still closing. A wake notice sets the wake latch, so a run that ends without claiming it (failed turn, End decision, rejected admission) is followed by exactly one run; a run that claims it starts no extra run. A context notice never starts a request on its own. `Idle` and `WaitForQuiescence` ([idle.go](idle.go)) wait by signal and never poll. See [async task runtime](../../docs/async-task-runtime.md).
 
 A tool body that started must finish before the run settles or disposal completes.
 Drain has no time bound; a tool must cooperate with cancellation.

@@ -36,6 +36,10 @@ Tool bodies must return promptly when their context is cancelled; process tools 
 The Agent waits without a time bound and stays busy until bodies return.
 The interface godoc in types.go owns this tool author contract.
 
+Work that must outlive the tool call starts as a task through the call context (field `Tasks` of `tools.Context`, nil when the caller has no registry), not as a goroutine of the tool.
+The tool returns the task ID at once; the Agent gets the result as a notice, and no tool waits or polls for it.
+See the [async task runtime](../../docs/async-task-runtime.md) sections 8.7 and 11.
+
 Tools are taken from one immutable snapshot for each turn.
 A registry change can affect a later request only after the model is told about the changed declarations.
 Input schemas compile at registration so an invalid schema cannot enter a request.
@@ -80,6 +84,6 @@ A blocking rule for commands belongs in a pipeline handler (`command-guard` in `
 
 Use `<family>_<topic>.go` and `<tool>_<vendor>.go` when a real tool or backend needs that boundary.
 Pass dependencies through constructors.
-Allowed imports include providers, store, sandbox, jobs, bus, skills, workspace, and tracing.
+Allowed imports include providers, store, sandbox, jobs, bus, skills, workspace, tracing, and tasks.
 Do not import agent, transport packages, acp, leader, or config.
 See [architecture](../../docs/ask-architecture-reference.md).

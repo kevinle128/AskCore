@@ -35,3 +35,8 @@ func Continue(ctx context.Context, ac pipeline.AgentContext, cfg LoopConfig, emi
 	}
 	return continueLoop(ctx, ac, cfg, d, emit)
 }
+
+// SetQuiescenceProbe sets the function that WaitForQuiescence calls between
+// its checks and its second read of the work counter. A test uses it to force
+// work into that window.
+func (a *Agent) SetQuiescenceProbe(f func()) { a.quiescenceProbe = f }

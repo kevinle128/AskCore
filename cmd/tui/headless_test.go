@@ -28,8 +28,17 @@ import (
 
 // os/signal.loop starts at the first signal.Notify and lives for the rest
 // of the process.
+//
+// ASK_HOME points to a fresh private directory while the tests run (see
+// isolateHome).
 func TestMain(m *testing.M) {
+	restore, err := isolateHome()
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "tui tests: %v\n", err)
+		os.Exit(1)
+	}
 	code := m.Run()
+	restore()
 	removeACPBinary()
 	removeDevBinaries()
 	if code == 0 {
@@ -39,6 +48,46 @@ func TestMain(m *testing.M) {
 		}
 	}
 	os.Exit(code)
+}
+
+// isolatedHomeMarker is set by the process that isolated ASK_HOME.
+const isolatedHomeMarker = "ASK_TUI_TEST_HOME_ISOLATED"
+
+// isolateHome sets ASK_HOME to a fresh private directory. An Agent without an
+// explicit home reads ASK_HOME and then ~/.ask, so without it the tests would
+// sweep and write the task output of the developer. Some tests start this test
+// binary again as a helper process and pass it an ASK_HOME of their own. That
+// helper sees isolatedHomeMarker, which the first process set, and leaves the
+// value alone. The returned function restores the environment and removes the
+// directory.
+func isolateHome() (restore func(), err error) {
+	if os.Getenv(isolatedHomeMarker) != "" {
+		return func() {}, nil
+	}
+	home, err := os.MkdirTemp("", "ask-tui-test-home-")
+	if err != nil {
+		return nil, fmt.Errorf("make home: %w", err)
+	}
+	// MkdirTemp gives 0700 already; the call makes the mode independent of it.
+	if err := os.Chmod(home, 0o700); err != nil {
+		_ = os.RemoveAll(home)
+		return nil, fmt.Errorf("private home: %w", err)
+	}
+	prev, had := os.LookupEnv("ASK_HOME")
+	if err := os.Setenv("ASK_HOME", home); err != nil {
+		_ = os.RemoveAll(home)
+		return nil, fmt.Errorf("set ASK_HOME: %w", err)
+	}
+	_ = os.Setenv(isolatedHomeMarker, "1")
+	return func() {
+		_ = os.Unsetenv(isolatedHomeMarker)
+		if had {
+			_ = os.Setenv("ASK_HOME", prev)
+		} else {
+			_ = os.Unsetenv("ASK_HOME")
+		}
+		_ = os.RemoveAll(home)
+	}, nil
 }
 
 var (
