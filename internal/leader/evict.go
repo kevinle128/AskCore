@@ -50,7 +50,9 @@ func (c *connector) evictZombie(ctx context.Context) {
 		c.handled = map[Owner]bool{}
 	}
 	c.handled[owner] = true
+	//nolint:staticcheck // The stub of a platform without process handles always fails; Linux does not.
 	res, err := evictLeaderProcess(ctx, c.cfg.Paths, owner, c.cfg.EvictWait)
+	//nolint:staticcheck // The stub of a platform without process handles always fails; Linux does not.
 	switch {
 	case errors.Is(err, ErrNotLeaderProcess) && !res.term:
 		// The process cannot be signalled safely here: wait, as for any lock holder.

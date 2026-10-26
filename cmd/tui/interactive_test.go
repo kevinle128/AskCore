@@ -497,4 +497,9 @@ func TestInteractiveErrorExitRestoresAfterPanic(t *testing.T) {
 	require.NoError(t, err)
 	require.Equal(t, before, after, "the terminal is restored after a panic")
 	require.Contains(t, stderr.String(), "Error:")
+	// After the recovered panic the input reader waits for one more read before it
+	// sees that the program ended. On Linux closing the pseudo terminal does not
+	// wake it, so one line of input lets the reader goroutine end.
+	_, err = master.Write([]byte("\n"))
+	require.NoError(t, err)
 }

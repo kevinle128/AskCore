@@ -321,6 +321,13 @@ func (c *connector) keep(msg string) {
 
 // attempt tries one connection and one handshake.
 func (c *connector) attempt(ctx context.Context) (*Client, outcome, error) {
+	// Linux answers ECONNREFUSED for a dial to a regular file, as it does for a
+	// stale socket, so the dial cannot tell them apart. The lock holder refuses
+	// such a path too, so refuse it here instead of starting leaders that fail.
+	if info, lerr := os.Lstat(c.cfg.Paths.Socket); lerr == nil &&
+		(info.Mode()&os.ModeSocket == 0 || info.Mode()&os.ModeSymlink != 0 || !ownedByCurrentUser(info)) {
+		return nil, outFatal, fmt.Errorf("%w: %s is not a socket of this user", ErrUnsafeEndpoint, c.cfg.Paths.Socket)
+	}
 	d := net.Dialer{Timeout: dialTimeout}
 	conn, err := d.DialContext(ctx, "unix", c.cfg.Paths.Socket)
 	if err != nil {
@@ -608,6 +615,7 @@ func Stop(ctx context.Context, cfg ConnectConfig, wait time.Duration) (StopResul
 	if oerr != nil {
 		return res, oerr
 	}
+	//nolint:staticcheck // The stub of a platform without process handles always fails; Linux does not.
 	if err := signalLeaderProcess(p, owner); err != nil {
 		return res, fmt.Errorf("leader: signal: %w", err)
 	}

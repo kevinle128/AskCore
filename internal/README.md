@@ -12,14 +12,14 @@ Full design: [docs/ask-architecture-reference.md](../docs/ask-architecture-refer
 | Files under `~/.ask` | `settings` (`auth.json`, `settings.json`) |
 | Transport | `gateway` (+ `methods`), `http`, `channels` |
 | Runtime core | `agent` (two-level loop, queues), `pipeline` (typed control points), `sessions` (typed in-memory log; persistent tree planned), `scheduler` (planned lanes), [tasks](tasks/README.md) (per-Agent async task registry; notices reach the Agent through `Agent.Notify`), `bus` (replay ring and followers), `workspace` (path resolution today; cwd, project root, trust planned), `cron` |
-| Terminal UI | [tui](tui/README.md) (implemented state and components), [tuiext](tuiext/README.md) (planned client-local UI extension host); see [TUI architecture](../docs/tui-architecture.md) |
+| Terminal UI | [tui](tui/README.md) (implemented state and components), `tuiclient` (the `tui.Client` implementation), [tuiext](tuiext/README.md) (planned client-local UI extension host); see [TUI architecture](../docs/tui-architecture.md) |
 | Process model | `leader` (local router and client), `acp` (ACP adapter over the agent) |
 | Capabilities | [auth](auth/README.md) (native credentials), `providers` (+ `acp`: subprocess agents), `tools`, `mcp`, `skills`, `bootstrap`, `hooks` (+ `handlers`), `permissions` (gateway RBAC), `sandbox` (process runner), `jobs` (per-session job table), `tracing` (+ `otelexport`). Parked: `memory`, `crypto` |
 | Storage | `store` (models + interfaces), `store/gormstore` (GORM implementation), `migrations` (runner) |
 | Infrastructure clients | `cache` (Redis), `messaging` (asynq), `realtime` (centrifuge), `validation` |
 | Tests | `testsupport` |
 
-Wire contract: `pkg/protocol` (WS) and `proto/` (gRPC, generated code only).
+Wire contract: `pkg/protocol` (the WS endpoint is planned, not built) and `proto/` (gRPC, generated code only).
 
 ## Import rules
 

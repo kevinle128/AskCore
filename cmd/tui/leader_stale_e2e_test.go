@@ -4,6 +4,7 @@ import (
 	"context"
 	"net"
 	"os"
+	"syscall"
 	"testing"
 
 	"AskCore/internal/leader"
@@ -29,13 +30,22 @@ func TestLeaderE2EStaleSocketReplacedByTheLockWinner(t *testing.T) {
 	stale, err := os.Lstat(paths.Socket)
 	require.NoError(t, err)
 	require.NotZero(t, stale.Mode()&os.ModeSocket)
+	// Nobody serves the stale socket. A freed inode number can be reused for the
+	// new socket, so the file identity cannot show the replacement. The refused
+	// dial before and the answered handshake after show it.
+	dead, derr := net.Dial("unix", paths.Socket)
+	if derr == nil {
+		_ = dead.Close()
+	}
+	require.ErrorIs(t, derr, syscall.ECONNREFUSED)
 
 	c, err := leader.ConnectOrSpawn(context.Background(), e2eConnect(home, bin))
 	require.NoError(t, err)
 	defer func() { _ = c.Close() }()
 	live, err := os.Lstat(paths.Socket)
 	require.NoError(t, err)
-	require.False(t, os.SameFile(stale, live), "the winner replaced the stale socket with its own")
+	require.NotZero(t, live.Mode()&os.ModeSocket)
+	require.NotEmpty(t, c.Info.InstanceID, "a live leader answers on the replaced socket")
 	require.Equal(t, os.FileMode(0o600), live.Mode().Perm())
 }
 

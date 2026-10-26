@@ -20,7 +20,9 @@ func ensureHome(home string) error {
 	}
 	info, err := os.Lstat(home)
 	if errors.Is(err, os.ErrNotExist) {
-		if err = os.Mkdir(home, 0700); err != nil {
+		// Another process can create the directory between Lstat and Mkdir.
+		// Check the same type, owner and mode rules for the winner's directory.
+		if err = os.Mkdir(home, 0700); err != nil && !errors.Is(err, os.ErrExist) {
 			return err
 		}
 		info, err = os.Lstat(home)

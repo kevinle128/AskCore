@@ -561,7 +561,9 @@ func TestStateReportsModelFallbackUntilModelChanges(t *testing.T) {
 
 	target := providers.OpenAIGPT55()
 	p.ok(protocol.ACPSetModel, map[string]any{"sessionId": sid, "modelId": fmt.Sprintf("%s/%s@%s", target.Provider, target.ID, target.API)}, nil)
-	require.Nil(t, p.state(sid).ModelFallback)
+	// The model update event clears the fallback from another goroutine, so the
+	// state can lag the set-model reply.
+	require.Eventually(t, func() bool { return p.state(sid).ModelFallback == nil }, 2*time.Second, 5*time.Millisecond)
 }
 
 func TestProviderCallsNeedInitialize(t *testing.T) {

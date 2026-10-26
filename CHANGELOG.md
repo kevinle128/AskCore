@@ -1,105 +1,66 @@
 # Changelog
 
-All notable changes to Ask are recorded in this file.
-The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
-Ask has no release yet, so every entry is under `Unreleased`.
-Details of each change are in `docs/`, in the plans under `plans/`, and in the git history.
+All notable changes to this project are written in this file.
+
+The format follows [Keep a Changelog 1.1.0](https://keepachangelog.com/en/1.1.0/). This project aims to follow [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
 ### Added
 
-#### Project structure
-
-- One Go package for each capability (the dewee package model) with the Ask import rules, enforced by depguard lint rules. Every package has a `README.md` that states what belongs there and which imports it may use ([architecture reference](docs/ask-architecture-reference.md)).
-- Composition root with `fx`; HTTP server (echo) and gRPC server; zap logging; viper configuration.
-- SQLite storage through GORM with embedded SQL migrations. `go run ./cmd/server` applies pending migrations at start; `-migrate` applies them and exits.
-- Reference example for a new entity: users and posts with REST endpoints, and a gRPC greeter service.
-
-#### Messages and events
-
-- Shared wire contract in `pkg/protocol`: system, user, assistant, and tool result messages; text, thinking, image, and tool call blocks; usage, stop reasons, and diagnostics.
-- Thinking levels `off`, `minimal`, `low`, `medium`, `high`, `xhigh`, and `max`.
-- Agent events with a sequencing envelope (sequence number, time, session ID, run ID) and an exact JSON and JSONL codec. The public JSON projection keeps Pi's event names.
-- Lifecycle events for cycles, turns, and attempts (`cycle_start`, `turn_start`, `attempt_start`, and their end events), queue updates, retry events, `agent_settled`, and `agent_disposed`.
-
-#### Agent loop
-
-- Two-level agent loop as in Pi: a cycle for each admitted input batch and a turn for each model answer with its tool calls.
-- Streaming of assistant messages from the provider.
-- Tool calls run in parallel; a tool can declare that a call must run alone. Results keep the order of the calls. A tool body that started always finishes before the run ends; abort records an outcome for every call.
-- Typed control points (`pipeline`) for admission, request preparation, model execution and recovery, before and after a tool, and the end of a turn. A handler can change a decision but does not own the loop.
-- Input queues: `Prompt`, `Continue`, `Steer` (taken at the next turn), `FollowUp` (taken when the run would stop), and `Remove`. `Abort` stops the current work; `Reset` starts a new conversation; `Dispose` ends the Agent.
-- Model retry with a captured serving policy; a retry keeps the selected credential and billing class. Failed attempts are recorded without putting their content into the model history.
-- Repair of an uncertain open turn after a crash, without running a tool again.
-- In-memory session log with typed entries and an exact rebuild of each model request without credentials.
-- Local event listeners and a bounded replay ring with followers, cursors, and explicit resync for slow observers (`Agent.Follow`).
-
-#### Tools
-
-- Tool registry with JSON Schema declarations, argument coercion and validation, and one immutable snapshot of the tools for each turn.
-- Built-in `echo` tool.
-
-#### Providers and models
-
-- Wire APIs: Anthropic Messages, OpenAI Chat Completions, and OpenAI Responses.
-- Providers: `anthropic`, `openai`, `xai`, and `alibaba-token-plan`, with a built-in model catalog, cost data, and request profiles.
-- `faux` provider: a scripted provider for tests and demos. In `ask -p`, `echo <text>` calls the echo tool, `fail <text>` ends with an assistant error, and other text is said back; `ASK_FAUX_TPS` sets the speed in tokens per second.
-
-#### Authentication
-
-- One saved credential for each provider in `~/.ask/auth.json` (override the home with `ASK_HOME`), with mode 0600 and a file lock.
-- `ask auth login --provider <name> --method <method>`: API key (read from private input), Anthropic subscription (`anthropic-oauth`), ChatGPT subscription (`openai-chatgpt`), and xAI (`xai-oauth`, device authorization). `ask auth logout` removes the saved credential.
-- Automatic refresh of a subscription token before a request, and a check of account access for the selected model.
-
-#### Command line
-
-- `ask -p "<prompt>"` (print mode): runs one prompt in process and prints the answer. Flags include `--provider`, `--model`, `--thinking`, `--api-key`, and `--mode json`, which writes every agent event as one JSON line.
-- Exit codes: 0 when done, 1 on an error, 130 on SIGINT, 143 on SIGTERM, 129 on SIGHUP.
-- `ask acp`: serves the Agent Client Protocol (ACP) v1 over standard input and output for editors. Each session has its own Agent. Ask methods under `_ask/session/*` add continue, state, reset, steer, follow-up, remove, follow, unfollow, resync, usage, model and thinking selection, and the model list. `compact`, `fork`, and `tree` return "unsupported".
-
-#### Testing
-
-- LLM cassettes: tests replay recorded provider traffic. `ASK_RECORD=1` records the cassette of one test again; `ASK_CAPTURE=<dir> ask -p ...` records a real run ([guide](docs/testing-llm-cassettes.md)).
-- Terminal end-to-end checks in `e2e/tui` with `tui-test`, and goroutine leak checks with goleak.
-
-#### Tools
-
-- Twelve session tools in every agent: `read`, `write`, `edit`, and `ls` for files; `grep` and `find` for search; `bash`, `job_output`, `job_kill`, `job_list`, and `monitor` for commands; and the demo tool `echo` ([tools](internal/tools/README.md)).
-- `internal/jobs`: the per-session job table behind the shell tools. A job that ends without the model having seen its end sends one completion notice. At most 10 jobs run at the same time ([jobs](internal/jobs/README.md)). Unix only.
-- `internal/sandbox`: the process runner of the shell tools. Each command runs in its own process group with a filtered environment and bounded output ([sandbox](internal/sandbox/README.md)).
-
-#### Leader and terminal UI
-
-- `ask leader`: a local router that holds one agent for all local clients on a Unix socket in `ASK_HOME`, readable by the owner only. Clients start it on demand. `ask leader status`, `list`, and `stop` manage it ([leader](internal/leader/README.md)).
-- `ask connect`: a line-oriented client of the leader.
-- The interactive TUI: `ask` with no arguments on a terminal opens a full-screen UI on the alternate screen. It connects to the leader and runs an agent in process only when that connect fails at startup. It has a block pane with fold modes, a one-block viewer, mouse scrolling and text selection, and `/copy` ([tui](internal/tui/README.md), [TUI architecture](docs/tui-architecture.md)).
-- Provider setup: `/providers` signs in with an API key, a browser URL, a copy code, or a device code, and removes a saved sign-in. `/model` lists the models of usable providers and saves the choice as `defaultModel` in `settings.json`.
-- The demo provider `faux` is opt-in with `ASK_FAUX=1`.
-
-#### Async task runtime (first phase)
-
-See the [design](docs/async-task-runtime.md) and [ADR 0004](docs/adr/0004-agent-owned-async-task-runtime.md).
-
-- `internal/tasks`: a per-Agent task registry. Each task runs on a goroutine that the registry owns, ends in exactly one terminal state, and produces exactly one notice. Timer tasks hold no goroutine while they wait.
-- `Agent.Notify`: the only entry for task notices. A notice joins the next turn of a running Agent or starts a run on an idle Agent. No component sleeps or polls to detect completion.
-- `Agent.Idle` and `Agent.WaitForQuiescence`: wait for the end of runs and tasks by signal.
-- `Agent.Tasks` and `tools.Context.Tasks`: tools start background work through the registry.
-- `protocol.CustomMessage` (role `custom`): an application message that the model receives as a user message. Task notices use it with the custom type `task-notification`.
-- Events `task_start`, `task_update`, and `task_end`.
-- Task output files under `<ASK_HOME>/tasks/<session>/`, created at the first output with mode 0600 in private directories. Session directories older than 7 days are removed once when a process starts.
-- `settings.EnsurePrivateDir`, `settings.CheckPrivateDir`, and `settings.ResolveHome`.
+- **Agent:** `internal/tasks` is a per-Agent registry for background work. Each task ends in exactly one terminal state and produces exactly one notice. No tool uses it yet ([design](docs/async-task-runtime.md), [ADR 0004](docs/adr/0004-agent-owned-async-task-runtime.md)).
+- **Agent:** `Agent.Notify` delivers task notices. A notice joins the next turn of a running agent or starts a run on an idle agent. Nothing sleeps or polls to detect completion.
+- **Agent:** `Agent.Idle` and `Agent.WaitForQuiescence` wait by signal for the end of runs and tasks.
+- **Protocol:** `protocol.CustomMessage` (role `custom`) is an application message that the model gets as a user message. Task notices use it with the custom type `task-notification`. The events `task_start`, `task_update`, and `task_end` report tasks.
+- **Settings:** Task output files are written under `<ASK_HOME>/tasks/<session>/` with mode 0600. Session directories older than 7 days are removed once when a process starts.
 
 ### Changed
 
-- An object with `"role": "custom"` now decodes to `protocol.CustomMessage`, not to `protocol.RawMessage`. Such an object without `customType` is a decode error.
-- `providers.ConvertToLLM` keeps a custom message and gives it to the model as a user message. Raw messages are still dropped.
-- `queue_update` shows a task notice as a preview of at most 200 bytes.
-- Task notices do not count toward `MaxQueuedInputs`, so they never take the queue slots of human input.
-- `Abort` keeps background tasks running and moves queued task notices to the context queue, where they ride with the next input. Human input is dropped as before.
-- `Reset` stops the tasks of the old conversation and refuses their late notices and events. `Dispose` stops and waits for every task.
+- **Protocol:** An object with `"role": "custom"` now decodes to `protocol.CustomMessage`, not to `protocol.RawMessage`. Such an object without `customType` is a decode error.
+- **Agent:** Task notices do not count toward `MaxQueuedInputs`. `Abort` keeps background tasks running and moves their queued notices to the context queue. `Reset` stops the tasks of the old conversation; `Dispose` stops and waits for every task.
 
-### Not yet available
+### Fixed
 
-- TUI extensions (widgets and extension views) and the hook runtime. The TUI shows hook blocks from fixtures only.
-- The read-only monitoring dashboard, persistent sessions, and the remote model catalog overlay ([ADR 0003](docs/adr/0003-remote-model-catalog-overlay.md)) are designed but not implemented.
+- **Settings:** Two `ask` processes that use a new `ASK_HOME` at the same time no longer fail with `file exists`.
+
+## [0.1.0] - 2026-10-15
+
+### Added
+
+- **Project:** Ask is released under the MIT License.
+- **CLI:** `ask -p "<prompt>"` runs one prompt without a terminal UI and prints the reply. `--mode json` writes every agent event as one JSON line.
+- **CLI:** `ask -p` accepts piped stdin, `@file` arguments, several messages, `--thinking`, `--model`, and `--api-key`.
+- **CLI:** `ask version [--json]` prints the build and the protocol versions.
+- **Providers:** Alibaba Token Plan, Anthropic, OpenAI, and xAI work through `--provider`.
+- **Providers:** The demo provider `faux` answers with a script, so you can try Ask without an account. It is the default of `ask -p`.
+- **Auth:** `ask auth login` and `ask auth logout` manage API keys and the sign-ins for Claude Pro and Max, ChatGPT Plus and Pro, and xAI Grok. Ask refreshes saved sign-ins.
+- **Agent:** The agent retries transient provider failures, can be cancelled, and recovers from failed tool calls.
+- **Tools:** Every agent has the tools `read`, `write`, `edit`, `ls`, `grep`, `find`, `bash`, `job_output`, `job_kill`, `job_list`, and `monitor`, and a demo tool `echo`.
+- **Tools:** A `bash` call that runs past its wait budget (120 s by default, 600 s at most) continues as a background job. A finished job tells the model through a `<system-reminder>` notice.
+- **Tools:** `ASK_COMMAND_GUARD=1` blocks a short list of destructive shell commands. It is not a security boundary.
+- **Editors:** `ask acp` serves the Agent Client Protocol v1 over standard input and output.
+- **Leader:** `ask leader` runs a local router on a Unix socket (`<ASK_HOME>/leader.sock`, owner only). It holds one agent for all local clients. `ask leader status|list|stop` manage it.
+- **Leader:** `ask connect` is a line-oriented client of the leader.
+- **TUI:** `ask` with no arguments on a terminal opens a full-screen TUI on the alternate screen. It connects to the leader and starts one when none runs. It runs an agent in the same process only when the first connect fails.
+- **TUI:** Tool calls, thinking, and hooks show as foldable blocks. A full-screen viewer shows one block. The mouse wheel scrolls, a click selects a block, and a drag copies text.
+- **TUI:** The commands `/model`, `/providers`, `/new`, `/sessions`, `/take`, `/copy`, and `/quit` are available.
+- **TUI:** `/providers` signs in to a provider (API key, browser URL, copy-code, or device code) and removes a saved sign-in. Without a usable provider the session starts with no model and says so. `/model` lists only the models of usable providers and saves your choice.
+- **Testing:** `ASK_CAPTURE=<dir>` records the provider traffic of an `ask -p` run to a cassette. Tests replay recorded model replies.
+- **Testing:** `python3 e2e/tui/run.py` drives the built `ask` on real terminal engines (Alacritty and Ghostty).
+- **Docs:** `docs/reference/` lists the built-in tools and the providers. The test suite generates it from code and fails when it is out of date.
+- **Server:** `cmd/server` is a demo daemon. It serves HTTP (`/health`, users, posts) and gRPC (`Greeter`) on SQLite with embedded migrations. `-migrate` applies the migrations and exits.
+
+### Changed
+
+- **TUI:** The interactive TUI moved from inline output to the alternate screen.
+- **Leader:** A client of a newer build now replaces an older leader that a client started. The sessions and background jobs of the old leader end. Clients retry a failed leader start.
+- **Build:** Ask now needs Go 1.27 or later.
+
+### Fixed
+
+- **Leader:** On Linux, a file that is not a socket at the leader socket path now stops the client with an unsafe-endpoint error. Before, the client tried to start a leader three times and then failed.
+- **Providers:** A model that the account cannot use is reported as its own error, not as a generic failure.
+- **TUI:** Rows use the full terminal width. A reconnect to a session no longer races on the session state.
+
+[Unreleased]: https://github.com/kevinle128/AskCore/compare/v0.1.0...HEAD
+[0.1.0]: https://github.com/kevinle128/AskCore/releases/tag/v0.1.0

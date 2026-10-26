@@ -115,6 +115,18 @@ func TestInteractiveSecretNeverOnScreen(t *testing.T) {
 	a.waitRow("key", "(hidden)")
 	a.requireNoSecret(key)
 
+	// The terminal gives no sign that the program read the typed bytes. On a
+	// loaded Linux host the program can read them after the check ended, and then
+	// the typing would clear the refusal. The program reads the input in order, so
+	// when it has drawn the screen for a size report that follows the typing, it
+	// has handled the typing too. The wider screen stays for the rest of the test.
+	wide := termCols + 20
+	a.reportSize(wide, termRows)
+	a.waitFor("the screen drawn at the new width", func(rows []string) bool {
+		return containsExactRow(rows, strings.Repeat("─", wide))
+	})
+	a.waitRow("key", "(hidden)")
+	a.requireNoSecret(key)
 	release()
 	a.waitText("openai refused the key: invalid_api_key (HTTP 401)")
 	a.requireNoSecret(key)

@@ -695,3 +695,28 @@ func TestAuthStoreRefreshPreservesSelectedUnknownFields(t *testing.T) {
 		t.Fatalf("refresh dropped unknown fields: %v", err)
 	}
 }
+
+func TestEnsureHomeConcurrentCreate(t *testing.T) {
+	for round := 0; round < 50; round++ {
+		home := filepath.Join(t.TempDir(), "home")
+		start := make(chan struct{})
+		errs := make(chan error, 16)
+		var wg sync.WaitGroup
+		for i := 0; i < cap(errs); i++ {
+			wg.Add(1)
+			go func() {
+				defer wg.Done()
+				<-start
+				errs <- ensureHome(home)
+			}()
+		}
+		close(start)
+		wg.Wait()
+		close(errs)
+		for err := range errs {
+			if err != nil {
+				t.Fatalf("round %d: concurrent home creation failed: %v", round, err)
+			}
+		}
+	}
+}

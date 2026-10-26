@@ -1,0 +1,40 @@
+name: CI
+
+on:
+  push:
+    branches: [master]
+  pull_request:
+
+# Fork pull requests run with a read-only token and no secrets.
+permissions:
+  contents: read
+
+# A new push to the same branch or pull request cancels the older run.
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v5
+
+      - uses: actions/setup-go@v6
+        with:
+          go-version-file: go.mod
+
+      # The grep and find tools call rg; their tests skip without it.
+      - name: Install ripgrep
+        run: sudo apt-get update && sudo apt-get install -y ripgrep
+
+      - name: Vet
+        run: go vet ./...
+
+      # Includes TestReferenceDocs, which fails when docs/reference drifts from code.
+      - name: Test
+        run: go test -count=1 ./...
+
+      - name: Lint
+        run: go run github.com/golangci/golangci-lint/v2/cmd/golangci-lint run ./...
