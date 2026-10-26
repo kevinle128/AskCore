@@ -60,6 +60,9 @@ type LoopConfig struct {
 	ConvertToLLM func(msgs []protocol.Message) ([]protocol.Message, error)
 	// Tasks is given to every tool call. The Agent sets it for each run.
 	Tasks tasks.Control
+	// Notices is the notice port of the run's generation, given to every tool
+	// call. The Agent sets it for each run, with Tasks.
+	Notices tasks.Port
 }
 
 // Emit receives every event of a run, in order, on the goroutine that called

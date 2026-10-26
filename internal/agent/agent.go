@@ -54,6 +54,10 @@ type Agent struct {
 	// wake is set when input arrived that the active run cannot take. When
 	// that run ends and a queue holds input, a new run starts.
 	wake bool
+	// interrupted is set by Abort of an active run and cleared by the next
+	// human input and by Reset. While it is set, a wake notice waits in the
+	// context queue and starts no run: the user stopped the Agent.
+	interrupted bool
 	// clearPending is set by ClearModel while a run is active. The run keeps
 	// its model; end clears the model before it decides on a queued run.
 	clearPending bool
@@ -219,7 +223,8 @@ func (a *Agent) Continue(ctx context.Context) error {
 // queued steering and follow-up messages of the human and the pending wake.
 // Notices of background tasks are not dropped: they move to the context queue,
 // which rides with the next input and starts no run. Abort does not stop
-// running tasks. It does nothing to an idle Agent with empty queues. It never waits for a listener, so a call
+// running tasks. A wake notice that arrives after Abort of an active run waits
+// in the context queue until the next human input. It does nothing to an idle Agent with empty queues. It never waits for a listener, so a call
 // from a handler or a listener is safe.
 func (a *Agent) Abort(opts ...AbortOption) {
 	var c abortConfig
@@ -234,6 +239,7 @@ func (a *Agent) Abort(opts ...AbortOption) {
 		}
 	}
 	if a.active != nil {
+		a.interrupted = true
 		a.active.cancel(errUserAbort)
 	}
 	a.mu.Unlock()
@@ -459,6 +465,7 @@ func (a *Agent) swapContext() (logErr error, oldTasks *tasks.Registry, err error
 	}
 	cleared := a.in.clear()
 	a.wake = false
+	a.interrupted = false
 	// An unpublished update describes the old conversation. A fresh one with
 	// the state after the reset replaces it, so a client never sees stale
 	// content in the new epoch.
@@ -534,6 +541,7 @@ func (a *Agent) begin(ctx context.Context) (*run, error) {
 	if a.cfg.Model.ID == "" {
 		return nil, ErrNoModel
 	}
+	a.interrupted = false
 	return a.startRunLocked(ctx), nil
 }
 
@@ -604,7 +612,11 @@ func (a *Agent) execute(r *run, start loopFunc) error {
 	system := systemMessages(snap)
 	ac := pipeline.AgentContext{Messages: append(slices.Clip(system), r.source.Messages()...), Tools: a.cfg.Tools}
 	cfg := a.cfg.LoopConfig
-	cfg.Tasks = a.Tasks()
+	// The registry and the notice port come from one snapshot, so the work that
+	// a tool call starts and the notices of that work share a generation.
+	a.mu.Lock()
+	cfg.Tasks, cfg.Notices = a.tasks, noticePort{a: a, gen: a.taskGen}
+	a.mu.Unlock()
 	if cfg.Options.SessionID == "" {
 		cfg.Options.SessionID = a.cfg.SessionID
 	}

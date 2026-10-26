@@ -17,6 +17,7 @@ This package runs background work for one Agent. A `Registry` owns the goroutine
 | Code | Put it in |
 |---|---|
 | The queue, the claims, and the wake of a run | [internal/agent](../agent/README.md) (`Agent.Notify`) |
+| The notice port of a source outside the registry (`Port`, declared in [types.go](types.go)) | Implemented by [internal/agent](../agent/README.md); a tool gets it in `tools.Context.Notices` |
 | Process, HTTP, and sub-agent bodies | The package that owns that capability; it passes a `Body` to `Start` |
 | The model-facing tools | [internal/tools](../tools/README.md) |
 | Creating and checking the session directory | `internal/app` (composition root), through `Config.PrepareDir`, which the registry calls once at the first output so a session without output makes no directory |

@@ -1,7 +1,7 @@
 ---
 title: "Jobs deliver notices through the Agent notify port"
 description: "Route every shell job notice through Agent.Notify, scope job notices and visibility to the conversation that started the job, remove the busy-retry polling, and make ask -p wait for background work."
-status: pending
+status: in-progress
 priority: P1
 effort: 8d
 branch: develop
@@ -44,7 +44,7 @@ The analysis, the verified defects, the reference harnesses (Claude Code, Grok C
 
 | # | Phase | Status | Effort | Depends on |
 |---|---|---|---|---|
-| 1 | [Agent notice port per generation](./phase-01-agent-notice-port.md) | pending | 1d | — |
+| 1 | [Agent notice port per generation](./phase-01-agent-notice-port.md) | completed | 1d | — |
 | 2 | [Jobs deliver through the port and scope by generation](./phase-02-jobs-through-port.md) | pending | 2d | 1 |
 | 3 | [Remove the busy-retry polling](./phase-03-remove-busy-polling.md) | pending | 1d | 2 |
 | 4 | [Print mode waits for background work](./phase-04-print-mode-background-wait.md) | pending | 3.5d | 2, 3 |

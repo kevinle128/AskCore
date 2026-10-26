@@ -36,7 +36,7 @@ Tool bodies must return promptly when their context is cancelled; process tools 
 The Agent waits without a time bound and stays busy until bodies return.
 The interface godoc in types.go owns this tool author contract.
 
-Work that must outlive the tool call starts as a task through the call context (field `Tasks` of `tools.Context`, nil when the caller has no registry), not as a goroutine of the tool.
+Work that must outlive the tool call starts as a task through the call context (field `Tasks` of `tools.Context`, nil when the caller has no registry), not as a goroutine of the tool. Work that has its own owner, such as the job table, delivers its notices through `tools.Context.Notices`, the notice port of the run's conversation generation; it is nil when the caller has no Agent.
 The tool returns the task ID at once; the Agent gets the result as a notice, and no tool waits or polls for it.
 See the [async task runtime](../../docs/async-task-runtime.md) sections 8.7 and 11.
 

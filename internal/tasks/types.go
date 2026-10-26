@@ -102,7 +102,7 @@ type Notice struct {
 	TaskID  string // empty for a source
 	Gen     uint64 // generation of the registry that made the notice
 	Policy  NoticePolicy
-	Message protocol.Message // a protocol.CustomMessage
+	Message protocol.Message // what the model gets; a task uses a protocol.CustomMessage
 }
 
 // Handle identifies a started task.
@@ -140,6 +140,22 @@ type Control interface {
 	Start(spec Spec) (Handle, error)
 	Stop(id string) error
 	List() []Info
+}
+
+// Port delivers the notices of a source outside the registry, such as the job
+// table of the shell tools, to the Agent of one conversation generation. A tool
+// call gets the Port of its run, so work that the call starts keeps the
+// generation of that conversation.
+type Port interface {
+	// Gen is the generation of the Port.
+	Gen() uint64
+	// Notify queues msg as a notice with policy. A notice never counts toward
+	// the bound of the human queues. A Port of an older generation is refused
+	// with an error that wraps ErrNotDelivered.
+	Notify(policy NoticePolicy, msg protocol.Message) (string, error)
+	// Remove deletes a queued notice that no run has taken yet. It removes
+	// only notices, never human input, and nothing for an older generation.
+	Remove(id string) bool
 }
 
 var (

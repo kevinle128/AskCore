@@ -85,6 +85,8 @@ func (a *Agent) nextTaskID(kind tasks.Kind) string {
 //   - A notice of an older generation returns ErrStaleNotice.
 //   - Policy Silent queues nothing.
 //   - Policy Context goes to the context queue and starts no run.
+//   - Policy Wake after Abort of an active run, until the next human input, or
+//     on an idle Agent with no model, goes to the context queue as well.
 //   - Policy Wake goes to the steering queue, and starts a run on an idle
 //     Agent. While a run is active, the notice also sets the wake latch. If the
 //     run claims the notice, the latch starts nothing. If the run ends first
@@ -116,6 +118,15 @@ func (a *Agent) Notify(n tasks.Notice) (string, error) {
 	msg := protocol.CloneMessage(n.Message)
 	a.work++
 	if n.Policy == tasks.NoticeContext {
+		id := a.in.nextID()
+		a.in.context = append(a.in.context, input{id: id, msg: msg, origin: originTask})
+		a.mu.Unlock()
+		return id, nil
+	}
+	if a.interrupted || (a.active == nil && a.cfg.Model.ID == "") {
+		// The user stopped the Agent, or it has no model to run with. The
+		// notice waits in the context queue, which rides with the next input,
+		// starts no run and does not block quiescence.
 		id := a.in.nextID()
 		a.in.context = append(a.in.context, input{id: id, msg: msg, origin: originTask})
 		a.mu.Unlock()
@@ -228,4 +239,30 @@ func isClosed(ch <-chan struct{}) bool {
 	default:
 		return false
 	}
+}
+
+// noticePort is the tasks.Port of one generation. The Agent gives each run the
+// port of the generation the run started in, so a notice of work that a tool
+// call started is refused after a Reset.
+type noticePort struct {
+	a   *Agent
+	gen uint64
+}
+
+func (p noticePort) Gen() uint64 { return p.gen }
+
+func (p noticePort) Notify(policy tasks.NoticePolicy, msg protocol.Message) (string, error) {
+	return p.a.Notify(tasks.Notice{Gen: p.gen, Policy: policy, Message: msg})
+}
+
+// Remove deletes a queued notice of the port's generation. Human input stays.
+func (p noticePort) Remove(id string) bool {
+	a := p.a
+	a.mu.Lock()
+	defer a.mu.Unlock()
+	if a.disposed || p.gen != a.taskGen || !a.in.removeNotice(id) {
+		return false
+	}
+	a.postLocked(a.in.update())
+	return true
 }

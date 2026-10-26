@@ -1,7 +1,7 @@
 ---
 phase: 1
 title: "Agent notice port per generation"
-status: pending
+status: completed
 priority: P1
 effort: "1d"
 dependencies: []
@@ -131,3 +131,9 @@ Pass: all commands exit 0; the thirteen new tests pass. An existing test that ex
 ## Rollback
 
 Revert the phase commit. Nothing outside `agent`, `tasks`, `tools` and a `pipeline` comment depends on the port yet.
+
+## Result (2026-10-26)
+
+- Implemented as designed, with one change found while reading `WaitForQuiescence`: a Wake notice that cannot start a run (after Abort, or with no model) goes to the context queue, not to steering, because queued steering keeps `WaitForQuiescence` from returning. The next human input still carries it.
+- The interrupt rule applies to every `Notify` caller, task registry notices included.
+- Verification: the 13 tests pass three times under `-race`; `go test ./...` (34 packages) and golangci-lint pass; no existing test changed.

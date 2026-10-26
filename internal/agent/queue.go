@@ -94,6 +94,23 @@ func (q *inbox) addFrom(o origin, followUp bool, msg protocol.Message) string {
 	return in.id
 }
 
+// removeNotice deletes the pending notice with the ID. Human input with that ID
+// stays: a notice source must never remove what the user queued.
+func (q *inbox) removeNotice(id string) bool {
+	for _, list := range []*[]input{&q.context, &q.steering, &q.followUp} {
+		for i, in := range *list {
+			if in.id == id {
+				if in.origin != originTask {
+					return false
+				}
+				*list = append((*list)[:i:i], (*list)[i+1:]...)
+				return true
+			}
+		}
+	}
+	return false
+}
+
 // remove deletes the pending input with the ID. It reports whether the input
 // was still pending: a claim takes it out of the queue.
 func (q *inbox) remove(id string) bool {
@@ -329,6 +346,7 @@ func (a *Agent) enqueue(msg protocol.Message, followUp bool) (string, error) {
 		followUp = true
 		a.wake = true
 	}
+	a.interrupted = false
 	id := a.in.add(followUp, msg)
 	a.work++
 	a.postLocked(a.in.update())
