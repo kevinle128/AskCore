@@ -238,7 +238,12 @@ func backgroundLimit(timeout *float64) (time.Duration, error) {
 	if math.IsNaN(*timeout) || *timeout <= 0 {
 		return 0, failf("timeout must be more than 0 seconds. With run_in_background it is the time the job may run in the background.")
 	}
-	return time.Duration(*timeout * float64(time.Second)), nil
+	// The job table caps the limit at its maximum; clamp here only so the
+	// conversion cannot overflow.
+	if *timeout >= float64(math.MaxInt64)/float64(time.Second) {
+		return time.Duration(math.MaxInt64), nil
+	}
+	return max(time.Duration(*timeout*float64(time.Second)), time.Millisecond), nil
 }
 
 // startFailure turns an error of the job table into text for the model.

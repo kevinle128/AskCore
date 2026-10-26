@@ -8,6 +8,7 @@ import (
 	"strconv"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	"AskCore/internal/agent"
@@ -78,49 +79,80 @@ type waitConfig struct {
 }
 
 // replyPrinter writes the reply of the last prompt and then the reply of each
-// run that a background notice wakes, as Claude Code's text output does.
+// run that a background notice wakes, as Claude Code's text output does. It
+// reads the messages at agent_settled, which the run emits before it ends, so
+// each reply is read from the run that produced it.
 type replyPrinter struct {
 	ag          *agent.Agent
 	out, stderr io.Writer
+	// prompts is the number of prompts; the run of the last one gives the
+	// first reply.
+	prompts int
+	// armed is cleared by disarm without the lock, so a signal never waits
+	// for a reply that blocks on a full stdout.
+	armed atomic.Bool
 
-	mu    sync.Mutex
-	armed bool
-	seen  int
-	code  int
+	mu      sync.Mutex
+	started int
+	lastRun string
+	first   bool // the reply of the last prompt was printed
+	seen    int
+	code    int
 }
 
-// first writes the reply that the prompts produced and arms the printer for
-// the runs that follow.
-func (p *replyPrinter) first() {
-	p.mu.Lock()
-	defer p.mu.Unlock()
-	msgs := p.ag.State().Messages
-	p.code = printReply(msgs, p.out, p.stderr)
-	p.seen, p.armed = len(msgs), true
+func newReplyPrinter(ag *agent.Agent, out, stderr io.Writer, prompts int) *replyPrinter {
+	p := &replyPrinter{ag: ag, out: out, stderr: stderr, prompts: prompts}
+	p.armed.Store(true)
+	return p
 }
 
-// settled writes the reply of a run that ended after first.
-func (p *replyPrinter) settled() {
+// promptRun records the run of a prompt; agent.WithRunStart calls it before
+// any event of that run.
+func (p *replyPrinter) promptRun(runID string) {
 	p.mu.Lock()
 	defer p.mu.Unlock()
-	if !p.armed {
+	p.started++
+	if p.started == p.prompts {
+		p.lastRun = runID
+	}
+}
+
+// settled writes the reply of the run that emitted agent_settled: the reply of
+// the last prompt, then the reply of each run after it. Runs before the last
+// prompt print nothing, as before the wait existed.
+func (p *replyPrinter) settled(runID string) {
+	if !p.armed.Load() {
 		return
 	}
 	msgs := p.ag.State().Messages
-	if len(msgs) <= p.seen {
+	p.mu.Lock()
+	var part []protocol.Message
+	switch {
+	case !p.first:
+		if p.lastRun == "" || runID != p.lastRun {
+			p.mu.Unlock()
+			return
+		}
+		part, p.first = msgs, true
+	case len(msgs) > p.seen:
+		part = msgs[p.seen:]
+	default:
+		p.mu.Unlock()
 		return
 	}
-	p.code = printReply(msgs[p.seen:], p.out, p.stderr)
 	p.seen = len(msgs)
+	p.mu.Unlock()
+
+	// The write runs without the lock: it can block on a full stdout.
+	code := printReply(part, p.out, p.stderr)
+	p.mu.Lock()
+	p.code = code
+	p.mu.Unlock()
 }
 
 // disarm stops the printing of later runs: a signal or --max-turns ended the
 // run, and an aborted run must not print an error.
-func (p *replyPrinter) disarm() {
-	p.mu.Lock()
-	defer p.mu.Unlock()
-	p.armed = false
-}
+func (p *replyPrinter) disarm() { p.armed.Store(false) }
 
 func (p *replyPrinter) exitCode() int {
 	p.mu.Lock()
@@ -161,8 +193,10 @@ func (l *turnLimit) observe(ev protocol.Event) {
 // starts; it never polls.
 type idleCeiling struct {
 	after  time.Duration
+	ag     *agent.Agent
 	jobs   *jobs.Table
 	cancel context.CancelCauseFunc
+	done   <-chan struct{}
 
 	mu    sync.Mutex
 	timer *time.Timer
@@ -190,6 +224,18 @@ func (c *idleCeiling) disarm() {
 }
 
 func (c *idleCeiling) fire() {
+	if idle := c.ag.Idle(); !isClosedSignal(idle) {
+		// A run or an event dispatch is in progress, so the Agent was not
+		// idle for the whole cap. The cap starts again when it is idle.
+		go func() {
+			select {
+			case <-idle:
+				c.arm()
+			case <-c.done:
+			}
+		}()
+		return
+	}
 	for _, j := range c.jobs.Active() {
 		if j.Kind == jobs.KindBash {
 			// A background command keeps the wait open; its end wakes a run,
@@ -205,7 +251,7 @@ func (c *idleCeiling) fire() {
 func waitBackground(ctx context.Context, ag *agent.Agent, w waitConfig) error {
 	ctx, cancel := context.WithCancelCause(ctx)
 	defer cancel(nil)
-	ceil := &idleCeiling{after: w.ceiling, jobs: w.jobs, cancel: cancel}
+	ceil := &idleCeiling{after: w.ceiling, ag: ag, jobs: w.jobs, cancel: cancel, done: ctx.Done()}
 	defer ceil.disarm()
 	unsubscribe := ag.Subscribe(func(ev protocol.Event) error {
 		switch ev.(type) {
@@ -217,9 +263,8 @@ func waitBackground(ctx context.Context, ag *agent.Agent, w waitConfig) error {
 		return nil
 	})
 	defer unsubscribe()
-	if isClosedSignal(ag.Idle()) {
-		ceil.arm()
-	}
+	// The cap checks at expiry that the Agent is idle, so it can start now.
+	ceil.arm()
 	if w.progress != nil {
 		progress := time.AfterFunc(progressAfter, func() { writeProgress(w.progress, w.jobs) })
 		defer progress.Stop()

@@ -23,6 +23,7 @@ import (
 	"AskCore/internal/agent"
 	"AskCore/internal/jobs"
 	"AskCore/internal/providers/anthropic"
+	"AskCore/internal/tasks"
 	"AskCore/pkg/protocol"
 )
 
@@ -32,6 +33,8 @@ type scriptedModel struct {
 	mu      sync.Mutex
 	answers []string
 	bodies  [][]byte
+	// before, when set, runs before request n is answered.
+	before func(n int)
 }
 
 func (s *scriptedModel) RoundTrip(r *http.Request) (*http.Response, error) {
@@ -46,7 +49,11 @@ func (s *scriptedModel) RoundTrip(r *http.Request) (*http.Response, error) {
 	if n < len(s.answers) {
 		answer = s.answers[n]
 	}
+	before := s.before
 	s.mu.Unlock()
+	if before != nil {
+		before(n)
+	}
 	return sseResponse(200, answer)(r)
 }
 
@@ -350,6 +357,98 @@ func TestPromptAllWaitsForNoticeRunOfRealAgent(t *testing.T) {
 	msgs := ag.State().Messages
 	require.Len(t, msgs, 4, "notice, its answer, the prompt, its answer")
 	assert.Equal(t, agent.Idle, ag.State().Status)
+}
+
+// A notice run that starts the moment the last prompt run ends must not take
+// the place of the prompt reply: each reply is printed from its own run.
+func TestPrintNoticeRightAfterLastPromptKeepsPromptReply(t *testing.T) {
+	model := &scriptedModel{answers: []string{sseText("prompt answer"), sseText("notice answer")}}
+	ag, jt := newTestSession(t, tokenPlanOptions(model), nativeEnv(nil))
+	var once sync.Once
+	unsubscribe := ag.Subscribe(func(ev protocol.Event) error {
+		if _, ok := ev.(*protocol.AgentSettled); ok {
+			once.Do(func() {
+				_, err := ag.Notify(tasks.Notice{Policy: tasks.NoticeWake, Message: textUser(protocol.SystemReminder("Background job bash-1 finished."))})
+				assert.NoError(t, err)
+			})
+		}
+		return nil
+	})
+	defer unsubscribe()
+
+	var out, errb bytes.Buffer
+	code := runHeadlessWait(ag, []string{"ping"}, modePrint, &out, &errb, nil, waitConfig{jobs: jt})
+	require.Equal(t, 0, code, errb.String())
+	assert.Equal(t, "prompt answer\nnotice answer\n", out.String())
+	assert.Empty(t, errb.String())
+}
+
+// blockedWriter blocks every write until release closes and reports the first
+// write on entered.
+type blockedWriter struct {
+	entered chan struct{}
+	release chan struct{}
+	once    sync.Once
+}
+
+func (w *blockedWriter) Write(p []byte) (int, error) {
+	w.once.Do(func() { close(w.entered) })
+	<-w.release
+	return len(p), nil
+}
+
+// A signal ends print mode even while the reply of a notice run waits for a
+// stdout that nobody reads: the flush of the first reply blocks and holds the
+// output lock, and the notice reply waits for that lock.
+func TestPrintSignalWhileReplyWriteBlocks(t *testing.T) {
+	model := &scriptedModel{answers: []string{sseText("prompt answer"), sseText("notice answer")}}
+	ag, jt := newTestSession(t, tokenPlanOptions(model), nativeEnv(nil))
+	stdout := &blockedWriter{entered: make(chan struct{}), release: make(chan struct{})}
+	// The notice run answers only when the flush of the first reply blocks.
+	model.before = func(n int) {
+		if n == 1 {
+			<-stdout.entered
+		}
+	}
+
+	settled := 0
+	noticeSettled := make(chan struct{})
+	unsubscribe := ag.Subscribe(func(ev protocol.Event) error {
+		if _, ok := ev.(*protocol.AgentSettled); !ok {
+			return nil
+		}
+		settled++
+		switch settled {
+		case 1:
+			_, err := ag.Notify(tasks.Notice{Policy: tasks.NoticeWake, Message: textUser(protocol.SystemReminder("Background job bash-1 finished."))})
+			assert.NoError(t, err)
+		case 2:
+			close(noticeSettled)
+		}
+		return nil
+	})
+	defer unsubscribe()
+	// Released before unsubscribe, which waits for a listener that writes.
+	defer close(stdout.release)
+
+	sigs := make(chan os.Signal, 1)
+	var errb bytes.Buffer
+	code := make(chan int, 1)
+	go func() {
+		code <- runHeadlessWait(ag, []string{"ping"}, modePrint, stdout, &errb, sigs, waitConfig{jobs: jt})
+	}()
+	select {
+	case <-noticeSettled:
+	case <-time.After(20 * time.Second):
+		t.Fatal("the notice run did not settle")
+	}
+	sigs <- syscall.SIGTERM
+	select {
+	case c := <-code:
+		assert.Equal(t, 143, c)
+	case <-time.After(abortGrace + 10*time.Second):
+		t.Fatal("print mode did not exit after SIGTERM while a reply write blocked")
+	}
 }
 
 func TestPrintEndDisposesAgentAndKillsBackgroundJobs(t *testing.T) {

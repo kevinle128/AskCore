@@ -406,7 +406,7 @@ func runHeadlessWait(ag *agent.Agent, prompts []string, mode runMode, stdout, st
 	out := newProtocolOut(stdout)
 	ctx, cancel := context.WithCancelCause(context.Background())
 	defer cancel(nil)
-	printer := &replyPrinter{ag: ag, out: out, stderr: stderr}
+	printer := newReplyPrinter(ag, out, stderr, len(prompts))
 	limit := &turnLimit{max: w.maxTurns, stop: func() {
 		printer.disarm()
 		cancel(errMaxTurns)
@@ -415,7 +415,7 @@ func runHeadlessWait(ag *agent.Agent, prompts []string, mode runMode, stdout, st
 	unsubscribe := ag.Subscribe(func(ev protocol.Event) error {
 		limit.observe(ev)
 		if _, ok := ev.(*protocol.AgentSettled); ok && mode == modePrint {
-			printer.settled()
+			printer.settled(ev.Env().RunID)
 		}
 		return nil
 	})
@@ -428,12 +428,13 @@ func runHeadlessWait(ag *agent.Agent, prompts []string, mode runMode, stdout, st
 			ag.Abort()
 		})()
 	}
-	// The prompts and the background wait run on one goroutine. The reply is
-	// printed here, between them, so nothing prints once a signal has won.
+	// The prompts and the background wait run on one goroutine. The wait
+	// starts only when this goroutine allows it, so a signal that comes first
+	// ends the run before the wait. The replies print at agent_settled.
 	prompted, waiting := make(chan error, 1), make(chan struct{})
 	done := make(chan error, 1)
 	go func() {
-		err := promptAll(ctx, ag, prompts)
+		err := promptAll(agent.WithRunStart(ctx, printer.promptRun), ag, prompts)
 		prompted <- err
 		if err != nil {
 			return
@@ -456,9 +457,6 @@ func runHeadlessWait(ag *agent.Agent, prompts []string, mode runMode, stdout, st
 		if err != nil {
 			done <- err
 			break
-		}
-		if mode == modePrint && !errors.Is(context.Cause(ctx), errMaxTurns) {
-			printer.first()
 		}
 		close(waiting)
 	case sig := <-sigs:
@@ -485,7 +483,9 @@ func runHeadlessWait(ag *agent.Agent, prompts []string, mode runMode, stdout, st
 			code = printer.exitCode()
 		}
 		// The reply is read before Dispose, which ends the background jobs
-		// of the session. Dispose does not change the exit code.
+		// of the session. Dispose does not change the exit code, and a run
+		// that it aborts prints nothing.
+		printer.disarm()
 		if derr := ag.Dispose(); derr != nil {
 			report(stderr, "Dispose:", derr)
 		}

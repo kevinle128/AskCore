@@ -63,11 +63,11 @@ func (t *Table) StartMonitor(spec MonitorSpec) (*Job, error) {
 	if t.noBg {
 		return nil, ErrBackgroundDisabled
 	}
-	if cap := t.limit.Default; cap > 0 {
+	if limit := t.limit.Default; limit > 0 {
 		// A session with a background limit gives every watch a deadline of at
 		// most that limit, persistent ones included.
-		if spec.Persistent || spec.Timeout <= 0 || spec.Timeout > cap {
-			spec.Timeout, spec.Persistent = cap, false
+		if spec.Persistent || spec.Timeout <= 0 || spec.Timeout > limit {
+			spec.Timeout, spec.Persistent = limit, false
 		}
 	}
 	m := &monitor{description: spec.Description}

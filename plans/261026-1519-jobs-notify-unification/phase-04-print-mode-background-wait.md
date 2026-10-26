@@ -115,3 +115,17 @@ Revert the phase commits (cassettes included); print mode returns to the N2 kill
 - Test names that differ from the matrix: the quiescence hand-off is `TestTableIdleWaitsForNoticeHandOff` (`jobs`) and `TestQuiescenceWaitsForBackgroundWork` (`agent`); the bash limit and its notice are `TestBackgroundLimitStopsJobWithNotice`, `TestRequestedBackgroundLimitIsCappedAtMax` and `TestMovedJobGetsDefaultLimitFromTheMove` (`jobs`); the leader case is `TestNativeSessionHasNoBackgroundLimit`; the two signal cases are subtests of `TestPrintSignalDuringBackgroundWait`; "max turns unset" is covered by `TestPrintWaitsForBackgroundJobAndAnswersAgain` (woken turn, no flag, exit 0).
 - Found during verification: `TestJobEndingAtBudgetIsReportedOnce` failed once under heavy machine load. A background job could end and start its notice before `Wait` took the lock; `Wait` then returned `Done` as well. This race was older than this phase; production waits only on foreground jobs, which cannot hit it. `Wait` now returns `Background` when the notice already started (`TestWaitAfterNoticeStartedDoesNotReportAgain` fails without the fix).
 - Known debt: the existing `time.Sleep(settle)` uses in `cmd/tui/tools_e2e_test.go` stay; new tests wait on signals.
+
+## Code review (2026-10-27)
+
+A code review of the print-mode layer and the job limits found no problem in the job table locking, the busy counter or the notice hand-off. It found these issues, all fixed:
+
+- A SIGTERM could hang `ask -p` when stdout was not read: the reply printer held its lock while a notice reply waited for the output lock, and the signal path waited for the printer lock. The printer is now disarmed without a lock and writes without holding its lock (`TestPrintSignalWhileReplyWriteBlocks`; the old code hangs).
+- The reply of the last prompt was read from the Agent state after the prompts returned, so a notice run that started in between took its place. The printer now prints each reply at the `agent_settled` of its own run; the last prompt reports its run ID through `agent.WithRunStart` (`TestPrintNoticeRightAfterLastPromptKeepsPromptReply`; the old code fails 10 of 10).
+- The idle-wait cap was armed only when the Agent was idle at the start of the wait, and it could end a run that had just started. It now always arms, and at expiry it checks that the Agent is idle; if not, it starts again when the Agent becomes idle.
+- A normal exit now disarms the printer before `Dispose`, so a run that `Dispose` aborts prints nothing.
+- A very large or tiny `timeout` with `run_in_background` is clamped before the conversion to a duration.
+- The `Background` wait outcome documents the case of a job whose notice already reports its end.
+- `TestPrintEleventhJobIsRefused` uses a 10 s background limit, so no job stops before the eleventh call on a loaded machine.
+
+Kept as is: the exit code of print mode is the code of the last printed reply, as `docs/cli.md` says and as Claude Code reports its final result.

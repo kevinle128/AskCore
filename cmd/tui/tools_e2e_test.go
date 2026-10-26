@@ -1168,11 +1168,12 @@ func TestPrintEleventhJobIsRefused(t *testing.T) {
 		say("done"),
 	)
 	m := scriptModel(t, steps...)
-	// The ten jobs stop at the short limit; their notices wake a number of
-	// turns that depends on timing.
+	// The ten jobs stop at the limit; their notices wake a number of turns
+	// that depends on timing. The limit is long enough that no job stops
+	// before the eleventh call, also on a loaded machine.
 	m.repeatLast = true
 
-	r := runPrint(t, m, printSpec{env: shortBgLimit()})
+	r := runPrint(t, m, printSpec{env: map[string]string{printBgLimitEnv: "10000"}})
 
 	r.requireOK(t)
 	assert.False(t, m.toolResult(10).IsError, "the monitor is the tenth job")

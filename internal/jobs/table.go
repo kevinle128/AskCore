@@ -75,7 +75,8 @@ type WaitOutcome int
 const (
 	// Done: the job ended inside the budget. The table removed it.
 	Done WaitOutcome = iota + 1
-	// Background: the budget passed; the job keeps running.
+	// Background: the budget passed and the job keeps running, or the job
+	// ended before the wait and its completion notice already reports the end.
 	Background
 	// Cancelled: the context ended; the table killed the job and removed it.
 	Cancelled
