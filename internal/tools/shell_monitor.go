@@ -91,7 +91,12 @@ func (m *Monitor) Execute(ctx context.Context, tc Context, args json.RawMessage)
 		timeoutMs = 0
 	}
 
+	owner, err := jobOwnerOf(tc)
+	if err != nil {
+		return protocol.ToolExecutionResult{}, err
+	}
 	job, err := m.table.StartMonitor(jobs.MonitorSpec{
+		Owner:       owner,
 		Command:     in.Command,
 		Cwd:         tc.Cwd,
 		Description: in.Description,

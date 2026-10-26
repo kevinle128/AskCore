@@ -212,6 +212,8 @@ func TestNativeAgentEnablesGuardOnlyWithEnv(t *testing.T) {
 	assert.NotContains(t, other, "blocked by command-guard", "only the value 1 enables the guard")
 }
 
+// The tests below start jobs on the table directly, with no owner, so the jobs
+// belong to generation 0.
 func TestNativeAgentSessionsHaveSeparateTables(t *testing.T) {
 	o := tokenPlanOptions(&scriptedModel{})
 	_, first := newTestSession(t, o, nativeEnv(nil))
@@ -221,9 +223,9 @@ func TestNativeAgentSessionsHaveSeparateTables(t *testing.T) {
 	job, err := first.Start(jobs.StartSpec{Command: "sleep 30", Cwd: t.TempDir()})
 	require.NoError(t, err)
 
-	require.Len(t, first.List(), 1)
-	assert.Equal(t, job.ID(), first.List()[0].ID)
-	assert.Empty(t, second.List(), "a job of one session is not listed in another")
+	require.Len(t, first.List(0), 1)
+	assert.Equal(t, job.ID(), first.List(0)[0].ID)
+	assert.Empty(t, second.List(0), "a job of one session is not listed in another")
 }
 
 func TestNativeAgentDisposeClosesTable(t *testing.T) {
@@ -235,7 +237,7 @@ func TestNativeAgentDisposeClosesTable(t *testing.T) {
 
 	_, err = jt.Start(jobs.StartSpec{Command: "true", Cwd: t.TempDir()})
 	require.ErrorIs(t, err, jobs.ErrClosed)
-	list := jt.List()
+	list := jt.List(0)
 	require.Len(t, list, 1)
 	assert.Equal(t, jobs.StatusKilled, list[0].Status, "the dispose killed the job")
 }

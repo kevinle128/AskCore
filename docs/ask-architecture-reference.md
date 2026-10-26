@@ -368,7 +368,7 @@ See the [operating guide](../README.md#native-auth-and-headless-prompts) for met
 | `providers` | `tools` |
 | `agent`, `pipeline`, `tools`, `sandbox`, `jobs`, `workspace`, `providers`, `store` | `gateway`, `http`, `channels/<vendor>` |
 
-Allowed: `tools` imports `providers`, `sandbox`, `jobs` and `workspace`. `jobs` imports `sandbox`. The Agent reaches `jobs` only through the `Notifier` that the composition root sets, and `jobs` reaches the Agent only through it.
+Allowed: `tools` imports `providers`, `sandbox`, `jobs` and `workspace`. `jobs` imports `sandbox`. `jobs` reaches the Agent only through the `jobs.Owner` of each job: the shell tools wrap the notice port of the call (`tools.Context.Notices`, a `tasks.Port`), so a job notice goes through `Agent.Notify` to the conversation that started the job.
 
 ### 8.2 Rules added by Ask
 
@@ -392,7 +392,7 @@ Allowed: `tools` imports `providers`, `sandbox`, `jobs` and `workspace`. `jobs` 
 | A new LLM vendor | its provider and model records (data); a new adapter `internal/providers/<api>/` only for a new wire API | `providers.Provider` for a new adapter |
 | A new chat platform | `internal/channels/<vendor>/` | `channels.Channel`, embed `BaseChannel` |
 | A new control handler | `internal/pipeline/<name>.go` | Register a typed handler with `pipeline.Registry`; stages stay private to agent. Example: `command-guard` (`CommandGuard`, a `BeforeTool` handler) is registered on a per-agent registry only when `ASK_COMMAND_GUARD=1`; the handler never reads the environment |
-| A new job or process rule | `internal/jobs/` or `internal/sandbox/` | Jobs reach the Agent through `jobs.Notifier`. Resources that a session owns close through `agent.Config.Release`, which `Agent.Dispose` calls once after the run and its started tools drained and before the log closes (the job table closes there) |
+| A new job or process rule | `internal/jobs/` or `internal/sandbox/` | Jobs reach the Agent through the `jobs.Owner` of each job (the notice port of the tool call). Resources that a session owns close through `agent.Config.Release`, which `Agent.Dispose` calls once after the run and its started tools drained and before the log closes (the job table closes there) |
 | A new session entry type | `internal/sessions/entry.go` | |
 | A new event type | `pkg/protocol` | Agent publishes lifecycle events; bus owns replay and follow; hooks owns the planned extension adapter |
 | A new user setting or credential | `internal/settings/` | |

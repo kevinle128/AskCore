@@ -45,7 +45,7 @@ The analysis, the verified defects, the reference harnesses (Claude Code, Grok C
 | # | Phase | Status | Effort | Depends on |
 |---|---|---|---|---|
 | 1 | [Agent notice port per generation](./phase-01-agent-notice-port.md) | completed | 1d | — |
-| 2 | [Jobs deliver through the port and scope by generation](./phase-02-jobs-through-port.md) | pending | 2d | 1 |
+| 2 | [Jobs deliver through the port and scope by generation](./phase-02-jobs-through-port.md) | completed | 2d | 1 |
 | 3 | [Remove the busy-retry polling](./phase-03-remove-busy-polling.md) | pending | 1d | 2 |
 | 4 | [Print mode waits for background work](./phase-04-print-mode-background-wait.md) | pending | 3.5d | 2, 3 |
 | 5 | [Design records and docs](./phase-05-design-records-and-docs.md) | pending | 0.5d | 1-4 |

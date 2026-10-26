@@ -106,9 +106,13 @@ type Options struct {
 	// KillGrace is the time that Close gives the jobs after SIGTERM before it
 	// sends SIGKILL to what is left. Zero means 3 s.
 	KillGrace time.Duration
-	// OnError gets the errors that have no caller: a refused notice, a notice
-	// before SetNotifier. Nil drops them.
+	// OnError gets the errors that have no caller: a refused notice, a job
+	// with no owner. Nil drops them.
 	OnError func(error)
+	// IsExpectedDrop tells a refusal that is part of the contract, such as a
+	// notice of a conversation that was reset. Such a refusal is not reported
+	// and mutes the job. Nil treats every refusal as an error.
+	IsExpectedDrop func(error) bool
 }
 
 // StartSpec describes a bash job.
@@ -124,6 +128,9 @@ type StartSpec struct {
 	// is reported by Wait and gets no notice. A wait that gives up turns the job
 	// into a background job with a notice.
 	Foreground bool
+	// Owner is the conversation that starts the job. Its notices go there,
+	// and only that conversation sees the job.
+	Owner Owner
 }
 
 // JobInfo is a snapshot of one job for job_list.
@@ -165,6 +172,10 @@ type Job struct {
 	held          bool // Start registered the first Wait as a waiter
 	cursor        int64
 	stopTimeout   func() bool
+	muted         bool // the owner refused a notice as expected: no more events
+
+	owner Owner  // set at start, never changed
+	gen   uint64 // generation of owner
 }
 
 // ID returns bash-N or monitor-N.
@@ -242,13 +253,12 @@ type Table struct {
 	maxActive int
 	killGrace time.Duration
 	onError   func(error)
+	expected  func(error) bool
 
 	mu       sync.Mutex // guards the fields below and the state of every Job
 	jobs     map[string]*Job
 	counters map[Kind]int
 	seq      int
-	notifier Notifier
-	hasNote  bool
 	closing  bool
 	owners   sync.WaitGroup
 
@@ -269,6 +279,7 @@ func New(o Options) *Table {
 		maxActive: o.MaxActive,
 		killGrace: o.KillGrace,
 		onError:   o.OnError,
+		expected:  o.IsExpectedDrop,
 		jobs:      make(map[string]*Job),
 		counters:  make(map[Kind]int),
 	}
@@ -284,14 +295,6 @@ func New(o Options) *Table {
 	return t
 }
 
-// SetNotifier sets the way to the Agent. The composition root calls it once,
-// after the Agent exists; a notice that is ready earlier goes to OnError.
-func (t *Table) SetNotifier(n Notifier) {
-	t.mu.Lock()
-	defer t.mu.Unlock()
-	t.notifier, t.hasNote = n, true
-}
-
 func (t *Table) report(err error) {
 	if t.onError != nil && err != nil {
 		t.onError(err)
@@ -304,11 +307,11 @@ func (t *Table) Start(spec StartSpec) (*Job, error) {
 	if spec.Kind != "" && spec.Kind != KindBash {
 		return nil, fmt.Errorf("jobs: Start runs bash jobs, not %q; use StartMonitor", spec.Kind)
 	}
-	return t.launch(KindBash, spec.Command, spec.Cwd, nil, spec.Foreground)
+	return t.launch(KindBash, spec.Command, spec.Cwd, nil, spec.Foreground, spec.Owner)
 }
 
 // launch starts the process of a job and its owner goroutine.
-func (t *Table) launch(kind Kind, command, cwd string, mon *monitor, held bool) (*Job, error) {
+func (t *Table) launch(kind Kind, command, cwd string, mon *monitor, held bool, owner Owner) (*Job, error) {
 	if strings.TrimSpace(command) == "" {
 		return nil, errors.New("jobs: empty command")
 	}
@@ -319,7 +322,12 @@ func (t *Table) launch(kind Kind, command, cwd string, mon *monitor, held bool) 
 	if t.closing {
 		return nil, ErrClosed
 	}
-	if t.activeLocked() >= t.maxActive {
+	gen := genOf(owner)
+	t.pruneLocked(gen)
+	if active := t.activeLocked(); active >= t.maxActive {
+		if older := t.activeOtherLocked(gen); older > 0 {
+			return nil, fmt.Errorf("%w (%d): %d of them belong to an earlier conversation and end when the session closes.", ErrTooManyJobs, t.maxActive, older) //nolint:staticcheck // the text is shown to the model
+		}
 		return nil, fmt.Errorf("%w (%d). Stop one with job_kill or wait for one to finish.", ErrTooManyJobs, t.maxActive) //nolint:staticcheck // the text is shown to the model
 	}
 	id := fmt.Sprintf("%s-%d", kind, t.counters[kind]+1)
@@ -332,6 +340,8 @@ func (t *Table) launch(kind Kind, command, cwd string, mon *monitor, held bool) 
 		done:    make(chan struct{}),
 		status:  StatusRunning,
 		mon:     mon,
+		owner:   owner,
+		gen:     gen,
 	}
 	if held {
 		// The wait of the caller is registered before the process can end.
@@ -379,6 +389,48 @@ func (t *Table) activeLocked() int {
 		}
 	}
 	return n
+}
+
+// activeOtherLocked counts the active jobs of other generations.
+func (t *Table) activeOtherLocked(gen uint64) int {
+	n := 0
+	for _, j := range t.jobs {
+		if j.gen != gen && !j.finishedLocked() {
+			n++
+		}
+	}
+	return n
+}
+
+// pruneLocked removes the finished jobs of generations older than gen. Their
+// conversation was reset, so nobody can read them any more. Generations only
+// grow, so a newer caller is the proof.
+func (t *Table) pruneLocked(gen uint64) {
+	for id, j := range t.jobs {
+		if j.gen < gen && j.finishedLocked() && j.waiters == 0 {
+			j.awaited = true
+			delete(t.jobs, id)
+		}
+	}
+}
+
+// lookupLocked returns the job id of generation gen. A job of another
+// generation is unknown to the caller.
+func (t *Table) lookupLocked(gen uint64, id string) (*Job, bool) {
+	t.pruneLocked(gen)
+	j, ok := t.jobs[id]
+	if !ok || j.gen != gen {
+		return nil, false
+	}
+	return j, true
+}
+
+// genOf returns the generation of owner, 0 when there is none.
+func genOf(owner Owner) uint64 {
+	if owner == nil {
+		return 0
+	}
+	return owner.Gen()
 }
 
 // labelOf returns the first line of command, cut to labelMax characters.
@@ -529,12 +581,12 @@ func (t *Table) takeLocked(j *Job) {
 	delete(t.jobs, j.id)
 }
 
-// Kill stops the job as asked by the model, waits until the process group is
+// Kill stops the job of generation gen as asked by the model, waits until the process group is
 // gone and removes the job. No notice follows. The returned Job holds the
 // final output and status. Killing a job that already ended only removes it.
-func (t *Table) Kill(id, reason string) (*Job, error) {
+func (t *Table) Kill(gen uint64, id, reason string) (*Job, error) {
 	t.mu.Lock()
-	j, ok := t.jobs[id]
+	j, ok := t.lookupLocked(gen, id)
 	t.mu.Unlock()
 	if !ok {
 		return nil, fmt.Errorf("%w: %s", ErrUnknownJob, id)
@@ -550,14 +602,17 @@ func (t *Table) Kill(id, reason string) (*Job, error) {
 	return j, nil
 }
 
-// List returns the jobs that the table holds, in start order: the active jobs
+// List returns the jobs of generation gen, in start order: the active jobs
 // and the finished jobs that nobody has read.
-func (t *Table) List() []JobInfo {
+func (t *Table) List(gen uint64) []JobInfo {
 	t.mu.Lock()
 	defer t.mu.Unlock()
+	t.pruneLocked(gen)
 	jobs := make([]*Job, 0, len(t.jobs))
 	for _, j := range t.jobs {
-		jobs = append(jobs, j)
+		if j.gen == gen {
+			jobs = append(jobs, j)
+		}
 	}
 	slices.SortFunc(jobs, func(a, b *Job) int { return a.seq - b.seq })
 	out := make([]JobInfo, len(jobs))

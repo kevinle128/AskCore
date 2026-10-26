@@ -9,18 +9,19 @@ import (
 	"AskCore/pkg/protocol"
 )
 
-// Notifier is the way from the table to the Agent. The table never imports the
-// agent package: the composition root passes the methods of the Agent.
-type Notifier struct {
-	// FollowUp queues a message for a cycle of its own. The table uses it for
-	// the completion notice of a job.
-	FollowUp func(protocol.Message) (string, error)
-	// Steer queues a message for the next turn boundary of the active run. The
-	// table uses it for monitor events.
-	Steer func(protocol.Message) (string, error)
+// Owner is the conversation that started a job. The completion notice and
+// the monitor events of the job go to that conversation only. The table never
+// imports the agent package: the tool that starts the job passes the owner.
+type Owner interface {
+	// Gen is the generation of the conversation. Only callers of the same
+	// generation see the job.
+	Gen() uint64
+	// Notify queues msg for the model. A refusal of a reset or closed
+	// conversation is expected; see Options.IsExpectedDrop.
+	Notify(msg protocol.Message) (string, error)
 	// Remove deletes a queued message that no run has taken yet. It reports
 	// whether it did. The table uses it to merge monitor events.
-	Remove func(inputID string) bool
+	Remove(id string) bool
 }
 
 // reminderMessage returns the user message that carries text as a system
@@ -82,28 +83,32 @@ func (t *Table) sendNotice(j *Job) {
 	}
 	j.noticeStarted = true
 	id, text := j.id, j.noticeLocked()
-	n, hasNotifier := t.notifier, t.hasNote
 	t.mu.Unlock()
-	if !hasNotifier || n.FollowUp == nil {
+	if j.owner == nil {
 		t.report(fmt.Errorf("notice for job %s: %w", id, ErrNoNotifier))
 		return
 	}
-	if _, err := n.FollowUp(t.reminderMessage(text)); err != nil {
-		t.report(fmt.Errorf("notice for job %s: %w", id, err))
+	if _, err := j.owner.Notify(t.reminderMessage(text)); err != nil {
+		t.refused(j, fmt.Errorf("notice for job %s: %w", id, err))
 	}
 }
 
-// notifierSnapshot returns the notifier under the lock.
-func (t *Table) notifierSnapshot() (Notifier, bool) {
-	t.mu.Lock()
-	defer t.mu.Unlock()
-	return t.notifier, t.hasNote
+// refused handles a refusal of the owner. An expected refusal, such as the
+// notice of a reset conversation, mutes the job and is not reported.
+func (t *Table) refused(j *Job, err error) {
+	if t.expected != nil && t.expected(err) {
+		t.mu.Lock()
+		j.muted = true
+		t.mu.Unlock()
+		return
+	}
+	t.report(err)
 }
 
 // eventsMuted reports whether monitor events of j must not be sent: the model
-// stopped the job, or the table is closing.
+// stopped the job, the owner refused it as expected, or the table is closing.
 func (t *Table) eventsMuted(j *Job) bool {
 	t.mu.Lock()
 	defer t.mu.Unlock()
-	return j.killedByModel || t.closing
+	return j.killedByModel || j.muted || t.closing
 }

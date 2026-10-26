@@ -50,9 +50,9 @@ type ReadResult struct {
 // than 600 s means 600 s) or ctx ends. Reading the final status marks the end
 // as seen and removes the job, so no notice follows. A canceled read keeps
 // the cursor and the job for a later call.
-func (t *Table) Read(ctx context.Context, id string, wait bool, timeout time.Duration) (ReadResult, error) {
+func (t *Table) Read(ctx context.Context, gen uint64, id string, wait bool, timeout time.Duration) (ReadResult, error) {
 	t.mu.Lock()
-	j, ok := t.jobs[id]
+	j, ok := t.lookupLocked(gen, id)
 	if !ok {
 		t.mu.Unlock()
 		return ReadResult{}, fmt.Errorf("%w: %s", ErrUnknownJob, id)

@@ -24,6 +24,7 @@ import (
 	"AskCore/internal/providers"
 	"AskCore/internal/providers/anthropic"
 	"AskCore/internal/sandbox"
+	"AskCore/internal/tasks"
 	"AskCore/internal/tools"
 	"AskCore/pkg/protocol"
 )
@@ -294,6 +295,9 @@ func newNativeAgentOn(o options, getenv func(string) string, service *auth.Servi
 	var ag *agent.Agent
 	jt := jobs.New(jobs.Options{
 		Clock: sandbox.SystemClock,
+		// A notice of a reset conversation or a disposed Agent is dropped on
+		// purpose; the job is muted and nothing is reported.
+		IsExpectedDrop: func(err error) bool { return errors.Is(err, tasks.ErrNotDelivered) },
 		Env: func() []string {
 			st := ag.State()
 			return sandbox.ChildEnv(environ(), map[string]string{
@@ -361,7 +365,6 @@ func newNativeAgentOn(o options, getenv func(string) string, service *auth.Servi
 		return fail(err)
 	}
 	ag = made
-	jt.SetNotifier(jobs.Notifier{FollowUp: ag.FollowUp, Steer: ag.Steer, Remove: ag.Remove})
 	return ag, jt, nil
 }
 

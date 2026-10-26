@@ -13,6 +13,7 @@ import (
 
 	"AskCore/internal/jobs"
 	"AskCore/internal/sandbox"
+	"AskCore/internal/tasks"
 	"AskCore/pkg/protocol"
 )
 
@@ -108,9 +109,13 @@ func (b *Bash) Execute(ctx context.Context, tc Context, args json.RawMessage) (p
 		return protocol.ToolExecutionResult{}, err
 	}
 
+	owner, err := jobOwnerOf(tc)
+	if err != nil {
+		return protocol.ToolExecutionResult{}, err
+	}
 	background := in.RunInBackground != nil && *in.RunInBackground
 	// A foreground command is waited for below; its end must not also come as a notice.
-	job, err := b.table.Start(jobs.StartSpec{Kind: jobs.KindBash, Command: in.Command, Cwd: tc.Cwd, Foreground: !background})
+	job, err := b.table.Start(jobs.StartSpec{Kind: jobs.KindBash, Command: in.Command, Cwd: tc.Cwd, Foreground: !background, Owner: owner})
 	if err != nil {
 		return protocol.ToolExecutionResult{}, startFailure(err)
 	}
@@ -361,4 +366,29 @@ func endsInBackgroundOperator(command string) bool {
 		}
 	}
 	return last == '&' && prev != '&' && prev != '>' && prev != '<' && prev != '|'
+}
+
+// errNoConversation refuses a job tool that runs outside an Agent: a job needs
+// a conversation for its notices and its visibility.
+var errNoConversation = errors.New("this tool needs an agent conversation; it has none")
+
+// jobOwner is the conversation of a tool call as the job table sees it: the
+// notices of the job wake that conversation at its next turn boundary.
+type jobOwner struct{ port tasks.Port }
+
+func (o jobOwner) Gen() uint64 { return o.port.Gen() }
+
+func (o jobOwner) Notify(msg protocol.Message) (string, error) {
+	return o.port.Notify(tasks.NoticeWake, msg)
+}
+
+func (o jobOwner) Remove(id string) bool { return o.port.Remove(id) }
+
+// jobOwnerOf returns the owner of the jobs that the call starts or sees. It
+// never falls back to a default generation.
+func jobOwnerOf(tc Context) (jobOwner, error) {
+	if tc.Notices == nil {
+		return jobOwner{}, errNoConversation
+	}
+	return jobOwner{port: tc.Notices}, nil
 }

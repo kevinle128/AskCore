@@ -1,7 +1,7 @@
 ---
 phase: 2
 title: "Jobs deliver through the port and scope by generation"
-status: pending
+status: completed
 priority: P1
 effort: "2d"
 dependencies: [1]
@@ -97,3 +97,15 @@ Pass: all commands exit 0, and the `rg` command prints nothing.
 ## Rollback
 
 Revert the phase commits; the `FollowUp`/`Steer` path and `SetNotifier` return.
+
+## Result (2026-10-26)
+
+- Implemented as designed with two simplifications found in the scout:
+  - Finished jobs of an older generation are removed when a newer caller next uses the table (start, read, kill, list), not from a reset hook. Generations only grow, so no hook into `acp` is needed.
+  - `Wait` keeps its signature: only `bash` calls it, for the job it just started.
+- `refusedNoticeAgent` became `orphanJobAgent`: the Agent no longer refuses a job notice as an error (a stale or disposed conversation is an expected drop; no model queues the notice), so the sink tests now use the remaining real error path, a job with no owner.
+- `TestPrintMonitorOverloadKillsProcess` changed to the S1 timing: the stop event and the completion notice arrive in the same wait and are taken at one turn boundary (3 requests, not 4).
+- `TestJobNoticeDeliveredWithFullHumanQueue` was not added: filling the default bound needs 100 queued cycles. The cap exemption is proven by the phase 1 test `TestNoticePortBypassesQueueCap`, and `TestJobNoticeSurvivesAbort` proves that a job notice has the notice origin.
+- The reset tests run on the real Agent and job table (`newTestSession`). The faux provider cannot call `bash`, so an `ask acp` end-to-end test cannot start a job; `Session.Reset` calls `Agent.Reset` unchanged.
+- Verification: new tests in `internal/jobs` (7), `internal/tools` (1) and `cmd/tui` (2) pass; `go test -race` on jobs, tools and agent passes; golangci-lint passes, and a probe import of `tasks` into `jobs` is refused by the new depguard rule; the `rg` gate is empty.
+- Known flaky test, not caused by this plan: `TestACPE2ERequestCancel` (`cmd/tui`) fails about 1 in 8 runs under load with `model request failed: UNKNOWN`, on the commit before phase 1 (`28c8869`) as on the current tree (A/B run 2026-10-26). `TestNewerBuildReplacesABusyLeader` failed once under the full suite and passed alone 5 of 5 on both trees.

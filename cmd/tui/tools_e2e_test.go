@@ -1355,15 +1355,16 @@ func TestPrintMonitorOverloadKillsProcess(t *testing.T) {
 			time.Sleep(settle)
 		}, "done"),
 		say("saw the stop"),
-		say("noticed"),
 	)
 
 	r := runPrint(t, m, printSpec{})
 
 	r.requireOK(t)
 	requireGroupGone(t, pgid)
+	// The stop event and the completion notice both arrive while the run
+	// waits for the model, so the next turn boundary takes them together.
 	assert.Contains(t, m.userText(2), "monitor-1 stopped: output too fast for the monitor")
-	assert.Contains(t, m.userText(3), "[status: killed, reason: overload]")
+	assert.Contains(t, m.userText(2), "[status: killed, reason: overload]")
 }
 
 func TestPrintMonitorStopsAtTimeout(t *testing.T) {
@@ -1547,9 +1548,11 @@ func TestPrintExitKillsBackgroundJobs(t *testing.T) {
 
 // ---- job table diagnostics ----
 
-// refusedNoticeAgent builds a session that has no model, so the Agent refuses
-// the completion notice of a job, and runs one short job to its end.
-func refusedNoticeAgent(t *testing.T, o options) {
+// orphanJobAgent builds a session and runs one short job with no owner, so its
+// completion notice has nowhere to go and the job table reports it. The Agent
+// refuses no notice on its own: a stale or disposed conversation is an
+// expected drop, and an Agent with no model queues the notice.
+func orphanJobAgent(t *testing.T, o options) {
 	t.Helper()
 	getenv := func(string) string { return "" }
 	ag, jt, err := newNativeAgentOn(o, getenv, nil, newSessionID(), t.TempDir(), nil, providers.Model{})
@@ -1564,7 +1567,7 @@ func TestJobTableErrorsReachTheConfiguredSink(t *testing.T) {
 	t.Parallel()
 	var mu sync.Mutex
 	var got []error
-	refusedNoticeAgent(t, options{onJobError: func(err error) {
+	orphanJobAgent(t, options{onJobError: func(err error) {
 		mu.Lock()
 		got = append(got, err)
 		mu.Unlock()
@@ -1588,7 +1591,7 @@ func TestJobTableErrorsDefaultToStderr(t *testing.T) {
 	os.Stderr = file
 	t.Cleanup(func() { os.Stderr = saved })
 
-	refusedNoticeAgent(t, options{})
+	orphanJobAgent(t, options{})
 
 	require.Eventually(t, func() bool {
 		data, readErr := os.ReadFile(file.Name())

@@ -29,7 +29,7 @@ func TestWaitReturnsDoneAndRemovesJob(t *testing.T) {
 	assert.Equal(t, 0, *j.Result().ExitCode)
 	out := j.Snapshot()
 	assert.Equal(t, "hi\n", string(out.Head))
-	assert.Empty(t, r.tb.List())
+	assert.Empty(t, r.tb.List(r.gen()))
 	assert.Empty(t, r.n.all(), "a job whose end the caller saw sends no notice")
 }
 
@@ -42,7 +42,7 @@ func TestWaitMovesToBackgroundAfterBudget(t *testing.T) {
 	assert.Equal(t, Background, r.tb.Wait(background(), j.ID(), 100*time.Millisecond))
 	assert.GreaterOrEqual(t, time.Since(start), 90*time.Millisecond)
 	assert.Equal(t, StatusRunning, j.Status())
-	require.Len(t, r.tb.List(), 1)
+	require.Len(t, r.tb.List(r.gen()), 1)
 
 	open()
 	waitDone(t, j)
@@ -77,7 +77,7 @@ func TestWaitCancelledKillsAndWaits(t *testing.T) {
 		t.Fatal("Wait returned before the job ended")
 	}
 	assert.Equal(t, StatusKilled, j.Status())
-	assert.Empty(t, r.tb.List())
+	assert.Empty(t, r.tb.List(r.gen()))
 	requireGroupGone(t, j.proc.PGID())
 	assert.Empty(t, r.n.all(), "a cancelled call sends no notice")
 }
@@ -142,7 +142,7 @@ func TestCapRefusesEleventhActiveJob(t *testing.T) {
 		jobs[i] = r.bash(command)
 	}
 
-	_, err := r.tb.Start(StartSpec{Command: "echo no", Cwd: r.dir})
+	_, err := r.tb.Start(StartSpec{Owner: r.owner(), Command: "echo no", Cwd: r.dir})
 	require.ErrorIs(t, err, ErrTooManyJobs)
 	assert.EqualError(t, err, "Too many active jobs (10). Stop one with job_kill or wait for one to finish.")
 
@@ -165,9 +165,9 @@ func TestCapCountsMonitors(t *testing.T) {
 	}
 	r.monitor(MonitorSpec{Command: command, Persistent: true})
 
-	_, err := r.tb.Start(StartSpec{Command: "echo no", Cwd: r.dir})
+	_, err := r.tb.Start(StartSpec{Owner: r.owner(), Command: "echo no", Cwd: r.dir})
 	require.ErrorIs(t, err, ErrTooManyJobs)
-	_, err = r.tb.StartMonitor(MonitorSpec{Command: "echo no", Cwd: r.dir, Description: "x", Persistent: true})
+	_, err = r.tb.StartMonitor(MonitorSpec{Owner: r.owner(), Command: "echo no", Cwd: r.dir, Description: "x", Persistent: true})
 	require.ErrorIs(t, err, ErrTooManyJobs)
 	open()
 }
@@ -198,7 +198,7 @@ func TestListReportsJobs(t *testing.T) {
 	finished := r.bash("exit 3")
 	waitDone(t, finished)
 
-	infos := r.tb.List()
+	infos := r.tb.List(r.gen())
 	require.Len(t, infos, 2)
 	assert.Equal(t, running.ID(), infos[0].ID)
 	assert.Equal(t, KindBash, infos[0].Kind)
@@ -216,7 +216,7 @@ func TestListElapsedFollowsClock(t *testing.T) {
 	r.bash(command)
 
 	r.clock.Advance(12 * time.Second)
-	infos := r.tb.List()
+	infos := r.tb.List(r.gen())
 	require.Len(t, infos, 1)
 	assert.Equal(t, 12*time.Second, infos[0].Elapsed)
 	open()
@@ -227,17 +227,17 @@ func TestKillByModelSendsNoNotice(t *testing.T) {
 	command, _ := r.gate("never")
 	j := r.bash(command)
 
-	got, err := r.tb.Kill(j.ID(), "no longer needed")
+	got, err := r.tb.Kill(r.gen(), j.ID(), "no longer needed")
 	require.NoError(t, err)
 	assert.Same(t, j, got)
 	assert.Equal(t, StatusKilled, j.Status())
 	assert.Equal(t, "[status: killed, reason: no longer needed]", j.StatusLine())
-	assert.Empty(t, r.tb.List())
+	assert.Empty(t, r.tb.List(r.gen()))
 	requireGroupGone(t, j.proc.PGID())
 	assert.Empty(t, r.n.all())
 	assert.Empty(t, r.errors())
 
-	_, err = r.tb.Kill(j.ID(), "")
+	_, err = r.tb.Kill(r.gen(), j.ID(), "")
 	assert.ErrorIs(t, err, ErrUnknownJob)
 }
 
@@ -251,10 +251,10 @@ func TestKillShowsStoppingStatus(t *testing.T) {
 	killed := make(chan struct{})
 	go func() {
 		defer close(killed)
-		_, _ = r.tb.Kill(j.ID(), "stop")
+		_, _ = r.tb.Kill(r.gen(), j.ID(), "stop")
 	}()
 	waitFor(t, 2*time.Second, "stopping status", func() bool { return j.Status() == StatusStopping })
-	infos := r.tb.List()
+	infos := r.tb.List(r.gen())
 	require.Len(t, infos, 1)
 	assert.Equal(t, StatusStopping, infos[0].Status)
 	<-killed
@@ -283,7 +283,7 @@ func TestNoNoticeAfterAwaitedRead(t *testing.T) {
 	j := r.bash(command)
 	time.AfterFunc(100*time.Millisecond, open)
 
-	res, err := r.tb.Read(background(), j.ID(), true, 10*time.Second)
+	res, err := r.tb.Read(background(), r.gen(), j.ID(), true, 10*time.Second)
 	require.NoError(t, err)
 	assert.Equal(t, StatusCompleted, res.Status)
 	waitDone(t, j)
@@ -314,7 +314,7 @@ func TestRefusedNoticeGoesToOnErrorAndJobStaysReadable(t *testing.T) {
 	assert.ErrorIs(t, err, refusal)
 	assert.Contains(t, err.Error(), "bash-1")
 
-	res, readErr := r.tb.Read(background(), j.ID(), false, 0)
+	res, readErr := r.tb.Read(background(), r.gen(), j.ID(), false, 0)
 	require.NoError(t, readErr)
 	assert.Equal(t, "kept\n", res.Output)
 	assert.Equal(t, StatusCompleted, res.Status)
@@ -390,7 +390,7 @@ func TestKillRemainingSendsSigkillWithoutWait(t *testing.T) {
 	// The sweep ends the session of the table: no notice reaches an Agent
 	// that is going away.
 	assert.Empty(t, r.n.all())
-	_, err := r.tb.Start(StartSpec{Command: "true", Cwd: r.dir})
+	_, err := r.tb.Start(StartSpec{Owner: r.owner(), Command: "true", Cwd: r.dir})
 	assert.ErrorIs(t, err, ErrClosed)
 }
 
@@ -398,9 +398,9 @@ func TestStartAfterCloseFails(t *testing.T) {
 	r := newRig(t)
 	require.NoError(t, r.tb.Close())
 
-	_, err := r.tb.Start(StartSpec{Command: "true", Cwd: r.dir})
+	_, err := r.tb.Start(StartSpec{Owner: r.owner(), Command: "true", Cwd: r.dir})
 	assert.ErrorIs(t, err, ErrClosed)
-	_, err = r.tb.StartMonitor(MonitorSpec{Command: "true", Cwd: r.dir, Description: "x"})
+	_, err = r.tb.StartMonitor(MonitorSpec{Owner: r.owner(), Command: "true", Cwd: r.dir, Description: "x"})
 	assert.ErrorIs(t, err, ErrClosed)
 }
 
@@ -413,13 +413,13 @@ func TestUnusedTableOwnsNoFileOrGoroutine(t *testing.T) {
 
 func TestStartRejectsBadSpec(t *testing.T) {
 	r := newRig(t)
-	_, err := r.tb.Start(StartSpec{Command: "", Cwd: r.dir})
+	_, err := r.tb.Start(StartSpec{Owner: r.owner(), Command: "", Cwd: r.dir})
 	assert.Error(t, err)
-	_, err = r.tb.Start(StartSpec{Command: "true", Cwd: ""})
+	_, err = r.tb.Start(StartSpec{Owner: r.owner(), Command: "true", Cwd: ""})
 	assert.Error(t, err)
-	_, err = r.tb.Start(StartSpec{Kind: KindMonitor, Command: "true", Cwd: r.dir})
+	_, err = r.tb.Start(StartSpec{Owner: r.owner(), Kind: KindMonitor, Command: "true", Cwd: r.dir})
 	assert.Error(t, err)
-	assert.Empty(t, r.tb.List())
+	assert.Empty(t, r.tb.List(r.gen()))
 
 	// A refused start does not use up an id.
 	j := r.bash("true")
@@ -480,7 +480,7 @@ func TestNoticeRechecksReadAndCloseAfterTimerStop(t *testing.T) {
 				t.Fatal("timeout stop did not start")
 			}
 			if action == "read" {
-				_, err := r.tb.Read(background(), j.ID(), false, 0)
+				_, err := r.tb.Read(background(), r.gen(), j.ID(), false, 0)
 				assert.NoError(t, err)
 			} else {
 				r.tb.KillRemaining()

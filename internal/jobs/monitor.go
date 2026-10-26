@@ -51,15 +51,17 @@ type MonitorSpec struct {
 	Timeout time.Duration
 	// Persistent runs the monitor until job_kill or the end of the session.
 	Persistent bool
+	// Owner is the conversation that starts the monitor; see StartSpec.Owner.
+	Owner Owner
 }
 
 // StartMonitor starts a monitor as a job of kind monitor. It counts toward
 // the cap of active jobs. Stdout lines go to the model as events through
-// Notifier.Steer; stderr goes to the job buffer only, and the end of the
+// the owner; stderr goes to the job buffer only, and the end of the
 // command ends the watch with the normal completion notice.
 func (t *Table) StartMonitor(spec MonitorSpec) (*Job, error) {
 	m := &monitor{description: spec.Description}
-	j, err := t.launch(KindMonitor, spec.Command, spec.Cwd, m, false)
+	j, err := t.launch(KindMonitor, spec.Command, spec.Cwd, m, false, spec.Owner)
 	if err != nil {
 		return nil, err
 	}
@@ -308,19 +310,19 @@ func (m *monitor) refillLocked(now time.Time) {
 	}
 }
 
-// deliver sends one event with Steer. When the previous message is still
-// queued, Remove takes it back and both events go out as one message, so the
-// Agent reads one reminder per delivery.
+// deliver sends one event to the owner of the job. When the previous message
+// is still queued, Remove takes it back and both events go out as one message,
+// so the Agent reads one reminder per delivery.
 func (m *monitor) deliver(text string) {
 	m.sendMu.Lock()
 	defer m.sendMu.Unlock()
-	n, ok := m.t.notifierSnapshot()
-	if !ok || n.Steer == nil {
+	owner := m.job.owner
+	if owner == nil {
 		m.t.report(fmt.Errorf("events of job %s: %w", m.job.id, ErrNoNotifier))
 		return
 	}
 	body := text
-	if m.pendingID != "" && n.Remove != nil && n.Remove(m.pendingID) {
+	if m.pendingID != "" && owner.Remove(m.pendingID) {
 		body = strings.TrimPrefix(m.pending, monitorCutMarker+"\n") + "\n" + text
 		runes := []rune(body)
 		if len(runes) > monitorBatchMax {
@@ -334,16 +336,20 @@ func (m *monitor) deliver(text string) {
 		return
 	}
 	element := monitorElement(m.job.id, m.description, body)
-	id, err := n.Steer(m.t.reminderMessage(element))
+	id, err := owner.Notify(m.t.reminderMessage(element))
 	if err != nil {
-		m.t.report(fmt.Errorf("events of job %s: %w", m.job.id, err))
+		m.t.refused(m.job, fmt.Errorf("events of job %s: %w", m.job.id, err))
 		return
 	}
 	m.pendingID, m.pending = id, body
 }
 
+// bodyEscaper escapes the event lines, so command output cannot close the
+// monitor-event element or the system reminder around it.
+var bodyEscaper = strings.NewReplacer("&", "&amp;", "<", "&lt;", ">", "&gt;")
+
 // monitorElement wraps the event lines of one delivery for the model.
 func monitorElement(job, description, body string) string {
 	return fmt.Sprintf("<monitor-event job=\"%s\" description=\"%s\">\n%s\n</monitor-event>",
-		html.EscapeString(job), html.EscapeString(description), body)
+		html.EscapeString(job), html.EscapeString(description), bodyEscaper.Replace(body))
 }
