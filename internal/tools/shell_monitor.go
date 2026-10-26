@@ -46,7 +46,8 @@ func (*Monitor) Decl() protocol.ToolDecl {
 			"Use `grep --line-buffered` in pipes (plain `grep` buffers and delays events by minutes). " +
 			"Responsiveness: print FAILED at once when any tracked item fails; never wait for unrelated work to finish. " +
 			"Set persistent: true for session-length watches (PR monitoring, log tails); the monitor then runs until you " +
-			"call job_kill or the session ends. Otherwise it stops at timeout_ms (default 10 h).",
+			"call job_kill or the session ends. Otherwise it stops at timeout_ms (default 10 h). " +
+			"In a non-interactive run every monitor, a persistent one included, stops after at most 10 minutes; start it again if it is still needed.",
 		Parameters: json.RawMessage(`{"type":"object","properties":{` +
 			`"command":{"type":"string","description":"Shell command to run; each stdout line is an event"},` +
 			`"description":{"type":"string","description":"Short name of the watch, shown with each event"},` +

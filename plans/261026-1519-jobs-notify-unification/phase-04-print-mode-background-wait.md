@@ -1,7 +1,7 @@
 ---
 phase: 4
 title: "Print mode waits for background work"
-status: pending
+status: completed
 priority: P2
 effort: "3.5d"
 dependencies: [2, 3]
@@ -44,8 +44,8 @@ Deep mode: scout first, then ask the open items below one at a time before you w
 
 ## Open items (ask one at a time at phase start)
 
-1. The tool parameter that sets the background limit, and whether it shows in every mode or only in print mode. H5 Q9 gives `bash` `timeout` the meaning "wait budget" (default 120 s, cap 600 s). A print-mode-only parameter needs a declaration that varies by mode.
-2. A `persistent` monitor never completes. Options include stopping persistent monitors at the final answer or leaving them to the print limit.
+1. Decided (user, 2026-10-26, P4-1 = A, as Claude Code): reuse `timeout`. With `run_in_background: true` in `ask -p` it sets the background limit (default 10 min, up to 2 h); a foreground `timeout` stays the wait budget; a command moved to the background gets the default limit from the move; the TUI and the leader have no limit and ignore it. One declaration for every mode; only the description text changes.
+2. Decided (user, 2026-10-26, P4-2 = A, as Claude Code): in `ask -p` every monitor, `persistent` included, gets `min(timeout_ms, print limit)`; at the deadline it stops with one notice that wakes a turn.
 
 ## Existing tests that change
 
@@ -101,3 +101,17 @@ Pass: all commands exit 0, including the re-recorded cassettes and the reference
 ## Rollback
 
 Revert the phase commits (cassettes included); print mode returns to the N2 kill-at-end behavior.
+
+## Result (2026-10-27)
+
+- `jobs.Options.BackgroundLimit` (`Default`, `Max`) stops a background job with `killReason` "background time limit" and a notice that names the limit. The limit counts from a background start or from the move of a foreground job. Zero (TUI, leader, `ask acp`) means no limit.
+- `jobs.Options.DisableBackground` (`ASK_DISABLE_BACKGROUND_TASKS=1`): a foreground command stops at its wait budget; a background start or a monitor is refused with `ErrBackgroundDisabled`.
+- `Table.Idle()` closes when every job has handed off its completion notice; `agent.Config.Background` makes `WaitForQuiescence` wait for it, so a quiescence check never sees the end of a job before its notice is queued.
+- In print mode a monitor deadline is capped at the default limit (10 min), persistent monitors too.
+- `ask -p` prints the first reply, then waits by signal (`WaitForQuiescence`) for the background work and prints the reply of each run that a notice wakes. The idle-wait cap (`ASK_PRINT_BG_WAIT_CEILING_MS`, default 10 min) runs only while the Agent is idle and no bash job runs. A progress line goes to stderr after 5 s when stderr is a terminal.
+- `bash` with `run_in_background`: in print mode `timeout` sets the background limit (default 10 min, at most 2 h; `ASK_PRINT_BG_LIMIT_MS` overrides the default). A foreground `timeout` stays the wait budget. The `bash` and `monitor` descriptions say this; the six cassettes were re-recorded once and `docs/reference/tools.md` regenerated.
+- `--max-turns N` counts every durable turn of the whole run, the woken ones too; a retried attempt does not count. When the limit is hit, stdout gets `Error: Reached max turns (N)` and the exit code is 1.
+- Signals during the wait: SIGINT exits 130 and SIGTERM 143; the Agent is disposed and its job groups are killed; no "Request was aborted" line is printed.
+- Test names that differ from the matrix: the quiescence hand-off is `TestTableIdleWaitsForNoticeHandOff` (`jobs`) and `TestQuiescenceWaitsForBackgroundWork` (`agent`); the bash limit and its notice are `TestBackgroundLimitStopsJobWithNotice`, `TestRequestedBackgroundLimitIsCappedAtMax` and `TestMovedJobGetsDefaultLimitFromTheMove` (`jobs`); the leader case is `TestNativeSessionHasNoBackgroundLimit`; the two signal cases are subtests of `TestPrintSignalDuringBackgroundWait`; "max turns unset" is covered by `TestPrintWaitsForBackgroundJobAndAnswersAgain` (woken turn, no flag, exit 0).
+- Found during verification: `TestJobEndingAtBudgetIsReportedOnce` failed once under heavy machine load. A background job could end and start its notice before `Wait` took the lock; `Wait` then returned `Done` as well. This race was older than this phase; production waits only on foreground jobs, which cannot hit it. `Wait` now returns `Background` when the notice already started (`TestWaitAfterNoticeStartedDoesNotReportAgain` fails without the fix).
+- Known debt: the existing `time.Sleep(settle)` uses in `cmd/tui/tools_e2e_test.go` stay; new tests wait on signals.

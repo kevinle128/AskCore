@@ -361,14 +361,16 @@ func TestPrintEndDisposesAgentAndKillsBackgroundJobs(t *testing.T) {
 	}}
 	var stdout, stderr bytes.Buffer
 	deps := runDependencies{
-		getenv:        nativeEnv(map[string]string{"ASK_HOME": t.TempDir()}),
+		getenv:        nativeEnv(map[string]string{"ASK_HOME": t.TempDir(), printBgLimitEnv: "500"}),
 		inferenceHTTP: &http.Client{Transport: model},
 	}
 
 	code := runWithDependencies([]string{"-p", "--provider", anthropic.ProviderID, "start a job"}, strings.NewReader(""), &stdout, &stderr, deps)
 
 	require.Equal(t, 0, code, stderr.String())
-	assert.Equal(t, "the final answer\n", stdout.String())
+	// ask -p waits for the job that moved to the background; it stops at its
+	// limit and its notice gets one more turn (the scripted model says done).
+	assert.Equal(t, "the final answer\ndone\n", stdout.String())
 	raw, err := os.ReadFile(pidFile)
 	require.NoError(t, err)
 	pid, err := strconv.Atoi(strings.TrimSpace(string(raw)))

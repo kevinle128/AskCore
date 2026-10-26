@@ -169,6 +169,7 @@ func runWithDependencies(argv []string, stdin io.Reader, stdout, stderr io.Write
 			return 1
 		}
 	}
+	o.bgLimit = printBackgroundLimit(deps.getenv)
 	ag, jt, err := newHeadlessAgentWithAuth(o, deps.getenv, service)
 	if err != nil {
 		report(stderr, "Error:", err)
@@ -183,7 +184,11 @@ func runWithDependencies(argv []string, stdin io.Reader, stdout, stderr io.Write
 		return 1
 	}
 
-	code := runHeadless(ag, prompts, mode, stdout, stderr, sigs, service)
+	w := waitConfig{jobs: jt, maxTurns: o.maxTurns, ceiling: printWaitCeiling(deps.getenv)}
+	if isTerminal(stderr) && (mode != modeJSON || !isTerminal(stdout)) {
+		w.progress = stderr
+	}
+	code := runHeadlessWait(ag, prompts, mode, stdout, stderr, sigs, w, service)
 	// The signal path returns after abortGrace, which is shorter than the kill
 	// grace of a job, so a job that traps SIGTERM can still live here.
 	jt.KillRemaining()
@@ -297,7 +302,9 @@ func newNativeAgentOn(o options, getenv func(string) string, service *auth.Servi
 		Clock: sandbox.SystemClock,
 		// A notice of a reset conversation or a disposed Agent is dropped on
 		// purpose; the job is muted and nothing is reported.
-		IsExpectedDrop: func(err error) bool { return errors.Is(err, tasks.ErrNotDelivered) },
+		IsExpectedDrop:    func(err error) bool { return errors.Is(err, tasks.ErrNotDelivered) },
+		BackgroundLimit:   o.bgLimit,
+		DisableBackground: getenv(disableBackgroundEnv) == "1",
 		Env: func() []string {
 			st := ag.State()
 			return sandbox.ChildEnv(environ(), map[string]string{
@@ -344,6 +351,7 @@ func newNativeAgentOn(o options, getenv func(string) string, service *auth.Servi
 		SystemPrompt: tools.PromptSection(reg.Snapshot()),
 		SessionID:    sessionID,
 		Release:      jt.Close,
+		Background:   jt,
 	}
 	if getenv(commandGuardEnv) == "1" {
 		pl := pipeline.NewRegistry()
@@ -387,9 +395,31 @@ func newSessionID() string {
 // Registered auth work drains first with its separate bound; another signal
 // cannot shorten that drain.
 func runHeadless(ag *agent.Agent, prompts []string, mode runMode, stdout, stderr io.Writer, sigs <-chan os.Signal, services ...*auth.Service) int {
+	return runHeadlessWait(ag, prompts, mode, stdout, stderr, sigs, waitConfig{}, services...)
+}
+
+// runHeadlessWait is runHeadless with the background wait of print mode: after
+// the last prompt it waits for the background work of the run, answers each
+// notice in a run of its own, and ends at --max-turns. The wait runs on the
+// goroutine of the prompts, so a signal cancels it like a prompt.
+func runHeadlessWait(ag *agent.Agent, prompts []string, mode runMode, stdout, stderr io.Writer, sigs <-chan os.Signal, w waitConfig, services ...*auth.Service) int {
 	out := newProtocolOut(stdout)
 	ctx, cancel := context.WithCancelCause(context.Background())
 	defer cancel(nil)
+	printer := &replyPrinter{ag: ag, out: out, stderr: stderr}
+	limit := &turnLimit{max: w.maxTurns, stop: func() {
+		printer.disarm()
+		cancel(errMaxTurns)
+		ag.Abort()
+	}}
+	unsubscribe := ag.Subscribe(func(ev protocol.Event) error {
+		limit.observe(ev)
+		if _, ok := ev.(*protocol.AgentSettled); ok && mode == modePrint {
+			printer.settled()
+		}
+		return nil
+	})
+	defer unsubscribe()
 	if mode == modeJSON {
 		// A failed stdout write ends the run and the prompts that have not
 		// started: nobody reads the replies.
@@ -398,17 +428,56 @@ func runHeadless(ag *agent.Agent, prompts []string, mode runMode, stdout, stderr
 			ag.Abort()
 		})()
 	}
+	// The prompts and the background wait run on one goroutine. The reply is
+	// printed here, between them, so nothing prints once a signal has won.
+	prompted, waiting := make(chan error, 1), make(chan struct{})
 	done := make(chan error, 1)
-	go func() { done <- promptAll(ctx, ag, prompts) }()
+	go func() {
+		err := promptAll(ctx, ag, prompts)
+		prompted <- err
+		if err != nil {
+			return
+		}
+		select {
+		case <-waiting:
+		case <-ctx.Done():
+			done <- ctx.Err()
+			return
+		}
+		if w.jobs == nil {
+			done <- nil
+			return
+		}
+		done <- waitBackground(ctx, ag, w)
+	}()
+
+	select {
+	case err := <-prompted:
+		if err != nil {
+			done <- err
+			break
+		}
+		if mode == modePrint && !errors.Is(context.Cause(ctx), errMaxTurns) {
+			printer.first()
+		}
+		close(waiting)
+	case sig := <-sigs:
+		return runHeadlessSignal(ag, out, stderr, sigs, sig, printer, services...)
+	}
 
 	select {
 	case err := <-done:
 		code := 0
 		switch {
+		case errors.Is(context.Cause(ctx), errMaxTurns):
+			code, err = 1, nil
+			if _, werr := fmt.Fprintf(out, "Error: Reached max turns (%d)\n", w.maxTurns); werr != nil {
+				report(stderr, werr)
+			}
 		case err != nil:
 			code = 1
 		case mode == modePrint:
-			code = printReply(ag.State().Messages, out, stderr)
+			code = printer.exitCode()
 		}
 		// The reply is read before Dispose, which ends the background jobs
 		// of the session. Dispose does not change the exit code.
@@ -423,51 +492,59 @@ func runHeadless(ag *agent.Agent, prompts []string, mode runMode, stdout, stderr
 		}
 		return code
 	case sig := <-sigs:
-		var service *auth.Service
-		if len(services) > 0 {
-			service = services[0]
+		return runHeadlessSignal(ag, out, stderr, sigs, sig, printer, services...)
+	}
+}
+
+// runHeadlessSignal ends print mode on a signal: it disposes the Agent, which
+// cancels the active run and ends the background wait, and exits with the code
+// of the signal. Nothing more is printed.
+func runHeadlessSignal(ag *agent.Agent, out *protocolOut, stderr io.Writer, sigs <-chan os.Signal, sig os.Signal, printer *replyPrinter, services ...*auth.Service) int {
+	printer.disarm()
+	var service *auth.Service
+	if len(services) > 0 {
+		service = services[0]
+	}
+	if service != nil {
+		service.StopRefresh()
+	}
+	// Dispose closes admission first, so the prompts that have not started
+	// fail with ErrDisposed, and cancels the active run. It waits for the
+	// run to settle, which includes the tools that started, so it runs on
+	// its own goroutine and the grace below bounds the exit.
+	disposed := make(chan struct{})
+	go func() {
+		defer close(disposed)
+		if err := ag.Dispose(); err != nil {
+			report(stderr, "Dispose:", err)
 		}
-		if service != nil {
-			service.StopRefresh()
+	}()
+	if service != nil {
+		if err := app.AuthWait(service)(context.Background()); err != nil {
+			report(stderr, "Auth shutdown:", err)
 		}
-		// Dispose closes admission first, so the prompts that have not started
-		// fail with ErrDisposed, and cancels the active run. It waits for the
-		// run to settle, which includes the tools that started, so it runs on
-		// its own goroutine and the grace below bounds the exit.
-		disposed := make(chan struct{})
-		go func() {
-			defer close(disposed)
-			if err := ag.Dispose(); err != nil {
-				report(stderr, "Dispose:", err)
-			}
-		}()
-		if service != nil {
-			if err := app.AuthWait(service)(context.Background()); err != nil {
-				report(stderr, "Auth shutdown:", err)
-			}
-		}
-		grace := time.NewTimer(abortGrace)
-		defer grace.Stop()
-		expired := false
+	}
+	grace := time.NewTimer(abortGrace)
+	defer grace.Stop()
+	expired := false
+	select {
+	case <-disposed:
+	case <-sigs:
+	case <-grace.C:
+		expired = true
+	}
+	if !expired {
+		// The final lines wait for a reader that keeps up, but only within
+		// the same grace: a write blocked on a full pipe holds the output
+		// lock, and the exit never waits on that lock. A write error
+		// changes nothing; the signal sets the code.
 		select {
-		case <-disposed:
+		case <-out.flushAsync():
 		case <-sigs:
 		case <-grace.C:
-			expired = true
 		}
-		if !expired {
-			// The final lines wait for a reader that keeps up, but only within
-			// the same grace: a write blocked on a full pipe holds the output
-			// lock, and the exit never waits on that lock. A write error
-			// changes nothing; the signal sets the code.
-			select {
-			case <-out.flushAsync():
-			case <-sigs:
-			case <-grace.C:
-			}
-		}
-		return signalExitCodes[sig]
 	}
+	return signalExitCodes[sig]
 }
 
 // promptTarget is the part of the Agent that promptAll uses.

@@ -53,6 +53,9 @@ type modelStep struct {
 type scriptedAnthropic struct {
 	t     *testing.T
 	steps []modelStep
+	// repeatLast answers a request past the script with the last step, for a
+	// run whose notice turns cannot be counted in advance.
+	repeatLast bool
 
 	mu     sync.Mutex
 	bodies [][]byte
@@ -78,6 +81,9 @@ func (m *scriptedAnthropic) RoundTrip(r *http.Request) (*http.Response, error) {
 	m.bodies = append(m.bodies, body)
 	m.mu.Unlock()
 	if n >= len(m.steps) {
+		if m.repeatLast {
+			return sseResponse(http.StatusOK, m.steps[len(m.steps)-1].reply)(r)
+		}
 		m.t.Errorf("the model got request %d, but the script has %d steps", n+1, len(m.steps))
 		return sseResponse(http.StatusOK, sseText("unexpected request"))(r)
 	}
@@ -249,6 +255,8 @@ type printSpec struct {
 	// environment of the test process, as in ask.
 	environ []string
 	prompts []string
+	// args are extra command-line flags, before the prompts.
+	args []string
 }
 
 // printResult is what ask -p wrote and returned.
@@ -276,6 +284,7 @@ func runPrint(t *testing.T, m *scriptedAnthropic, s printSpec) printResult {
 	if len(s.prompts) == 0 {
 		s.prompts = []string{"go"}
 	}
+	args = append(args, s.args...)
 	args = append(args, s.prompts...)
 	home := t.TempDir()
 	getenv := func(k string) string {
@@ -967,21 +976,27 @@ func TestPrintJSONStreamCarriesBashPartialUpdates(t *testing.T) {
 	assert.Less(t, lastUpdate, endAt)
 }
 
+// shortBgLimit makes the print-mode background limit short, so a test sees a
+// job stop at its limit through the real entry point.
+func shortBgLimit() map[string]string { return map[string]string{printBgLimitEnv: "500"} }
+
 func TestPrintBashMovesToBackgroundAfterTimeout(t *testing.T) {
 	t.Parallel()
 	pgid := filepath.Join(t.TempDir(), "pgid")
 	m := scriptModel(t,
 		call(t, "bash", map[string]any{"command": recordGroup(pgid) + "echo started; sleep 300", "timeout": 1}),
 		sayAfter(func([]byte) { requireGroupAlive(t, pgid) }, "done"),
+		say("noticed the stop"),
 	)
 
-	r := runPrint(t, m, printSpec{})
+	r := runPrint(t, m, printSpec{env: shortBgLimit()})
 
-	r.requireOK(t)
+	assert.Equal(t, "done\nnoticed the stop\n", r.requireOK(t), "print mode waits for the moved job and prints the extra turn")
 	res := m.toolResult(1)
 	assert.False(t, res.IsError)
 	assert.Contains(t, res.Text, "continues as background job bash-1")
 	assert.Contains(t, res.Text, "started")
+	assert.Contains(t, m.userText(2), "was stopped after reaching its background time limit")
 	requireGroupGone(t, pgid)
 }
 
@@ -991,12 +1006,14 @@ func TestPrintBashRunInBackgroundReturnsJobID(t *testing.T) {
 	m := scriptModel(t,
 		call(t, "bash", map[string]any{"command": recordGroup(pgid) + "sleep 300", "run_in_background": true}),
 		sayAfter(func([]byte) { requireGroupAlive(t, pgid) }, "done"),
+		say("noticed the stop"),
 	)
 
-	r := runPrint(t, m, printSpec{})
+	r := runPrint(t, m, printSpec{env: shortBgLimit()})
 
 	r.requireOK(t)
 	assert.Contains(t, m.toolResult(1).Text, "Started background job bash-1.")
+	assert.Contains(t, m.userText(2), `Background command "ps -o pgid=`)
 	requireGroupGone(t, pgid)
 }
 
@@ -1068,8 +1085,11 @@ func TestPrintJobOutputAnswersRunningJobAtOnce(t *testing.T) {
 		}, "job_output", map[string]any{"job_id": "bash-1"}),
 		sayAfter(func([]byte) { elapsed = time.Since(asked) }, "done"),
 	)
+	// The job is still running at the answer; it stops at a short limit and
+	// its notice wakes a turn, so print mode does not wait for the gate.
+	m.repeatLast = true
 
-	r := runPrint(t, m, printSpec{})
+	r := runPrint(t, m, printSpec{env: map[string]string{printBgLimitEnv: "3000"}})
 
 	r.requireOK(t)
 	res := m.toolResult(2)
@@ -1124,8 +1144,11 @@ func TestPrintJobListShowsJobs(t *testing.T) {
 		call(t, "job_list", map[string]any{}),
 		say("done"),
 	)
+	// Both jobs stop at a short limit after the answer; their notices wake a
+	// number of turns that depends on timing.
+	m.repeatLast = true
 
-	r := runPrint(t, m, printSpec{})
+	r := runPrint(t, m, printSpec{env: map[string]string{printBgLimitEnv: "3000"}})
 
 	r.requireOK(t)
 	text := m.toolResult(3).Text
@@ -1145,8 +1168,11 @@ func TestPrintEleventhJobIsRefused(t *testing.T) {
 		say("done"),
 	)
 	m := scriptModel(t, steps...)
+	// The ten jobs stop at the short limit; their notices wake a number of
+	// turns that depends on timing.
+	m.repeatLast = true
 
-	r := runPrint(t, m, printSpec{})
+	r := runPrint(t, m, printSpec{env: shortBgLimit()})
 
 	r.requireOK(t)
 	assert.False(t, m.toolResult(10).IsError, "the monitor is the tenth job")
@@ -1535,14 +1561,16 @@ func TestPrintExitKillsBackgroundJobs(t *testing.T) {
 			return http.StatusOK, "text/event-stream", sseText("all done")
 		}
 	}
-	cmd := builtAsk(t, f, dir, nil, "-p", "--provider", "anthropic", "--model", "claude-sonnet-4-6", "start it")
+	cmd := builtAsk(t, f, dir, []string{printBgLimitEnv + "=500"}, "-p", "--provider", "anthropic", "--model", "claude-sonnet-4-6", "start it")
 	var stdout, stderr lockedBuffer
 	cmd.Stdout, cmd.Stderr = &stdout, &stderr
 
 	err := cmd.Run()
 
 	require.NoError(t, err, "stderr: %s", stderr.String())
-	assert.Equal(t, "all done\n", stdout.String())
+	// ask -p waits for the job, which ignores SIGTERM and stops at its limit
+	// with SIGKILL after the grace; the stop notice gets one more turn.
+	assert.Equal(t, "all done\nall done\n", stdout.String())
 	requireGroupGoneSoon(t, pgid)
 }
 

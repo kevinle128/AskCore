@@ -53,6 +53,20 @@ func TestTableIdleWaitsForNoticeHandOff(t *testing.T) {
 	assert.Len(t, r.n.followUps(), 1)
 }
 
+// A wait that comes after the notice of a background job started must not
+// report the end a second time.
+func TestWaitAfterNoticeStartedDoesNotReportAgain(t *testing.T) {
+	r := newRig(t)
+	owner := &blockingOwner{fakeNotifier: r.n, entered: make(chan struct{}, 1), release: make(chan struct{})}
+	j := r.startFor(owner, "true")
+	waitDone(t, j)
+	<-owner.entered
+
+	assert.Equal(t, Background, r.tb.Wait(background(), j.ID(), time.Minute))
+	close(owner.release)
+	waitFor(t, 5*time.Second, "the notice", func() bool { return len(r.n.followUps()) == 1 })
+}
+
 func TestTableIdleAfterAwaitedJob(t *testing.T) {
 	r := newRig(t)
 	j, err := r.tb.Start(StartSpec{Owner: r.owner(), Command: "true", Cwd: r.dir, Foreground: true})

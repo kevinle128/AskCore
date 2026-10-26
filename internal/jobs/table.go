@@ -609,7 +609,9 @@ func (t *Table) killJob(j *Job, reason string, byModel bool) {
 
 // Wait waits for the end of the job for at most budget. A budget of zero or
 // less returns Background at once. When ctx ends first, the job is killed as
-// by the model and Wait returns after the process group is gone.
+// by the model and Wait returns after the process group is gone. A job whose
+// completion notice already started returns Background: the notice is the
+// one report of its end.
 func (t *Table) Wait(ctx context.Context, id string, budget time.Duration) WaitOutcome {
 	t.mu.Lock()
 	j, ok := t.jobs[id]
@@ -623,6 +625,12 @@ func (t *Table) Wait(ctx context.Context, id string, budget time.Duration) WaitO
 	if j.finishedLocked() {
 		if held {
 			j.waiters--
+		}
+		if j.noticeStarted {
+			// A background job ended before this wait and its notice already
+			// reports the end; a result would report it a second time.
+			t.mu.Unlock()
+			return Background
 		}
 		t.takeLocked(j)
 		t.mu.Unlock()
@@ -723,6 +731,26 @@ func (t *Table) List(gen uint64) []JobInfo {
 	jobs := make([]*Job, 0, len(t.jobs))
 	for _, j := range t.jobs {
 		if j.gen == gen {
+			jobs = append(jobs, j)
+		}
+	}
+	slices.SortFunc(jobs, func(a, b *Job) int { return a.seq - b.seq })
+	out := make([]JobInfo, len(jobs))
+	for i, j := range jobs {
+		out[i] = j.infoLocked()
+	}
+	return out
+}
+
+// Active returns the jobs that still run or stop, of every generation, in
+// start order. The composition root uses it to describe a wait; tools use
+// List.
+func (t *Table) Active() []JobInfo {
+	t.mu.Lock()
+	defer t.mu.Unlock()
+	jobs := make([]*Job, 0, len(t.jobs))
+	for _, j := range t.jobs {
+		if !j.finishedLocked() {
 			jobs = append(jobs, j)
 		}
 	}

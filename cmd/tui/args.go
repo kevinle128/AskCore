@@ -5,9 +5,11 @@ import (
 	"fmt"
 	"net/http"
 	"slices"
+	"strconv"
 	"strings"
 	"time"
 
+	"AskCore/internal/jobs"
 	"AskCore/internal/providers"
 	"AskCore/internal/providers/anthropic"
 	"AskCore/pkg/protocol"
@@ -46,6 +48,12 @@ type options struct {
 	// one line to stderr, which suits print mode, ask acp and the leader (its
 	// stderr is the leader log).
 	onJobError func(error)
+	// maxTurns ends a print-mode run after that many turns, turns that a
+	// notice wakes included. Zero means no limit.
+	maxTurns int
+	// bgLimit is the background limit of the job table. Only print mode sets
+	// it; the TUI, the leader and ask acp have none.
+	bgLimit jobs.BackgroundLimit
 }
 
 // diagnostic is one parse problem. Any error ends the program with exit 1; a
@@ -87,6 +95,14 @@ var valueFlags = map[string]func(o *options, v string) *diagnostic{
 			return &diagnostic{msg: fmt.Sprintf("Invalid thinking level %q. Valid values: %s", v, strings.Join(names, ", "))}
 		}
 		o.thinking = level
+		return nil
+	},
+	"--max-turns": func(o *options, v string) *diagnostic {
+		n, err := strconv.Atoi(v)
+		if err != nil || n <= 0 {
+			return &diagnostic{err: true, msg: fmt.Sprintf("Invalid max turns %q. Use a whole number above 0", v)}
+		}
+		o.maxTurns = n
 		return nil
 	},
 }
@@ -196,6 +212,7 @@ Options:
   --model <id>          Model id (default: faux-1, or deepseek-v4.1-flash for alibaba-token-plan)
   --api-key <key>       API key for the provider (requires --model)
   --thinking <level>    Thinking level: off, minimal, low, medium, high, xhigh, max
+  --max-turns <n>       Print mode: end the run after n turns, turns of background notices included
   --                    End option parsing; the rest are messages and @files
   --help, -h            Show this help
 `

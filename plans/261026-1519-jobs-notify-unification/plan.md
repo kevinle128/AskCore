@@ -30,6 +30,8 @@ The analysis, the verified defects, the reference harnesses (Claude Code, Grok C
 | S4 | `origin/master` is merged into `develop` (done, `ee53317`). |
 | D-R7 | After Abort, a new notice waits for the next human input and starts no run, as Grok (red-team decision). |
 | D-R5b | No total wall-clock ceiling for `ask -p`, as Claude Code (red-team decision). |
+| P4-1 | The background limit uses the existing `timeout`, as Claude Code: with `run_in_background: true` in `ask -p`, `timeout` sets the background limit (default 10 min, up to 2 h); a foreground `timeout` stays the wait budget (H5 Q9); a command moved to the background gets the default limit from the move; no limit in the TUI and the leader. No schema change. |
+| P4-2 | In `ask -p` every monitor, `persistent` included, has a deadline of at most 10 min (`min(timeout_ms, 10 min)`), as Claude Code; at the deadline it stops with one notice that wakes a turn. The TUI and the leader keep H5 N3. |
 | MT | `ask -p --max-turns N` counts every turn of the whole run, woken turns included; at N it stops background work and exits 1 with `Error: Reached max turns (N)`. Claude Code counts per query, which does not bound the wake chain. `--max-budget-usd` is a later plan. |
 
 ## Design findings that shape the plan (verified)
@@ -47,7 +49,7 @@ The analysis, the verified defects, the reference harnesses (Claude Code, Grok C
 | 1 | [Agent notice port per generation](./phase-01-agent-notice-port.md) | completed | 1d | — |
 | 2 | [Jobs deliver through the port and scope by generation](./phase-02-jobs-through-port.md) | completed | 2d | 1 |
 | 3 | [Remove the busy-retry polling](./phase-03-remove-busy-polling.md) | completed | 1d | 2 |
-| 4 | [Print mode waits for background work](./phase-04-print-mode-background-wait.md) | pending | 3.5d | 2, 3 |
+| 4 | [Print mode waits for background work](./phase-04-print-mode-background-wait.md) | completed | 3.5d | 2, 3 |
 | 5 | [Design records and docs](./phase-05-design-records-and-docs.md) | pending | 0.5d | 1-4 |
 
 Deep mode: phase 1 is detailed. Phases 2 to 5 list goals, files, known facts and the test matrix; each phase gets its own scout pass before it starts, and its open items are asked one at a time then.
@@ -99,8 +101,7 @@ Three reviewers (Security Adversary, Assumption Destroyer, Failure Mode Analyst)
 
 ## Open items
 
-- Phase 4: the tool parameter that sets the background limit, and whether it shows in every mode (H5 Q9 already gives `timeout` the meaning "wait budget").
-- Phase 4: what `ask -p` does with a `persistent` monitor (it never completes).
+- None.
 
 ## Validation Log
 
