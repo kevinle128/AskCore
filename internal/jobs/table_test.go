@@ -326,7 +326,7 @@ func TestNoticeBeforeNotifierSetIsReported(t *testing.T) {
 
 	assert.Equal(t, Background, r.tb.Wait(background(), j.ID(), 0))
 	waitFor(t, 5*time.Second, "OnError", func() bool { return len(r.errors()) == 1 })
-	assert.ErrorIs(t, r.errors()[0], ErrNoNotifier)
+	assert.ErrorIs(t, r.errors()[0], ErrNoOwner)
 	assert.Contains(t, r.errors()[0].Error(), "bash-1")
 	assert.Empty(t, r.n.all())
 }

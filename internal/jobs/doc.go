@@ -6,6 +6,6 @@
 // refuses more than ten active jobs, and kills everything when it closes. A
 // job that ends without the model having seen its end sends one completion
 // notice, and a monitor sends the stdout lines of its command as events. Both
-// reach the Agent through the Notifier that the composition root sets, so this
-// package never imports agent.
+// go to the Owner of the job, the notice port of the conversation that started
+// it, so this package never imports agent.
 package jobs

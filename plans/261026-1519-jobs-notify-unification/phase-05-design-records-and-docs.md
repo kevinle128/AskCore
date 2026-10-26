@@ -1,7 +1,7 @@
 ---
 phase: 5
 title: "Design records and docs"
-status: pending
+status: completed
 priority: P2
 effort: "0.5d"
 dependencies: [1, 2, 3, 4]
@@ -40,3 +40,12 @@ rg -n "when H5 lands|SetNotifier|FollowUp\(" docs internal/jobs/README.md intern
 ```
 
 Pass: tests exit 0 (the reference drift test included), and the `rg` command prints nothing.
+
+## Result (2026-10-27)
+
+- New `docs/adr/0005-shell-jobs-use-the-notify-port.md`; ADR 0004 points to it; `docs/README.md` now lists both ADRs and `docs/async-task-runtime.md`.
+- `docs/async-task-runtime.md`: sections 4, 5, 7.3, 11, 11.1, 14, 14.1 and 17 describe the built state. The A2 stdio watchdog ticker and the gRPC demo sleep are still open and say so. The `sleep` and `cd` rules of section 11.1 are recorded as not built.
+- H5 records: supersession notes on Q9, Q11, Q13 and the N3 monitor limit (`plans/architectures/h5-builtin-tools.md`) and on N2 (`plans/261010-2349-h5-builtin-tools/plan.md`).
+- The `ask-docs-sync` pass updated `docs/cli.md` (new flag, three env vars, a "Background work in print mode" section), `AGENTS.md`, the `jobs` and `tools` READMEs, and the `[Unreleased]` changelog.
+- Found during the docs pass and fixed: with `--mode json` the max-turns line went to stdout and broke the JSON event stream; it now goes to stderr (`TestPrintMaxTurnsJSONKeepsStdoutJSON`). `jobs.ErrNoNotifier` is renamed `ErrNoOwner`, and the package comment names the owner instead of the removed notifier.
+- Not fixed, outside this plan: two ADR files share the number 0004.

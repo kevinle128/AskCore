@@ -328,7 +328,7 @@ func (m *monitor) deliver(text string) {
 	defer m.sendMu.Unlock()
 	owner := m.job.owner
 	if owner == nil {
-		m.t.report(fmt.Errorf("events of job %s: %w", m.job.id, ErrNoNotifier))
+		m.t.report(fmt.Errorf("events of job %s: %w", m.job.id, ErrNoOwner))
 		return
 	}
 	body := text

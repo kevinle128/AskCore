@@ -1,6 +1,7 @@
 package main
 
 import (
+	"encoding/json"
 	"net/http"
 	"os/exec"
 	"path/filepath"
@@ -146,6 +147,25 @@ func TestPrintMaxTurnsCountsWokenTurns(t *testing.T) {
 	assert.Equal(t, 1, r.code, "stderr: %s", r.stderr)
 	assert.Contains(t, r.stdout, "Error: Reached max turns (2)")
 	assert.Equal(t, 2, m.requestCount(), "the woken turn did not reach the model")
+}
+
+// In JSON mode the max-turns line goes to stderr, so every stdout line stays
+// one JSON event.
+func TestPrintMaxTurnsJSONKeepsStdoutJSON(t *testing.T) {
+	t.Parallel()
+	m := scriptModel(t,
+		call(t, "bash", map[string]any{"command": "sleep 0.5", "run_in_background": true}),
+		say("first answer"),
+	)
+	m.repeatLast = true
+
+	r := runPrint(t, m, printSpec{json: true, args: []string{"--max-turns", "2"}})
+
+	assert.Equal(t, 1, r.code, "stderr: %s", r.stderr)
+	assert.Contains(t, r.stderr, "Error: Reached max turns (2)")
+	for _, line := range strings.Split(strings.TrimSpace(r.stdout), "\n") {
+		assert.True(t, json.Valid([]byte(line)), "stdout line is not JSON: %q", line)
+	}
 }
 
 func TestParseMaxTurns(t *testing.T) {

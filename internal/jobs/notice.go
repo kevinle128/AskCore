@@ -89,7 +89,7 @@ func (t *Table) sendNotice(j *Job) {
 	id, text := j.id, j.noticeLocked()
 	t.mu.Unlock()
 	if j.owner == nil {
-		t.report(fmt.Errorf("notice for job %s: %w", id, ErrNoNotifier))
+		t.report(fmt.Errorf("notice for job %s: %w", id, ErrNoOwner))
 		return
 	}
 	if _, err := j.owner.Notify(t.reminderMessage(text)); err != nil {

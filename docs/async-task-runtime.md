@@ -69,10 +69,11 @@ Research evidence:
 | `Registry` | `internal/tasks` (new) | Owns task lifetime, terminal transition, output sink, notice rendering, the poller | Decide steer or wake; import `agent` or `tools` |
 | Delivery port | `internal/agent` | `Notify` maps a notice to the existing claims and wakes an idle Agent | Run task bodies |
 | Lifetime context | `internal/agent` | Root context of the registry, cancelled only by Dispose | Follow the run context |
-| Task tools | `internal/tools` | `bash` with `run_in_background`, `task_stop`; `read` reads the output file | Wait for a task |
+| Task tools | `internal/tools` | `subagent` and `task_stop` for registry tasks (not built yet); `read` reads the output file | Wait for a task |
+| Shell job table | `internal/jobs` | Runs the background `bash` jobs and the `monitor` watches of the shell tools. Sends each notice through the notice port (`tasks.Port`) of the conversation that started the job ([ADR 0005](adr/0005-shell-jobs-use-the-notify-port.md)) | Import `agent`; deliver to another conversation |
 | Message and events | `pkg/protocol` | `CustomMessage` (Pi `role: "custom"`), `task_start`, `task_update`, `task_end` | Carry task output in events |
 | Converter | `internal/providers` | `ConvertToLLM` maps a custom message to a user message | Drop notices |
-| Sources | `hooks`, `mcp`, `channels`, `cron` | Call an injected notify function | Import `agent` |
+| Sources | `jobs` (built), `hooks`, `mcp`, `channels`, `cron` | Call an injected notify function or port | Import `agent` |
 | Process model | `internal/acp` | Waits on the Agent idle broadcast instead of a sleep loop | Poll the Agent |
 
 ```mermaid
@@ -122,7 +123,7 @@ flowchart TB
 |---|---|---|---|
 | `tasks` (new) | `types.go`, `registry.go`, `runner.go`, `sink.go`, `notice.go`, `poll.go`, `README.md` | stdlib, `pkg/protocol`, `tracing` | `agent`, `tools`, transport, `config` |
 | `agent` | `tasks.go` (registry ownership, `Notify`, quiescence), `idle.go` (idle broadcast) | `tasks` | unchanged |
-| `tools` | `task_stop.go`; `bash` gets `run_in_background` when H5 lands | `tasks` (types only) | `agent` |
+| `tools` | `task_stop.go` (not built yet). The shell tools (`bash`, `job_*`, `monitor`) use `internal/jobs`, not the registry ([ADR 0005](adr/0005-shell-jobs-use-the-notify-port.md)) | `tasks` (types only) | `agent` |
 | `pkg/protocol` | custom message type, task events | none | none |
 | `app` | wires notify functions into sources | | |
 
@@ -310,9 +311,9 @@ flowchart TD
 
 | Operation | Running tasks | Queued notices | Late notices |
 |---|---|---|---|
-| `Abort()` | Keep running. Abort stops the current work, not background work. | Moved from steering and follow-up to the `context` queue. They ride with the next input and do not wake. | Follow the table in 7.2. A notice during the teardown of the cancelled run wakes the next run, as in Pi `durable` (`23-subagent-background.ts`). |
+| `Abort()` | Keep running. Abort stops the current work, not background work. | Moved from steering and follow-up to the `context` queue. They ride with the next input and do not wake. | Go to the `context` queue and wait for the next human input; they do not start a run, as in Grok. Any input (`Prompt`, steering, follow-up) or a context swap ends this state. |
 | `Abort(KeepQueued)` | Keep running | Kept | Same |
-| `Reset()` | Under `a.mu` the Agent bumps the task generation and swaps in a new registry; after unlock the old registry closes (`Close(errReset)`) | Dropped with the other queues | `Notify` drops every notice of an old generation |
+| `Reset()` | Under `a.mu` the Agent bumps the task generation and swaps in a new registry; after unlock the old registry closes (`Close(errReset)`). Shell jobs of the old generation keep running until the session closes; the tools of the new conversation do not see them | Dropped with the other queues | `Notify` drops every notice of an old generation (`ErrStaleNotice`); the job table mutes that job |
 | `Dispose()` | `Close(errDisposed)`: stop admission, cancel the root, wait for all runners | Dropped | `ErrDisposed`, marked `discarded` |
 | `task_stop` tool | That task stops | n/a | Its notice uses `Context`: the model asked for the stop, so a wake is not needed |
 
@@ -592,6 +593,12 @@ A model-started task gets `TryAcquire` and a clear tool error when the class is 
 
 There is no `task_wait`, `task_status`, or `task_output` tool. The system prompt states that a notice arrives by itself.
 
+Built state (2026-10-27): shell work is the job table of the built-in tools (`internal/jobs`), not a registry task kind ([ADR 0005](adr/0005-shell-jobs-use-the-notify-port.md)).
+`bash` with `run_in_background` starts a job and returns its job ID; `job_output`, `job_kill`, `job_list` and `monitor` work on jobs; `job_kill` stops a job with no notice, so shell work needs no `task_stop`.
+`job_output` with `wait: true` blocks once on the end of the job, for at most its `timeout_ms`; ADR 0005 explains why this is not the rejected wait tool.
+Each job sends its notice through the `tasks.Port` that the tool call got (`tools.Context.Notices`), bound to the generation of its conversation.
+`subagent` and `task_stop` are not built yet.
+
 ### 11.1 Foreground commands that move to the background (decision D4)
 
 Decision (user, 2026-10-24): when a foreground `bash` command reaches its timeout, it moves to the background instead of being killed, as in Claude Code ([foreground commands that move to the background](https://code.claude.com/docs/en/tools-reference#foreground-commands-that-move-to-the-background)).
@@ -604,6 +611,11 @@ Decision (user, 2026-10-24): when a foreground `bash` command reaches its timeou
 - A command that starts with `sleep` does not move; it stops at its timeout.
 - A `cd` inside a moved command does not change the session cwd. The result says so, as in Claude Code.
 - With `ASK_DISABLE_BACKGROUND_TASKS=1` a command stops at its timeout.
+
+Built state (2026-10-27): the job table runs every `bash` command, foreground and background, so a move needs no handover.
+A foreground job has one registered waiter from its start; the job owner skips the notice of a job whose end a waiter saw, under the table lock, so a command that ends with its timeout gives a result or one notice, never both.
+The moved result says `Command still running after <N> s. It continues as background job <id>.`
+The `sleep` rule and the `cd` note are not built: a command that starts with `sleep` moves like any other, and the result does not mention the cwd.
 - The switch from `Silent` to `Wake` and the terminal transition both happen under `registry.mu`, so a command that ends at the same moment as the timer produces either a normal result or one notice, never both.
 
 ## 12. Polling policy
@@ -662,6 +674,7 @@ Lifecycle events are published, not written to the session log. The log records 
 
 `WaitForQuiescence(ctx)` returns when three conditions hold together: no active run, no active task, and an empty inbox.
 It waits only on a signal whose condition does not hold yet (first `Registry.Idle()`, then `Agent.Idle()`), so it never spins, and it never sleeps.
+Shell jobs count as active tasks through `Config.Background` (the job table `Idle()`): a job counts from its start until its notice was handed to the Agent, so a quiescence check never sees the end of a job before its notice is queued.
 A work counter that the Agent and the registry raise on every start and end is read before and after the checks; a change means the checks repeat.
 "Empty inbox" means no steering and no follow-up input. A `Context` notice does not block quiescence and is not delivered if the process then exits.
 A task notice that stays queued after the run it woke also failed does not block quiescence either. One wake gives one run (section 7.2); if that run fails, ends by decision, or is rejected without claiming the notice, nothing starts a third run, and `ask -p` exits with the notice undelivered. The exit code reports the failure of that last run.
@@ -684,6 +697,16 @@ The behavior follows Claude Code `claude -p` ([headless: background tasks at exi
 | Turn off background work | `CLAUDE_CODE_DISABLE_BACKGROUND_TASKS=1` or `--bare` | `ASK_DISABLE_BACKGROUND_TASKS=1`: `run_in_background` is refused with a tool error |
 
 Exit code: 0 when the last run ends normally; 1 when the last run ends with an error. A task that stops at its time limit does not by itself change the exit code, because the model gets a turn to handle it.
+
+Built state (2026-10-27) for shell jobs (`cmd/tui/headless_wait.go`):
+
+- The limit is a job table option (`jobs.Options.BackgroundLimit`). Print mode sets 10 minutes by default and 2 hours at most; `ASK_PRINT_BG_LIMIT_MS` changes the default. The TUI, the leader and `ask acp` set none. The remote (cloud) default is not built.
+- The `timeout` of a `bash` call with `run_in_background` sets the limit. A foreground `timeout` stays the wait budget (section 11.1), and a moved job gets the default limit from the move.
+- A job at its limit has status `killed` with reason `background time limit`; its notice uses the Claude Code words above.
+- In print mode a `monitor` deadline is capped at the default limit, a persistent monitor too.
+- The idle-wait cap counts only while the Agent is idle and no `bash` job runs; it stops when a run starts.
+- `--max-turns N` counts every turn of the whole run, the turns that notices wake too; a retried attempt does not count. At the limit, stdout gets `Error: Reached max turns (N)` and the exit code is 1. Claude Code counts turns per query instead.
+- The sub-agent row is not built (phase A4).
 
 ## 15. Store seam for durable tasks (later)
 
@@ -708,8 +731,8 @@ No test uses `time.Sleep` for synchronization.
 | Phase | Content | Depends on |
 |---|---|---|
 | A1 (done 2026-10-24) | `tasks` registry, runner, sink, notice, timer kind, output sweep; Agent lifetime ctx, `Notify`, Abort/Reset/Dispose rules, `Idle`, `WaitForQuiescence`; `CustomMessage`, converter, task events | none |
-| A2 | Replace the ACP busy poll, the stdio watchdog ticker, and the demo sleep | A1 (`Idle`) |
-| A3 | `bash run_in_background`, move to background at timeout, `task_stop`, process bodies, `ask -p` wait, faux `bg` command, end-to-end proof of all criteria through `ask -p` | H5 bash tool |
+| A2 | Replace the ACP busy poll (done 2026-10-26, with the `promptAll` retry), the stdio watchdog ticker, and the demo sleep (both still open) | A1 (`Idle`) |
+| A3 (done 2026-10-27, changed by [ADR 0005](adr/0005-shell-jobs-use-the-notify-port.md)) | Shell work stays in the H5 job table and delivers through `Agent.Notify` per conversation generation; `ask -p` waits for it with background limits, the idle-wait cap and `--max-turns`. No `task_stop` and no faux `bg` command: the end-to-end tests drive `bash` through `ask -p` with a scripted provider | H5 bash tool |
 | A4 | `subagent` kind and tool | A1 |
 | A5 | Sources: extension messages (X1), MCP notifications (H16), cron fire, remote poller | X1, H16 |
 | A6 | Durable tasks through the store seam | a persistence decision after M1 |

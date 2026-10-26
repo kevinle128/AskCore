@@ -471,7 +471,12 @@ func runHeadlessWait(ag *agent.Agent, prompts []string, mode runMode, stdout, st
 		switch {
 		case errors.Is(context.Cause(ctx), errMaxTurns):
 			code, err = 1, nil
-			if _, werr := fmt.Fprintf(out, "Error: Reached max turns (%d)\n", w.maxTurns); werr != nil {
+			// JSON mode keeps stdout to event lines only.
+			var dst io.Writer = out
+			if mode == modeJSON {
+				dst = stderr
+			}
+			if _, werr := fmt.Fprintf(dst, "Error: Reached max turns (%d)\n", w.maxTurns); werr != nil {
 				report(stderr, werr)
 			}
 		case err != nil:

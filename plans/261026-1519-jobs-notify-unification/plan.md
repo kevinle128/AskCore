@@ -1,7 +1,7 @@
 ---
 title: "Jobs deliver notices through the Agent notify port"
 description: "Route every shell job notice through Agent.Notify, scope job notices and visibility to the conversation that started the job, remove the busy-retry polling, and make ask -p wait for background work."
-status: in-progress
+status: completed
 priority: P1
 effort: 8d
 branch: develop
@@ -50,23 +50,23 @@ The analysis, the verified defects, the reference harnesses (Claude Code, Grok C
 | 2 | [Jobs deliver through the port and scope by generation](./phase-02-jobs-through-port.md) | completed | 2d | 1 |
 | 3 | [Remove the busy-retry polling](./phase-03-remove-busy-polling.md) | completed | 1d | 2 |
 | 4 | [Print mode waits for background work](./phase-04-print-mode-background-wait.md) | completed | 3.5d | 2, 3 |
-| 5 | [Design records and docs](./phase-05-design-records-and-docs.md) | pending | 0.5d | 1-4 |
+| 5 | [Design records and docs](./phase-05-design-records-and-docs.md) | completed | 0.5d | 1-4 |
 
 Deep mode: phase 1 is detailed. Phases 2 to 5 list goals, files, known facts and the test matrix; each phase gets its own scout pass before it starts, and its open items are asked one at a time then.
 
 ## Success criteria
 
-- [ ] No production code calls `Agent.FollowUp`, `Agent.Steer` or `Agent.Remove` for a job notice; `jobs.Notifier` and `Table.SetNotifier` are gone.
-- [ ] A job notice is delivered when the human queue is full, and survives Abort in the context queue.
-- [ ] After a reset, a job of the old conversation sends no notice and is invisible to `job_list`, `job_output` and `job_kill`.
-- [ ] `cmd/tui/headless.go` and `internal/acp/host.go` have no sleep or retry loop on `ErrBusy`.
-- [ ] `ask -p` waits for running background jobs without polling, answers once per completion, stops a command at its limit and wakes one more turn.
-- [ ] `ask -p --max-turns N` ends the whole run after N turns, woken turns included, with exit code 1.
-- [ ] Monitor event text is escaped, so job output cannot close the `<system-reminder>` or `<monitor-event>` structure.
-- [ ] After phases 1 to 3 the cassettes replay unchanged (completion notice bytes unchanged). Phase 4 changes the `bash` declaration and re-records the six cassettes once.
-- [ ] SIGINT and SIGTERM end `ask -p` at once with 130 and 143 at any point, the background wait included.
-- [ ] `go test ./...`, `go test -race` on the touched packages, and golangci-lint pass locally and in the GitHub CI of `develop`.
-- [ ] ADR, design doc, H5 decision record, package READMEs and `CHANGELOG.md` match the code.
+- [x] No production code calls `Agent.FollowUp`, `Agent.Steer` or `Agent.Remove` for a job notice; `jobs.Notifier` and `Table.SetNotifier` are gone.
+- [x] A job notice is delivered when the human queue is full, and survives Abort in the context queue.
+- [x] After a reset, a job of the old conversation sends no notice and is invisible to `job_list`, `job_output` and `job_kill`.
+- [x] `cmd/tui/headless.go` and `internal/acp/host.go` have no sleep or retry loop on `ErrBusy`.
+- [x] `ask -p` waits for running background jobs without polling, answers once per completion, stops a command at its limit and wakes one more turn.
+- [x] `ask -p --max-turns N` ends the whole run after N turns, woken turns included, with exit code 1.
+- [x] Monitor event text is escaped, so job output cannot close the `<system-reminder>` or `<monitor-event>` structure.
+- [x] After phases 1 to 3 the cassettes replay unchanged (completion notice bytes unchanged). Phase 4 changes the `bash` declaration and re-records the six cassettes once.
+- [x] SIGINT and SIGTERM end `ask -p` at once with 130 and 143 at any point, the background wait included.
+- [ ] `go test ./...`, `go test -race` on the touched packages, and golangci-lint pass locally and in the GitHub CI of `develop`. Local: passes (load flakes noted in the phase results). CI: not run yet, because CI runs only on pushes to `master` and on pull requests.
+- [x] ADR, design doc, H5 decision record, package READMEs and `CHANGELOG.md` match the code.
 
 ## Test commands (every phase)
 

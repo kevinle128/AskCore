@@ -53,13 +53,14 @@ No permission popup or separate approval layer is part of the current registry.
 | `write` | Atomic write, parents created, execute bit set for a file that starts with a shebang. Refuses a generated file. |
 | `edit` | Pi `edits[{oldText,newText}]`. A match ladder runs from exact to fuzzy; a rung with more than one place is an error. Refuses a file that changed since the session last read it. |
 | `ls`, `grep`, `find` | Pi limits and messages. `grep` needs `rg`. `find` uses `fd`, then `rg --files`, then an in-house walk with a `.gitignore` subset. |
-| `bash` | Every call is a job. `timeout` is the wait budget (default 120 s, maximum 600 s); a command that runs longer continues in the background. `run_in_background` skips the wait. |
-| `job_output`, `job_kill`, `job_list` | Read, stop and list the jobs of the session. `job_output` answers at once unless `wait` is true. |
+| `bash` | Every call is a job. `timeout` is the wait budget (default 120 s, maximum 600 s); a command that runs longer continues in the background. `run_in_background` skips the wait; with it, `timeout` is the background time limit of the job where the session sets one (`ask -p`: default 10 min, maximum 2 h). |
+| `job_output`, `job_kill`, `job_list` | Read, stop and list the jobs of the current conversation. A job of an earlier conversation is unknown to them. `job_output` answers at once unless `wait` is true. |
 | `monitor` | Runs a command; each stdout line is an event for the model. |
 
 A non-persistent monitor has a default and maximum timeout of 10 hours.
 Positive fractional `timeout_ms` values are rounded up to the next millisecond.
-`persistent: true` runs until `job_kill` or session close.
+`persistent: true` runs until `job_kill` or session close. A session with a background time limit (`ask -p`) stops every monitor after at most that limit, a persistent one included.
+The shell tools refuse to run when the call context has no notice port (`tools.Context.Notices` is nil). The rules of the job table are in [internal/jobs](../jobs/README.md).
 
 `ConcurrencySafe` is true for `read`, `ls`, `grep`, `find`, `job_list` and `job_output` without `wait`.
 `write`, `edit`, `bash`, `monitor` and `job_kill` run alone.

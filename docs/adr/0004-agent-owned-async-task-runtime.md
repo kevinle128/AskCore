@@ -10,6 +10,7 @@ When a task ends, the registry produces exactly one notice and gives it to `Agen
 `Agent.Notify` maps the notice onto the existing claims: steering while a run is active, follow-up with wake while a run closes, and a new run while the Agent is idle.
 No new input queue is added, as `internal/scheduler/README.md` requires.
 Outside sources (MCP notifications, extension messages, chat inbound messages, cron fires) use the same port through an injected function.
+Background shell work keeps its own job table and uses the same port as an outside source; see [ADR 0005](0005-shell-jobs-use-the-notify-port.md).
 
 Following the user's decision of 2026-10-24, M1 has no concurrency limit: no worker pool, no per-class lane, and no per-Agent task cap.
 Each task starts one goroutine when it starts, and that goroutine ends with the task.

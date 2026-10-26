@@ -12,6 +12,7 @@ Start with the [project README](../README.md). Rules for changes and docs are in
 | [reference/tools.md](reference/tools.md) | Built-in tools. Generated from code; do not edit by hand. | user, agent |
 | [reference/providers.md](reference/providers.md) | Providers and models of the compiled catalog. Generated from code; do not edit by hand. | user, agent |
 | [ask-architecture-reference.md](ask-architecture-reference.md) | Architecture: dewee package model, layers, process model, import rules, where to put new code. | contributor, agent |
+| [async-task-runtime.md](async-task-runtime.md) | Background work and its notices: task registry, shell jobs, `Agent.Notify`, quiescence, `ask -p` wait; no sleep or polling. | contributor, agent |
 | [CONTEXT.md](CONTEXT.md) | Glossary of provider-access terms (provider, model, access, auth method). | contributor, agent |
 | [testing-llm-cassettes.md](testing-llm-cassettes.md) | The test layers, how cassettes record and replay, native auth and capture limits. | contributor |
 | [tui-architecture.md](tui-architecture.md) | TUI decisions: Bubble Tea, one update loop, alternate screen, extension boundary. | contributor, agent |
@@ -19,7 +20,9 @@ Start with the [project README](../README.md). Rules for changes and docs are in
 | [adr/0001-provider-auth-composition.md](adr/0001-provider-auth-composition.md) | One provider with several auth methods; one credential for each provider. | contributor |
 | [adr/0002-minimal-login-in-provider-phase.md](adr/0002-minimal-login-in-provider-phase.md) | Minimal headless login ships with subscription access. | contributor |
 | [adr/0003-remote-model-catalog-overlay.md](adr/0003-remote-model-catalog-overlay.md) | Accepted decision to refresh model data from a remote catalog. The catalog is compiled in today; the overlay is not built. | contributor |
+| [adr/0004-agent-owned-async-task-runtime.md](adr/0004-agent-owned-async-task-runtime.md) | The Agent owns async tasks and receives their completions by push through `Agent.Notify`. | contributor |
 | [adr/0004-leader-drivers-output-and-sdk-copy.md](adr/0004-leader-drivers-output-and-sdk-copy.md) | Leader drivers, output queues, version gate, patched ACP SDK copy. | contributor |
+| [adr/0005-shell-jobs-use-the-notify-port.md](adr/0005-shell-jobs-use-the-notify-port.md) | Shell jobs send their notices through the notify port of their conversation; `ask -p` waits for background work. | contributor |
 
 ## Package documentation
 

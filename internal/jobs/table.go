@@ -38,9 +38,9 @@ var (
 	// ErrUnknownJob is returned for an id that the table does not hold: it
 	// never existed, or the model already saw the end of the job.
 	ErrUnknownJob = errors.New("jobs: unknown job")
-	// ErrNoNotifier is reported through Options.OnError when a notice or an
+	// ErrNoOwner is reported through Options.OnError when a notice or an
 	// event is ready and the job has no owner.
-	ErrNoNotifier = errors.New("jobs: job has no owner")
+	ErrNoOwner = errors.New("jobs: job has no owner")
 	// ErrBackgroundDisabled is returned by a start of background work when
 	// Options.DisableBackground is set.
 	ErrBackgroundDisabled = errors.New("background jobs are turned off in this session")
