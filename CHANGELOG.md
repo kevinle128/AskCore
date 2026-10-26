@@ -63,6 +63,20 @@ Details of each change are in `docs/`, in the plans under `plans/`, and in the g
 - LLM cassettes: tests replay recorded provider traffic. `ASK_RECORD=1` records the cassette of one test again; `ASK_CAPTURE=<dir> ask -p ...` records a real run ([guide](docs/testing-llm-cassettes.md)).
 - Terminal end-to-end checks in `e2e/tui` with `tui-test`, and goroutine leak checks with goleak.
 
+#### Tools
+
+- Twelve session tools in every agent: `read`, `write`, `edit`, and `ls` for files; `grep` and `find` for search; `bash`, `job_output`, `job_kill`, `job_list`, and `monitor` for commands; and the demo tool `echo` ([tools](internal/tools/README.md)).
+- `internal/jobs`: the per-session job table behind the shell tools. A job that ends without the model having seen its end sends one completion notice. At most 10 jobs run at the same time ([jobs](internal/jobs/README.md)). Unix only.
+- `internal/sandbox`: the process runner of the shell tools. Each command runs in its own process group with a filtered environment and bounded output ([sandbox](internal/sandbox/README.md)).
+
+#### Leader and terminal UI
+
+- `ask leader`: a local router that holds one agent for all local clients on a Unix socket in `ASK_HOME`, readable by the owner only. Clients start it on demand. `ask leader status`, `list`, and `stop` manage it ([leader](internal/leader/README.md)).
+- `ask connect`: a line-oriented client of the leader.
+- The interactive TUI: `ask` with no arguments on a terminal opens a full-screen UI on the alternate screen. It connects to the leader and runs an agent in process only when that connect fails at startup. It has a block pane with fold modes, a one-block viewer, mouse scrolling and text selection, and `/copy` ([tui](internal/tui/README.md), [TUI architecture](docs/tui-architecture.md)).
+- Provider setup: `/providers` signs in with an API key, a browser URL, a copy code, or a device code, and removes a saved sign-in. `/model` lists the models of usable providers and saves the choice as `defaultModel` in `settings.json`.
+- The demo provider `faux` is opt-in with `ASK_FAUX=1`.
+
 #### Async task runtime (first phase)
 
 See the [design](docs/async-task-runtime.md) and [ADR 0004](docs/adr/0004-agent-owned-async-task-runtime.md).
@@ -87,5 +101,5 @@ See the [design](docs/async-task-runtime.md) and [ADR 0004](docs/adr/0004-agent-
 
 ### Not yet available
 
-- The interactive `ask` terminal UI is a placeholder; the TUI packages are scaffolds ([TUI architecture](docs/tui-architecture.md)).
-- The leader over a Unix socket, the read-only monitoring dashboard, persistent sessions, and the remote model catalog overlay ([ADR 0003](docs/adr/0003-remote-model-catalog-overlay.md)) are designed but not implemented.
+- TUI extensions (widgets and extension views) and the hook runtime. The TUI shows hook blocks from fixtures only.
+- The read-only monitoring dashboard, persistent sessions, and the remote model catalog overlay ([ADR 0003](docs/adr/0003-remote-model-catalog-overlay.md)) are designed but not implemented.
