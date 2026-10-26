@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"sync"
 	"testing"
+	"time"
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -348,4 +349,26 @@ func TestRunStartReportsOwnRunBeforeEvents(t *testing.T) {
 	require.NoError(t, a.Prompt(ctx, user("go")))
 	require.NotEmpty(t, reported)
 	assert.Equal(t, reported, firstRun)
+}
+
+// fakeBackground is outside work whose idle signal the test gives.
+type fakeBackground struct{ idle chan struct{} }
+
+func (f *fakeBackground) Idle() <-chan struct{} { return f.idle }
+
+func TestQuiescenceWaitsForBackgroundWork(t *testing.T) {
+	p, m := newFaux(t)
+	bg := &fakeBackground{idle: make(chan struct{})}
+	a := newAgent(t, p, m, func(c *agent.Config) { c.Background = bg })
+	defer func() { require.NoError(t, a.Dispose()) }()
+
+	done := make(chan error, 1)
+	go func() { done <- a.WaitForQuiescence(context.Background()) }()
+	select {
+	case err := <-done:
+		t.Fatalf("quiescence came while background work was busy: %v", err)
+	case <-time.After(100 * time.Millisecond):
+	}
+	close(bg.idle)
+	require.NoError(t, <-done)
 }

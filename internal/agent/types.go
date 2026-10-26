@@ -77,6 +77,10 @@ type Config struct {
 	// and its started tools have drained and before the session log closes, and
 	// joins its error into the result of Dispose. It may block. Nil means none.
 	Release func() error
+	// Background is work outside the task registry that WaitForQuiescence must
+	// wait for, such as the job table of the shell tools. Its Idle channel is
+	// closed while that work has handed off every notice. Nil means none.
+	Background interface{ Idle() <-chan struct{} }
 	// TaskDir is the directory for the output files of background tasks.
 	// Empty means that tasks with an output file cannot start; timers still
 	// work.

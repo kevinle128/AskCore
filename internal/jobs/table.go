@@ -24,6 +24,7 @@ const (
 	labelMax = 80
 	// killByModelReason names the kill when the model gave no reason.
 	killByModelReason = "job_kill"
+	limitReason       = "background time limit"
 	closeReason       = "session closed"
 	cancelReason      = "cancelled"
 )
@@ -38,8 +39,11 @@ var (
 	// never existed, or the model already saw the end of the job.
 	ErrUnknownJob = errors.New("jobs: unknown job")
 	// ErrNoNotifier is reported through Options.OnError when a notice or an
-	// event is ready and no Notifier was set.
-	ErrNoNotifier = errors.New("jobs: no notifier set")
+	// event is ready and the job has no owner.
+	ErrNoNotifier = errors.New("jobs: job has no owner")
+	// ErrBackgroundDisabled is returned by a start of background work when
+	// Options.DisableBackground is set.
+	ErrBackgroundDisabled = errors.New("background jobs are turned off in this session")
 )
 
 // Kind tells what a job is.
@@ -113,6 +117,37 @@ type Options struct {
 	// notice of a conversation that was reset. Such a refusal is not reported
 	// and mutes the job. Nil treats every refusal as an error.
 	IsExpectedDrop func(error) bool
+	// BackgroundLimit stops a job that runs in the background for too long.
+	// The zero value means no limit, as in an interactive session.
+	BackgroundLimit BackgroundLimit
+	// DisableBackground turns background work off: a foreground command stops
+	// at its wait budget, and a background start or a monitor is refused.
+	DisableBackground bool
+}
+
+// BackgroundLimit is the time a job may run in the background. It counts from
+// the start of a background job, or from the move of a foreground job.
+type BackgroundLimit struct {
+	// Default applies when the start asks for no limit and to a moved job.
+	// Zero turns limits off.
+	Default time.Duration
+	// Max caps a limit that a start asks for. Zero means no cap.
+	Max time.Duration
+}
+
+// of returns the limit for a request, zero when limits are off.
+func (l BackgroundLimit) of(requested time.Duration) time.Duration {
+	if l.Default <= 0 {
+		return 0
+	}
+	d := requested
+	if d <= 0 {
+		d = l.Default
+	}
+	if l.Max > 0 && d > l.Max {
+		d = l.Max
+	}
+	return d
 }
 
 // StartSpec describes a bash job.
@@ -128,6 +163,10 @@ type StartSpec struct {
 	// is reported by Wait and gets no notice. A wait that gives up turns the job
 	// into a background job with a notice.
 	Foreground bool
+	// BackgroundLimit asks for a limit for a background job; zero takes the
+	// default of Options.BackgroundLimit, and Max caps it. It is ignored for a
+	// foreground job, which gets the default when it moves.
+	BackgroundLimit time.Duration
 	// Owner is the conversation that starts the job. Its notices go there,
 	// and only that conversation sees the job.
 	Owner Owner
@@ -173,6 +212,7 @@ type Job struct {
 	cursor        int64
 	stopTimeout   func() bool
 	muted         bool // the owner refused a notice as expected: no more events
+	stopLimit     func() bool
 
 	owner Owner  // set at start, never changed
 	gen   uint64 // generation of owner
@@ -254,13 +294,19 @@ type Table struct {
 	killGrace time.Duration
 	onError   func(error)
 	expected  func(error) bool
+	limit     BackgroundLimit
+	noBg      bool
 
 	mu       sync.Mutex // guards the fields below and the state of every Job
 	jobs     map[string]*Job
 	counters map[Kind]int
 	seq      int
 	closing  bool
-	owners   sync.WaitGroup
+	// busy counts the jobs whose notice is not handed off yet; idle is open
+	// while it is above zero. See Idle.
+	busy   int
+	idle   chan struct{}
+	owners sync.WaitGroup
 
 	spillMu     sync.Mutex // never taken together with mu
 	spillDir    string
@@ -280,6 +326,8 @@ func New(o Options) *Table {
 		killGrace: o.KillGrace,
 		onError:   o.OnError,
 		expected:  o.IsExpectedDrop,
+		limit:     o.BackgroundLimit,
+		noBg:      o.DisableBackground,
 		jobs:      make(map[string]*Job),
 		counters:  make(map[Kind]int),
 	}
@@ -307,8 +355,48 @@ func (t *Table) Start(spec StartSpec) (*Job, error) {
 	if spec.Kind != "" && spec.Kind != KindBash {
 		return nil, fmt.Errorf("jobs: Start runs bash jobs, not %q; use StartMonitor", spec.Kind)
 	}
-	return t.launch(KindBash, spec.Command, spec.Cwd, nil, spec.Foreground, spec.Owner)
+	if t.noBg && !spec.Foreground {
+		return nil, ErrBackgroundDisabled
+	}
+	j, err := t.launch(KindBash, spec.Command, spec.Cwd, nil, spec.Foreground, spec.Owner)
+	if err != nil {
+		return nil, err
+	}
+	if !spec.Foreground {
+		t.armLimit(j, t.limit.of(spec.BackgroundLimit))
+	}
+	return j, nil
 }
+
+// armLimit stops j after d unless it ends first. Zero arms nothing.
+func (t *Table) armLimit(j *Job, d time.Duration) {
+	if d <= 0 {
+		return
+	}
+	stop := t.clock.AfterFunc(d, func() { t.killJob(j, limitReason, false) })
+	t.mu.Lock()
+	defer t.mu.Unlock()
+	if j.finishedLocked() || j.stopLimit != nil {
+		stop()
+		return
+	}
+	j.stopLimit = stop
+}
+
+// Idle returns a channel that is closed while every job has handed off its
+// completion notice or has none to send. A job counts from its start until
+// then, so a quiescence check never sees the end of a job before its notice
+// reached the Agent.
+func (t *Table) Idle() <-chan struct{} {
+	t.mu.Lock()
+	defer t.mu.Unlock()
+	if t.idle == nil {
+		return closedChan
+	}
+	return t.idle
+}
+
+var closedChan = func() chan struct{} { ch := make(chan struct{}); close(ch); return ch }()
 
 // launch starts the process of a job and its owner goroutine.
 func (t *Table) launch(kind Kind, command, cwd string, mon *monitor, held bool, owner Owner) (*Job, error) {
@@ -369,6 +457,10 @@ func (t *Table) launch(kind Kind, command, cwd string, mon *monitor, held bool, 
 	t.seq++
 	j.seq = t.seq
 	t.jobs[id] = j
+	t.busy++
+	if t.idle == nil {
+		t.idle = make(chan struct{})
+	}
 	t.owners.Add(1)
 	go t.own(j)
 	return j, nil
@@ -472,14 +564,25 @@ func (t *Table) own(j *Job) {
 	if j.waiters > 0 {
 		j.awaited = true
 	}
-	stop := j.stopTimeout
+	stop, stopLimit := j.stopTimeout, j.stopLimit
 	close(j.done)
 	t.mu.Unlock()
 
 	if stop != nil {
 		stop()
 	}
+	if stopLimit != nil {
+		stopLimit()
+	}
 	t.sendNotice(j)
+	// The hand-off is done or was not needed: the job no longer counts.
+	t.mu.Lock()
+	t.busy--
+	if t.busy == 0 && t.idle != nil {
+		close(t.idle)
+		t.idle = nil
+	}
+	t.mu.Unlock()
 }
 
 // killJob stops a running job. It does not wait. byModel suppresses the
@@ -530,6 +633,7 @@ func (t *Table) Wait(ctx context.Context, id string, budget time.Duration) WaitO
 			j.waiters--
 		}
 		t.mu.Unlock()
+		t.armLimit(j, t.limit.of(0))
 		return Background
 	}
 	// A waiter that is registered when the job ends owns the report of the
@@ -547,15 +651,23 @@ func (t *Table) Wait(ctx context.Context, id string, budget time.Duration) WaitO
 	case <-j.done:
 		return t.leaveWait(j)
 	case <-expired:
+		if t.noBg {
+			// Background work is off: the command stops at its budget.
+			t.killJob(j, timeoutReason, false)
+			<-j.done
+			return t.leaveWait(j)
+		}
 		t.mu.Lock()
-		defer t.mu.Unlock()
 		j.waiters--
 		if j.finishedLocked() {
 			// The end came with the budget; the owner already skipped the
 			// notice, so this result is the only report.
 			t.takeLocked(j)
+			t.mu.Unlock()
 			return Done
 		}
+		t.mu.Unlock()
+		t.armLimit(j, t.limit.of(0))
 		return Background
 	case <-ctx.Done():
 		t.killJob(j, cancelReason, true)

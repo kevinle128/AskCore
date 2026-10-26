@@ -32,6 +32,13 @@ One `Table` belongs to one session. The composition root (`newNativeAgentOn` in 
 
 At most 10 jobs run or stop at the same time (monitors count). The 11th start returns `ErrTooManyJobs`; when jobs of an earlier conversation hold some of the slots, the refusal says how many and that they end when the session closes, and names none of them. A finished job leaves the table when the model has seen its end.
 
+## Background limit and quiescence
+
+- `Options.BackgroundLimit` stops a job that runs too long in the background, with the kill reason `background time limit` and the notice `Background command "<label>" was stopped after reaching its background time limit`. A background start asks for a limit (`StartSpec.BackgroundLimit`, zero takes `Default`, `Max` caps it); a foreground job that moves to the background gets `Default` from the move. The zero value means no limit: only `ask -p` sets one.
+- With a limit set, every monitor gets a deadline of at most `Default`, a `persistent` one included.
+- `Options.DisableBackground` (`ASK_DISABLE_BACKGROUND_TASKS=1`) stops a foreground command at its wait budget and refuses a background start and a monitor with `ErrBackgroundDisabled`.
+- `Table.Idle` is closed while every job has handed off its completion notice or has none to send. A job counts from its start until `own` has run `sendNotice`, so `Agent.WaitForQuiescence` (through `agent.Config.Background`) never sees the end of a job before its notice is queued.
+
 ## Conversations
 
 Each job keeps the generation of its owner (`Owner.Gen`). `Read`, `Kill` and `List` take the generation of the caller: a job of another generation is unknown to it and is not listed. After a session reset the old jobs keep running, hidden, and still count toward the cap; the table closes them with the session. A finished job of an older generation is removed when a newer caller next uses the table, because nobody can read it any more.

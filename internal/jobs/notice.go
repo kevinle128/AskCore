@@ -69,6 +69,10 @@ func (j *Job) statusLineLocked() string {
 
 // noticeLocked is the text of the completion notice of j.
 func (j *Job) noticeLocked() string {
+	if j.status == StatusKilled && j.killReason == limitReason {
+		return fmt.Sprintf("Background command %q was stopped after reaching its background time limit. It was job %s. Read its output with job_output; start it again with a longer timeout if the work still needs it.",
+			j.label, j.id)
+	}
 	return fmt.Sprintf("Background job %s (%s: %s) finished %s. Read its output with job_output.",
 		j.id, j.kind, j.label, j.statusLineLocked())
 }

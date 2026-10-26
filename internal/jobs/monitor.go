@@ -60,6 +60,16 @@ type MonitorSpec struct {
 // the owner; stderr goes to the job buffer only, and the end of the
 // command ends the watch with the normal completion notice.
 func (t *Table) StartMonitor(spec MonitorSpec) (*Job, error) {
+	if t.noBg {
+		return nil, ErrBackgroundDisabled
+	}
+	if cap := t.limit.Default; cap > 0 {
+		// A session with a background limit gives every watch a deadline of at
+		// most that limit, persistent ones included.
+		if spec.Persistent || spec.Timeout <= 0 || spec.Timeout > cap {
+			spec.Timeout, spec.Persistent = cap, false
+		}
+	}
 	m := &monitor{description: spec.Description}
 	j, err := t.launch(KindMonitor, spec.Command, spec.Cwd, m, false, spec.Owner)
 	if err != nil {

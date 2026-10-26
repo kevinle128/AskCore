@@ -175,8 +175,8 @@ func checkNoticeMessage(m protocol.Message) error {
 	return nil
 }
 
-// WaitForQuiescence returns nil when no task is active, no run is active, and
-// no steering or follow-up input is queued. It returns the error of ctx if ctx
+// WaitForQuiescence returns nil when no task is active, Config.Background is
+// idle, no run is active, and no steering or follow-up input is queued. It returns the error of ctx if ctx
 // ends first. It waits only on a signal whose condition does not hold yet and
 // it never sleeps, so it cannot spin. A work counter that the Agent and the
 // registry raise on every start, end, enqueue, and busy edge is read before
@@ -205,6 +205,16 @@ func (a *Agent) WaitForQuiescence(ctx context.Context) error {
 				return ctx.Err()
 			}
 			continue
+		}
+		if bg := a.cfg.Background; bg != nil {
+			if idle := bg.Idle(); !isClosed(idle) {
+				select {
+				case <-idle:
+				case <-ctx.Done():
+					return ctx.Err()
+				}
+				continue
+			}
 		}
 
 		a.mu.Lock()
