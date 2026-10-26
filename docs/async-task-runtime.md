@@ -619,7 +619,8 @@ Decision (user, 2026-10-24): when a foreground `bash` command reaches its timeou
 
 | Site | Today | Change |
 |---|---|---|
-| `acp/host.go:512-522` | `time.Sleep(2ms)` loop for up to 250 ms while the call gets `ErrBusy` | Wait on events: `Agent.Idle()` (closes when `active == nil && dispatching == 0`, the condition of `idleLocked`, `agent.go:368`) and a `bound` channel that the binding closes when it gets a run ID. Retry the call once per idle event. |
+| `acp/host.go` `Session.execute` | `time.Sleep(2ms)` loop for up to 250 ms while the call gets `ErrBusy` | **Done (2026-10-26).** The call waits on `Agent.Idle()` and retries once per idle signal, for at most 250 ms. The binding takes the run ID that `agent.WithRunStart` reports for the call's own run, so a run that a notice started is never bound to the call and an early cancel stops the call's run. |
+| `cmd/tui/headless.go` `promptAll` | `time.After(5ms)` retry after `ErrBusy` | **Done (2026-10-26).** Waits on `Agent.Idle()`. |
 | `acp/stdio.go:132` | Ticker every `stall/4` checks `cw.Stalled()` | Arm `time.AfterFunc(stall)` when a write starts, stop it when the write ends. Verify the writer exposes start and end at implementation time. |
 | `gateway/grpc_greeter.go:34` | `time.Sleep(500ms)` in a demo stream | Pacing, not waiting. Replace with a timer `select` on the stream context so cancel stops it. |
 

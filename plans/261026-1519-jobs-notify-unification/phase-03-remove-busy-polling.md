@@ -1,7 +1,7 @@
 ---
 phase: 3
 title: "Remove the busy-retry polling"
-status: pending
+status: completed
 priority: P1
 effort: "1d"
 dependencies: [2]
@@ -62,3 +62,12 @@ Pass: all commands exit 0, and the `rg` command prints nothing.
 ## Rollback
 
 Revert the phase commits; the two sleep loops and the first-event binding return.
+
+## Result (2026-10-26)
+
+- `agent.WithRunStart(ctx, f)`: `Prompt` and `Continue` report the ID of the run they start, after the run exists and before any of its events, with no Agent lock held (`Continue` reports only after its context checks pass).
+- ACP binds a call only to its own run (`Session.bindRun`); `observe` no longer binds the first event that carries a run ID. An early cancel is applied when the call's own run starts.
+- `Session.retryWhenIdle` and `promptAll` wait on `Agent.Idle()`; `busyPoll` and `busyRetryDelay` are gone. The 250 ms window stays, as the plan says: the TUI already treats a busy prompt as a send failure and chooses steer or follow-up from the run state.
+- `admit` is unchanged: it already waits on a signal (`WaitForIdle` with the window).
+- Tests: `TestPromptDuringNoticeRunBindsOwnRun` and `TestEarlyAbortStopsOwnRunNotNoticeRun` fail on the old binding and pass now; `TestRunStartReportsOwnRunBeforeEvents`; `TestPromptAllRetryWaitsForIdleSignal`. `TestHostBusyCallDoesNotBindSiblingRun` and `TestHostContinueStateErrorDoesNotBindSiblingRun` no longer wait for the old first-event binding (10 s each before, under 0.1 s now).
+- Verification: `go test ./...` passes except `TestNewerBuildReplacesABusyLeader`, a load flake in `internal/leader`, which does not depend on `agent`, `acp`, `jobs` or `tasks` and passes 3 of 3 alone; golangci-lint passes; the `rg` gate is empty.

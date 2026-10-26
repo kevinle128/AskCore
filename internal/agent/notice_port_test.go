@@ -328,3 +328,24 @@ func TestNoticePortKeepsUserMessageShape(t *testing.T) {
 	assert.Equal(t, msg, logged[0])
 	assert.Contains(t, requestUsers(p, 0), text, "the model gets the same text")
 }
+
+func TestRunStartReportsOwnRunBeforeEvents(t *testing.T) {
+	p, m := newFaux(t)
+	p.Set(faux.Say("hi"))
+	a := newAgent(t, p, m, nil)
+	defer func() { require.NoError(t, a.Dispose()) }()
+
+	var reported string
+	var firstRun string
+	a.Subscribe(func(ev protocol.Event) error {
+		if firstRun == "" {
+			firstRun = ev.Env().RunID
+			assert.Equal(t, reported, firstRun, "the run ID is reported before the first event of the run")
+		}
+		return nil
+	})
+	ctx := agent.WithRunStart(context.Background(), func(id string) { reported = id })
+	require.NoError(t, a.Prompt(ctx, user("go")))
+	require.NotEmpty(t, reported)
+	assert.Equal(t, reported, firstRun)
+}

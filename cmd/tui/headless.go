@@ -474,16 +474,13 @@ func runHeadless(ag *agent.Agent, prompts []string, mode runMode, stdout, stderr
 type promptTarget interface {
 	Prompt(ctx context.Context, msgs ...protocol.Message) error
 	WaitForIdle(ctx context.Context) error
+	Idle() <-chan struct{}
 }
-
-// busyRetryDelay is the pause before a prompt retries after ErrBusy, so a
-// listener that is still being called is not met by a tight loop.
-const busyRetryDelay = 5 * time.Millisecond
 
 // promptAll sends the prompts in order. A job notice can start a run of its
 // own, so each prompt waits for the Agent to be idle first and, when a notice
-// run starts in between and Prompt returns ErrBusy, waits again and retries
-// the same prompt. After the last prompt it waits once more: a notice that
+// run starts in between and Prompt returns ErrBusy, waits for the idle signal
+// and retries the same prompt. It never sleeps or polls. After the last prompt it waits once more: a notice that
 // came during the last prompt gets its answer before the caller reads the
 // reply.
 func promptAll(ctx context.Context, ag promptTarget, prompts []string) error {
@@ -504,7 +501,7 @@ func promptAll(ctx context.Context, ag promptTarget, prompts []string) error {
 				return err
 			}
 			select {
-			case <-time.After(busyRetryDelay):
+			case <-ag.Idle():
 			case <-ctx.Done():
 				return ctx.Err()
 			}

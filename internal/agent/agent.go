@@ -27,6 +27,24 @@ func WithMutationGuard(ctx context.Context, guard func() (func(), error)) contex
 	return context.WithValue(ctx, mutationGuardKey{}, guard)
 }
 
+// runStartKey carries the function that Prompt and Continue call with the ID
+// of the run they start.
+type runStartKey struct{}
+
+// WithRunStart returns a context that makes Prompt and Continue call f with
+// the ID of the run they start. f runs on the caller's goroutine, after the run
+// exists and before any event of it, with no lock of the Agent held. A caller
+// that must tell its own run from a run that a notice started uses it.
+func WithRunStart(ctx context.Context, f func(runID string)) context.Context {
+	return context.WithValue(ctx, runStartKey{}, f)
+}
+
+func notifyRunStart(ctx context.Context, runID string) {
+	if f, ok := ctx.Value(runStartKey{}).(func(string)); ok && f != nil {
+		f(runID)
+	}
+}
+
 func mutationGuard(ctx context.Context) (func(), error) {
 	if guard, ok := ctx.Value(mutationGuardKey{}).(func() (func(), error)); ok {
 		return guard()
@@ -191,6 +209,7 @@ func (a *Agent) Prompt(ctx context.Context, msgs ...protocol.Message) error {
 		return err
 	}
 	defer a.end(r)
+	notifyRunStart(ctx, r.id)
 	return a.execute(r, func(ctx context.Context, ac pipeline.AgentContext, cfg LoopConfig, d driver, emit Emit) error {
 		_, err := runLoop(ctx, msgs, ac, cfg, d, emit)
 		return err
@@ -213,6 +232,7 @@ func (a *Agent) Continue(ctx context.Context) error {
 	if msgs[len(msgs)-1].Role() == protocol.RoleAssistant {
 		return ErrContinueFromAssistant
 	}
+	notifyRunStart(ctx, r.id)
 	return a.execute(r, func(ctx context.Context, ac pipeline.AgentContext, cfg LoopConfig, d driver, emit Emit) error {
 		_, err := continueLoop(ctx, ac, cfg, d, emit)
 		return err

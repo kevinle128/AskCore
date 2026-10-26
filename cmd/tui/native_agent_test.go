@@ -271,6 +271,17 @@ func TestNativeAgentJobsGetSessionEnvironment(t *testing.T) {
 type promptRecorder struct {
 	events []string
 	busy   int
+	idle   chan struct{} // nil: the idle signal is already given
+}
+
+func (p *promptRecorder) Idle() <-chan struct{} {
+	p.events = append(p.events, "signal")
+	if p.idle != nil {
+		return p.idle
+	}
+	ch := make(chan struct{})
+	close(ch)
+	return ch
 }
 
 func (p *promptRecorder) WaitForIdle(context.Context) error {
@@ -294,8 +305,8 @@ func TestPromptAllRetriesWhenNoticeRunIsActive(t *testing.T) {
 
 	require.NoError(t, err)
 	assert.Equal(t, []string{
-		"idle", "prompt:first", // a notice run started: busy
-		"idle", "prompt:first", // busy again
+		"idle", "prompt:first", "signal", // a notice run started: busy
+		"idle", "prompt:first", "signal", // busy again
 		"idle", "prompt:first",
 		"idle", "prompt:second",
 		"idle", // the notice of the last prompt gets its answer
@@ -314,6 +325,12 @@ func TestPromptAllStopsOnOtherErrors(t *testing.T) {
 type promptFunc func(context.Context, ...protocol.Message) error
 
 func (promptFunc) WaitForIdle(context.Context) error { return nil }
+
+func (promptFunc) Idle() <-chan struct{} {
+	ch := make(chan struct{})
+	close(ch)
+	return ch
+}
 
 func (f promptFunc) Prompt(ctx context.Context, msgs ...protocol.Message) error {
 	return f(ctx, msgs...)
@@ -357,4 +374,21 @@ func TestPrintEndDisposesAgentAndKillsBackgroundJobs(t *testing.T) {
 	pid, err := strconv.Atoi(strings.TrimSpace(string(raw)))
 	require.NoError(t, err)
 	assert.ErrorIs(t, syscall.Kill(-pid, 0), syscall.ESRCH, "the process group is gone when ask -p returns")
+}
+
+// After a busy refusal the retry waits for the idle signal of the Agent, not
+// for a timer.
+func TestPromptAllRetryWaitsForIdleSignal(t *testing.T) {
+	rec := &promptRecorder{busy: 1, idle: make(chan struct{})}
+	done := make(chan error, 1)
+	go func() { done <- promptAll(context.Background(), rec, []string{"only"}) }()
+
+	select {
+	case err := <-done:
+		t.Fatalf("promptAll returned before the idle signal: %v", err)
+	case <-time.After(100 * time.Millisecond):
+	}
+	close(rec.idle)
+	require.NoError(t, <-done)
+	assert.Equal(t, []string{"idle", "prompt:only", "signal", "idle", "prompt:only", "idle"}, rec.events)
 }
