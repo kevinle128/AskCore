@@ -65,7 +65,7 @@ Deep mode: phase 1 is detailed. Phases 2 to 5 list goals, files, known facts and
 - [x] Monitor event text is escaped, so job output cannot close the `<system-reminder>` or `<monitor-event>` structure.
 - [x] After phases 1 to 3 the cassettes replay unchanged (completion notice bytes unchanged). Phase 4 changes the `bash` declaration and re-records the six cassettes once.
 - [x] SIGINT and SIGTERM end `ask -p` at once with 130 and 143 at any point, the background wait included.
-- [ ] `go test ./...`, `go test -race` on the touched packages, and golangci-lint pass locally and in the GitHub CI of `develop`. Local: passes (load flakes noted in the phase results). CI: not run yet, because CI runs only on pushes to `master` and on pull requests.
+- [x] `go test ./...`, `go test -race` on the touched packages, and golangci-lint pass locally and in the GitHub CI of `develop`. Local: passes (load flakes noted in the phase results). CI: passed on draft PR #5 (run 40382072420, `ubuntu-latest`, 2026-10-27).
 - [x] ADR, design doc, H5 decision record, package READMEs and `CHANGELOG.md` match the code.
 
 ## Test commands (every phase)
