@@ -261,7 +261,7 @@ func (b *toolCoordinator) execute(ctx context.Context, p preparedCall, u *update
 		var err error
 		var once sync.Once
 		var terminal protocol.ToolExecutionResult
-		res, err = b.cfg.Pipeline.ExecuteTool(ctx, pipeline.ExecuteToolInput{Call: p.handlerCall(), Args: bytes.Clone(p.args), Context: tools.Context{CallID: p.call.ID, Cwd: b.cfg.Cwd, Update: u.send}}, func(nextCtx context.Context, in pipeline.ExecuteToolInput) (protocol.ToolExecutionResult, error) {
+		res, err = b.cfg.Pipeline.ExecuteTool(ctx, pipeline.ExecuteToolInput{Call: p.handlerCall(), Args: bytes.Clone(p.args), Context: tools.Context{CallID: p.call.ID, Cwd: b.cfg.Cwd, Update: u.send, Tasks: b.cfg.Tasks, Notices: b.cfg.Notices}}, func(nextCtx context.Context, in pipeline.ExecuteToolInput) (protocol.ToolExecutionResult, error) {
 			once.Do(func() {
 				if b.ctx.Err() != nil || nextCtx.Err() != nil {
 					terminal = errorOutcome(p.call, textBeforeDispatch).result
@@ -283,7 +283,7 @@ func (b *toolCoordinator) execute(ctx context.Context, p preparedCall, u *update
 						return bodyCtx.Err()
 					}
 					tc := in.Context
-					tc.CallID, tc.Cwd = p.call.ID, b.cfg.Cwd
+					tc.CallID, tc.Cwd, tc.Tasks, tc.Notices = p.call.ID, b.cfg.Cwd, b.cfg.Tasks, b.cfg.Notices
 					invoked = true
 					var e error
 					body, e = p.tool.Execute(bodyCtx, tc, bytes.Clone(p.args))

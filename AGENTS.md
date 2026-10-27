@@ -35,6 +35,7 @@ Some stack items are not composed in the running server yet (asynq, opentelemetr
 Ask (this repository) is an agent harness that runs as a local daemon or as a remote agent in the cloud. It follows the dewee package model (one package for each capability) plus the Ask import rules. Read these before you add code:
 
 - `docs/ask-architecture-reference.md`: design, import rules, "where to put new code"
+- `docs/async-task-runtime.md`: background work and its notices (task registry, `Agent.Notify`, no sleep or polling)
 - `internal/README.md`: package map
 - `README.md` in each package: what belongs there, file names, allowed imports. A few packages with Go code have no README yet (for example `internal/tuiclient` and some `internal/providers/*` adapters).
 
@@ -53,6 +54,7 @@ AskCore/
 │   ├── gateway/           # HTTP (echo) and gRPC servers, gRPC services; methods/ for WS RPC (not built)
 │   ├── http/              # REST handlers (import alias httpapi)
 │   ├── agent/ pipeline/ sessions/ bus/ workspace/    # Runtime core (implemented; workspace in part)
+│   ├── tasks/             # Per-Agent async task registry; completions wake the agent by push (docs/async-task-runtime.md)
 │   ├── scheduler/ cron/                              # Runtime core (scaffold)
 │   ├── auth/ settings/ providers/ tools/ sandbox/ jobs/   # Capabilities (implemented); sandbox = process runner, jobs = per-session job table
 │   ├── acp/ leader/       # Process model: ACP adapter, local router
@@ -128,7 +130,7 @@ The leader flows need a binary named `ask`. A client starts the leader from a bi
   Auth and headless composition must not start a database or leader.
   Reuse `internal/app.NewNativeAuth` and `BindAuth`; do not add a command-specific auth service.
   Keep the private auth HTTP client outside inference capture.
-  Every agent (print mode, leader, `ask acp`, in-process TUI) has the built-in tools `read`, `write`, `edit`, `ls`, `grep` (needs `rg`), `find`, `bash`, `job_output`, `job_kill`, `job_list`, and `monitor`, plus the demo tool `echo`; see `docs/reference/tools.md` and `internal/tools/README.md`. A `bash` call that runs past its wait budget (default 120 s, maximum 600 s) continues as a background job, and a finished job sends the model a `<system-reminder>` notice. Background jobs end when the session ends: `ask -p` stops the jobs that still run after the last reply. `ASK_COMMAND_GUARD=1` blocks a short list of destructive commands (`rm -rf /`, `mkfs`, a fork bomb); it is off by default and is not a security boundary.
+  Every agent (print mode, leader, `ask acp`, in-process TUI) has the built-in tools `read`, `write`, `edit`, `ls`, `grep` (needs `rg`), `find`, `bash`, `job_output`, `job_kill`, `job_list`, and `monitor`, plus the demo tool `echo`; see `docs/reference/tools.md` and `internal/tools/README.md`. A `bash` call that runs past its wait budget (default 120 s, maximum 600 s) continues as a background job, and a finished job sends the model a `<system-reminder>` notice. A job belongs to the conversation that started it: after a conversation reset the old jobs run on, hidden, and their notices are dropped. Background jobs end when the session ends. `ask -p` does not stop them after the last reply: it waits for them, prints the reply of each run that a notice starts, and stops the jobs that still run only when it exits. In print mode a background job has a time limit (10 min by default, 2 h at most; `ASK_PRINT_BG_LIMIT_MS`), the wait has an idle cap (`ASK_PRINT_BG_WAIT_CEILING_MS`), and `--max-turns N` ends the run after N turns. `ASK_DISABLE_BACKGROUND_TASKS=1` turns background jobs off in every mode. See [print mode background work](docs/cli.md#background-work-in-print-mode). `ASK_COMMAND_GUARD=1` blocks a short list of destructive commands (`rm -rf /`, `mkfs`, a fork bomb); it is off by default and is not a security boundary.
   Exit codes: 0 done, 1 error (print mode also on an assistant error; `--mode json` exits 0 on an assistant error), 130 SIGINT, 143 SIGTERM, 129 SIGHUP.
 
 ## Better Fullstack project context

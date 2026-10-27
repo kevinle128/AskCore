@@ -38,6 +38,7 @@ The mode is chosen in this order:
 | `--model <id>` | Model id. Defaults: `faux-1` (faux), `deepseek-v4.1-flash` (alibaba-token-plan), `claude-sonnet-4-6` (anthropic), `gpt-5.5` (openai), `grok-4.7` (xai). The model list is in [reference/providers.md](reference/providers.md). |
 | `--api-key <key>` | Key for this run. It needs `--model`, except for `alibaba-token-plan`. A key in the arguments is visible to other processes. Prefer the environment or `ask auth login`. |
 | `--thinking <level>` | `off`, `minimal`, `low`, `medium`, `high`, `xhigh`, or `max`. `alibaba-token-plan` defaults to `medium`. |
+| `--max-turns <n>` | Print and JSON mode. End the run after `n` turns. `n` is a whole number above 0, or the command exits 1. See [Background work in print mode](#background-work-in-print-mode). |
 | `--` | End of options. |
 | `-h`, `--help` | Show the usage text. |
 
@@ -48,9 +49,22 @@ Input rules:
 - More messages run as follow-up prompts, in order.
 - An unknown flag is an error.
 
-Exit codes: 0 done; 1 for an argument or setup error, and in print mode for an assistant error; `--mode json` exits 0 on an assistant error. Jobs that still run after the last reply are stopped.
+Exit codes: 0 done; 1 for an argument or setup error, and in print mode for an assistant error; `--mode json` exits 0 on an assistant error. In print mode the code comes from the last reply that the run printed. SIGINT, SIGTERM, and SIGHUP end the run, also during the wait for background work, with 130, 143, and 129.
 
 The demo provider `faux` is the default of `ask -p`. It runs a script: `echo <text>` calls the echo tool, `fail <text>` ends in an assistant error, and any other text is said back.
+
+### Background work in print mode
+
+A `bash` job or a `monitor` can still run when the last prompt ends. `ask -p` and `--mode json` then wait for it instead of stopping it:
+
+- Print mode prints the reply of the last prompt at once. Then it waits by signal. Each completion notice or monitor event starts one more run, and print mode prints the reply of each of these runs. `--mode json` writes the events of these runs to the stream.
+- The wait ends when no run, task, or job is left. A job that still runs at the exit (signal, idle cap, or `--max-turns`) is stopped.
+- A background job stops after a time limit. The default is 10 minutes. A `bash` call with `run_in_background` can set the limit with `timeout`, up to 2 hours. Every `monitor` stops after at most 10 minutes, also a `persistent` one. The model gets a notice when a limit stops a job. The foreground wait of `bash` keeps its own budget (default 120 s, maximum 600 s).
+- The idle cap ends the wait when the agent is idle for 10 minutes and no `bash` job runs. Then only monitors are left.
+- After 5 seconds, a terminal on stderr shows `Waiting for background work to finish: <job> (<label>), ...`. In `--mode json` it shows only when stdout is not a terminal.
+- `--max-turns <n>` counts every turn of the run, also the turns that a notice starts. A turn that the agent retries does not count. When the limit is reached, the run stops before turn `n+1` and exits with code 1. The line `Error: Reached max turns (n)` goes to stdout, or to stderr with `--mode json`, so the JSON event stream stays valid. The interactive TUI ignores the flag.
+
+The TUI, the leader, and `ask acp` set no time limit on background jobs. The variables `ASK_PRINT_BG_LIMIT_MS`, `ASK_PRINT_BG_WAIT_CEILING_MS`, and `ASK_DISABLE_BACKGROUND_TASKS` are in [Environment variables](#environment-variables). The owner of the rules is [internal/jobs/README.md](../internal/jobs/README.md#background-limit-and-quiescence). The tool texts are in [reference/tools.md](reference/tools.md).
 
 ## `ask auth`
 
@@ -162,6 +176,9 @@ The key bindings, block folding, the viewer, and the mouse rules are in [interna
 | `ASK_FAUX` | leader, `ask acp`, in-process TUI | `1` lists the demo provider `faux`. `ask -p` has it by default and ignores the variable. |
 | `ASK_FAUX_TPS` | `faux` provider | Pace in tokens per second. A negative value or a non-number is an error. |
 | `ASK_COMMAND_GUARD` | `ask -p`, leader, `ask acp` | `1` blocks a short list of destructive commands. It is off by default and is not a security boundary. |
+| `ASK_DISABLE_BACKGROUND_TASKS` | `ask -p`, leader, `ask acp`, in-process TUI | `1` turns background jobs off. A foreground `bash` command stops at its wait budget. A background start and `monitor` are refused. |
+| `ASK_PRINT_BG_LIMIT_MS` | `ask -p` | The default background time limit, in milliseconds (default 600000). A value that is not a whole number above 0 is ignored. A larger value also raises the 2 hour maximum. |
+| `ASK_PRINT_BG_WAIT_CEILING_MS` | `ask -p` | The idle cap of the background wait, in milliseconds (default 600000). `0` means no cap. An empty, negative, or invalid value gives the default. |
 | `ASK_CAPTURE` | `ask -p` | A directory. The run records the provider HTTP traffic to a new cassette. Ignored for `faux`. |
 | `TEA_TRACE` | interactive TUI | A file. It receives raw keyboard input, pasted keys included. The TUI warns on screen. Do not set it when you sign in. |
 | `ANTHROPIC_API_KEY`, `OPENAI_API_KEY`, `XAI_API_KEY`, `ASK_ALIBABA_TOKEN_PLAN_API_KEY` (or `ALIBABA_TOKEN_PLAN_API_KEY`) | providers | API key when no saved sign-in applies. |

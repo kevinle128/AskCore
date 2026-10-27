@@ -23,6 +23,7 @@ import (
 	"AskCore/internal/agent"
 	"AskCore/internal/jobs"
 	"AskCore/internal/providers/anthropic"
+	"AskCore/internal/tasks"
 	"AskCore/pkg/protocol"
 )
 
@@ -32,6 +33,8 @@ type scriptedModel struct {
 	mu      sync.Mutex
 	answers []string
 	bodies  [][]byte
+	// before, when set, runs before request n is answered.
+	before func(n int)
 }
 
 func (s *scriptedModel) RoundTrip(r *http.Request) (*http.Response, error) {
@@ -46,7 +49,11 @@ func (s *scriptedModel) RoundTrip(r *http.Request) (*http.Response, error) {
 	if n < len(s.answers) {
 		answer = s.answers[n]
 	}
+	before := s.before
 	s.mu.Unlock()
+	if before != nil {
+		before(n)
+	}
 	return sseResponse(200, answer)(r)
 }
 
@@ -212,6 +219,8 @@ func TestNativeAgentEnablesGuardOnlyWithEnv(t *testing.T) {
 	assert.NotContains(t, other, "blocked by command-guard", "only the value 1 enables the guard")
 }
 
+// The tests below start jobs on the table directly, with no owner, so the jobs
+// belong to generation 0.
 func TestNativeAgentSessionsHaveSeparateTables(t *testing.T) {
 	o := tokenPlanOptions(&scriptedModel{})
 	_, first := newTestSession(t, o, nativeEnv(nil))
@@ -221,9 +230,9 @@ func TestNativeAgentSessionsHaveSeparateTables(t *testing.T) {
 	job, err := first.Start(jobs.StartSpec{Command: "sleep 30", Cwd: t.TempDir()})
 	require.NoError(t, err)
 
-	require.Len(t, first.List(), 1)
-	assert.Equal(t, job.ID(), first.List()[0].ID)
-	assert.Empty(t, second.List(), "a job of one session is not listed in another")
+	require.Len(t, first.List(0), 1)
+	assert.Equal(t, job.ID(), first.List(0)[0].ID)
+	assert.Empty(t, second.List(0), "a job of one session is not listed in another")
 }
 
 func TestNativeAgentDisposeClosesTable(t *testing.T) {
@@ -235,7 +244,7 @@ func TestNativeAgentDisposeClosesTable(t *testing.T) {
 
 	_, err = jt.Start(jobs.StartSpec{Command: "true", Cwd: t.TempDir()})
 	require.ErrorIs(t, err, jobs.ErrClosed)
-	list := jt.List()
+	list := jt.List(0)
 	require.Len(t, list, 1)
 	assert.Equal(t, jobs.StatusKilled, list[0].Status, "the dispose killed the job")
 }
@@ -269,6 +278,17 @@ func TestNativeAgentJobsGetSessionEnvironment(t *testing.T) {
 type promptRecorder struct {
 	events []string
 	busy   int
+	idle   chan struct{} // nil: the idle signal is already given
+}
+
+func (p *promptRecorder) Idle() <-chan struct{} {
+	p.events = append(p.events, "signal")
+	if p.idle != nil {
+		return p.idle
+	}
+	ch := make(chan struct{})
+	close(ch)
+	return ch
 }
 
 func (p *promptRecorder) WaitForIdle(context.Context) error {
@@ -292,8 +312,8 @@ func TestPromptAllRetriesWhenNoticeRunIsActive(t *testing.T) {
 
 	require.NoError(t, err)
 	assert.Equal(t, []string{
-		"idle", "prompt:first", // a notice run started: busy
-		"idle", "prompt:first", // busy again
+		"idle", "prompt:first", "signal", // a notice run started: busy
+		"idle", "prompt:first", "signal", // busy again
 		"idle", "prompt:first",
 		"idle", "prompt:second",
 		"idle", // the notice of the last prompt gets its answer
@@ -312,6 +332,12 @@ func TestPromptAllStopsOnOtherErrors(t *testing.T) {
 type promptFunc func(context.Context, ...protocol.Message) error
 
 func (promptFunc) WaitForIdle(context.Context) error { return nil }
+
+func (promptFunc) Idle() <-chan struct{} {
+	ch := make(chan struct{})
+	close(ch)
+	return ch
+}
 
 func (f promptFunc) Prompt(ctx context.Context, msgs ...protocol.Message) error {
 	return f(ctx, msgs...)
@@ -333,6 +359,98 @@ func TestPromptAllWaitsForNoticeRunOfRealAgent(t *testing.T) {
 	assert.Equal(t, agent.Idle, ag.State().Status)
 }
 
+// A notice run that starts the moment the last prompt run ends must not take
+// the place of the prompt reply: each reply is printed from its own run.
+func TestPrintNoticeRightAfterLastPromptKeepsPromptReply(t *testing.T) {
+	model := &scriptedModel{answers: []string{sseText("prompt answer"), sseText("notice answer")}}
+	ag, jt := newTestSession(t, tokenPlanOptions(model), nativeEnv(nil))
+	var once sync.Once
+	unsubscribe := ag.Subscribe(func(ev protocol.Event) error {
+		if _, ok := ev.(*protocol.AgentSettled); ok {
+			once.Do(func() {
+				_, err := ag.Notify(tasks.Notice{Policy: tasks.NoticeWake, Message: textUser(protocol.SystemReminder("Background job bash-1 finished."))})
+				assert.NoError(t, err)
+			})
+		}
+		return nil
+	})
+	defer unsubscribe()
+
+	var out, errb bytes.Buffer
+	code := runHeadlessWait(ag, []string{"ping"}, modePrint, &out, &errb, nil, waitConfig{jobs: jt})
+	require.Equal(t, 0, code, errb.String())
+	assert.Equal(t, "prompt answer\nnotice answer\n", out.String())
+	assert.Empty(t, errb.String())
+}
+
+// blockedWriter blocks every write until release closes and reports the first
+// write on entered.
+type blockedWriter struct {
+	entered chan struct{}
+	release chan struct{}
+	once    sync.Once
+}
+
+func (w *blockedWriter) Write(p []byte) (int, error) {
+	w.once.Do(func() { close(w.entered) })
+	<-w.release
+	return len(p), nil
+}
+
+// A signal ends print mode even while the reply of a notice run waits for a
+// stdout that nobody reads: the flush of the first reply blocks and holds the
+// output lock, and the notice reply waits for that lock.
+func TestPrintSignalWhileReplyWriteBlocks(t *testing.T) {
+	model := &scriptedModel{answers: []string{sseText("prompt answer"), sseText("notice answer")}}
+	ag, jt := newTestSession(t, tokenPlanOptions(model), nativeEnv(nil))
+	stdout := &blockedWriter{entered: make(chan struct{}), release: make(chan struct{})}
+	// The notice run answers only when the flush of the first reply blocks.
+	model.before = func(n int) {
+		if n == 1 {
+			<-stdout.entered
+		}
+	}
+
+	settled := 0
+	noticeSettled := make(chan struct{})
+	unsubscribe := ag.Subscribe(func(ev protocol.Event) error {
+		if _, ok := ev.(*protocol.AgentSettled); !ok {
+			return nil
+		}
+		settled++
+		switch settled {
+		case 1:
+			_, err := ag.Notify(tasks.Notice{Policy: tasks.NoticeWake, Message: textUser(protocol.SystemReminder("Background job bash-1 finished."))})
+			assert.NoError(t, err)
+		case 2:
+			close(noticeSettled)
+		}
+		return nil
+	})
+	defer unsubscribe()
+	// Released before unsubscribe, which waits for a listener that writes.
+	defer close(stdout.release)
+
+	sigs := make(chan os.Signal, 1)
+	var errb bytes.Buffer
+	code := make(chan int, 1)
+	go func() {
+		code <- runHeadlessWait(ag, []string{"ping"}, modePrint, stdout, &errb, sigs, waitConfig{jobs: jt})
+	}()
+	select {
+	case <-noticeSettled:
+	case <-time.After(20 * time.Second):
+		t.Fatal("the notice run did not settle")
+	}
+	sigs <- syscall.SIGTERM
+	select {
+	case c := <-code:
+		assert.Equal(t, 143, c)
+	case <-time.After(abortGrace + 10*time.Second):
+		t.Fatal("print mode did not exit after SIGTERM while a reply write blocked")
+	}
+}
+
 func TestPrintEndDisposesAgentAndKillsBackgroundJobs(t *testing.T) {
 	pidFile := filepath.Join(t.TempDir(), "pid")
 	command := "echo $$ > " + pidFile + "; trap '' TERM; sleep 300"
@@ -342,17 +460,36 @@ func TestPrintEndDisposesAgentAndKillsBackgroundJobs(t *testing.T) {
 	}}
 	var stdout, stderr bytes.Buffer
 	deps := runDependencies{
-		getenv:        nativeEnv(map[string]string{"ASK_HOME": t.TempDir()}),
+		getenv:        nativeEnv(map[string]string{"ASK_HOME": t.TempDir(), printBgLimitEnv: "500"}),
 		inferenceHTTP: &http.Client{Transport: model},
 	}
 
 	code := runWithDependencies([]string{"-p", "--provider", anthropic.ProviderID, "start a job"}, strings.NewReader(""), &stdout, &stderr, deps)
 
 	require.Equal(t, 0, code, stderr.String())
-	assert.Equal(t, "the final answer\n", stdout.String())
+	// ask -p waits for the job that moved to the background; it stops at its
+	// limit and its notice gets one more turn (the scripted model says done).
+	assert.Equal(t, "the final answer\ndone\n", stdout.String())
 	raw, err := os.ReadFile(pidFile)
 	require.NoError(t, err)
 	pid, err := strconv.Atoi(strings.TrimSpace(string(raw)))
 	require.NoError(t, err)
 	assert.ErrorIs(t, syscall.Kill(-pid, 0), syscall.ESRCH, "the process group is gone when ask -p returns")
+}
+
+// After a busy refusal the retry waits for the idle signal of the Agent, not
+// for a timer.
+func TestPromptAllRetryWaitsForIdleSignal(t *testing.T) {
+	rec := &promptRecorder{busy: 1, idle: make(chan struct{})}
+	done := make(chan error, 1)
+	go func() { done <- promptAll(context.Background(), rec, []string{"only"}) }()
+
+	select {
+	case err := <-done:
+		t.Fatalf("promptAll returned before the idle signal: %v", err)
+	case <-time.After(100 * time.Millisecond):
+	}
+	close(rec.idle)
+	require.NoError(t, <-done)
+	assert.Equal(t, []string{"idle", "prompt:only", "signal", "idle", "prompt:only", "idle"}, rec.events)
 }

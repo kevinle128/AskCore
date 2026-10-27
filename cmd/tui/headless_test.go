@@ -28,8 +28,17 @@ import (
 
 // os/signal.loop starts at the first signal.Notify and lives for the rest
 // of the process.
+//
+// ASK_HOME points to a fresh private directory while the tests run (see
+// isolateHome).
 func TestMain(m *testing.M) {
+	restore, err := isolateHome()
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "tui tests: %v\n", err)
+		os.Exit(1)
+	}
 	code := m.Run()
+	restore()
 	removeACPBinary()
 	removeDevBinaries()
 	if code == 0 {
@@ -39,6 +48,46 @@ func TestMain(m *testing.M) {
 		}
 	}
 	os.Exit(code)
+}
+
+// isolatedHomeMarker is set by the process that isolated ASK_HOME.
+const isolatedHomeMarker = "ASK_TUI_TEST_HOME_ISOLATED"
+
+// isolateHome sets ASK_HOME to a fresh private directory. An Agent without an
+// explicit home reads ASK_HOME and then ~/.ask, so without it the tests would
+// sweep and write the task output of the developer. Some tests start this test
+// binary again as a helper process and pass it an ASK_HOME of their own. That
+// helper sees isolatedHomeMarker, which the first process set, and leaves the
+// value alone. The returned function restores the environment and removes the
+// directory.
+func isolateHome() (restore func(), err error) {
+	if os.Getenv(isolatedHomeMarker) != "" {
+		return func() {}, nil
+	}
+	home, err := os.MkdirTemp("", "ask-tui-test-home-")
+	if err != nil {
+		return nil, fmt.Errorf("make home: %w", err)
+	}
+	// MkdirTemp gives 0700 already; the call makes the mode independent of it.
+	if err := os.Chmod(home, 0o700); err != nil {
+		_ = os.RemoveAll(home)
+		return nil, fmt.Errorf("private home: %w", err)
+	}
+	prev, had := os.LookupEnv("ASK_HOME")
+	if err := os.Setenv("ASK_HOME", home); err != nil {
+		_ = os.RemoveAll(home)
+		return nil, fmt.Errorf("set ASK_HOME: %w", err)
+	}
+	_ = os.Setenv(isolatedHomeMarker, "1")
+	return func() {
+		_ = os.Unsetenv(isolatedHomeMarker)
+		if had {
+			_ = os.Setenv("ASK_HOME", prev)
+		} else {
+			_ = os.Unsetenv("ASK_HOME")
+		}
+		_ = os.RemoveAll(home)
+	}, nil
 }
 
 var (
@@ -153,15 +202,15 @@ func TestJSONHelloLines(t *testing.T) {
 {"seq":4,"ts":0,"sessionId":"","runId":"R","type":"message_start","message":{"role":"user","content":[{"type":"text","text":"hello"}],"timestamp":0}}
 {"seq":5,"ts":0,"sessionId":"","runId":"R","type":"message_end","message":{"role":"user","content":[{"type":"text","text":"hello"}],"timestamp":0}}
 {"seq":6,"ts":0,"sessionId":"","runId":"R","type":"attempt_start","attemptId":"A","cycleId":"C","number":1}
-{"seq":7,"ts":0,"sessionId":"","runId":"R","type":"message_start","message":{"role":"assistant","content":[],"api":"faux","provider":"faux","model":"faux-1","usage":{"input":2513,"output":0,"cacheRead":0,"cacheWrite":2513,"totalTokens":5026,"cost":{"input":0,"output":0,"cacheRead":0,"cacheWrite":0,"total":0}},"stopReason":"pending","timestamp":0}}
-{"seq":8,"ts":0,"sessionId":"","runId":"R","type":"message_update","assistantMessageEvent":{"type":"text_start","contentIndex":0,"content":{"type":"text","text":""}},"usage":{"input":2513,"output":2,"cacheRead":0,"cacheWrite":2513,"totalTokens":5028,"cost":{"input":0,"output":0,"cacheRead":0,"cacheWrite":0,"total":0}}}
-{"seq":9,"ts":0,"sessionId":"","runId":"R","type":"message_update","assistantMessageEvent":{"type":"text_delta","contentIndex":0,"delta":"hello"},"usage":{"input":2513,"output":2,"cacheRead":0,"cacheWrite":2513,"totalTokens":5028,"cost":{"input":0,"output":0,"cacheRead":0,"cacheWrite":0,"total":0}}}
-{"seq":10,"ts":0,"sessionId":"","runId":"R","type":"message_update","assistantMessageEvent":{"type":"text_end","contentIndex":0,"content":"hello"},"usage":{"input":2513,"output":2,"cacheRead":0,"cacheWrite":2513,"totalTokens":5028,"cost":{"input":0,"output":0,"cacheRead":0,"cacheWrite":0,"total":0}}}
-{"seq":11,"ts":0,"sessionId":"","runId":"R","type":"message_end","message":{"role":"assistant","content":[{"type":"text","text":"hello"}],"api":"faux","provider":"faux","model":"faux-1","thinkingLevel":"off","usage":{"input":2513,"output":2,"cacheRead":0,"cacheWrite":2513,"totalTokens":5028,"cost":{"input":0,"output":0,"cacheRead":0,"cacheWrite":0,"total":0}},"stopReason":"stop","timestamp":0}}
+{"seq":7,"ts":0,"sessionId":"","runId":"R","type":"message_start","message":{"role":"assistant","content":[],"api":"faux","provider":"faux","model":"faux-1","usage":{"input":2622,"output":0,"cacheRead":0,"cacheWrite":2622,"totalTokens":5244,"cost":{"input":0,"output":0,"cacheRead":0,"cacheWrite":0,"total":0}},"stopReason":"pending","timestamp":0}}
+{"seq":8,"ts":0,"sessionId":"","runId":"R","type":"message_update","assistantMessageEvent":{"type":"text_start","contentIndex":0,"content":{"type":"text","text":""}},"usage":{"input":2622,"output":2,"cacheRead":0,"cacheWrite":2622,"totalTokens":5246,"cost":{"input":0,"output":0,"cacheRead":0,"cacheWrite":0,"total":0}}}
+{"seq":9,"ts":0,"sessionId":"","runId":"R","type":"message_update","assistantMessageEvent":{"type":"text_delta","contentIndex":0,"delta":"hello"},"usage":{"input":2622,"output":2,"cacheRead":0,"cacheWrite":2622,"totalTokens":5246,"cost":{"input":0,"output":0,"cacheRead":0,"cacheWrite":0,"total":0}}}
+{"seq":10,"ts":0,"sessionId":"","runId":"R","type":"message_update","assistantMessageEvent":{"type":"text_end","contentIndex":0,"content":"hello"},"usage":{"input":2622,"output":2,"cacheRead":0,"cacheWrite":2622,"totalTokens":5246,"cost":{"input":0,"output":0,"cacheRead":0,"cacheWrite":0,"total":0}}}
+{"seq":11,"ts":0,"sessionId":"","runId":"R","type":"message_end","message":{"role":"assistant","content":[{"type":"text","text":"hello"}],"api":"faux","provider":"faux","model":"faux-1","thinkingLevel":"off","usage":{"input":2622,"output":2,"cacheRead":0,"cacheWrite":2622,"totalTokens":5246,"cost":{"input":0,"output":0,"cacheRead":0,"cacheWrite":0,"total":0}},"stopReason":"stop","timestamp":0}}
 {"seq":12,"ts":0,"sessionId":"","runId":"R","type":"attempt_end","attemptId":"A","outcome":"completed"}
-{"seq":13,"ts":0,"sessionId":"","runId":"R","type":"turn_end","cycleId":"C","message":{"role":"assistant","content":[{"type":"text","text":"hello"}],"api":"faux","provider":"faux","model":"faux-1","thinkingLevel":"off","usage":{"input":2513,"output":2,"cacheRead":0,"cacheWrite":2513,"totalTokens":5028,"cost":{"input":0,"output":0,"cacheRead":0,"cacheWrite":0,"total":0}},"stopReason":"stop","timestamp":0},"toolResults":[]}
+{"seq":13,"ts":0,"sessionId":"","runId":"R","type":"turn_end","cycleId":"C","message":{"role":"assistant","content":[{"type":"text","text":"hello"}],"api":"faux","provider":"faux","model":"faux-1","thinkingLevel":"off","usage":{"input":2622,"output":2,"cacheRead":0,"cacheWrite":2622,"totalTokens":5246,"cost":{"input":0,"output":0,"cacheRead":0,"cacheWrite":0,"total":0}},"stopReason":"stop","timestamp":0},"toolResults":[]}
 {"seq":14,"ts":0,"sessionId":"","runId":"R","type":"cycle_end","cycleId":"C","reason":"completed"}
-{"seq":15,"ts":0,"sessionId":"","runId":"R","type":"agent_end","messages":[{"role":"user","content":[{"type":"text","text":"hello"}],"timestamp":0},{"role":"assistant","content":[{"type":"text","text":"hello"}],"api":"faux","provider":"faux","model":"faux-1","thinkingLevel":"off","usage":{"input":2513,"output":2,"cacheRead":0,"cacheWrite":2513,"totalTokens":5028,"cost":{"input":0,"output":0,"cacheRead":0,"cacheWrite":0,"total":0}},"stopReason":"stop","timestamp":0}],"willRetry":false}
+{"seq":15,"ts":0,"sessionId":"","runId":"R","type":"agent_end","messages":[{"role":"user","content":[{"type":"text","text":"hello"}],"timestamp":0},{"role":"assistant","content":[{"type":"text","text":"hello"}],"api":"faux","provider":"faux","model":"faux-1","thinkingLevel":"off","usage":{"input":2622,"output":2,"cacheRead":0,"cacheWrite":2622,"totalTokens":5246,"cost":{"input":0,"output":0,"cacheRead":0,"cacheWrite":0,"total":0}},"stopReason":"stop","timestamp":0}],"willRetry":false}
 {"seq":16,"ts":0,"sessionId":"","runId":"R","type":"agent_settled"}
 `
 	assert.Equal(t, result{want, "", 0}, result{normalize(got.stdout), got.stderr, got.code})

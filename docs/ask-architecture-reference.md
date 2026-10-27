@@ -92,6 +92,7 @@ Go has no classes. A "class" is a struct with methods. The rule is **one package
 | `internal/memory` | parked | `internal/memory` |
 | `internal/sessions` | typed in-memory log; persistent tree and branch projection remain planned | `internal/sessions` |
 | `internal/scheduler` | lanes and concurrency limits | `internal/scheduler` |
+| `internal/tasks` | per-Agent registry of async tasks: lifetime, terminal transition, output sink, notice, output sweep; see [ADR 0004](adr/0004-agent-owned-async-task-runtime.md) and its [README](../internal/tasks/README.md) | |
 | `internal/bus` | bounded replay ring and followers; publication belongs to agent | `internal/bus` |
 | `internal/hooks` | sync and notify event dispatch; `handlers/` for command and HTTP handlers | `internal/hooks` |
 | `internal/permissions` | RBAC for gateway and HTTP callers | `internal/permissions` |
@@ -201,6 +202,8 @@ Input uses the DeepSeek claim model.
 A turn boundary claims all steering input; a cycle boundary claims all steering input and one follow-up.
 AfterTool alone supplies added context that does not wake an idle Agent.
 These claims belong to the Agent, not the scheduler.
+Async tasks and outside sources reach these claims only through `Agent.Notify`; no task adds a queue ([async task runtime](async-task-runtime.md), [ADR 0004](adr/0004-agent-owned-async-task-runtime.md)).
+No component sleeps or polls to detect completion, except the isolated poller of that design.
 The scheduler remains the planned owner of run lanes and concurrency limits.
 Abort ends current work; disposal also closes future admission and waits for started bodies.
 
@@ -365,7 +368,7 @@ See the [operating guide](../README.md#native-auth-and-headless-prompts) for met
 | `providers` | `tools` |
 | `agent`, `pipeline`, `tools`, `sandbox`, `jobs`, `workspace`, `providers`, `store` | `gateway`, `http`, `channels/<vendor>` |
 
-Allowed: `tools` imports `providers`, `sandbox`, `jobs` and `workspace`. `jobs` imports `sandbox`. The Agent reaches `jobs` only through the `Notifier` that the composition root sets, and `jobs` reaches the Agent only through it.
+Allowed: `tools` imports `providers`, `sandbox`, `jobs` and `workspace`. `jobs` imports `sandbox`. `jobs` reaches the Agent only through the `jobs.Owner` of each job: the shell tools wrap the notice port of the call (`tools.Context.Notices`, a `tasks.Port`), so a job notice goes through `Agent.Notify` to the conversation that started the job.
 
 ### 8.2 Rules added by Ask
 
@@ -389,7 +392,7 @@ Allowed: `tools` imports `providers`, `sandbox`, `jobs` and `workspace`. `jobs` 
 | A new LLM vendor | its provider and model records (data); a new adapter `internal/providers/<api>/` only for a new wire API | `providers.Provider` for a new adapter |
 | A new chat platform | `internal/channels/<vendor>/` | `channels.Channel`, embed `BaseChannel` |
 | A new control handler | `internal/pipeline/<name>.go` | Register a typed handler with `pipeline.Registry`; stages stay private to agent. Example: `command-guard` (`CommandGuard`, a `BeforeTool` handler) is registered on a per-agent registry only when `ASK_COMMAND_GUARD=1`; the handler never reads the environment |
-| A new job or process rule | `internal/jobs/` or `internal/sandbox/` | Jobs reach the Agent through `jobs.Notifier`. Resources that a session owns close through `agent.Config.Release`, which `Agent.Dispose` calls once after the run and its started tools drained and before the log closes (the job table closes there) |
+| A new job or process rule | `internal/jobs/` or `internal/sandbox/` | Jobs reach the Agent through the `jobs.Owner` of each job (the notice port of the tool call). Resources that a session owns close through `agent.Config.Release`, which `Agent.Dispose` calls once after the run and its started tools drained and before the log closes (the job table closes there) |
 | A new session entry type | `internal/sessions/entry.go` | |
 | A new event type | `pkg/protocol` | Agent publishes lifecycle events; bus owns replay and follow; hooks owns the planned extension adapter |
 | A new user setting or credential | `internal/settings/` | |
@@ -400,6 +403,8 @@ Allowed: `tools` imports `providers`, `sandbox`, `jobs` and `workspace`. `jobs` 
 | A new WS RPC method | name in `pkg/protocol`, handler in `internal/gateway/methods/<resource>.go` | |
 | A new gRPC service | `.proto` in `proto/`, implementation in `internal/gateway/grpc_<service>.go` | map generated types |
 | A new hook handler | `internal/hooks/handlers/` | `hooks.Handler` |
+| A new kind of async task | a `tasks.Body` next to the tool or package that starts it | start it through `tools.Context.Tasks`; never call `Agent.Steer` or `FollowUp` from a task |
+| A new outside source of notices (MCP, channel, extension, webhook) | the adapter package of that source | call the notify function that `internal/app` injects; never import `agent` |
 | A new infrastructure client | its own package under `internal/` | constructor registered in `internal/app` |
 
 ---

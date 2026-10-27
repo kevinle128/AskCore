@@ -5,6 +5,7 @@ package jobs
 import (
 	"fmt"
 	"strings"
+	"sync"
 	"testing"
 	"time"
 
@@ -107,7 +108,7 @@ func TestMonitorPersistentHasNoTimer(t *testing.T) {
 	r.clock.Advance(11 * time.Hour)
 	assert.Equal(t, StatusRunning, j.Status())
 
-	_, err := r.tb.Kill(j.ID(), "")
+	_, err := r.tb.Kill(r.gen(), j.ID(), "")
 	require.NoError(t, err)
 	requireGroupGone(t, j.proc.PGID())
 	assert.Empty(t, r.n.all(), "job_kill sends no notice")
@@ -125,7 +126,7 @@ func TestMonitorKillByModelDropsPendingLines(t *testing.T) {
 	j := r.monitor(MonitorSpec{Command: f.command(), Persistent: true})
 	feed(t, f, j, "pending", 1)
 
-	_, err := r.tb.Kill(j.ID(), "stop")
+	_, err := r.tb.Kill(r.gen(), j.ID(), "stop")
 	require.NoError(t, err)
 	r.clock.Advance(time.Second)
 	assert.Empty(t, r.n.all(), "a killed monitor sends neither the batch nor a notice")
@@ -291,16 +292,9 @@ func TestMonitorCompletionWaitsForEventDelivery(t *testing.T) {
 	r := newRig(t)
 	delivering, release := make(chan struct{}), make(chan struct{})
 	defer close(release)
-	n := r.n.notifier()
-	steer := n.Steer
-	n.Steer = func(m protocol.Message) (string, error) {
-		close(delivering)
-		<-release
-		return steer(m)
-	}
-	r.tb.SetNotifier(n)
+	owner := &gatedOwner{fakeNotifier: r.n, delivering: delivering, release: release}
 	gate, open := r.gate("exit")
-	j := r.monitor(MonitorSpec{Command: "echo line; " + gate})
+	j := r.monitor(MonitorSpec{Command: "echo line; " + gate, Owner: owner})
 	select {
 	case <-delivering:
 	case <-time.After(5 * time.Second):
@@ -340,14 +334,12 @@ func TestMonitorBoundsPendingMessage(t *testing.T) {
 func TestMonitorDropsDeliveryWhenClosedDuringMerge(t *testing.T) {
 	r := newRig(t, withFakeClock())
 	f := r.fifo()
-	j := r.monitor(MonitorSpec{Command: f.command(), Persistent: true})
+	owner := &hookOwner{fakeNotifier: r.n}
+	j := r.monitor(MonitorSpec{Command: f.command(), Persistent: true, Owner: owner})
 	feed(t, f, j, "first", 1)
 	r.clock.Advance(200 * time.Millisecond)
 	merging, release := make(chan struct{}), make(chan struct{})
-	n := r.n.notifier()
-	remove := n.Remove
-	n.Remove = func(id string) bool { close(merging); <-release; return remove(id) }
-	r.tb.SetNotifier(n)
+	owner.setRemove(func(id string) bool { close(merging); <-release; return r.n.Remove(id) })
 	feed(t, f, j, "second", 2)
 	flushed := make(chan struct{})
 	go func() { defer close(flushed); r.clock.Advance(200 * time.Millisecond) }()
@@ -357,4 +349,43 @@ func TestMonitorDropsDeliveryWhenClosedDuringMerge(t *testing.T) {
 	<-flushed
 	waitDone(t, j)
 	assert.Len(t, r.n.steers(), 1, "closing must stop the merged delivery")
+}
+
+// gatedOwner holds the first monitor event until release closes.
+type gatedOwner struct {
+	*fakeNotifier
+	delivering chan struct{}
+	release    <-chan struct{}
+	once       sync.Once
+}
+
+func (g *gatedOwner) Notify(m protocol.Message) (string, error) {
+	if strings.Contains(messageText(m), "<monitor-event") {
+		g.once.Do(func() { close(g.delivering) })
+		<-g.release
+	}
+	return g.fakeNotifier.Notify(m)
+}
+
+// hookOwner lets a test replace Remove after the job started.
+type hookOwner struct {
+	*fakeNotifier
+	mu     sync.Mutex
+	remove func(id string) bool
+}
+
+func (h *hookOwner) setRemove(f func(id string) bool) {
+	h.mu.Lock()
+	defer h.mu.Unlock()
+	h.remove = f
+}
+
+func (h *hookOwner) Remove(id string) bool {
+	h.mu.Lock()
+	f := h.remove
+	h.mu.Unlock()
+	if f != nil {
+		return f(id)
+	}
+	return h.fakeNotifier.Remove(id)
 }

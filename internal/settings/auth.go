@@ -65,18 +65,9 @@ type fileOps struct {
 
 // NewAuthStore constructs a local credential store. Empty home uses ASK_HOME or ~/.ask.
 func NewAuthStore(home string) (*AuthStore, error) {
-	if home == "" {
-		home = os.Getenv("ASK_HOME")
-	}
-	if home == "" {
-		dir, err := os.UserHomeDir()
-		if err != nil {
-			return nil, err
-		}
-		home = filepath.Join(dir, ".ask")
-	}
-	if !filepath.IsAbs(home) {
-		return nil, fmt.Errorf("%w: home must be absolute", ErrUnsafeStore)
+	home, err := ResolveHome(home)
+	if err != nil {
+		return nil, err
 	}
 	return &AuthStore{home: home, ops: fileOps{write: func(f *os.File, b []byte) (int, error) { return f.Write(b) }, syncFile: (*os.File).Sync, closeFile: (*os.File).Close, rename: os.Rename, syncDir: (*os.File).Sync}}, nil
 }

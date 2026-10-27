@@ -20,6 +20,7 @@ import (
 	"github.com/stretchr/testify/require"
 
 	"AskCore/internal/jobs"
+	"AskCore/internal/tasks"
 	"AskCore/internal/tools"
 	"AskCore/pkg/protocol"
 )
@@ -122,6 +123,16 @@ func (n *shellNotices) accept(m protocol.Message) (string, error) {
 	return fmt.Sprintf("in-%d", len(n.texts)), nil
 }
 
+// Gen, Notify and Remove make the recorder the notice port of the calls of a
+// harness, so the jobs that the tools start report to it.
+func (n *shellNotices) Gen() uint64 { return 1 }
+
+func (n *shellNotices) Notify(_ tasks.NoticePolicy, m protocol.Message) (string, error) {
+	return n.accept(m)
+}
+
+func (n *shellNotices) Remove(string) bool { return false }
+
 func (n *shellNotices) all() []string {
 	n.mu.Lock()
 	defer n.mu.Unlock()
@@ -176,7 +187,6 @@ func newShellHarness(t *testing.T, opts ...shellOption) *shellHarness {
 		o.Clock = h.clock
 	}
 	h.table = jobs.New(o)
-	h.table.SetNotifier(jobs.Notifier{FollowUp: h.notices.accept, Steer: h.notices.accept, Remove: func(string) bool { return false }})
 	for _, tool := range tools.NewShellTools(h.table) {
 		require.NoError(t, h.reg.Register(tool, tools.SourceInfo{Kind: tools.SourceBuiltin}))
 		h.set[tool.Decl().Name] = tool
@@ -256,7 +266,7 @@ func (h *shellHarness) prepare(name string, args any) json.RawMessage {
 func (h *shellHarness) runWith(ctx context.Context, update func(protocol.ToolExecutionResult), name string, args any) (protocol.ToolExecutionResult, error) {
 	h.t.Helper()
 	prepared := h.prepare(name, args)
-	return h.set[name].Execute(ctx, tools.Context{CallID: "c1", Cwd: h.cwd, Update: update}, prepared)
+	return h.set[name].Execute(ctx, tools.Context{CallID: "c1", Cwd: h.cwd, Update: update, Notices: h.notices}, prepared)
 }
 
 func (h *shellHarness) run(name string, args any) (protocol.ToolExecutionResult, error) {
@@ -284,7 +294,7 @@ func (h *shellHarness) start(ctx context.Context, name string, args any) *shellC
 	c := &shellCall{done: make(chan struct{})}
 	go func() {
 		defer close(c.done)
-		c.res, c.err = h.set[name].Execute(ctx, tools.Context{CallID: "c1", Cwd: h.cwd}, prepared)
+		c.res, c.err = h.set[name].Execute(ctx, tools.Context{CallID: "c1", Cwd: h.cwd, Notices: h.notices}, prepared)
 	}()
 	return c
 }
@@ -384,7 +394,7 @@ func TestBashTimeoutMovesToBackground(t *testing.T) {
 	d := shellDetails(t, res)
 	assert.Equal(t, "bash-1", d.JobID)
 	assert.Equal(t, "running", d.Status)
-	list := h.table.List()
+	list := h.table.List(h.notices.Gen())
 	require.Len(t, list, 1)
 	assert.Equal(t, jobs.StatusRunning, list[0].Status)
 
@@ -418,7 +428,7 @@ func TestBashRejectsNonPositiveTimeout(t *testing.T) {
 		require.Error(t, err)
 		assert.Contains(t, err.Error(), "timeout")
 	}
-	assert.Empty(t, h.table.List())
+	assert.Empty(t, h.table.List(h.notices.Gen()))
 }
 
 func TestBashRunInBackgroundReturnsAtOnce(t *testing.T) {
@@ -434,7 +444,7 @@ func TestBashRunInBackgroundReturnsAtOnce(t *testing.T) {
 	d := shellDetails(t, res)
 	assert.Equal(t, "bash-1", d.JobID)
 	assert.Equal(t, "running", d.Status)
-	list := h.table.List()
+	list := h.table.List(h.notices.Gen())
 	require.Len(t, list, 1)
 	assert.Equal(t, jobs.StatusRunning, list[0].Status)
 }
@@ -446,7 +456,7 @@ func TestBashRejectsTrailingAmpersand(t *testing.T) {
 		require.Error(t, err, cmd)
 		assert.Equal(t, "Do not end the command with &. Set run_in_background to true to run it in the background.", err.Error())
 	}
-	assert.Empty(t, h.table.List(), "a refused command starts no job")
+	assert.Empty(t, h.table.List(h.notices.Gen()), "a refused command starts no job")
 
 	for command, want := range map[string]string{
 		"echo a && echo b":    "a\nb",
@@ -478,7 +488,7 @@ func TestBashCancelledKillsJob(t *testing.T) {
 	assert.True(t, strings.HasPrefix(text, "Command aborted"), text)
 	assert.Contains(t, text, "partial")
 	assert.ErrorIs(t, syscall.Kill(-pgid, 0), syscall.ESRCH, "the process group is gone when the body returns")
-	assert.Empty(t, h.table.List())
+	assert.Empty(t, h.table.List(h.notices.Gen()))
 }
 
 func TestBashSendsThrottledPartialUpdates(t *testing.T) {
@@ -631,7 +641,7 @@ func TestBashRejectsEmptyCommand(t *testing.T) {
 	h := newShellHarness(t)
 	_, err := h.run("bash", map[string]any{"command": "  \n"})
 	require.Error(t, err)
-	assert.Empty(t, h.table.List())
+	assert.Empty(t, h.table.List(h.notices.Gen()))
 }
 
 func TestBashDeclaresItsContract(t *testing.T) {

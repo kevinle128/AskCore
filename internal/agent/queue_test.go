@@ -11,6 +11,7 @@ import (
 	"sync/atomic"
 	"testing"
 	"time"
+	"unicode/utf8"
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -19,6 +20,7 @@ import (
 	"AskCore/internal/pipeline"
 	"AskCore/internal/providers/faux"
 	"AskCore/internal/sessions"
+	"AskCore/internal/tasks"
 	"AskCore/internal/tools"
 	"AskCore/pkg/protocol"
 )
@@ -60,6 +62,27 @@ func idle(t testing.TB, a *agent.Agent) {
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel()
 	require.NoError(t, a.WaitForIdle(ctx))
+}
+
+// retryBusy calls fn again each time the agent turns idle, for as long as fn
+// returns ErrBusy. An event that no run published, such as queue_update, can be
+// in delivery when a call arrives, and Idle names the end of that delivery.
+func retryBusy(t testing.TB, a *agent.Agent, fn func() error) {
+	t.Helper()
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+	for {
+		err := fn()
+		if !errors.Is(err, agent.ErrBusy) {
+			require.NoError(t, err)
+			return
+		}
+		select {
+		case <-a.Idle():
+		case <-ctx.Done():
+			t.Fatal("the agent stayed busy")
+		}
+	}
 }
 
 // onEvent calls fn the n-th time that an event with label l is published.
@@ -416,13 +439,15 @@ func TestAbortClearsQueuesByDefault(t *testing.T) {
 	require.NoError(t, waitOrFail(context.Background(), streaming, "the stream"))
 	mustSteer(t, a, "s")
 	mustFollowUp(t, a, "f")
+	_, err := a.Notify(plainNotice("tm-1", "kept", tasks.NoticeWake))
+	require.NoError(t, err)
 	a.Abort()
 	require.NoError(t, <-done)
 	idle(t, a)
 
-	assert.Equal(t, 1, p.Calls(), "nothing queued ran")
+	assert.Equal(t, 1, p.Calls(), "nothing queued ran, and the notice woke nothing")
 	require.NoError(t, a.Prompt(context.Background(), user("fresh")))
-	assert.Equal(t, []string{"go", "fresh"}, requestUsers(p, 1), "the cleared messages are gone")
+	assert.Equal(t, []string{"go", "fresh", "notice-tm-1"}, requestUsers(p, 1), "the human messages are gone; the notice rides with the next prompt")
 }
 
 func TestAbortKeepQueuedKeepsQueues(t *testing.T) {
@@ -448,6 +473,31 @@ func TestAbortKeepQueuedKeepsQueues(t *testing.T) {
 	require.Equal(t, 3, p.Calls())
 	assert.Equal(t, []string{"go", "next", "s"}, requestUsers(p, 1), "the next run claims the kept steering message")
 	assert.Equal(t, []string{"go", "next", "s", "f"}, requestUsers(p, 2), "and the kept follow-up opens its own cycle")
+}
+
+// A wake notice that waits in the queue when the run is aborted with
+// KeepQueued has asked for a run, and the aborted run did not take it. One run
+// follows, and it takes the kept input together with the notice.
+func TestAbortKeepQueuedKeepsWakeNotice(t *testing.T) {
+	p, m := newFaux(t, faux.WithChunk(2, 2))
+	p.Set(slowStep(), faux.Say("one"), faux.Say("two"))
+	a := newAgent(t, p, m, nil)
+	streaming := make(chan struct{})
+	a.Subscribe(signalOn("message_update(text_delta)", streaming))
+
+	done := make(chan error, 1)
+	go func() { done <- a.Prompt(context.Background(), user("go")) }()
+	require.NoError(t, waitOrFail(context.Background(), streaming, "the stream"))
+	mustSteer(t, a, "s")
+	mustFollowUp(t, a, "f")
+	_, err := a.Notify(plainNotice("tm-1", "kept", tasks.NoticeWake))
+	require.NoError(t, err)
+	a.Abort(agent.KeepQueued)
+	require.NoError(t, <-done)
+	idle(t, a)
+
+	require.Equal(t, 2, p.Calls(), "the notice started one run")
+	assert.Equal(t, []string{"go", "s", "notice-tm-1", "f"}, requestUsers(p, 1), "the first cycle of the run takes the kept steering messages, the notice and one follow-up message")
 }
 
 func TestAbortClearRacesLateSteerDeterministically(t *testing.T) {
@@ -569,8 +619,8 @@ func TestResetClearsQueues(t *testing.T) {
 	require.NoError(t, <-done)
 	idle(t, a)
 
-	require.NoError(t, a.Reset())
-	require.NoError(t, a.Prompt(context.Background(), user("fresh")))
+	retryBusy(t, a, a.Reset)
+	retryBusy(t, a, func() error { return a.Prompt(context.Background(), user("fresh")) })
 	idle(t, a)
 
 	require.Equal(t, 2, p.Calls(), "the reset dropped both queued messages")
@@ -1047,4 +1097,56 @@ func TestInputIDsAreUnique(t *testing.T) {
 	}
 	a.Abort()
 	require.NoError(t, <-done)
+}
+
+func TestQueueUpdateShowsCustomPreview(t *testing.T) {
+	notice := func(details string, text string) protocol.CustomMessage {
+		return protocol.CustomMessage{
+			CustomType: "task-notification",
+			Content:    []protocol.UserBlock{protocol.Text{Text: text}},
+			Details:    json.RawMessage(details),
+		}
+	}
+	long := strings.Repeat("\u00e9", 150) // 300 bytes of two-byte runes
+	steer := notice(`{"taskId":"t-1","status":"completed","title":"wait"}`, "full output that must not appear")
+	followUp := notice(`{"taskId":"t-2","status":"failed","title":"`+long+`"}`, "x")
+	plain := protocol.CustomMessage{CustomType: "note", Content: []protocol.UserBlock{
+		protocol.Text{Text: "alpha "}, protocol.Image{Data: "AAAA", MimeType: "image/png"}, protocol.Text{Text: "beta"},
+	}}
+	noDetails := notice("", "fallback text")
+	partial := notice(`{"taskId":"t-9"}`, "partial text")
+
+	p, m := newFaux(t)
+	p.Set(faux.Say("one"), faux.Say("two"), faux.Say("three"), faux.Say("four"), faux.Say("five"), faux.Say("six"))
+	a := newAgent(t, p, m, nil)
+	rec := &recorder{}
+	a.Subscribe(rec.emit)
+	a.Subscribe(onEvent("turn_start", 1, func() {
+		for _, msg := range []protocol.Message{steer, &plain} {
+			_, err := a.Steer(msg)
+			require.NoError(t, err)
+		}
+		for _, msg := range []protocol.Message{&followUp, noDetails, &partial} {
+			_, err := a.FollowUp(msg)
+			require.NoError(t, err)
+		}
+	}))
+
+	require.NoError(t, a.Prompt(context.Background(), user("go")))
+
+	var peak *protocol.QueueUpdate
+	for _, e := range eventsOf[*protocol.QueueUpdate](rec) {
+		if len(e.Steering) == 2 && len(e.FollowUp) == 3 {
+			peak = e
+		}
+	}
+	require.NotNil(t, peak, "an update lists all five queued notices")
+	assert.Equal(t, []string{"task t-1 completed: wait", "alpha beta"}, peak.Steering)
+	require.Len(t, peak.FollowUp, 3)
+	assert.LessOrEqual(t, len(peak.FollowUp[0]), 200, "a long title is cut")
+	assert.Len(t, peak.FollowUp[0], 199, "the 200th byte would split a two-byte rune")
+	assert.True(t, utf8.ValidString(peak.FollowUp[0]), "the cut is on a rune boundary")
+	assert.True(t, strings.HasPrefix(peak.FollowUp[0], "task t-2 failed: \u00e9"))
+	assert.Equal(t, "fallback text", peak.FollowUp[1], "no details gives the text")
+	assert.Equal(t, "task t-9", peak.FollowUp[2], "missing status and title are skipped")
 }

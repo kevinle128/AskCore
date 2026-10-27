@@ -25,16 +25,16 @@ func TestIndentedUnknownEventStaysOneJSONLLine(t *testing.T) {
 }
 
 func TestIndentedUnknownRoleStaysOneLine(t *testing.T) {
-	m, err := UnmarshalMessage([]byte("{\n  \"role\": \"custom\",\n  \"x\": 1\n}"))
+	m, err := UnmarshalMessage([]byte("{\n  \"role\": \"branchSummary\",\n  \"x\": 1\n}"))
 	require.NoError(t, err)
 	require.IsType(t, RawMessage{}, m)
-	for _, msg := range []Message{m, &RawMessage{RoleName: "custom", Data: m.(RawMessage).Data}} {
+	for _, msg := range []Message{m, &RawMessage{RoleName: "branchSummary", Data: m.(RawMessage).Data}} {
 		out, err := MarshalMessage(msg)
 		require.NoError(t, err)
 		assert.NotContains(t, string(out), "\n")
-		assert.JSONEq(t, `{"role":"custom","x":1}`, string(out))
+		assert.JSONEq(t, `{"role":"branchSummary","x":1}`, string(out))
 	}
-	_, err = MarshalMessage(RawMessage{RoleName: "custom", Data: json.RawMessage(`{"role":`)})
+	_, err = MarshalMessage(RawMessage{RoleName: "branchSummary", Data: json.RawMessage(`{"role":`)})
 	assert.Error(t, err)
 }
 
@@ -87,7 +87,7 @@ func TestCloneMessageKeepsPointerKind(t *testing.T) {
 		&SystemMessage{Content: []Text{{Text: "a"}}},
 		&AssistantMessage{Content: []AssistantBlock{Text{Text: "a"}}},
 		&ToolResultMessage{ToolCallID: "x", Content: []UserBlock{Text{Text: "a"}}},
-		&RawMessage{RoleName: "custom", Data: json.RawMessage(`{"role":"custom"}`)},
+		&RawMessage{RoleName: "branchSummary", Data: json.RawMessage(`{"role":"branchSummary"}`)},
 	}
 	for _, m := range msgs {
 		c := CloneMessage(m)

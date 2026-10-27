@@ -21,7 +21,7 @@ func TestReadRunningJobAnswersAtOnce(t *testing.T) {
 	waitFor(t, 5*time.Second, "first line", func() bool { return j.Snapshot().Total > 0 })
 
 	start := time.Now()
-	res, err := r.tb.Read(background(), j.ID(), false, 0)
+	res, err := r.tb.Read(background(), r.gen(), j.ID(), false, 0)
 	require.NoError(t, err)
 	assert.Less(t, time.Since(start), 50*time.Millisecond)
 
@@ -30,7 +30,7 @@ func TestReadRunningJobAnswersAtOnce(t *testing.T) {
 	assert.Equal(t, "start\n", res.Output)
 	assert.Contains(t, res.Text, "[status: running]")
 	assert.Contains(t, res.Text, "The job is still running. A notice will arrive when it finishes; do not poll.")
-	assert.Len(t, r.tb.List(), 1, "a running job stays in the table")
+	assert.Len(t, r.tb.List(r.gen()), 1, "a running job stays in the table")
 	open()
 }
 
@@ -41,25 +41,25 @@ func TestReadAdvancesCursorAndReportsSkippedBytes(t *testing.T) {
 	j := r.bash("echo first; " + gate1 + "; echo second; " + gate2 + "; head -c 200000 /dev/zero | tr '\\0' z")
 
 	waitFor(t, 5*time.Second, "first", func() bool { return j.Snapshot().Total >= 6 })
-	res, err := r.tb.Read(background(), j.ID(), false, 0)
+	res, err := r.tb.Read(background(), r.gen(), j.ID(), false, 0)
 	require.NoError(t, err)
 	assert.Equal(t, "first\n", res.Output)
 	assert.Zero(t, res.Skipped)
 
 	// Nothing new: the cursor moved.
-	res, err = r.tb.Read(background(), j.ID(), false, 0)
+	res, err = r.tb.Read(background(), r.gen(), j.ID(), false, 0)
 	require.NoError(t, err)
 	assert.Empty(t, res.Output)
 
 	open1()
 	waitFor(t, 5*time.Second, "second", func() bool { return j.Snapshot().Total >= 13 })
-	res, err = r.tb.Read(background(), j.ID(), false, 0)
+	res, err = r.tb.Read(background(), r.gen(), j.ID(), false, 0)
 	require.NoError(t, err)
 	assert.Equal(t, "second\n", res.Output)
 
 	open2()
 	waitDone(t, j)
-	res, err = r.tb.Read(background(), j.ID(), false, 0)
+	res, err = r.tb.Read(background(), r.gen(), j.ID(), false, 0)
 	require.NoError(t, err)
 	assert.Equal(t, StatusCompleted, res.Status)
 
@@ -82,16 +82,16 @@ func TestReadWithWaitReturnsFinalStatusAndRemovesJob(t *testing.T) {
 	j := r.bash("echo done; " + command)
 	time.AfterFunc(100*time.Millisecond, open)
 
-	res, err := r.tb.Read(background(), j.ID(), true, 10*time.Second)
+	res, err := r.tb.Read(background(), r.gen(), j.ID(), true, 10*time.Second)
 	require.NoError(t, err)
 	assert.False(t, res.Running)
 	assert.Equal(t, StatusCompleted, res.Status)
 	assert.Equal(t, "done\n", res.Output)
 	assert.Contains(t, res.Text, "[status: completed, exit code: 0]")
 	assert.NotContains(t, res.Text, "do not poll")
-	assert.Empty(t, r.tb.List())
+	assert.Empty(t, r.tb.List(r.gen()))
 
-	_, err = r.tb.Read(background(), j.ID(), false, 0)
+	_, err = r.tb.Read(background(), r.gen(), j.ID(), false, 0)
 	assert.ErrorIs(t, err, ErrUnknownJob)
 }
 
@@ -103,7 +103,7 @@ func TestReadWaitTimeoutCapsAt600Seconds(t *testing.T) {
 	read := func(timeout time.Duration) <-chan ReadResult {
 		out := make(chan ReadResult, 1)
 		go func() {
-			res, err := r.tb.Read(background(), j.ID(), true, timeout)
+			res, err := r.tb.Read(background(), r.gen(), j.ID(), true, timeout)
 			assert.NoError(t, err)
 			out <- res
 		}()
@@ -143,15 +143,15 @@ func TestReadWithWaitStopsWhenContextEnds(t *testing.T) {
 
 	ctx, cancel := context.WithCancel(background())
 	time.AfterFunc(50*time.Millisecond, cancel)
-	res, err := r.tb.Read(ctx, j.ID(), true, time.Minute)
+	res, err := r.tb.Read(ctx, r.gen(), j.ID(), true, time.Minute)
 	require.NoError(t, err)
 	assert.True(t, res.Running, "ending the read does not end the job")
-	assert.Len(t, r.tb.List(), 1)
+	assert.Len(t, r.tb.List(r.gen()), 1)
 }
 
 func TestReadUnknownJob(t *testing.T) {
 	r := newRig(t)
-	_, err := r.tb.Read(background(), "bash-1", false, 0)
+	_, err := r.tb.Read(background(), r.gen(), "bash-1", false, 0)
 	assert.ErrorIs(t, err, ErrUnknownJob)
 }
 
@@ -159,14 +159,14 @@ func TestReadReportsKilledAndFailedStatus(t *testing.T) {
 	r := newRig(t)
 	killedByShell := r.bash("kill -KILL $$")
 	waitDone(t, killedByShell)
-	res, err := r.tb.Read(background(), killedByShell.ID(), false, 0)
+	res, err := r.tb.Read(background(), r.gen(), killedByShell.ID(), false, 0)
 	require.NoError(t, err)
 	assert.Equal(t, StatusFailed, res.Status)
 	assert.Contains(t, res.Text, "[status: failed, signal: SIGKILL]")
 
 	command, _ := r.gate("never")
 	running := r.bash(command)
-	_, err = r.tb.Kill(running.ID(), "enough")
+	_, err = r.tb.Kill(r.gen(), running.ID(), "enough")
 	require.NoError(t, err)
 	assert.Equal(t, "[status: killed, reason: enough]", running.StatusLine())
 }
@@ -178,9 +178,9 @@ func TestCancelledReadKeepsUnreadOutput(t *testing.T) {
 	waitFor(t, 5*time.Second, "output", func() bool { return j.Snapshot().Total > 0 })
 	ctx, cancel := context.WithCancel(background())
 	cancel()
-	_, err := r.tb.Read(ctx, j.ID(), true, time.Minute)
+	_, err := r.tb.Read(ctx, r.gen(), j.ID(), true, time.Minute)
 	require.NoError(t, err)
-	res, err := r.tb.Read(background(), j.ID(), false, 0)
+	res, err := r.tb.Read(background(), r.gen(), j.ID(), false, 0)
 	require.NoError(t, err)
 	assert.Equal(t, "kept\n", res.Output)
 	open()
@@ -192,9 +192,9 @@ func TestCancelledReadKeepsFinishedJob(t *testing.T) {
 	waitDone(t, j)
 	ctx, cancel := context.WithCancel(background())
 	cancel()
-	_, err := r.tb.Read(ctx, j.ID(), false, 0)
+	_, err := r.tb.Read(ctx, r.gen(), j.ID(), false, 0)
 	require.NoError(t, err)
-	res, err := r.tb.Read(background(), j.ID(), false, 0)
+	res, err := r.tb.Read(background(), r.gen(), j.ID(), false, 0)
 	require.NoError(t, err)
 	assert.Equal(t, "kept\n", res.Output)
 	assert.Equal(t, StatusCompleted, res.Status)
@@ -205,11 +205,11 @@ func TestReadReportsCappedSpillAfterCursorPassesGap(t *testing.T) {
 	command, open := r.gate("finish")
 	j := r.bash("head -c 68157440 /dev/zero; echo ready; " + command)
 	waitReady(t, j)
-	first, err := r.tb.Read(background(), j.ID(), false, 0)
+	first, err := r.tb.Read(background(), r.gen(), j.ID(), false, 0)
 	require.NoError(t, err)
 	assert.True(t, first.SpillCapped)
 	assert.Contains(t, first.Text, "[spill file capped at 64 MB]")
-	second, err := r.tb.Read(background(), j.ID(), false, 0)
+	second, err := r.tb.Read(background(), r.gen(), j.ID(), false, 0)
 	require.NoError(t, err)
 	assert.Zero(t, second.Skipped)
 	assert.True(t, second.SpillCapped)
@@ -237,7 +237,7 @@ func TestCancelledReadAtCompletionRestoresNotice(t *testing.T) {
 	readDone := make(chan struct{})
 	go func() {
 		defer close(readDone)
-		_, err := r.tb.Read(ctx, j.ID(), true, time.Minute)
+		_, err := r.tb.Read(ctx, r.gen(), j.ID(), true, time.Minute)
 		assert.NoError(t, err)
 	}()
 	waitFor(t, 5*time.Second, "reader", func() bool {
@@ -255,7 +255,7 @@ func TestCancelledReadAtCompletionRestoresNotice(t *testing.T) {
 	<-stopping
 	close(release)
 	waitFor(t, 5*time.Second, "completion notice", func() bool { return len(r.n.followUps()) == 1 })
-	res, err := r.tb.Read(background(), j.ID(), false, 0)
+	res, err := r.tb.Read(background(), r.gen(), j.ID(), false, 0)
 	require.NoError(t, err)
 	assert.Equal(t, "kept\n", res.Output)
 }

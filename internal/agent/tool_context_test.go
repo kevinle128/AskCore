@@ -121,13 +121,13 @@ func TestQueuedToolContextClearsOnAbortResetAndDispose(t *testing.T) {
 			case "abort":
 				a.Abort()
 			case "reset":
-				require.NoError(t, a.Reset())
+				retryBusy(t, a, a.Reset)
 			case "dispose":
 				require.NoError(t, a.Dispose())
 				require.ErrorIs(t, a.Prompt(context.Background(), user("next")), agent.ErrDisposed)
 				return
 			}
-			require.NoError(t, a.Prompt(context.Background(), user("next")))
+			retryBusy(t, a, func() error { return a.Prompt(context.Background(), user("next")) })
 			require.NotContains(t, userTexts(p.Requests()[1].Transcript.Messages), "queued")
 		})
 	}

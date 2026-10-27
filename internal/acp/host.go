@@ -26,10 +26,7 @@ const (
 // busyWindow bounds how long a call waits for an Agent that is busy with
 // work the call does not own, such as the delivery of a queue_update or a run
 // that a queued input started. A longer run still gives busy.
-const (
-	busyWindow = 250 * time.Millisecond
-	busyPoll   = 2 * time.Millisecond
-)
+const busyWindow = 250 * time.Millisecond
 
 // ErrQueueOverflow means a session held more unwritten events than its bound.
 var ErrQueueOverflow = errors.New("acp: outbound queue overflow")
@@ -535,14 +532,11 @@ func (s *Session) idle() bool {
 func (s *Session) observe(ev protocol.Event) error {
 	env := ev.Env()
 	s.mu.Lock()
-	lateAbort := false
 	if b := s.binding; b != nil {
-		if b.runID == "" && env.RunID != "" {
-			b.runID = env.RunID
-			lateAbort = b.abortPending
-			b.abortPending = false
-		}
-		if b.runID == env.RunID {
+		// The call names its run when the Agent starts it (bindRun), so an
+		// event of another run, such as a run that a notice started, never
+		// binds here.
+		if b.runID != "" && b.runID == env.RunID {
 			switch e := ev.(type) {
 			case *protocol.AgentSettled:
 				b.seq = env.Seq
@@ -560,10 +554,6 @@ func (s *Session) observe(ev protocol.Event) error {
 	epoch := s.epoch
 	s.mu.Unlock()
 	s.enqueue(ev, epoch)
-	if lateAbort {
-		// Abort never waits for a listener, so it is safe to call from here.
-		s.agent.Abort()
-	}
 	return nil
 }
 
@@ -770,17 +760,10 @@ func (s *Session) execute(ctx context.Context, call func(runCtx context.Context)
 	s.mu.Lock()
 	b.cancel = cancel
 	s.mu.Unlock()
-	callErr := call(runCtx)
-	for until := time.Now().Add(busyWindow); errors.Is(callErr, agent.ErrBusy) && time.Now().Before(until) && s.host.usable() == nil; {
-		s.mu.Lock()
-		bound := b.runID != ""
-		s.mu.Unlock()
-		if bound {
-			// The busy Agent runs work that a sibling input started.
-			break
-		}
-		time.Sleep(busyPoll)
-		callErr = call(runCtx)
+	callCtx := agent.WithRunStart(runCtx, func(runID string) { s.bindRun(b, runID) })
+	callErr := call(callCtx)
+	if errors.Is(callErr, agent.ErrBusy) {
+		callErr = s.retryWhenIdle(callCtx, call, callErr)
 	}
 	if refused(callErr) {
 		// The Agent refused the call. Events that follow belong to other work.
@@ -919,4 +902,56 @@ func (s *Session) Close() error {
 		<-s.wdone
 	})
 	return s.cerr
+}
+
+// bindRun names the run of an admitted call. The Agent calls it when it starts
+// the run, before any event of the run. A cancel that came before the run
+// existed stops it now.
+func (s *Session) bindRun(b *binding, runID string) {
+	s.mu.Lock()
+	b.runID = runID
+	late := b.abortPending
+	b.abortPending = false
+	s.mu.Unlock()
+	if late {
+		s.agent.Abort()
+	}
+}
+
+// retryWhenIdle retries a call that the Agent refused as busy, once each time
+// the Agent turns idle, for at most busyWindow. It waits on the idle signal and
+// never polls. A refusal while the Agent is already idle is not retried again,
+// so a call that keeps refusing cannot spin.
+func (s *Session) retryWhenIdle(ctx context.Context, call func(context.Context) error, callErr error) error {
+	window := time.NewTimer(busyWindow)
+	defer window.Stop()
+	for errors.Is(callErr, agent.ErrBusy) && s.host.usable() == nil {
+		idle := s.agent.Idle()
+		select {
+		case <-idle:
+		default:
+			select {
+			case <-idle:
+			case <-window.C:
+				return callErr
+			case <-s.host.ctx.Done():
+				return callErr
+			}
+		}
+		prev := callErr
+		callErr = call(ctx)
+		if errors.Is(callErr, agent.ErrBusy) && isClosedChan(s.agent.Idle()) {
+			return prev
+		}
+	}
+	return callErr
+}
+
+func isClosedChan(ch <-chan struct{}) bool {
+	select {
+	case <-ch:
+		return true
+	default:
+		return false
+	}
 }

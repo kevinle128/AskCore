@@ -16,6 +16,7 @@ JSON compatibility is deliberate: the public headless event projection remains P
 | Agent event types and sequencing envelope (`model_update` carries the model of an Agent; all fields empty means no model) | [events.go](events.go) |
 | Provider stream events and message reconstruction | [stream_events.go](stream_events.go), [builder.go](builder.go) |
 | Exact JSON and JSONL projection | [codec.go](codec.go) |
+| `CustomMessage` (`role: "custom"`) for task notices, and the `task_start`, `task_update`, `task_end` events | [message.go](message.go), [events.go](events.go), [codec.go](codec.go); design in [async task runtime](../../docs/async-task-runtime.md) sections 7.4 and 13 |
 
 ## ACP wire rules
 
@@ -51,6 +52,12 @@ The headless JSON stream ends with agent_settled.
 Disposal then reaches Go observers as agent_disposed, which is omitted from that JSON stream.
 See [headless JSON writer](../../cmd/tui/headless_json.go) and [disposal fixture](../../cmd/tui/headless_lifecycle_test.go).
 Preparation failure is the deliberate compatibility exception: no user input is committed or published before the failure wrapper.
+
+## Custom message role
+
+`custom` is a built-in role, as in Pi: `CustomMessage` holds `customType`, `content`, `display`, optional `details` (a JSON object), and `timestamp`.
+`RegisterRole("custom", ...)` is rejected, and an object with `"role":"custom"` no longer decodes to `RawMessage`: it decodes to `CustomMessage`, and a missing `customType` or non-object `details` is a decode error.
+A custom message is not human input. The model sees it as a user message with the same content (`providers.ConvertToLLM`), so a custom `LoopConfig.ConvertToLLM` must map it too.
 
 ## Copy and safety boundaries
 

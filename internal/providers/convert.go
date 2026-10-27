@@ -4,17 +4,25 @@ import "AskCore/pkg/protocol"
 
 // ConvertToLLM is the default filter from the agent message log to the model
 // message list. It keeps system, user, assistant and tool result messages and
-// drops every other role (custom and raw messages). It returns a new slice and
-// does not change msgs; the kept messages are the same values, not copies.
+// drops raw messages (a role without a decoder). A custom message becomes a
+// user message with the same content and timestamp, because the model has no
+// custom role. It returns a new slice and does not change msgs; the other kept
+// messages are the same values, not copies.
 func ConvertToLLM(msgs []protocol.Message) []protocol.Message {
 	out := make([]protocol.Message, 0, len(msgs))
 	for _, m := range msgs {
-		switch m.(type) {
+		switch v := m.(type) {
 		case protocol.SystemMessage, *protocol.SystemMessage,
 			protocol.UserMessage, *protocol.UserMessage,
 			protocol.AssistantMessage, *protocol.AssistantMessage,
 			protocol.ToolResultMessage, *protocol.ToolResultMessage:
 			out = append(out, m)
+		case protocol.CustomMessage:
+			out = append(out, protocol.UserMessage{Content: v.Content, Timestamp: v.Timestamp})
+		case *protocol.CustomMessage:
+			if v != nil {
+				out = append(out, protocol.UserMessage{Content: v.Content, Timestamp: v.Timestamp})
+			}
 		}
 	}
 	return out

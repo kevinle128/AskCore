@@ -24,6 +24,9 @@ const (
 	TypeToolExecutionStart  = "tool_execution_start"
 	TypeToolExecutionUpdate = "tool_execution_update"
 	TypeToolExecutionEnd    = "tool_execution_end"
+	TypeTaskStart           = "task_start"
+	TypeTaskUpdate          = "task_update"
+	TypeTaskEnd             = "task_end"
 )
 
 // Envelope is the sequencing data around every agent event. On the wire it is
@@ -202,6 +205,37 @@ type ToolExecutionEnd struct {
 	IsError    bool
 }
 
+// TaskStart reports that a background task began. StartedAt is Unix
+// milliseconds.
+type TaskStart struct {
+	Envelope
+	TaskID    string
+	Kind      string
+	Title     string
+	StartedAt int64
+}
+
+// TaskUpdate reports the size of the output of a running task. It never holds
+// output text, so the event stays small.
+type TaskUpdate struct {
+	Envelope
+	TaskID      string
+	OutputBytes int64
+	OutputLines int64
+}
+
+// TaskEnd reports the terminal state of a task. ExitCode is nil when the task
+// has no exit code, and OutputFile is empty when the task has no output file.
+// The event does not say how the notice of the task was delivered.
+type TaskEnd struct {
+	Envelope
+	TaskID     string
+	Status     string
+	ExitCode   *int
+	OutputFile string
+	DurationMS int64
+}
+
 // RawEvent holds an event of a type that this package does not know, for
 // example a session-level event. Data is the complete JSON object, envelope
 // included. On encode, the Envelope and Type fields replace the envelope keys
@@ -233,6 +267,9 @@ func (*MessageEnd) EventType() string          { return TypeMessageEnd }
 func (*ToolExecutionStart) EventType() string  { return TypeToolExecutionStart }
 func (*ToolExecutionUpdate) EventType() string { return TypeToolExecutionUpdate }
 func (*ToolExecutionEnd) EventType() string    { return TypeToolExecutionEnd }
+func (*TaskStart) EventType() string           { return TypeTaskStart }
+func (*TaskUpdate) EventType() string          { return TypeTaskUpdate }
+func (*TaskEnd) EventType() string             { return TypeTaskEnd }
 func (e *RawEvent) EventType() string          { return e.Type }
 
 // envelopeWire holds the flat envelope keys. The wire structs embed it so the

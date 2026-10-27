@@ -10,7 +10,7 @@ import (
 	"AskCore/pkg/protocol"
 )
 
-func TestConvertToLLMKeepsFourRolesAndDropsTheRest(t *testing.T) {
+func TestConvertToLLMKeepsBuiltInRolesAndDropsRaw(t *testing.T) {
 	user := protocol.UserMessage{Content: []protocol.UserBlock{protocol.Text{Text: "hi"}}, Timestamp: 1}
 	assistant := protocol.AssistantMessage{StopReason: protocol.StopStop, Content: []protocol.AssistantBlock{protocol.Text{Text: "yo"}}}
 	result := protocol.ToolResultMessage{ToolCallID: "a", ToolName: "echo"}
@@ -24,6 +24,33 @@ func TestConvertToLLMKeepsFourRolesAndDropsTheRest(t *testing.T) {
 	assert.Equal(t, []protocol.Message{system, user, &assistant, result}, out)
 	assert.Equal(t, before, in, "the input is not changed")
 	assert.Len(t, in, 6)
+}
+
+func TestConvertToLLMMapsCustomToUser(t *testing.T) {
+	content := []protocol.UserBlock{protocol.Text{Text: "task t-1 done"}}
+	user := protocol.UserMessage{Content: []protocol.UserBlock{protocol.Text{Text: "hi"}}, Timestamp: 1}
+	custom := protocol.CustomMessage{
+		CustomType: "task-notification", Content: content, Display: true,
+		Details: json.RawMessage(`{"taskId":"t-1"}`), Timestamp: 2,
+	}
+	assistant := protocol.AssistantMessage{StopReason: protocol.StopStop, Content: []protocol.AssistantBlock{protocol.Text{Text: "yo"}}}
+	raw := protocol.RawMessage{RoleName: "bashExecution", Data: json.RawMessage(`{"role":"bashExecution"}`)}
+	wantUser := protocol.UserMessage{Content: content, Timestamp: 2}
+
+	t.Run("value", func(t *testing.T) {
+		in := []protocol.Message{user, custom, raw, assistant}
+		out := ConvertToLLM(in)
+		assert.Equal(t, []protocol.Message{user, wantUser, assistant}, out)
+		assert.Equal(t, custom, in[1], "the input is not changed")
+	})
+	t.Run("pointer", func(t *testing.T) {
+		out := ConvertToLLM([]protocol.Message{user, &custom, assistant})
+		assert.Equal(t, []protocol.Message{user, wantUser, assistant}, out)
+	})
+	t.Run("nil pointer is dropped", func(t *testing.T) {
+		var none *protocol.CustomMessage
+		assert.Empty(t, ConvertToLLM([]protocol.Message{none}))
+	})
 }
 
 func TestConvertToLLMDropsARawMessageEvenWithABuiltInRoleName(t *testing.T) {

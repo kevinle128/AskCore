@@ -13,6 +13,7 @@ import (
 	"AskCore/internal/pipeline"
 	"AskCore/internal/providers"
 	"AskCore/internal/sessions"
+	"AskCore/internal/tasks"
 	"AskCore/pkg/protocol"
 )
 
@@ -24,6 +25,24 @@ type mutationGuardKey struct{}
 // not wait for a run or call Agent methods. Other callers need no guard.
 func WithMutationGuard(ctx context.Context, guard func() (func(), error)) context.Context {
 	return context.WithValue(ctx, mutationGuardKey{}, guard)
+}
+
+// runStartKey carries the function that Prompt and Continue call with the ID
+// of the run they start.
+type runStartKey struct{}
+
+// WithRunStart returns a context that makes Prompt and Continue call f with
+// the ID of the run they start. f runs on the caller's goroutine, after the run
+// exists and before any event of it, with no lock of the Agent held. A caller
+// that must tell its own run from a run that a notice started uses it.
+func WithRunStart(ctx context.Context, f func(runID string)) context.Context {
+	return context.WithValue(ctx, runStartKey{}, f)
+}
+
+func notifyRunStart(ctx context.Context, runID string) {
+	if f, ok := ctx.Value(runStartKey{}).(func(string)); ok && f != nil {
+		f(runID)
+	}
 }
 
 func mutationGuard(ctx context.Context) (func(), error) {
@@ -53,6 +72,10 @@ type Agent struct {
 	// wake is set when input arrived that the active run cannot take. When
 	// that run ends and a queue holds input, a new run starts.
 	wake bool
+	// interrupted is set by Abort of an active run and cleared by the next
+	// human input and by Reset. While it is set, a wake notice waits in the
+	// context queue and starts no run: the user stopped the Agent.
+	interrupted bool
 	// clearPending is set by ClearModel while a run is active. The run keeps
 	// its model; end clears the model before it decides on a queued run.
 	clearPending bool
@@ -68,6 +91,28 @@ type Agent struct {
 	dispatching int
 	publishing  bool
 	pubDone     chan struct{}
+	// idle is nil while the Agent is idle, else the open channel that Idle
+	// returns. work counts the changes that a quiescence check must see again.
+	// See idle.go.
+	idle chan struct{}
+	work uint64
+	// quiescenceProbe is a test seam, nil in production. WaitForQuiescence calls
+	// it after its checks and before it reads work again.
+	quiescenceProbe func()
+	// life is the lifetime context of the Agent: only Dispose cancels it, with
+	// endLife. tasks is the registry of the current generation, taskGen. Reset
+	// replaces the registry and raises the generation, so a notice or an event
+	// of the old registry is refused. taskSeq numbers task IDs for the whole
+	// life of the Agent.
+	life    context.Context
+	endLife context.CancelCauseFunc
+	tasks   *tasks.Registry
+	taskGen uint64
+	taskSeq atomic.Uint64
+	// closing counts the old registries that Reset still closes. Reset adds to
+	// it under mu at the swap, so Dispose, which sets disposed under the same
+	// lock, cannot miss one. Dispose waits for it, so no task outlives Dispose.
+	closing sync.WaitGroup
 
 	disposeOnce sync.Once
 	disposeErr  error
@@ -144,6 +189,8 @@ func New(cfg Config) (*Agent, error) {
 	}
 	a.source = newTrackedLog(a.newContext())
 	a.pub = published{epoch: newEpoch(), commitIndex: int(a.source.end.Load()), writer: a.source}
+	a.life, a.endLife = context.WithCancelCause(context.Background())
+	a.tasks = a.newRegistry(0)
 	return a, nil
 }
 
@@ -162,6 +209,7 @@ func (a *Agent) Prompt(ctx context.Context, msgs ...protocol.Message) error {
 		return err
 	}
 	defer a.end(r)
+	notifyRunStart(ctx, r.id)
 	return a.execute(r, func(ctx context.Context, ac pipeline.AgentContext, cfg LoopConfig, d driver, emit Emit) error {
 		_, err := runLoop(ctx, msgs, ac, cfg, d, emit)
 		return err
@@ -184,6 +232,7 @@ func (a *Agent) Continue(ctx context.Context) error {
 	if msgs[len(msgs)-1].Role() == protocol.RoleAssistant {
 		return ErrContinueFromAssistant
 	}
+	notifyRunStart(ctx, r.id)
 	return a.execute(r, func(ctx context.Context, ac pipeline.AgentContext, cfg LoopConfig, d driver, emit Emit) error {
 		_, err := continueLoop(ctx, ac, cfg, d, emit)
 		return err
@@ -191,8 +240,11 @@ func (a *Agent) Continue(ctx context.Context) error {
 }
 
 // Abort cancels the active run and, unless KeepQueued is given, drops the
-// queued steering and follow-up messages and the pending wake. It does nothing
-// to an idle Agent with empty queues. It never waits for a listener, so a call
+// queued steering and follow-up messages of the human and the pending wake.
+// Notices of background tasks are not dropped: they move to the context queue,
+// which rides with the next input and starts no run. Abort does not stop
+// running tasks. A wake notice that arrives after Abort of an active run waits
+// in the context queue until the next human input. It does nothing to an idle Agent with empty queues. It never waits for a listener, so a call
 // from a handler or a listener is safe.
 func (a *Agent) Abort(opts ...AbortOption) {
 	var c abortConfig
@@ -202,11 +254,12 @@ func (a *Agent) Abort(opts ...AbortOption) {
 	a.mu.Lock()
 	if !c.keepQueued {
 		a.wake = false
-		if a.in.clear() {
+		if a.in.abort() {
 			a.postLocked(a.in.update())
 		}
 	}
 	if a.active != nil {
+		a.interrupted = true
 		a.active.cancel(errUserAbort)
 	}
 	a.mu.Unlock()
@@ -239,7 +292,10 @@ func (a *Agent) WaitForIdle(ctx context.Context) error {
 // closes the session log, publishes agent_disposed, ends the followers of
 // Follow and joins the publisher goroutine. A panic of a listener does not stop
 // it. Every call returns the result of the first. A listener or a handler of the
-// run must not call it, because it waits for them.
+// run must not call it, because it waits for them. Dispose also stops every
+// running task and waits until each task has ended and its notice was refused.
+// That includes the tasks of an older conversation that a concurrent Reset is
+// still closing.
 func (a *Agent) Dispose() error {
 	a.disposeOnce.Do(func() { a.disposeErr = a.dispose() })
 	return a.disposeErr
@@ -252,7 +308,7 @@ func (a *Agent) dispose() error {
 	if a.in.clear() {
 		a.postLocked(a.in.update())
 	}
-	r, src := a.active, a.source
+	r, src, reg := a.active, a.source, a.tasks
 	if r != nil {
 		r.cancel(errDisposeAbort)
 	}
@@ -260,6 +316,15 @@ func (a *Agent) dispose() error {
 	if r != nil {
 		<-r.done
 	}
+	// Close waits for every task and its hand-off. Notify refuses each notice
+	// now, so a task cannot wake the Agent. The task events that Close causes
+	// come before agent_disposed. No lock is held here: the tasks call Notify
+	// and post events, which take mu.
+	reg.Close(errDisposeAbort)
+	// A Reset that came first still closes its old registry. Its tasks belong
+	// to this Agent, so Dispose waits for that close as well.
+	a.closing.Wait()
+	a.endLife(errDisposeAbort)
 	var releaseErr error
 	if a.cfg.Release != nil {
 		releaseErr = a.cfg.Release()
@@ -383,7 +448,9 @@ func (a *Agent) SetThinkingLevel(level protocol.ThinkingLevel) error {
 // clears both queues, with one queue_update when something was queued. It
 // returns ErrBusy while a run is active or a listener is being called, and
 // ErrDisposed after Dispose. A queue_update that is not published yet is
-// replaced by one with the state after the reset.
+// replaced by one with the state after the reset. Reset also stops the running
+// tasks of the old conversation and waits until each of them has ended; their
+// late notices and events are refused.
 func (a *Agent) Reset() error {
 	a.mu.Lock()
 	err := a.idleLocked()
@@ -391,16 +458,34 @@ func (a *Agent) Reset() error {
 	if err != nil {
 		return err
 	}
+	logErr, oldTasks, err := a.swapContext()
+	if err != nil {
+		return err
+	}
+	// The old registry closes with no lock held: its tasks end through
+	// Notify and the event gate, which take mu, and a task body can be slow.
+	// Both refuse the old generation by now.
+	defer a.closing.Done()
+	oldTasks.Close(errReset)
+	return logErr
+}
+
+// swapContext replaces the conversation: a fresh log, empty queues, a new task
+// generation, and a new registry. It closes the old log, as Reset always did,
+// before it releases emitMu. It returns the result of that close and the old
+// registry, which the caller closes after emitMu is released.
+func (a *Agent) swapContext() (logErr error, oldTasks *tasks.Registry, err error) {
 	// resetPublished reads seq, which the holder of emitMu owns.
 	a.emitMu.Lock()
 	defer a.emitMu.Unlock()
 	a.mu.Lock()
 	if err := a.idleLocked(); err != nil {
 		a.mu.Unlock()
-		return err
+		return nil, nil, err
 	}
 	cleared := a.in.clear()
 	a.wake = false
+	a.interrupted = false
 	// An unpublished update describes the old conversation. A fresh one with
 	// the state after the reset replaces it, so a client never sees stale
 	// content in the new epoch.
@@ -409,15 +494,23 @@ func (a *Agent) Reset() error {
 	old := a.source
 	a.source = newTrackedLog(a.newContext())
 	a.resetPublished(a.source)
+	// A new generation turns off the event gate and the notice gate of the old
+	// registry at once. Its tasks still end, but nothing they say reaches the
+	// new epoch.
+	oldTasks = a.tasks
+	a.closing.Add(1)
+	a.taskGen++
+	a.tasks = a.newRegistry(a.taskGen)
+	a.work++
 	if cleared || replaced {
 		a.postLocked(a.in.update())
 	}
 	fresh := a.source
 	a.mu.Unlock()
 	if old.Writer != fresh.Writer {
-		return old.Close()
+		logErr = old.Close()
 	}
-	return nil
+	return logErr, oldTasks, nil
 }
 
 // idleLocked returns the error that stops a change of an Agent that is
@@ -426,7 +519,7 @@ func (a *Agent) idleLocked() error {
 	if a.disposed {
 		return ErrDisposed
 	}
-	if a.active != nil || a.dispatching > 0 {
+	if a.busyLocked() {
 		return ErrBusy
 	}
 	return nil
@@ -468,6 +561,7 @@ func (a *Agent) begin(ctx context.Context) (*run, error) {
 	if a.cfg.Model.ID == "" {
 		return nil, ErrNoModel
 	}
+	a.interrupted = false
 	return a.startRunLocked(ctx), nil
 }
 
@@ -476,6 +570,7 @@ func (a *Agent) startRunLocked(ctx context.Context) *run {
 	runCtx, cancel := context.WithCancelCause(ctx)
 	r := &run{id: newRunID(), ctx: runCtx, cancel: cancel, done: make(chan struct{}), source: a.source}
 	a.active = r
+	a.syncIdleLocked()
 	return r
 }
 
@@ -499,6 +594,7 @@ func (a *Agent) end(r *run) {
 	} else {
 		a.active = nil
 	}
+	a.syncIdleLocked()
 	a.wake = false
 	a.mu.Unlock()
 	close(r.done)
@@ -536,6 +632,11 @@ func (a *Agent) execute(r *run, start loopFunc) error {
 	system := systemMessages(snap)
 	ac := pipeline.AgentContext{Messages: append(slices.Clip(system), r.source.Messages()...), Tools: a.cfg.Tools}
 	cfg := a.cfg.LoopConfig
+	// The registry and the notice port come from one snapshot, so the work that
+	// a tool call starts and the notices of that work share a generation.
+	a.mu.Lock()
+	cfg.Tasks, cfg.Notices = a.tasks, noticePort{a: a, gen: a.taskGen}
+	a.mu.Unlock()
 	if cfg.Options.SessionID == "" {
 		cfg.Options.SessionID = a.cfg.SessionID
 	}

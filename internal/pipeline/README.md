@@ -33,7 +33,7 @@ Handler failure cancels that call before joining it; a cached success does not c
 Panics remain with the caller rather than becoming generic dispatcher errors.
 The [middleware lifecycle tests](middleware_lifecycle_test.go) own these boundaries and retained-call rejection.
 
-Validated tool arguments and executable tools are frozen by the Agent.
+Validated tool arguments and executable tools are frozen by the Agent, and so are the call ID, working directory, task control and notice port of the tool context.
 BeforeTool can allow, deny, or cancel, but it cannot change those arguments.
 AfterTool alone produces additional user context for later admission.
 Body outcomes have no separate added-context API.
