@@ -626,6 +626,9 @@ The `sleep` rule and the `cd` note are not built: a command that starts with `sl
 |---|---|---|
 | `tasks` poller | A remote job API without push or subscription (MCP Tasks default mode, HTTP job status) | `Timer.Reset` with backoff, jitter, a maximum interval, and a deadline. One task per remote job. Emits the normal `Result`. |
 | `settings/lock.go:31` | A cross-process `flock` has no wait that a context can cancel | Keep the current shape: `select` on ticker, deadline, and `ctx.Done()`. Document the exception in the code. |
+| `leader/spawn.go` `AcquireWait`, `leader/client.go` `waitFree` | A cross-process leader lock and socket give no wait that a context can cancel | Short fixed interval with a deadline; the same case as `settings/lock.go`. |
+| `sandbox/process.go` `sweepGroup` | After SIGKILL no system call waits for a process group whose processes the caller does not own (a grandchild can outlive the command) | Bounded check at teardown only, with a deadline and an error when the group stays. |
+| `tools/shell_bash.go` `await` | Not a completion check: a ticker paces the live output updates of a foreground command; the end arrives on the `Wait` channel | Keep; it runs only while a client listens for updates. |
 
 ### 12.2 Current sites to change
 
@@ -633,8 +636,8 @@ The `sleep` rule and the `cd` note are not built: a command that starts with `sl
 |---|---|---|
 | `acp/host.go` `Session.execute` | `time.Sleep(2ms)` loop for up to 250 ms while the call gets `ErrBusy` | **Done (2026-10-26).** The call waits on `Agent.Idle()` and retries once per idle signal, for at most 250 ms. The binding takes the run ID that `agent.WithRunStart` reports for the call's own run, so a run that a notice started is never bound to the call and an early cancel stops the call's run. |
 | `cmd/tui/headless.go` `promptAll` | `time.After(5ms)` retry after `ErrBusy` | **Done (2026-10-26).** Waits on `Agent.Idle()`. |
-| `acp/stdio.go:132` | Ticker every `stall/4` checks `cw.Stalled()` | Arm `time.AfterFunc(stall)` when a write starts, stop it when the write ends. Verify the writer exposes start and end at implementation time. |
-| `gateway/grpc_greeter.go:34` | `time.Sleep(500ms)` in a demo stream | Pacing, not waiting. Replace with a timer `select` on the stream context so cancel stops it. |
+| `acp/stdio.go:132` | Ticker every `stall/4` checks `cw.Stalled()` | **Done (2026-10-27).** `CheckedWriter.WatchStall` arms a `time.AfterFunc` when a write starts and stops it when the write ends; a write that is already blocked when shutdown starts the watch counts from its own start. |
+| `gateway/grpc_greeter.go:34` | `time.Sleep(500ms)` in a demo stream | **Done (2026-10-27).** A timer `select` on the stream context paces the greetings, so a client cancel ends the stream at once. |
 
 `WaitForIdle` (`agent.go:194-207`) waits on `r.done` and ignores `dispatching`. `Idle()` closes the gap without a second loop.
 The Agent makes a new idle channel only on the idle-to-busy change and closes it on the busy-to-idle change, not on each listener call, so no event allocates a channel.
@@ -731,7 +734,7 @@ No test uses `time.Sleep` for synchronization.
 | Phase | Content | Depends on |
 |---|---|---|
 | A1 (done 2026-10-24) | `tasks` registry, runner, sink, notice, timer kind, output sweep; Agent lifetime ctx, `Notify`, Abort/Reset/Dispose rules, `Idle`, `WaitForQuiescence`; `CustomMessage`, converter, task events | none |
-| A2 | Replace the ACP busy poll (done 2026-10-26, with the `promptAll` retry), the stdio watchdog ticker, and the demo sleep (both still open) | A1 (`Idle`) |
+| A2 (done 2026-10-27) | Replace the ACP busy poll and the `promptAll` retry (2026-10-26), the stdio watchdog ticker, and the demo sleep (2026-10-27) | A1 (`Idle`) |
 | A3 (done 2026-10-27, changed by [ADR 0005](adr/0005-shell-jobs-use-the-notify-port.md)) | Shell work stays in the H5 job table and delivers through `Agent.Notify` per conversation generation; `ask -p` waits for it with background limits, the idle-wait cap and `--max-turns`. No `task_stop` and no faux `bg` command: the end-to-end tests drive `bash` through `ask -p` with a scripted provider | H5 bash tool |
 | A4 | `subagent` kind and tool | A1 |
 | A5 | Sources: extension messages (X1), MCP notifications (H16), cron fire, remote poller | X1, H16 |

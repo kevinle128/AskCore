@@ -126,24 +126,9 @@ func ServeStdio(ctx context.Context, cfg StdioConfig) StdioExit {
 	if stall <= 0 {
 		stall = defaultWriteStall
 	}
-	stopWatch := make(chan struct{})
-	defer close(stopWatch)
-	go func() {
-		tick := time.NewTicker(stall / 4)
-		defer tick.Stop()
-		for {
-			select {
-			case <-stopWatch:
-				return
-			case <-tick.C:
-				if cw.Stalled() > stall {
-					// The peer does not read: the write ends with an error.
-					out.force()
-					return
-				}
-			}
-		}
-	}()
+	// A write that runs longer than stall means the peer does not read:
+	// closing the output ends that write with an error.
+	defer cw.WatchStall(stall, out.force)()
 
 	done := make(chan error, 1)
 	go func() {

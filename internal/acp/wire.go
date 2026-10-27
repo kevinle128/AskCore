@@ -6,7 +6,6 @@ import (
 	"io"
 	"log/slog"
 	"sync"
-	"sync/atomic"
 	"time"
 )
 
@@ -23,9 +22,16 @@ type CheckedWriter struct {
 	onFail func(error)
 	// observe sees each frame that was written in full.
 	observe func([]byte)
-	// writing is the start time of the write in progress, in Unix nanoseconds,
-	// or zero when no write is in progress.
-	writing atomic.Int64
+
+	// watchMu guards the stall watch. Write holds mu while it writes, so the
+	// watch has its own lock.
+	watchMu sync.Mutex
+	// started is the start of the write in progress; zero when none runs.
+	started time.Time
+	// stallAfter and onStall describe the watch; onStall is nil when none.
+	stallAfter time.Duration
+	onStall    func()
+	stallTimer *time.Timer
 }
 
 // NewCheckedWriter wraps w. onFail runs once, on the first failed write.
@@ -43,9 +49,9 @@ func (c *CheckedWriter) Write(p []byte) (int, error) {
 		c.mu.Unlock()
 		return 0, err
 	}
-	c.writing.Store(time.Now().UnixNano())
+	c.beginWrite()
 	n, err := c.w.Write(p)
-	c.writing.Store(0)
+	c.endWrite()
 	if err == nil && n < len(p) {
 		err = io.ErrShortWrite
 	}
@@ -66,14 +72,47 @@ func (c *CheckedWriter) Write(p []byte) (int, error) {
 	return n, err
 }
 
-// Stalled returns how long the write in progress has run, or zero when no write
-// is in progress.
-func (c *CheckedWriter) Stalled() time.Duration {
-	start := c.writing.Load()
-	if start == 0 {
-		return 0
+// WatchStall calls onStall when one write runs longer than after. A write that
+// is in progress when the watch starts counts from its own start. The watch
+// is a timer for each write, not a periodic check. The returned function ends
+// the watch. onStall can run more than once, once for each stalled write.
+func (c *CheckedWriter) WatchStall(after time.Duration, onStall func()) (stop func()) {
+	c.watchMu.Lock()
+	defer c.watchMu.Unlock()
+	c.stopTimerLocked()
+	c.stallAfter, c.onStall = after, onStall
+	if !c.started.IsZero() {
+		c.stallTimer = time.AfterFunc(max(after-time.Since(c.started), 0), onStall)
 	}
-	return time.Since(time.Unix(0, start))
+	return func() {
+		c.watchMu.Lock()
+		defer c.watchMu.Unlock()
+		c.stopTimerLocked()
+		c.onStall = nil
+	}
+}
+
+func (c *CheckedWriter) beginWrite() {
+	c.watchMu.Lock()
+	defer c.watchMu.Unlock()
+	c.started = time.Now()
+	if c.onStall != nil {
+		c.stallTimer = time.AfterFunc(c.stallAfter, c.onStall)
+	}
+}
+
+func (c *CheckedWriter) endWrite() {
+	c.watchMu.Lock()
+	defer c.watchMu.Unlock()
+	c.started = time.Time{}
+	c.stopTimerLocked()
+}
+
+func (c *CheckedWriter) stopTimerLocked() {
+	if c.stallTimer != nil {
+		c.stallTimer.Stop()
+		c.stallTimer = nil
+	}
 }
 
 // Err returns the first write failure, or nil.
