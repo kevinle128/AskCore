@@ -283,7 +283,6 @@ const (
 	GlyphRailStatus = "┊"
 	GlyphRailQueue  = "┆"
 	GlyphObserver   = "◉"
-	GlyphInProcess  = "○"
 	GlyphCwd        = "⌂"
 	GlyphLevel      = "◐"
 	GlyphBarFull    = "▰"

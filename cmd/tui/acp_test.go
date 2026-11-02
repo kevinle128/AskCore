@@ -7,7 +7,38 @@ import (
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+
+	"AskCore/internal/app"
+	"AskCore/internal/testsupport"
 )
+
+// offlineModelRefresh is the model refresh of a fixture that builds ACPParams
+// itself: off, with an HTTP client that fails the test on a request to any
+// host but loopback, in case the refresh is turned on by mistake.
+func offlineModelRefresh(t *testing.T) app.ModelRefresh {
+	return app.ModelRefresh{Enabled: false, HTTP: testsupport.LoopbackOnly(t)}
+}
+
+// The product entry point turns the model refresh on in the shared host
+// parameters (leader, ask acp, in-process TUI); the environment switch and
+// the dependencies of a test turn it off.
+func TestACPParamsModelRefreshSwitch(t *testing.T) {
+	env := func(vars map[string]string) func(string) string {
+		return func(k string) string { return vars[k] }
+	}
+	p, err := acpParams(runDependencies{getenv: env(nil), modelRefresh: true})
+	require.NoError(t, err)
+	require.True(t, p.ModelRefresh.Enabled)
+	require.NotNil(t, p.ModelRefresh.HTTP)
+
+	p, err = acpParams(runDependencies{getenv: env(map[string]string{disableModelRefreshEnv: "1"}), modelRefresh: true})
+	require.NoError(t, err)
+	require.False(t, p.ModelRefresh.Enabled)
+
+	p, err = acpParams(runDependencies{getenv: env(nil)})
+	require.NoError(t, err)
+	require.False(t, p.ModelRefresh.Enabled, "test dependencies stay offline")
+}
 
 // bare acp must select the protocol command, not a positional prompt.
 func TestACPDispatchHelp(t *testing.T) {

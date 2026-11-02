@@ -1,11 +1,12 @@
 # `internal/settings`
 
-The files under `~/.ask/` (override with `ASK_HOME`) and the project `.ask/` folder. It owns two things. The first is `auth.json`, the credentials file: mode 0600, a file lock, and read-merge-write so that two processes do not lose each other's keys. The second is `settings.json`, the user settings, and the project `.ask/settings.json`, which loads only after the project is trusted. `config` may be imported only by `app` and `cmd/*`, so runtime settings need this separate package. Cloud mode keeps the same files on the server.
+The files under `~/.ask/` (override with `ASK_HOME`) and the project `.ask/` folder. It owns two things. The first is `auth.json`, the credentials file: mode 0600, a file lock, and read-merge-write so that two processes do not lose each other's keys. The second is `settings.json`, the user settings, and the project `.ask/settings.json`, which loads only after the project is trusted. It also keeps `model-cache.json`, a cache of model metadata and account model lists. `config` may be imported only by `app` and `cmd/*`, so runtime settings need this separate package. Cloud mode keeps the same files on the server.
 
 ## What belongs here
 
 - `auth.json` read, merge and write with a lock (`auth.go`, `lock.go`)
 - User and project settings: load, merge, typed read and write (`settings.go`, `merge.go`)
+- `model-cache.json` read and write with a lock (`model_cache.go`)
 - Path rules for `~/.ask` and `.ask` (`paths.go`)
 
 ## What does not belong here
@@ -60,9 +61,29 @@ The leader writes it when a client sets a model with `saveDefault` (the `/model`
 A missing file means no default.
 A file that is not owner-only, or not a JSON object, is refused and never overwritten.
 
+## Model cache
+
+[ModelCache](model_cache.go) keeps `model-cache.json` in the home.
+The file holds the last filtered models.dev metadata (the overlay with its ETag and provider filter) and the model id list of each account.
+It never holds a token, a key, or a header.
+An account key can hold an API key identity only as `KeyedHash`: HMAC-SHA256 with a random 32-byte salt of the home, first 16 bytes, in hex.
+The store makes the salt once and an `Update` callback cannot change it.
+`KeyedHash` returns an empty string for a salt that is not 32 bytes, for example the empty salt that `Read` returns for a missing file.
+The caller builds the account keys.
+
+`Read` does not take the lock, because each replace is atomic. It never creates the home.
+A missing, corrupt, older-schema or newer-schema file gives empty data and a status, not an error.
+A file or home with a bad owner, type or mode gives `ErrUnsafeStore`.
+
+`Update` and `DeleteProvider` lock `model-cache.json.lock`, read fresh data, and write with the same 0600 temporary file, rename and directory sync as `auth.json`.
+For each account entry and for the overlay, a stored value with a later `fetchedAt` stays, so a slow fetch cannot replace a newer result.
+The next write replaces a corrupt file and discards a file of an older schema.
+A file of a newer schema is read-only: `Update` returns `ErrModelCacheNewerSchema` and writes nothing.
+`DeleteProvider` removes the account entries of one provider and keeps the overlay.
+
 ## File names
 
-`auth.go`, `lock.go`, `settings.go`, `merge.go`, `paths.go`
+`auth.go`, `lock.go`, `settings.go`, `merge.go`, `paths.go`, `model_cache.go`
 
 ## Imports
 

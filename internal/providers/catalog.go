@@ -119,9 +119,13 @@ func OpenAIGPT56Sol() Model {
 // Find returns the one row for ref.
 // API set: exact triple. API empty: the unique provider+id row.
 // Two rows (Token Plan) with API empty return an error that names both APIs.
-func Find(ref Ref) (Model, error) {
+func Find(ref Ref) (Model, error) { return findIn(catalog(), ref) }
+
+// findIn applies the Find rules to rows, so the compiled catalog and a
+// ModelSet give the same answers and the same errors.
+func findIn(rows []Model, ref Ref) (Model, error) {
 	var matches []Model
-	for _, m := range catalog() {
+	for _, m := range rows {
 		if m.Provider != ref.Provider || m.ID != ref.ID {
 			continue
 		}
@@ -158,7 +162,7 @@ func AnthropicSonnet46() Model {
 func XAIGrok47() Model {
 	return Model{ID: ModelGrok47, Name: "Grok 4.7", Provider: ProviderXAI, API: APIOpenAIResponses, BaseURL: XAIURL,
 		Reasoning: true, Input: []string{"text", "image"}, ContextWindow: 500_000, MaxTokens: 500_000,
-		ThinkingLevelMap: ThinkingLevelMap{protocol.ThinkingOff: nil, protocol.ThinkingMinimal: nil, protocol.ThinkingXHigh: stringPointer("xhigh"), protocol.ThinkingMax: nil},
+		ThinkingLevelMap: ThinkingLevelMap{protocol.ThinkingOff: nil, protocol.ThinkingMinimal: nil, protocol.ThinkingLow: stringPointer("low"), protocol.ThinkingMedium: stringPointer("medium"), protocol.ThinkingHigh: stringPointer("high"), protocol.ThinkingXHigh: stringPointer("xhigh"), protocol.ThinkingMax: nil},
 		Compat:           ResponsesCompat{Store: false, SupportsMaxOutputTokens: true}}
 }
 

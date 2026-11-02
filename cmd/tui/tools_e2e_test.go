@@ -1491,7 +1491,7 @@ func builtAsk(t *testing.T, f *providerFixture, dir string, extraEnv []string, a
 	require.NoError(t, os.MkdirAll(home, 0o700))
 	cmd := exec.Command(acpBinary(t), args...)
 	cmd.Dir = dir
-	cmd.Env = []string{"PATH=" + os.Getenv("PATH"), "HOME=" + root, "ASK_HOME=" + home, "ANTHROPIC_API_KEY=fixture-anthropic-key", "TZ=UTC"}
+	cmd.Env = []string{"PATH=" + os.Getenv("PATH"), "HOME=" + root, "ASK_HOME=" + home, "ANTHROPIC_API_KEY=fixture-anthropic-key", "TZ=UTC", disableModelRefreshEnv + "=1"}
 	for k, v := range f.env() {
 		cmd.Env = append(cmd.Env, k+"="+v)
 	}

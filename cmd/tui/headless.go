@@ -63,10 +63,17 @@ type runDependencies struct {
 	// TUI sets it, because its stderr is the terminal under a full-screen
 	// program.
 	onJobError func(error)
+	// modelRefresh turns on the network refresh of the model list (models.dev
+	// metadata and account lists). Only the product entry point sets it, so a
+	// test that builds its own dependencies stays offline.
+	// ASK_DISABLE_MODEL_REFRESH=1 turns it off again.
+	modelRefresh bool
+	// modelHTTP carries the models.dev request. Nil uses a default client.
+	modelHTTP *http.Client
 }
 
 func run(argv []string, stdin io.Reader, stdout, stderr io.Writer) int {
-	return runWithDependencies(argv, stdin, stdout, stderr, runDependencies{getenv: os.Getenv})
+	return runWithDependencies(argv, stdin, stdout, stderr, runDependencies{getenv: os.Getenv, modelRefresh: true})
 }
 
 func runWithDependencies(argv []string, stdin io.Reader, stdout, stderr io.Writer, deps runDependencies) int {
@@ -96,25 +103,13 @@ func runWithDependencies(argv []string, stdin io.Reader, stdout, stderr io.Write
 			report(stderr, "Error:", err)
 			return 1
 		}
-		ctx, cancel := context.WithCancel(context.Background())
-		defer cancel()
-		done := make(chan int, 1)
-		go func() { done <- runAuth(ctx, argv[1:], stdin, stdout, stderr, service) }()
-		select {
-		case code := <-done:
-			return code
-		case sig := <-sigs:
-			service.StopRefresh()
-			cancel()
-			if err := app.AuthWait(service)(context.Background()); err != nil {
-				report(stderr, "Auth shutdown:", err)
-			}
-			select {
-			case <-done:
-			case <-time.After(abortGrace):
-			}
-			return signalExitCodes[sig]
-		}
+		models := authModelLists(deps)
+		return runWithAuthSignals(service, sigs, stderr, func(ctx context.Context) int {
+			return runAuth(ctx, argv[1:], stdin, stdout, stderr, service, models)
+		})
+	}
+	if len(argv) > 0 && argv[0] == "models" {
+		return runModelsCommand(argv[1:], stdout, stderr, deps, sigs)
 	}
 	if len(argv) > 0 && argv[0] == "acp" {
 		return runACP(argv[1:], stdin, stdout, stderr, deps, sigs)
@@ -210,6 +205,33 @@ func selectMode(o options, stdinTTY, stdoutTTY bool) runMode {
 
 // report writes one line to stderr. A failed write to stderr has nowhere to
 // be reported.
+// runWithAuthSignals runs a command that uses the native credentials and ends
+// it on a signal. A signal stops the token refreshes and waits for a rotating
+// refresh to save its grant, because a lost rotated grant signs the user out.
+// Then it gives the command abortGrace to end and exits with the code of the
+// signal.
+func runWithAuthSignals(service *auth.Service, sigs <-chan os.Signal, stderr io.Writer, fn func(context.Context) int) int {
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	done := make(chan int, 1)
+	go func() { done <- fn(ctx) }()
+	select {
+	case code := <-done:
+		return code
+	case sig := <-sigs:
+		service.StopRefresh()
+		cancel()
+		if err := app.AuthWait(service)(context.Background()); err != nil {
+			report(stderr, "Auth shutdown:", err)
+		}
+		select {
+		case <-done:
+		case <-time.After(abortGrace):
+		}
+		return signalExitCodes[sig]
+	}
+}
+
 func report(stderr io.Writer, a ...any) { _, _ = fmt.Fprintln(stderr, a...) }
 
 func isTerminal(v any) bool {
@@ -264,7 +286,7 @@ func newHeadlessAgentWithAuth(o options, getenv func(string) string, service *au
 // newNativeAgent builds one independent agent for the session and directory.
 // The headless run and every ACP session use it, so both share one composition.
 func newNativeAgent(o options, getenv func(string) string, service *auth.Service, sessionID, cwd string, extra ...tools.Tool) (*agent.Agent, *jobs.Table, error) {
-	stream, model, err := openProvider(o, getenv)
+	stream, model, err := openProvider(o, getenv, service)
 	if err != nil {
 		return nil, nil, err
 	}

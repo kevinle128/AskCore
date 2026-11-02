@@ -56,7 +56,7 @@ func TestSessionEventForOtherSessionAddsNoModelLine(t *testing.T) {
 	require.Equal(t, before, r.screen())
 }
 
-func TestPickedModelOfTwoFormatsShowsFormatInChangeLine(t *testing.T) {
+func TestPickedModelOfTwoFormatsShowsFormatInTheStatusRow(t *testing.T) {
 	fc := providerFake()
 	fc.setModels(protocol.ACPModelsResult{Current: tokenPlanFlash, Models: designModels(true), UsableOnly: true})
 	fc.setState(protocol.ACPStateResult{SessionID: testSessionID, ModelID: tokenPlanFlash})
@@ -66,7 +66,8 @@ func TestPickedModelOfTwoFormatsShowsFormatInChangeLine(t *testing.T) {
 	r.key("down")
 	r.key("enter")
 	r.waitCall("set_model:" + tokenPlanChat)
-	r.h.waitText("model  alibaba-token-plan/deepseek-v4.1-flash (openai-completions) · was alibaba-token-plan/deepseek-v4.1-flash (anthropic-messages)")
+	r.h.waitText("✓ Default model: alibaba-token-plan/deepseek-v4.1-flash (openai-completions)")
+	requireNoModelLine(t, r.content())
 }
 
 func TestOwnGenerationResetsWithNewLeader(t *testing.T) {

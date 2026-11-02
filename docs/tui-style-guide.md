@@ -15,7 +15,7 @@ The T1a renderings in [preview.html](../plans/261009-2239-t1a-local-tui/artifact
 2. **The dashed rail means "not finished".** A dashed rail (`┊`, `┆`) appears only next to live things: work in progress and queued input. The solid rail `┃` marks a selected block or an open thinking body, never live work.
 3. **One accent, few colors.** Pink is the interactive accent, violet marks the assistant, teal marks tools. Other colors carry status only.
 4. **Readable without color.** Every state must be clear with bold, dim and glyphs alone.
-5. **One screen, rows by priority.** The TUI owns the alternate screen. The header and the shortcut bar always stay, the prompt keeps one row, and the block pane takes what is left. Rules (`─`) separate the parts; nothing draws a box around the whole screen. Only selectors and dialogs use boxes.
+5. **One screen, rows by priority.** The TUI owns the alternate screen. The footer row and the shortcut bar always stay, the prompt keeps one row, the block pane takes what is left, and the header row shows from 5 rows. Rules (`─`) separate the parts; nothing draws a box around the whole screen. Only selectors and dialogs use boxes.
 6. **One row first.** A tool, a thinking part and a hook are one row. The user opens more with a key or the mouse, and the row count of a block never changes when the selection moves.
 
 ## Roles and palette
@@ -26,7 +26,7 @@ The theme maps roles to colors; lipgloss downsamples truecolor for 256-color ter
 | Role | Dark truecolor | 256-color | No color | Used for |
 |---|---|---|---|---|
 | `fg` | `#d9dbe8` | 253 | default | Body text |
-| `muted` | `#6f7390` | 244 | dim | Header details, hints, secondary notes |
+| `muted` | `#6f7390` | 244 | dim | Footer details, hints, secondary notes, the `?` of an unknown value |
 | `dim` | `#4c4f66` | 240 | dim | Hints, placeholders, meta lines, timestamps |
 | `border` | `#4c4f66` | 240 | default | Box lines of the editor and selectors |
 | `panel` (background) | `#1d1f2b` | 235 | reverse off; prompt is bold | User prompt band |
@@ -42,7 +42,7 @@ The theme maps roles to colors; lipgloss downsamples truecolor for 256-color ter
 | `warning` | `#facc15` | 220 | bold | Running tools, retries, observer, context ≥ 70% |
 | `error` | `#f87171` | 203 | bold | `✗`, disconnected, context ≥ 90% |
 | `prov-1..4` | `#fb923c` `#f472b6` `#2dd4bf` `#7aa2f7` | 209 205 43 111 | none | Provider dot in selectors |
-| `logo` | gradient `assistant` → `accent` → `code` | `accent` | bold | `◢◤ ask` in the header |
+| `logo` | gradient `assistant` → `accent` → `code` | `accent` | bold | `◢◤ ask` in the header row; no other part uses the logo |
 
 A light theme is not designed yet; add it here before any component uses it.
 
@@ -65,12 +65,11 @@ All are one column wide in common monospace fonts, except `⚓`, which is two co
 | `↻` | Retry or reconnect note |
 | `⊘` | Cancelled |
 | `⏏` | Detached |
-| `◌` | Work in progress on the status row; also "starting" in the header |
+| `◌` | Work in progress on the status row |
 | `⧗` | Queued input |
 | `┊` / `┆` | Dashed rail: status row / queue rows |
-| `●` | Link dot in the header; provider dot in selectors |
-| `◉` | Observer (watching another driver) |
-| `○` | In-process agent (no leader) |
+| `●` | Provider dot in selectors |
+| `◉` | Observer: the prompt row of a client that watches another driver |
 | `⌂` | Working directory |
 | `◐` | Thinking level |
 | `▰▱` | Context use bar, 8 cells |
@@ -85,11 +84,12 @@ All are one column wide in common monospace fonts, except `⚓`, which is two co
 ## Patterns
 
 Widths below assume an 80-column terminal; rows always fill the terminal width exactly.
-The screen, top to bottom: header row, rule, block pane, queue rows, status row, rule, prompt pane, rule, shortcut bar.
+The screen, top to bottom: header row, rule, block pane, queue rows, status row, rule, prompt pane, rule, footer row, shortcut bar. The [footer design](../plans/261028-1310-account-model-discovery/design.md) owns this order; earlier designs that put the status data in the header row are historical records.
 The owner of the order and the limits is [layout.go](../internal/tui/layout.go); the owner of each part is in the [component table](../internal/tui/README.md#component-owners).
 
-- **Header row** (row 1): `◢◤ ask  ● leader <id>  ⌂ <cwd>` at the left and `<model> ◐ <level>  ▰▰▱▱▱▱▱▱ <pct>%  $<cost> ` at the right. The dot is `success` (connected), `error` (leader lost), `warning` `◉` (observer), `muted` `○` with `in-process` (in-process agent) or `muted` `◌` (starting). With no model the right side is `no model` in `muted`. The cwd gives way first (last element, then none), then the model name is cut. Under 60 columns: `◢◤ ask ● <id>` left and `<model> <pct>% ` right.
-- **Rules**: `─` over the full width in `border`. They exist from 8 rows; under that the header, one pane row, one status row and the prompt stay.
+- **Header row** (row 1): ` ◢◤ ask` in `logo`, with one space of padding, then spaces to the full width. It has no link state, no directory and no model, and it is the same in every state. A rule sits under it. The header row is not drawn in the viewer.
+- **Footer row** (second-to-last row, under the lower rule of the prompt pane, no rule between it and the bar): ` ⌂ <cwd>` in `muted` at the left and `<provider>/<model> ◐ <level>  ▰▰▱▱▱▱▱▱ <pct>% ` at the right (`assistant` for the model and the level, `accent`, `warning` or `error` for the bar and the percent), with one space of padding at each end. The row shows no logo, no link state and no session cost. When the context window of the model is unknown, a lone `?` in `muted` replaces the bar and the percent. With no model the right side is `no model` in `muted`. When the row is too wide the parts give way in this order: the cwd shortens to its last element (`~/…/askcore`; it never goes from 60 columns), then the end of the model id is cut with `…` (the provider stays whole), and last, in a very narrow terminal, the rest of the model text. Under 60 columns: `<provider>/<model> <pct>% ` at the right and nothing at the left. The footer row is not drawn in the viewer.
+- **Rules**: `─` over the full width in `border`: one under the header row and two around the prompt pane. They exist from 9 rows; under that the header row, one pane row, one status row, the prompt, the footer row and the bar stay. Under 5 rows the header row gives way first, then the pane row, then the footer row.
 - **Block pane**: blocks one after another, each drawn at the full width. Column 0 is the gutter that a selection mark uses; every block leaves it blank.
 - **User prompt**: full-width `panel` band: two spaces, `❯ ` (`accent`, bold), the prompt (bold), send time right-aligned in `dim`. Wrapped rows indent four spaces on the band. A prompt over 3 rows is cut to 3 rows and one hint row `    … +<n> lines · e to expand` in `muted`.
 - **Assistant reply**: no glyph. Rendered markdown indented two spaces; one empty row above a reply that follows a step.
@@ -109,10 +109,11 @@ The owner of the order and the limits is [layout.go](../internal/tui/layout.go);
 - **Drag range**: the cells between the press and the pointer on the `selected` background. The text that a release copies is plain: no rail, no shade, no indicator.
 - **Job line**: a step row for a finished background job, `  ◆ job <id> <label>`. A finished job shows `completed · exit 0` in `muted`; a failed or killed job shows `✗ failed · exit 2` or `✗ killed · <reason>` in `error`; monitor output shows `<n> events` in `muted`. It does not fold.
 - **Notes**: `  ↻ ` retry (`warning`) or reconnect (`success`), `  ✗ ` error (`error`, with a `muted` next-action row indented four spaces), `  ⊘ ` cancel (`muted`), `  ⏏ ` detach (`muted`). Each is one block.
+- **Start notices**: the block pane shows no model line; the footer row names the model. Two notices can stand at the start of a transcript, each as its own block with no glyph, indented two columns at every width and wrapped at spaces: the fallback notice `  Default model <provider>/<model> is not usable (<reason>).` in `muted`, and the `TEA_TRACE` warning in `warning`.
 - **Status row**: `┊ ◌ <Status>` with the status word in `accent` (or `warning` for retry, `error` for disconnected) and a `muted` tail such as ` 4s · esc to interrupt`. Notices use the same rail in `dim`. Running background jobs use the row only when nothing else does: `┊ ◌ 1 background job · <id> <label>` in `muted` with a `dim` tail, no shimmer.
 - **Queue rows**: `┆ ⧗ steer   <text>` (`assistant`) and `┆ ⧗ next    <text>` (`tool`), then `┆ alt+↑ edit queue · dashed rail = not sent yet` in `dim` italic. At most 3 rows; the last is `┆ +<n> more` when rows are cut.
 - **Prompt pane**: between two rules; one column of left padding, `❯ ` then the draft. The placeholder `Ask anything  ·  / commands  ·  ctrl+l model` in `dim` italic (`Ask anything` under 60 columns). It grows with the draft up to half of the screen height and then scrolls inside.
-- **Selector and dialog box**: take the prompt pane slot, up to half of the screen height. Rounded box titled `╭─ <Title> ───╮` (title in `accent`, bold); filter row `⌕`; rows `❯ ● provider/model` with right-aligned columns; the selected row uses the `selected` background; errors inside the box; one `dim` italic hint row below the box.
+- **Selector and dialog box**: take the prompt pane slot, up to half of the screen height. Rounded box titled `╭─ <Title> ───╮` (title in `accent`, bold); filter row `⌕`; rows `❯ ● provider/model` with right-aligned columns; the selected row uses the `selected` background; errors inside the box; one `dim` italic hint row below the box. A model row with an unknown context window shows a right-aligned `?` in `muted` in the window column. The row of the running model that the account list no longer has shows the note ` · not in account list` in `muted` after its id; under 60 columns, or when the note does not fit, the tag `unlisted` replaces `current`.
 - **Completion list**: rows above the editor inside the prompt pane, `  ❯ /command   description`, selected row on `selected`; at most 8 rows, the last is `… <n> more` when rows are cut.
 - **Shortcut bar** (last row): `dim`, one space of padding. Prompt focus: `Tab blocks · ctrl+t thinking · ctrl+l model · / commands`. Block list focus: `j/k select · e fold: <mode> · E all · Enter open · Tab prompt`, where `: <mode>` shows only for a block that can fold. Under 60 columns: `Tab blocks · / commands` and `j/k · e fold · Enter open`.
   When the complete hint fits, the bar adds `shift/option+drag select` for terminal selection.

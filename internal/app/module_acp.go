@@ -42,6 +42,9 @@ type ACPParams struct {
 	Initial providers.Model
 	// Info names the agent in the initialize result.
 	Info sdk.Implementation
+	// ModelRefresh configures the network refresh of the model list. The zero
+	// value reads the cache only; the product compositions turn it on.
+	ModelRefresh ModelRefresh
 	// NewAgent builds the Agent of one session on the start model that the
 	// runtime chose, which is the zero model when no provider is usable. It must
 	// use NewNativeAgent with the given service, so that sessions share one
@@ -63,8 +66,11 @@ type ACPRuntime struct {
 	Native auth.NativeOptions
 	// Usable tells whether a provider can serve models now. It is offline.
 	Usable func(ctx context.Context, provider string) bool
-	// Rows lists the catalog rows that the model list shows.
+	// Rows lists the rows that the model list shows, in display order.
 	Rows func() []providers.Model
+
+	// models owns the model list and its refresh. Cleanup stops it.
+	models *modelRefresher
 }
 
 // ACPModule provides the ACPRuntime. Supply ACPParams to use it.
@@ -88,19 +94,31 @@ func NewACPRuntime(p ACPParams) (*ACPRuntime, error) {
 	if err != nil {
 		return nil, err
 	}
+	models, err := newModelRefresher(p.Home, service, p.ModelRefresh)
+	if err != nil {
+		return nil, err
+	}
 	rows := func() []providers.Model {
-		catalog := providers.AvailableModels()
+		set := models.Current().set.All()
 		if p.Initial.ID == "" {
-			return catalog
+			return set
 		}
-		return append([]providers.Model{p.Initial}, catalog...)
+		return append([]providers.Model{p.Initial}, set...)
+	}
+	isInitial := func(ref providers.Ref) bool {
+		in := p.Initial
+		return in.ID != "" && ref.Provider == in.Provider && ref.ID == in.ID && (ref.API == "" || ref.API == in.API)
 	}
 	find := func(ref providers.Ref) (providers.Model, error) {
-		in := p.Initial
-		if in.ID != "" && ref.Provider == in.Provider && ref.ID == in.ID && (ref.API == "" || ref.API == in.API) {
-			return in, nil
+		if isInitial(ref) {
+			return p.Initial, nil
 		}
-		return providers.Find(ref)
+		return models.Current().set.Find(ref)
+	}
+	// inCatalog tells a model that the account list removed from a model that
+	// no source has.
+	inCatalog := func(ref providers.Ref) bool {
+		return isInitial(ref) || models.Current().catalog.Contains(ref)
 	}
 	usable := func(ctx context.Context, provider string) bool {
 		if p.Initial.ID != "" && provider == p.Initial.Provider {
@@ -108,7 +126,7 @@ func NewACPRuntime(p ACPParams) (*ACPRuntime, error) {
 		}
 		return providerUsable(ctx, service, provider)
 	}
-	choice := startChoice{initial: p.Initial, rows: rows, find: find, usable: usable, saved: prefs.DefaultModel}
+	choice := startChoice{initial: p.Initial, rows: rows, find: find, inCatalog: inCatalog, usable: usable, saved: prefs.DefaultModel}
 	// A session that starts on a fallback model hands its note to the adapter
 	// once, when the adapter publishes the session.
 	var fbMu sync.Mutex
@@ -138,27 +156,43 @@ func NewACPRuntime(p ACPParams) (*ACPRuntime, error) {
 		SaveDefault:  prefs.SetDefaultModel,
 		Info:         p.Info,
 		AuthMethods:  acpAuthMethods(service),
-		// A method is ready when some catalog row accepts it with the saved or
-		// environment credential. The check never starts a sign-in.
+		// A method is ready when some row accepts it with the saved or
+		// environment credential. The check never starts a sign-in. Readiness
+		// depends on the provider, the API and the endpoint of a row (they
+		// select the sign-in method), so one row of each is enough: the list
+		// can have many rows of one provider.
 		Authenticate: func(ctx context.Context, methodID string) error {
-			for _, m := range providers.AvailableModels() {
+			seen := map[[3]string]bool{}
+			for _, m := range models.Current().set.All() {
+				k := [3]string{m.Provider, string(m.API), m.BaseURL}
+				if seen[k] {
+					continue
+				}
+				seen[k] = true
 				if NativeAuthReady(ctx, service, m, "", methodID) == nil {
 					return nil
 				}
 			}
 			return auth.ErrNoCredential
 		},
-		Models:    rows,
-		FindModel: find,
+		Models:        rows,
+		RefreshModels: models.RefreshIfStale,
+		FindModel:     find,
 		ModelAuth: func(ctx context.Context, m providers.Model, methodID string) error {
 			return NativeAuthReady(ctx, service, m, "", methodID)
 		},
 	}
+	// The model refresh stops first: an account list fetch can hold a
+	// credential refresh slot, which the drain waits for.
 	cleanup := func(ctx context.Context) error {
+		models.Stop()
 		service.StopRefresh()
 		return AuthWait(service)(ctx)
 	}
-	return &ACPRuntime{Config: cfg, Cleanup: cleanup, Service: service, Native: native, Usable: usable, Rows: rows}, nil
+	// The start path reads the cache only; a stale cache starts one refresh
+	// in the background.
+	models.RefreshIfStale()
+	return &ACPRuntime{Config: cfg, Cleanup: cleanup, Service: service, Native: native, Usable: usable, Rows: rows, models: models}, nil
 }
 
 // acpAuthMethods lists each native method once. The description names the host

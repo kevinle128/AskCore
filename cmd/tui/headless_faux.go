@@ -7,6 +7,8 @@ import (
 	"strconv"
 	"strings"
 
+	"AskCore/internal/app"
+	"AskCore/internal/auth"
 	"AskCore/internal/providers"
 	"AskCore/internal/providers/anthropic"
 	"AskCore/internal/providers/faux"
@@ -69,14 +71,19 @@ func fauxStream(modelID string, getenv func(string) string) (providers.StreamFn,
 	return stream, m, nil
 }
 
-func openProvider(o options, getenv func(string) string) (providers.StreamFn, providers.Model, error) {
+// openProvider returns the stream and the model of a headless run. A catalog
+// model resolves through the model list of the cache and the built-in catalog,
+// with the account list of the credential of service (nil: access unknown).
+// It makes no network call.
+func openProvider(o options, getenv func(string) string, service *auth.Service) (providers.StreamFn, providers.Model, error) {
 	switch o.provider {
 	case defaultProvider:
 		return fauxStream(o.model, getenv)
 	case anthropic.ProviderID:
 		return tokenPlanStream(o.model, getenv, o.transport)
 	case providers.ProviderAnthropic, providers.ProviderOpenAI, providers.ProviderXAI:
-		m, err := providers.Find(providers.Ref{Provider: o.provider, ID: o.model})
+		set := app.CachedModelSet(context.Background(), getenv("ASK_HOME"), service)
+		m, err := set.Find(providers.Ref{Provider: o.provider, ID: o.model})
 		if err != nil {
 			return nil, providers.Model{}, err
 		}

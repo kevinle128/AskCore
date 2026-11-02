@@ -70,8 +70,8 @@ func TestRunningToolShowsTheSpinnerAndTheWorkingStatusAt80x24(t *testing.T) {
 		}
 	}
 	require.Regexp(t, `^  ◆ Running go test \./\.\.\. -count=1 +[\x{2800}-\x{28FF}]( 4s)?$`, row)
-	require.Equal(t, 19, status, "the status row sits above the prompt pane: %v", grid)
-	require.Equal(t, ruleRow(80), grid[20])
+	require.Equal(t, 18, status, "the status row sits above the prompt pane: %v", grid)
+	require.Equal(t, ruleRow(80), grid[19])
 }
 
 func TestStreamingThinkingFoldsToOneThoughtRowWhenTheTurnEndsAt80x24(t *testing.T) {
@@ -222,10 +222,14 @@ func TestEnterOnTheSelectedToolRowOpensTheViewerAndEscReturnsToTheSameList(t *te
 	before := screenOf(m)
 	require.Regexp(t, `(?m)^  › Ran seq 1 40$`, strings.Join(before, "\n"))
 
+	require.Contains(t, strings.Join(before, "\n"), " ◢◤ ask", "the header row is on the screen before")
+
 	press(t, m, "enter")
 	require.True(t, m.viewerOpen())
 	rows := screenOf(m)
 	require.Contains(t, rows[0], "← back  Ran seq 1 40")
+	require.NotContains(t, strings.Join(rows, "\n"), "◢◤ ask", "the viewer shows no header row")
+	require.NotContains(t, strings.Join(rows, "\n"), "⌂", "the viewer shows no footer row")
 	require.Equal(t, "    $ seq 1 40", rows[2])
 	for i := 1; i <= 18; i++ {
 		require.Equal(t, fmt.Sprintf("    %d", i), rows[3+i])
@@ -301,7 +305,7 @@ func TestDragOverWrappedReplyTextCopiesItAndTheStatusRowSaysCopied(t *testing.T)
 func sketchScenarios40x14(t *testing.T) []struct {
 	name   string
 	model  *Model
-	header bool
+	footer bool
 } {
 	t.Helper()
 	compact := listModel(t, 40, 14)
@@ -344,7 +348,7 @@ func sketchScenarios40x14(t *testing.T) []struct {
 	return []struct {
 		name   string
 		model  *Model
-		header bool
+		footer bool
 	}{
 		{"compact session in the prompt focus", compact, true},
 		{"truncated failed tool", truncated, true},
@@ -358,7 +362,7 @@ func sketchScenarios40x14(t *testing.T) []struct {
 
 // The renderer does not pad a row with trailing blanks: a blank cell and a
 // missing cell look the same. A row of the narrow screens is never wider than
-// 40 columns, and the rows that run to the edge (the header with its right
+// 40 columns, and the rows that run to the edge (the footer row with its right
 // side and the rules) are exactly 40 columns.
 func TestEveryRowOfTheNarrowScreensFitsFortyColumns(t *testing.T) {
 	for _, sc := range sketchScenarios40x14(t) {
@@ -371,13 +375,18 @@ func TestEveryRowOfTheNarrowScreensFitsFortyColumns(t *testing.T) {
 					require.Equal(t, 40, displayWidth(r), "a rule runs to the edge: row %d", i+1)
 				}
 			}
-			if sc.header {
-				require.Equal(t, 40, displayWidth(rows[0]), "the header runs to the edge: %q", rows[0])
-				require.True(t, strings.HasPrefix(rows[0], "◢◤ ask ● 7c1e"), rows[0])
+			if sc.footer {
+				require.Equal(t, 40, displayWidth(rows[12]), "the footer row runs to the edge: %q", rows[12])
+				require.Equal(t, " ◢◤ ask", strings.TrimRight(rows[0], " "), "the header row holds the logo only")
+				require.Equal(t, 40, displayWidth(rows[0]), "the header row runs to the edge: %q", rows[0])
 				require.Equal(t, strings.Repeat("─", 40), rows[1])
+				require.Equal(t, strings.Repeat("─", 40), rows[11])
 			} else {
-				require.True(t, strings.HasPrefix(rows[0], " ← back"), "a viewer replaces the header: %q", rows[0])
+				require.True(t, strings.HasPrefix(rows[0], " ← back"), "a viewer takes the whole screen: %q", rows[0])
 				require.Equal(t, 40, displayWidth(rows[0]), "the outcome ends at the edge: %q", rows[0])
+				for _, r := range rows {
+					require.NotContains(t, r, "◢◤ ask", "a viewer shows no header row")
+				}
 			}
 		})
 	}
@@ -386,7 +395,7 @@ func TestEveryRowOfTheNarrowScreensFitsFortyColumns(t *testing.T) {
 func TestResizeTo120x40KeepsTheSelectedBlockInViewAndTheBarOnTheLastRow(t *testing.T) {
 	m := listModelAt(t, colorprofile.NoTTY, 80, 24, longSession(40)...)
 	press(t, m, "tab")
-	for range 15 {
+	for range 16 {
 		press(t, m, "k")
 	}
 	sel := m.selectedBlock()
@@ -411,7 +420,7 @@ func TestResizeTo40x14KeepsTheSelectedBlockOnTheTerminal(t *testing.T) {
 	h := startScreen(t, m, 80, 24)
 	h.send(keyNamed(t, "tab"))
 	h.send(keyNamed(t, "home"))
-	for range 9 {
+	for range 8 {
 		h.send(keyNamed(t, "j"))
 	}
 	h.waitText("› Ran step 7")

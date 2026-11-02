@@ -1,7 +1,5 @@
-◢◤ ask  ● leader 7c1e  ⌂ ~/src/askcore                                         deepseek-v4.1-flash  ▰▱▱▱▱▱▱▱ 18%  $0.04
+ ◢◤ ask
 ────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
-  model  alibaba/deepseek-v4.1-flash
-
   ❯ why does TestLeaderStale fail on CI?                                                                         14:02
 
   The test waits for the stale socket check, but CI runs it with a 1 s deadline. The leader removes the stale socket
@@ -10,6 +8,7 @@
   go
   deadline := 5 * time.Second
   deepseek-v4.1-flash · 4.2s · ↑12.4k ↓1.8k · $0.004
+
 
 
 
@@ -37,4 +36,5 @@
 ╰──────────────────────────────────────────────────────────────────────────────────────────────────────────────────────╯
    enter select  ·  esc close  ·  your draft is kept
 ────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+ ⌂ ~/src/askcore                                                              alibaba/deepseek-v4.1-flash  ▰▱▱▱▱▱▱▱ 18%
  Tab blocks · ctrl+t thinking · ctrl+l model · / commands · shift/option+drag select

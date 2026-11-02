@@ -1,8 +1,7 @@
-◢◤ ask ● 7c1e    deepseek-v4.1-flash 0%
+ ◢◤ ask
 ────────────────────────────────────────
-  alibaba-token-plan/deepseek-v4.1-flash
-
-
+  Default model openai/gpt-5.4-mini is
+  not usable (not in account list).
 
 
 
@@ -11,4 +10,5 @@
 ────────────────────────────────────────
  ❯ Ask anything
 ────────────────────────────────────────
+                      openai/gpt-5.5 0%
  Tab blocks · / commands

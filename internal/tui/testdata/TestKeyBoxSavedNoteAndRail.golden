@@ -1,7 +1,5 @@
-◢◤ ask  ● leader 7c1e  ⌂ ~/src/askcore deepseek-v4.1-flash  ▰▱▱▱▱▱▱▱ 18%  $0.04
+ ◢◤ ask
 ────────────────────────────────────────────────────────────────────────────────
-  model  alibaba-token-plan/deepseek-v4.1-flash
-
   ❯ why does TestLeaderStale fail on CI?                                 14:02
 
   The test waits for the stale socket check, but CI runs it with a 1 s deadline.
@@ -17,8 +15,10 @@
 
 
 
+
 ┊ ✓ openai key saved · 2 models
 ────────────────────────────────────────────────────────────────────────────────
  ❯ Ask anything  ·  / commands  ·  ctrl+l model
 ────────────────────────────────────────────────────────────────────────────────
+ ⌂ ~/src/askcore           alibaba-token-plan/deepseek-v4.1-flash  ▰▱▱▱▱▱▱▱ 18%
  Tab blocks · ctrl+t thinking · ctrl+l model · / commands

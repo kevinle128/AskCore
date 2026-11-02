@@ -30,7 +30,9 @@ import (
 // of the process.
 //
 // ASK_HOME points to a fresh private directory while the tests run (see
-// isolateHome).
+// isolateHome). isolateHome also turns the model list refresh off, also in
+// each ask binary that a test starts with this environment, so no test calls
+// models.dev or a vendor model list.
 func TestMain(m *testing.M) {
 	restore, err := isolateHome()
 	if err != nil {
@@ -79,7 +81,16 @@ func isolateHome() (restore func(), err error) {
 		return nil, fmt.Errorf("set ASK_HOME: %w", err)
 	}
 	_ = os.Setenv(isolatedHomeMarker, "1")
+	// A helper process inherits the switch and may clear it for a test of the
+	// refresh, so only the first process sets it.
+	prevRefresh, hadRefresh := os.LookupEnv(disableModelRefreshEnv)
+	_ = os.Setenv(disableModelRefreshEnv, "1")
 	return func() {
+		if hadRefresh {
+			_ = os.Setenv(disableModelRefreshEnv, prevRefresh)
+		} else {
+			_ = os.Unsetenv(disableModelRefreshEnv)
+		}
 		_ = os.Unsetenv(isolatedHomeMarker)
 		if had {
 			_ = os.Setenv("ASK_HOME", prev)

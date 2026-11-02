@@ -7,6 +7,7 @@ import (
 	"io"
 	"os"
 	"os/exec"
+	"regexp"
 	"strings"
 	"sync"
 	"syscall"
@@ -237,40 +238,88 @@ func (a *askTerm) requireRestored() {
 	require.Equal(a.t, a.initial, now, "the terminal is restored")
 }
 
-// requireLeaderHeader checks the leader id in the header row against the id
-// that the leader of the home reports, so a fallback cannot pass.
-func requireLeaderHeader(t *testing.T, a *askTerm, bin, home string) string {
-	t.Helper()
-	// The header row is on the screen from the first frame; the link comes later.
-	a.waitText("◢◤ ask")
-	// The label "starting" turns into the leader id once the link is up, and the
-	// leader runs by then.
-	a.waitText("● leader")
-	ctx, cancel := context.WithTimeout(context.Background(), clientWait)
-	defer cancel()
-	st, err := leader.Status(ctx, e2eConnect(home, bin))
-	require.NoError(t, err)
-	short := tui.ShortID(st.InstanceID)
-	a.waitFor("the leader in the header row", func(rows []string) bool {
-		for _, r := range rows {
-			if strings.Contains(r, "⌂") && strings.Contains(r, "leader "+short) {
-				return true
-			}
+// footerRowOf returns the footer row: the row above the shortcut bar.
+func footerRowOf(rows []string) string {
+	if len(rows) < 2 {
+		return ""
+	}
+	return rows[len(rows)-2]
+}
+
+// footerHas reports whether the footer row holds every part.
+func footerHas(rows []string, parts ...string) bool {
+	footer := footerRowOf(rows)
+	for _, p := range parts {
+		if !strings.Contains(footer, p) {
+			return false
 		}
-		return false
-	})
-	require.False(t, containsRow(a.rows(), "in-process"), "a leader test must not run in process")
+	}
+	return true
+}
+
+// linkWords are the words that the screen must not use for the link: the footer
+// row names the work, and the status rail reports a lost link.
+var linkWords = regexp.MustCompile(`[●◌○◉]|leader|starting|lost|in-process|observer`)
+
+// requireHeaderAndNoLinkState checks the first row, the header row with the
+// logo only, and that the footer row shows no link state. The directory part of
+// the footer row is cut out first, because a test directory can hold any word.
+func requireHeaderAndNoLinkState(t *testing.T, a *askTerm) {
+	t.Helper()
+	rows := a.rows()
+	require.Equal(t, " ◢◤ ask", rows[0], "the header row holds the logo only:\n%s", a.screen())
+	footer := regexp.MustCompile(`⌂ \S+`).ReplaceAllString(footerRowOf(rows), "")
+	require.NotRegexp(t, linkWords, footer, "the footer row shows a link state:\n%s", a.screen())
+}
+
+// requireLeaderLink checks that the session runs through the leader of the
+// home. The screen does not show the link, so the check reads the leader: its
+// status answers with an instance id and holds a session of this client, and a
+// leader process runs for the binary. A fallback to the in-process agent starts
+// no leader, so it cannot pass. It returns the instance id of the leader.
+func requireLeaderLink(t *testing.T, a *askTerm, bin, home string) string {
+	t.Helper()
+	a.waitFor("the header row on the first row", func(rows []string) bool { return len(rows) > 0 && rows[0] == " ◢◤ ask" })
+	var st protocol.LeaderStatus
+	require.Eventually(t, func() bool {
+		ctx, cancel := context.WithTimeout(context.Background(), clientWait)
+		defer cancel()
+		var err error
+		st, err = leader.Status(ctx, e2eConnect(home, bin))
+		return err == nil && st.InstanceID != "" && st.Sessions > 0
+	}, exitWait, 50*time.Millisecond, "the leader holds a session of this client:\n%s", a.screen())
+	a.waitFor("the starting state to go", func(rows []string) bool { return !containsRow(rows, "Starting leader") })
+	require.NotEmpty(t, leaderProcesses(bin), "a leader test must not run in process")
+	requireHeaderAndNoLinkState(t, a)
 	return st.InstanceID
+}
+
+// footerModel matches the model of the footer row once the state of the
+// session is known: "<provider>/<model>" after the directory.
+var footerModel = regexp.MustCompile(`[a-z][a-z-]*/[A-Za-z0-9][A-Za-z0-9.-]*`)
+
+// requireInProcess waits until the session has its state and checks that no
+// leader runs: the TUI fell back to its own agent. The fallback is decided at
+// startup, so a leader would be running or starting by then.
+func requireInProcess(t *testing.T, a *askTerm, bin string) {
+	t.Helper()
+	a.waitFor("the header row on the first row", func(rows []string) bool { return len(rows) > 0 && rows[0] == " ◢◤ ask" })
+	a.waitFor("the model in the footer row", func(rows []string) bool {
+		return footerModel.MatchString(regexp.MustCompile(`⌂ \S+`).ReplaceAllString(footerRowOf(rows), "")) &&
+			containsRow(rows, "Ask anything") && !containsRow(rows, "Starting leader")
+	})
+	require.Empty(t, leaderProcesses(bin), "no leader process is started")
+	requireHeaderAndNoLinkState(t, a)
 }
 
 func TestInteractiveStartsLeaderAndShowsEditor(t *testing.T) {
 	bin, home := newE2EHome(t)
 	a := startAskTerm(t, bin, home, askTermOptions{})
 	a.waitText("Ask anything")
-	a.waitText("◢◤ ask")
+	a.waitFor("the header row on the first row", func(rows []string) bool { return len(rows) > 0 && rows[0] == " ◢◤ ask" })
 	require.Contains(t, a.rawOutput(), "Starting leader…", "the starting state shows before the link is up")
 	a.waitFor("the starting state to go", func(rows []string) bool { return !containsRow(rows, "Starting leader") })
-	requireLeaderHeader(t, a, bin, home)
+	requireLeaderLink(t, a, bin, home)
 	require.Len(t, leaderProcesses(bin), 1, "ask started one leader")
 	a.requireRaw()
 	id := onlySessionID(t, bin, home)
@@ -289,7 +338,7 @@ func TestInteractiveFallsBackInProcess(t *testing.T) {
 	home := leaderHome(t)
 	makeHomeUnsafe(t, home)
 	a := startAskTerm(t, bin, home, askTermOptions{})
-	a.waitText("○ in-process")
+	requireInProcess(t, a, bin)
 	a.write("hello there\r")
 	// A reply has no glyph; the text sits in the block pane under the prompt band.
 	a.waitFor("the reply", func(rows []string) bool { return hasRowPrefix(rows, "  hello there") })
@@ -326,7 +375,7 @@ func TestInteractiveSignalsRestoreTerminal(t *testing.T) {
 			bin, home := newE2EHome(t)
 			a := startAskTerm(t, bin, home, askTermOptions{})
 			a.waitText("Ask anything")
-			requireLeaderHeader(t, a, bin, home)
+			requireLeaderLink(t, a, bin, home)
 			a.requireRaw()
 			require.NoError(t, a.cmd.Process.Signal(tc.sig))
 			require.Equal(t, tc.code, a.waitExit(), a.stderr.String())
@@ -341,7 +390,7 @@ func TestInteractiveQuitDetachesRunContinues(t *testing.T) {
 	prompt := strings.Repeat("slow words ", 10)
 	a := startAskTerm(t, bin, home, askTermOptions{}, pacedEnv(8)...)
 	a.waitText("Ask anything")
-	instance := requireLeaderHeader(t, a, bin, home)
+	instance := requireLeaderLink(t, a, bin, home)
 	a.write(prompt + "\r")
 	a.waitText("Working…")
 
@@ -393,7 +442,7 @@ func TestInteractiveEarlyInputKept(t *testing.T) {
 	a.waitFor("the early text in the editor", func(rows []string) bool {
 		return containsRow(rows, "❯ typed early")
 	})
-	requireLeaderHeader(t, a, bin, home)
+	requireLeaderLink(t, a, bin, home)
 	// The text is a draft and nothing was sent.
 	require.False(t, containsRow(a.rows(), "Working"))
 	a.write("\x03") // clears the draft
@@ -408,7 +457,7 @@ func TestInteractiveEarlyInputKept(t *testing.T) {
 func TestInteractiveShiftEnterInsertsNewline(t *testing.T) {
 	bin, home := newE2EHome(t)
 	a := startAskTerm(t, bin, home, askTermOptions{})
-	requireLeaderHeader(t, a, bin, home)
+	requireLeaderLink(t, a, bin, home)
 	// The program asks the terminal for key disambiguation, which is what
 	// makes shift+enter reach it as its own key.
 	require.Contains(t, a.rawOutput(), "\x1b[>1u")

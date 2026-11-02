@@ -1,6 +1,5 @@
-◢◤ ask ● 7c1e            0%
+ ◢◤ ask
 ────────────────────────────
-  ◆ Edited parser.go  +3 -1
   ◆ Ran go test ./...
 
   Count now skips empty
@@ -11,4 +10,5 @@
 ────────────────────────────
  ❯ Ask anything
 ────────────────────────────
+                         0%
  Tab blocks · / commands

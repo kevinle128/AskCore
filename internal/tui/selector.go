@@ -46,6 +46,10 @@ type selItem struct {
 	role   Role   // role of the dot
 	right  string // right text, already padded to its column width
 	filter string // text that the filter matches
+	// note is a muted text after the label, shown only from shortWidth
+	// columns and only when it fits next to the whole label. noteRight is the
+	// right text that the row shows in its place.
+	note, noteRight string
 	// header marks a group header row: the cursor skips it, and it shows only
 	// while a row of its group matches the filter.
 	header bool
@@ -257,7 +261,7 @@ func (sl *selector) slot(width, height int, th *Theme) EditorSlot {
 	}
 	for i := sl.top; i < sl.top+shown && i < len(disp); i++ {
 		d := disp[i]
-		rows = append(rows, sl.itemRow(sl.items[d.item], d.pos == sel && d.pos >= 0, inner, bar, th))
+		rows = append(rows, sl.itemRow(sl.items[d.item], d.pos == sel && d.pos >= 0, width < shortWidth, inner, bar, th))
 	}
 	if hidden > 0 {
 		more := fmt.Sprintf("   … %d more", hidden)
@@ -274,8 +278,9 @@ func (sl *selector) slot(width, height int, th *Theme) EditorSlot {
 	return EditorSlot{Rows: rows, Cursor: cursor, Modal: true}
 }
 
-// itemRow draws one row of the list.
-func (sl *selector) itemRow(it selItem, selected bool, inner int, bar string, th *Theme) string {
+// itemRow draws one row of the list. A short terminal has no room for the note
+// of a row.
+func (sl *selector) itemRow(it selItem, selected, short bool, inner int, bar string, th *Theme) string {
 	if it.header {
 		plain := "  " + it.dot + " " + it.label
 		styled := "  " + th.Render(it.role, it.dot) + " " + th.Style(RoleMuted).Bold(true).Render(it.label)
@@ -289,20 +294,30 @@ func (sl *selector) itemRow(it selItem, selected bool, inner int, bar string, th
 	if it.dot != "" {
 		dot = it.dot + " "
 	}
-	rightW := displayWidth(it.right)
+	right, note := it.right, ""
+	if it.note != "" {
+		// The note goes as a whole when it does not fit: the label is never cut
+		// to make room for it.
+		if !short && displayWidth(mark+dot+it.label+it.note)+1+displayWidth(right) <= inner {
+			note = it.note
+		} else {
+			right = it.noteRight
+		}
+	}
+	rightW := displayWidth(right)
 	leftRoom := max(1, inner-rightW-1)
 	label := truncateTo(it.label, max(1, leftRoom-displayWidth(mark)-displayWidth(dot)))
-	plainLeft := mark + dot + label
+	plainLeft := mark + dot + label + note
 	gap := max(1, inner-displayWidth(plainLeft)-rightW)
 	if selected {
-		plain := plainLeft + strings.Repeat(" ", gap) + it.right
+		plain := plainLeft + strings.Repeat(" ", gap) + right
 		return bar + " " + th.Render(RoleSelected, padTo(plain, inner)) + " " + bar
 	}
 	styled := mark + th.Render(it.role, it.dot)
 	if it.dot != "" {
 		styled += " "
 	}
-	styled += label + strings.Repeat(" ", gap) + th.Render(RoleMuted, it.right)
+	styled += label + th.Render(RoleMuted, note) + strings.Repeat(" ", gap) + th.Render(RoleMuted, right)
 	return bar + " " + styled + strings.Repeat(" ", max(0, inner-displayWidth(plainLeft)-gap-rightW)) + " " + bar
 }
 
@@ -317,11 +332,12 @@ func providerRole(order map[string]int, provider string) Role {
 	return Role(int(RoleProv1) + n%4)
 }
 
-// formatWindow writes a context window: "128k", "1M".
+// formatWindow writes a context window: "128k", "1M", or "?" when the catalog
+// has no window for the model.
 func formatWindow(n int) string {
 	switch {
 	case n <= 0:
-		return ""
+		return "?"
 	case n >= 1_000_000 && n%1_000_000 == 0:
 		return fmt.Sprintf("%dM", n/1_000_000)
 	case n >= 1_000_000:
@@ -399,10 +415,17 @@ func newModelSelectorFor(res protocol.ACPModelsResult, current string) *selector
 		if shown[name] > 1 && m.API != "" {
 			label += " (" + m.API + ")"
 		}
+		window := padLeft(formatWindow(m.ContextWindow), windowColWidth) + "  "
 		it := selItem{
 			id: m.ModelID, label: label, dot: GlyphToolDone, role: role, group: group,
-			right:  padLeft(formatWindow(m.ContextWindow), windowColWidth) + "  " + padTo(tag, tagColWidth) + " ",
+			right:  window + padTo(tag, tagColWidth) + " ",
 			filter: name + " " + label,
+		}
+		if m.NotInAccount && m.ModelID == current {
+			// The leader sends the row of the running model also when the
+			// account list no longer has it.
+			it.note = " · not in account list"
+			it.noteRight = window + padTo("unlisted", tagColWidth) + " "
 		}
 		if grouped {
 			it.dot = ""

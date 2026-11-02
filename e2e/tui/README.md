@@ -1,6 +1,6 @@
 # Headless TUI checks
 
-The runner starts the built `ask` in owned tui-test sessions on real terminal engines (Alacritty and Ghostty) and checks the engine screen and the output recording. The interactive `ask` TUI uses the alternate screen, so every check reads one full frame: a header row, a block pane, a prompt pane between two rules, and a shortcut bar. The screen design is in the [alternate-screen design](../../plans/261012-1337-t1b-grok-style-altscreen/design.md) and `docs/tui-architecture.md`.
+The runner starts the built `ask` in owned tui-test sessions on real terminal engines (Alacritty and Ghostty) and checks the engine screen and the output recording. The interactive `ask` TUI uses the alternate screen, so every check reads one full frame: a header row with the logo only and its rule, a block pane, a prompt pane between two rules, a footer row with the status data, and a shortcut bar. The screen shows no link state, so a case learns from `ask leader status` and the process table whether the program runs through a leader or in process. The screen design is in the [alternate-screen design](../../plans/261012-1337-t1b-grok-style-altscreen/design.md) and `docs/tui-architecture.md`.
 
 Run from the repository root:
 
@@ -30,11 +30,11 @@ All cases start `ask` with no arguments, with the faux provider and a temporary 
 
 | Case | Size | What it checks |
 |---|---|---|
-| `ask-idle` | 80×24 | The alternate screen is entered (`?1049h`) and mouse reporting is on. Row 1 is the header `◢◤ ask  ● leader <id>` with the model, row 2 a `─` rule, the prompt row sits between two rules with the placeholder and the cursor at column 4, and the last row is the bar `Tab blocks · ctrl+t thinking · ctrl+l model · / commands`. No scrollback purge. `ctrl+d` ends the program. |
+| `ask-idle` | 80×24 | The alternate screen is entered (`?1049h`) and mouse reporting is on. Row 1 is the header ` ◢◤ ask` (the logo only) and row 2 a `─` rule. The block pane starts on row 3 and shows no model line. The prompt row sits between two rules with the placeholder and the cursor at column 4. The second-to-last row is the footer row ` ⌂ <dir>  <provider>/<model> …  <bar> <pct>%` with no link state, and the last row is the bar `Tab blocks · ctrl+t thinking · ctrl+l model · / commands`. No scrollback purge. `ctrl+d` ends the program. |
 | `ask-turn` | 80×24 | A prompt that calls the echo tool with nine output lines. The tool block is one row `◆ echo out-01 …` and no output line is on its own row. `Tab` selects the last block, the reply (it has a `┃` rail and cannot fold); `k` selects the tool step (`›` mark, bar `j/k select · e fold`). `e` shows Truncated: the first three lines, `⋮ 3 more lines · e to expand · Enter full screen`, the last three, and no command row. `e` again shows Expanded (`⌄`, nine lines), and a third `e` returns to one row. `Enter` opens the full-screen viewer (`← back  echo …`, the nine lines, the viewer bar), `Esc` returns to the same selection, `Esc` again returns to the prompt. |
-| `ask-in-process` | 80×24 | The `ask-turn` flow with the in-process agent. `ASK_HOME` is a symlink, which the leader connect refuses, so the TUI falls back at startup (header `in-process`, no leader process). |
-| `ask-resize` | 80×24 to 120×40 to 40×14 | A long reply streams (paced at 10 tokens per second) while a draft is in the prompt. After each size: no row is wider than the terminal, the header and its rule are on the first rows, the bar is on the last row, the short header form shows under 60 columns, the draft and the cursor stay, and the reply still streams. After the end, at 120×40 the whole reply is on the screen once and in order, the long prompt is folded, and no scrollback purge was written. |
-| `ask-selector` | 80×24 | `/model` on an empty prompt and `ctrl+l` with a draft both put the selector in the prompt slot (rule above, full-width rows, the hint, then rule and bar) while the header and the block pane stay. `Esc` brings the prompt back, with the draft and its cursor after `ctrl+l`. |
+| `ask-in-process` | 80×24 | The `ask-turn` flow with the in-process agent. `ASK_HOME` is a symlink, which the leader connect refuses, so the TUI falls back at startup. The screen looks the same as in a leader case; the runner proves the fallback by the process table (no leader process) and by `ask leader status`, which must find no leader. |
+| `ask-resize` | 80×24 to 120×40 to 40×14 | A long reply streams (paced at 10 tokens per second) while a draft is in the prompt. After each size: no row is wider than the terminal, the header row and its rule are on the first rows, the footer row is the second-to-last row and the bar is on the last row, the short footer form shows under 60 columns, the draft and the cursor stay, and the reply still streams. After the end, at 120×40 the whole reply is on the screen once and in order, the long prompt is folded, and no scrollback purge was written. |
+| `ask-selector` | 80×24 | `/model` on an empty prompt and `ctrl+l` with a draft both put the selector in the prompt slot (rule above, full-width rows, the hint, then rule, footer row and bar) while the header row, the block pane and the footer row stay and the footer row still names the model. `Esc` brings the prompt back, with the draft and its cursor after `ctrl+l`. |
 | `ask-providers` | 80×24 | `/providers` puts the box in the prompt slot: seven rows in order, the search row last, full-width rows, the hint ending `your draft is kept`. The filter `key` keeps the four key rows. `enter` on `OpenAI API key` opens the key box at once. A fake key is pasted, the box shows `(hidden)`, the key is on no row of the screen or the recording, and `esc` brings the prompt back. |
 | `ask-mouse` | 80×24 | Two long turns fill the pane. One SGR wheel-up report moves the window and shows `▼ End` centered on the last pane row. A new turn while scrolled up shows `▼ <N> new lines · End` centered with the top row unchanged. A click on the marker returns to the end and the marker is gone. Wheel-up and then wheel-down to the last row follows again without a click. |
 | `ask-exit-quit` | 80×24 | `/quit` after a tool turn: the main screen is back, the cursor is visible, mouse reporting and bracketed paste are off (last write of each mode), and the last row on the screen is `ask: session <id>`. |
@@ -53,8 +53,8 @@ These checks use structure and the stable texts of the design, not whole-screen 
 - The alternate screen has no scrollback, so there is no history check; the tests read the visible frame.
 
 Each case has its own `ASK_HOME` and its own leader, which the TUI starts.
-A case that shows `in-process` in the header fails to start, so the fallback cannot pass for a leader test.
-Only the cases in `IN_PROCESS_CASES` in [run.py](run.py) expect `in-process`; they start no leader, and the runner fails them when a leader of the run binary exists.
+Every leader case checks, after the program is ready, that `ask leader status` finds a leader that holds a session and that a leader process of the run binary exists, so the fallback cannot pass for a leader test.
+Only the cases in `IN_PROCESS_CASES` in [run.py](run.py) run with the in-process agent; they start no leader, and the runner fails them when a leader of the run binary exists or when `ask leader status` finds one.
 The cases in `REMOTE_CASES` add `SSH_TTY` to the child environment (the name is recorded in `commands.json`).
 After a case the runner runs `ask leader stop` for that home and checks the process table for leaders of its own binary path.
 A leader of that path that ignores the stop is signaled after its command line is checked again; no other process is touched.
@@ -85,7 +85,8 @@ The cases use the faux provider, so no key is needed. Real-provider acceptance i
 `real_provider.py` and `real_provider_scenarios.py` run the built `ask` against real providers for acceptance runs by hand (they are not part of `run.py`).
 They need the Python package `pyte` (`pip install --target /private/tmp/ask-rp-py pyte`, then `PYTHONPATH=/private/tmp/ask-rp-py`).
 The runner compiles `./cmd/tui` at the start of each run into `/private/tmp/ask-rp-bin/ask` unless `ASK_BIN` names a file.
-The scenarios read the header row for the leader id and the model, and `Working` for a running reply.
+The scenarios read the footer row (by `⌂`) for the model, `ask leader status` for the leader, and `Working` for a running reply.
+`pick_model` types an exact model id into the `/model` filter and moves the selection down until the selected row has that exact id. It fails when no row has the id, because a filter also matches longer ids.
 
 - `python3 e2e/tui/real_provider_scenarios.py acceptance` runs the provider-setup scenarios in order; `acceptance`, `providers` and `oauth` in [real_provider_scenarios.py](real_provider_scenarios.py) own the steps.
   The OAuth scenario uses existing credentials from a copy of `~/.ask-t1a-oauth`.

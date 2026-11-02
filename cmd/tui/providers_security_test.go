@@ -167,10 +167,13 @@ func TestInteractiveSecretNotInTranscript(t *testing.T) {
 	})
 	a.requireNoSecret(key)
 	a.resize(termCols, termRows)
-	// The emulator cuts the old rows at the new width, so only a header row that
-	// the program drew at 80 columns ends with the cost.
+	// The emulator cuts the old rows at the new width, so only a footer row that
+	// the program drew at 80 columns ends with the context use.
 	a.waitFor("the screen drawn again at the old width", func(rows []string) bool {
-		return hasRowPrefix(rows, "◢◤ ask") && hasRow(rows, "◢◤ ask", "$0.00") && containsExactRow(rows, strings.Repeat("─", termCols))
+		if strings.HasPrefix(footerRowOf(rows), " ⌂ ") && strings.HasSuffix(footerRowOf(rows), "%") {
+			return containsExactRow(rows, strings.Repeat("─", termCols))
+		}
+		return false
 	})
 	a.requireNoSecret(key)
 

@@ -31,6 +31,9 @@ func newProviderSetup(rt *ACPRuntime, onChange func(generation uint64, provider 
 		CheckKey: auth.NativeKeyCheck(rt.Native),
 		HostID:   rt.Service.Store.HostID,
 		OnChange: func(generation uint64, provider string, change auth.Change) {
+			// The broker holds its change lock here, so the model list only
+			// schedules its work.
+			rt.models.Schedule(provider)
 			kind := protocol.ACPProviderChangeSaved
 			if change == auth.ChangeRemoved {
 				kind = protocol.ACPProviderChangeRemoved
@@ -38,6 +41,7 @@ func newProviderSetup(rt *ACPRuntime, onChange func(generation uint64, provider 
 			onChange(generation, provider, kind)
 		},
 	})
+	rt.models.setGeneration(broker.Generation)
 	return &providerSetup{broker: broker, service: rt.Service, usable: rt.Usable, rows: rt.Rows}
 }
 

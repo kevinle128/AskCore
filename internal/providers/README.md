@@ -10,6 +10,10 @@ Keep authentication methods separate from provider identity; [access terms](../.
 |---|---|
 | Provider and request contracts | [types.go](types.go), [model.go](model.go), [api.go](api.go) |
 | Catalog and compatibility data | [catalog.go](catalog.go), [compat.go](compat.go) |
+| Family rules: which model ids Ask can send a correct request to | [catalog_rules.go](catalog_rules.go) |
+| Generated rows from the embedded models.dev snapshot | [generated_catalog.go](generated_catalog.go), [catalog_snapshot.json](catalog_snapshot.json) |
+| models.dev mapping and download | [modelsdev.go](modelsdev.go), [modelsdev_fetch.go](modelsdev_fetch.go) |
+| The merged model list of a session | [model_set.go](model_set.go) |
 | One settled stream result and message assembly | [stream.go](stream.go), [assembler.go](assembler.go) |
 | Typed failure codes and transport classification | [failure.go](failure.go), [errors.go](errors.go) |
 | Serving registration and captured retry policy | [registry.go](registry.go), [retry.go](retry.go) |
@@ -23,6 +27,31 @@ Each adapter chooses its own libraries.
 [fantasykit](fantasykit/) is adapter infrastructure; its types must not reach the core contract.
 [Faux](faux/) supplies scripted product behavior for offline tests.
 [Cassettes](cassette/) record and replay provider HTTP; see [test guidance](../../docs/testing-llm-cassettes.md).
+
+## Model list
+
+The model list has three layers.
+The first layer is the compiled catalog in `catalog.go`: hand-written rows that win over generated rows with the same provider, id and API.
+The second layer is the generated catalog: models.dev rows from the embedded snapshot, and from a newer download that the cache keeps.
+The third layer is the account list that the vendor gives for the signed-in account.
+`NewModelSet` merges the layers into one immutable `ModelSet`; the app holds it and swaps it after a refresh.
+`Find`, `AvailableModels` and `RecommendedModel` keep their contract over the compiled catalog only.
+
+Every shown row must match a family rule in `catalog_rules.go`.
+A rule sets the wire API, the base URL, the compat flags, the default output limit and context window, and the effort words that the adapter can send.
+models.dev can only narrow the effort words and give limits and prices.
+An id that matches no rule, or a rule that hides its family, gets no row, because Ask cannot build a correct request for it.
+A context window or output limit of 0 means unknown for display; the request then uses the default of the rule.
+Add a rule only after a live request proves the shape for that family.
+
+A known account list keeps only the rows that it names, directly or through an alias or a dated snapshot.
+An unknown list (not read, or refused) keeps all rows of the provider, because inference can still work.
+[auth](../auth/README.md) reads the lists, and the [cache](../settings/README.md) keeps them; this package imports neither.
+
+To update the embedded snapshot, run `ASK_UPDATE_CATALOG=1 go test -run TestCatalogSnapshot ./internal/providers`.
+The test downloads models.dev, keeps the Ask providers and the fields that the mapper reads, and writes `catalog_snapshot.json`.
+Without the variable the test sends no request.
+After an update, run `ASK_UPDATE_DOCS=1 go test -run '^TestReferenceDocs$' ./cmd/tui` to regenerate [the provider reference](../../docs/reference/providers.md).
 
 ## Preparation and recovery boundary
 

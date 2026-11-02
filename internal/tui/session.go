@@ -164,18 +164,15 @@ type sessionView struct {
 	modelSeq uint64
 	// fallback is the saved default that the session did not start on.
 	fallback *protocol.ACPModelFallback
-	// lastRef is the model that the last start or change line named.
-	lastRef modelRef
 	// baseline is the cursor of the last follow cut. A model event at or below
 	// it is already part of the state.
 	baseline protocol.ACPCursor
-	// starts are the placeholders of start lines that wait for the state.
-	starts    []startSlot
+	// starts are the block ids of fallback notices that wait for the state.
+	starts    []string
 	trace     string
 	thinking  protocol.ThinkingLevel
 	thinkTry  protocol.ThinkingLevel
 	ctxTokens int64
-	costMicro int64
 	// modelReq numbers the set-model requests. Only the answer to the latest
 	// request, in the generation it started in, changes the model.
 	modelReq uint64
@@ -204,7 +201,7 @@ type sessionView struct {
 	deferred []ProvidersChangedMsg
 
 	tickPending bool
-	// startShown is true once the start line slot of the session was added.
+	// startShown is true once the start notices of the transcript were added.
 	startShown bool
 	blockSeq   int
 
@@ -322,24 +319,6 @@ func (s *sessionView) modelRow(id string) (protocol.ACPModel, bool) {
 	return protocol.ACPModel{}, false
 }
 
-// modelName is the short name of the current model.
-func (s *sessionView) modelName() string {
-	if s.modelID == "" {
-		return ""
-	}
-	if row, ok := s.modelRow(s.modelID); ok && row.ID != "" {
-		return row.ID
-	}
-	name := s.modelID
-	if i := strings.LastIndex(name, "@"); i >= 0 {
-		name = name[:i]
-	}
-	if i := strings.Index(name, "/"); i >= 0 {
-		name = name[i+1:]
-	}
-	return name
-}
-
 func (s *sessionView) reasoning() bool {
 	row, ok := s.modelRow(s.modelID)
 	return ok && row.Reasoning
@@ -356,8 +335,11 @@ func (s *sessionView) isObserver() bool { return s.sess.Role == protocol.ACPRole
 // ---- screen parts ----
 
 // modalHeight is the number of rows that a selector or box may use: the prompt
-// pane slot.
-func (s *sessionView) modalHeight() int { return promptSlotRows(s.m.height) }
+// pane slot, as layout gives it once the status row has its row. A box that
+// is told more rows than layout gives would lose its last row, the hint.
+func (s *sessionView) modalHeight(status string) int {
+	return max(1, allocate(s.m.height, demand{prompt: promptSlotRows(s.m.height), status: statusRowCount(status)}).prompt)
+}
 
 // Slots implements SlotSource. The root model calls it from View, so it reads
 // state and never waits.
@@ -365,19 +347,20 @@ func (s *sessionView) Slots(width int) Slots {
 	th := s.m.theme
 	out := Slots{
 		Header:  s.headerText(width),
+		Footer:  s.footerText(width),
 		Status:  s.statusText(width),
 		Bar:     s.barRow(width),
 		Pending: s.pendingRows(width),
 	}
 	switch {
 	case s.dlg != nil:
-		out.Editor = s.dlg.slot(s, width, s.modalHeight())
+		out.Editor = s.dlg.slot(s, width, s.modalHeight(out.Status))
 		return out
 	case s.pbox != nil:
-		out.Editor = s.pbox.slot(width, s.modalHeight(), th)
+		out.Editor = s.pbox.slot(width, s.modalHeight(out.Status), th)
 		return out
 	case s.sel != nil:
-		out.Editor = s.sel.slot(width, s.modalHeight(), th)
+		out.Editor = s.sel.slot(width, s.modalHeight(out.Status), th)
 		return out
 	}
 	out.Editor = s.editorSlot(width)

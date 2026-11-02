@@ -88,14 +88,17 @@ The Bubble Tea renderer remains the terminal output owner.
 ## Screen composition
 
 The TUI owns every row of the alternate screen.
-Top to bottom the rows are the header row, a rule, the block pane, queue rows, the status row, a rule, the prompt pane, a rule and the shortcut bar.
+Top to bottom the rows are the header row, a rule, the block pane, queue rows, the status row, a rule, the prompt pane, a rule, the footer row and the shortcut bar.
+The header row holds the logo only.
+The footer row holds the status data: the working directory, the model as `<provider>/<model>` with its thinking level, and the context use. It shows no logo, no link state and no session cost. The status rail and the notices report a lost link, an observer or a detach; the screen does not tell a leader from the in-process agent.
+The [footer design](../plans/261028-1310-account-model-discovery/design.md) owns this order. The viewer takes the whole screen and shows neither the header row nor the footer row.
 The block pane takes all rows that no other part uses.
 Empty parts use no rows.
 A selector or dialog takes the prompt pane slot and keeps the draft.
 A custom interaction can occupy an assigned bounded region under host focus control.
 
 Layout reserves space in a fixed priority order, so that a small terminal keeps the prompt usable.
-The header, the shortcut bar and one prompt row always stay.
+The footer row, the shortcut bar and one prompt row always stay, and the header row shows from 5 rows.
 The prompt pane grows with the draft up to half of the screen height.
 The block pane gives rows away last and keeps at least one row.
 The order and the limits are in [layout.go](../internal/tui/layout.go).
@@ -112,7 +115,7 @@ Fullscreen composition reuses transcript data and does not create another sessio
 
 The editor owns draft text, cursor, selection, undo, paste, and draft revision.
 The transcript owns ordered content blocks and content versions.
-The session view owns execution and queue projections; header, status, pending-input, and bar components read those owners instead of storing copies.
+The session view owns execution and queue projections; footer, status, pending-input, and bar components read those owners instead of storing copies.
 Selectors own their filters, selection, and visible item windows.
 Completion owns its query generation and selected candidate.
 The dialog host owns active and queued interactions and their response lifecycle.
@@ -132,11 +135,11 @@ The mouse acts on the geometry of the last frame and is ignored while a selector
 Closing an interaction restores the prior focus only if its target still exists.
 Agent events are processed regardless of focus.
 
-## Provider setup, secret input and the model line
+## Provider setup, secret input and the model
 
 The [provider setup design](../plans/261010-1424-t1c-provider-setup-design/design.md) is the UI authority for these parts.
 Provider account methods require the leader link; see [the ACP owner](../internal/acp/README.md#provider-methods).
-The in-process agent still uses the model line and the no-model state.
+The in-process agent still uses the no-model state.
 
 **Dialog slot.** `/providers` and its key, login and removal boxes replace the editor slot, as the selectors do, and keep the draft.
 They follow the input order above: the active box receives keys before the editor.
@@ -154,10 +157,12 @@ Do not set it when you sign in.
 **Rail priority.** The status shows one state on the live rail.
 The order is in [status.go](../internal/tui/status.go).
 
-**Model line.** The agent is the authority for the model.
+**Model.** The agent is the authority for the model.
 The state and `model_update` event carry that model to the TUI.
-The [model line renderer](../internal/tui/model_line.go) owns its layout.
-The header row and the reply meta line keep the bare model id, as the user decided.
+The block pane shows no model line: the [footer row](../internal/tui/footer.go) names the model as `<provider>/<model>`, and a choice in `/model` also shows in the status row.
+The reply meta line keeps the bare model id.
+The [start notices](../internal/tui/start_notices.go) own the two notices that can stand at the start of a transcript: the fallback note and the `TEA_TRACE` warning.
+An unknown context window shows as `?` in the footer row and in `/model`; the running model that the account list no longer has shows the note `not in account list` (the tag `unlisted` under 60 columns).
 
 **Default model and fallback.** A choice in `/model` saves the default for new sessions; sign-in keeps the default and the current model.
 This is a user decision; see section 3 of the approved design.

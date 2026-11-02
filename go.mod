@@ -412,7 +412,7 @@ require (
 	pluginrpc.com/pluginrpc v0.5.0 // indirect
 )
 
-replace charm.land/fantasy => github.com/kevinle128/fantasy v0.0.0-20261005094512-08976763bfea
+replace charm.land/fantasy => github.com/kevinle128/fantasy v0.0.0-20261101125124-e894229ccae5
 
 // The Ask copy raises one scanner limit. See third_party/acp-go-sdk/PATCH.txt.
 replace github.com/coder/acp-go-sdk => ./third_party/acp-go-sdk

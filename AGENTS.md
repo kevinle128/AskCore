@@ -47,7 +47,7 @@ The users/posts demo is the reference example for a new entity (see design secti
 AskCore/
 ├── cmd/
 │   ├── server/            # Daemon: HTTP + gRPC today; `-migrate` applies migrations and exits
-│   └── tui/               # `ask` binary: TUI, headless `ask -p`, `ask auth`, `ask acp`, `ask leader`, `ask connect`, `ask version`. See docs section 7.3
+│   └── tui/               # `ask` binary: TUI, headless `ask -p`, `ask auth`, `ask models`, `ask acp`, `ask leader`, `ask connect`, `ask version`. See docs section 7.3
 ├── internal/              # Package map: internal/README.md (the owner)
 │   ├── app/               # Composition root (fx)
 │   ├── config/  logs/     # Config (viper) and zap logger
@@ -109,9 +109,10 @@ For TUI design files, follow the skill `.claude/skills/ask-tui-design`.
 
 ### The `ask` binary
 
-The leader flows need a binary named `ask`. A client starts the leader from a binary named `ask` that is next to the caller or on the `PATH` (`internal/leader/spawn.go`). `go run ./cmd/tui` makes a binary named `tui`, so the TUI falls back to the in-process agent and `/providers` is refused. Build a named binary for the TUI, `connect`, and `leader`: `go build -o ask ./cmd/tui`. `ask -p`, `ask auth`, `ask version`, and `ask acp` need no leader and work with `go run ./cmd/tui`. The full CLI reference is `docs/cli.md`.
+The leader flows need a binary named `ask`. A client starts the leader from a binary named `ask` that is next to the caller or on the `PATH` (`internal/leader/spawn.go`). `go run ./cmd/tui` makes a binary named `tui`, so the TUI falls back to the in-process agent and `/providers` is refused. Build a named binary for the TUI, `connect`, and `leader`: `go build -o ask ./cmd/tui`. `ask -p`, `ask auth`, `ask models`, `ask version`, and `ask acp` need no leader and work with `go run ./cmd/tui`. The full CLI reference is `docs/cli.md`.
 
-- `ask` (no arguments, on a terminal) - Open the full-screen TUI on the alternate screen. It connects to the local leader and starts one when none runs. Only when that connect fails at startup does it run an agent in process; the header row then shows `in-process`. With no usable provider the session has no model: use `/providers` to sign in. Keys, folding, mouse, `/copy`, and `TEA_TRACE` are in `internal/tui/README.md` and `docs/cli.md`.
+- `ask` (no arguments, on a terminal) - Open the full-screen TUI on the alternate screen. It connects to the local leader and starts one when none runs. Only when that connect fails at startup does it run an agent in process. The screen does not show the difference: `/providers` answers `Needs the leader; this session runs in process.` and `ask leader status` reports `no leader is running`. With no usable provider the session has no model: use `/providers` to sign in. Keys, folding, mouse, `/copy`, and `TEA_TRACE` are in `internal/tui/README.md` and `docs/cli.md`.
+- `ask models refresh [--provider P]` - Read the model lists of the signed-in accounts and the models.dev metadata now, and write `<ASK_HOME>/model-cache.json`. It starts no leader and no database, and `ASK_DISABLE_MODEL_REFRESH` does not stop it. It prints one `<provider>  <n> models  <known|unknown|no credential>` line for each provider and one `metadata  <updated|not modified|failed>` line. Exit codes: 0 done (also with an `unknown` provider), 1 usage or local error such as a cache write that fails, 130, 143, 129.
 - `ask acp` (`go run ./cmd/tui acp`) - Serve ACP v1 over stdio. One Agent per session.
   It dispatches before prompt and mode parsing and takes no other argument.
   It uses `internal/app.ACPModule` with the shared native auth composition: no listener, no database, no leader, and no credential input on the protocol connection.

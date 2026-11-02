@@ -7,37 +7,38 @@ from unittest.mock import patch
 from subprocess import CompletedProcess
 
 from run import (ASK_FAKE_KEY, ECHO_LINES, ECHO_REPLY, PROVIDER_HINT, PROVIDER_NAMES, SELECTOR_HINT, Session,
-                 assert_complete_stream, assert_exit_line, assert_idle_screen, assert_marker, assert_mouse_enabled,
-                 assert_one_draft, assert_provider_box, assert_selector_screen, assert_shell, assert_terminal_restored,
-                 ask_environment, ask_ready, ask_ready_in_process, hide_typed_secret, marker_row, output_bytes,
+                 assert_complete_stream, assert_exit_line, assert_idle_screen, assert_link, assert_marker,
+                 assert_mouse_enabled, assert_one_draft, assert_provider_box, assert_selector_screen, assert_shell,
+                 assert_terminal_restored, ask_environment, ask_ready, hide_typed_secret, marker_row, output_bytes,
                  pane_rows, provider_names, scan_secrets, secret_values, tool_rows)
 
 COLUMNS, ROWS = 80, 24
 RULE = '─' * COLUMNS
-HEADER = '◢◤ ask  ● leader 7c1e  ⌂ ~/src/p         faux-1  ▱▱▱▱▱▱▱▱ 0%  $0.00'
+HEADER_ROW = ' ◢◤ ask'
+FOOTER = ' ⌂ ~/src/p     faux/faux-1  ▱▱▱▱▱▱▱▱ 0% '
 BAR = ' Tab blocks · ctrl+t thinking · ctrl+l model · / commands'
 PLACEHOLDER = ' ❯ Ask anything  ·  / commands  ·  ctrl+l model'
 
 
-def frame(pane=(), prompt=PLACEHOLDER, bar=BAR, header=HEADER, rows=ROWS, columns=COLUMNS):
-    """A full frame: header, rule, pane rows, rule, one prompt row, rule, bar."""
-    body = list(pane) + [''] * (rows - 6 - len(pane))
-    assert len(body) == rows - 6, 'the pane of the control frame is too tall'
-    return '\n'.join([header, '─' * columns, *body, '─' * columns, prompt, '─' * columns, bar])
+def frame(pane=(), prompt=PLACEHOLDER, bar=BAR, footer=FOOTER, rows=ROWS, columns=COLUMNS, header=HEADER_ROW):
+    """A full frame: header row, rule, pane rows, rule, one prompt row, rule, footer row, bar."""
+    body = list(pane) + [''] * (rows - 7 - len(pane))
+    assert len(body) == rows - 7, 'the pane of the control frame is too tall'
+    return '\n'.join([header, '─' * columns, *body, '─' * columns, prompt, '─' * columns, footer, bar])
 
 
-def slot_frame(title, rows_text, hint, pane=('  model  faux/faux-1',), columns=COLUMNS):
+def slot_frame(title, rows_text, hint, pane=(), footer=FOOTER, columns=COLUMNS):
     """A frame whose prompt slot holds a box with `rows_text` rows."""
     inner = [('│ ' + text).ljust(columns - 1) + '│' for text in rows_text]
     box = [('╭─ ' + title + ' ').ljust(columns - 1, '─') + '╮', *inner, '╰' + '─' * (columns - 2) + '╯', '   ' + hint]
-    body_rows = ROWS - 2 - 1 - 1 - len(box) - 1
+    body_rows = ROWS - 6 - len(box)
     body = list(pane) + [''] * (body_rows - len(pane))
-    return '\n'.join([HEADER, RULE, *body, RULE, *box, RULE, BAR])
+    return '\n'.join([HEADER_ROW, RULE, *body, RULE, *box, RULE, footer, BAR])
 
 
 class ShellControls(unittest.TestCase):
     def test_shell_accepts_the_idle_frame(self):
-        state = {'text': frame(), 'cursor': {'x': 3, 'y': ROWS - 3}}
+        state = {'text': frame(), 'cursor': {'x': 3, 'y': ROWS - 4}}
         assert_shell(state, COLUMNS, ROWS)
         assert_idle_screen(state, COLUMNS, ROWS)
 
@@ -45,48 +46,73 @@ class ShellControls(unittest.TestCase):
         good = frame()
         for name, text in [
                 ('header gone', good.replace('◢◤ ask', 'ask', 1)),
-                ('header twice', good.replace('\n\n', '\n' + HEADER + '\n', 1)),
-                ('inline leader label', good.replace('leader 7c1e', 'in-process')),
-                ('header rule short', good.replace(RULE, '─' * (COLUMNS - 1), 1)),
+                ('header twice', frame(pane=[HEADER_ROW])),
+                ('header with a link', frame(header=' ◢◤ ask  ● leader 7c1e')),
+                ('header rule gone', good.replace(RULE + '\n', '\n', 1)),
+                ('footer gone', frame(footer='')),
+                ('model line drawn', frame(pane=['  model  faux/faux-1'])),
+                ('leader label in the footer', frame(footer=' ⌂ ~/src/p  ● leader 7c1e  faux/faux-1  ▱▱▱▱▱▱▱▱ 0% ')),
+                ('prompt rule short', good.replace(RULE, '─' * (COLUMNS - 1))),
                 ('bar gone', frame(bar=' something else')),
                 ('row too wide', frame(pane=['x' * (COLUMNS + 1)])),
                 ('one row short', '\n'.join(good.split('\n')[1:]))]:
             with self.subTest(name), self.assertRaises(AssertionError):
-                assert_shell({'text': text, 'cursor': {'x': 3, 'y': ROWS - 3}}, COLUMNS, ROWS)
+                assert_shell({'text': text, 'cursor': {'x': 3, 'y': ROWS - 4}}, COLUMNS, ROWS)
 
-    def test_short_header_at_40_columns(self):
-        short = frame(header='◢◤ ask ● 7c1e            faux-1 0% ', columns=40, rows=14,
+    def test_short_footer_at_40_columns(self):
+        short = frame(footer='                 faux/faux-1 0% ', columns=40, rows=14,
                       prompt=' ❯ Ask anything', bar=' Tab blocks · / commands')
         assert_shell({'text': short}, 40, 14)
-        with self.assertRaises(AssertionError):
-            assert_shell({'text': short.replace('● 7c1e', 'leader')}, 40, 14)
+        for name, invalid in [('leader id', short.replace('                 faux/faux-1', ' ● 7c1e   faux/faux-1')),
+                              ('long form', short.replace('                 faux/faux-1 0%', ' ⌂ ~/src/p  faux/faux-1  ▱▱▱▱▱▱▱▱ 0%'))]:
+            with self.subTest(name), self.assertRaises(AssertionError):
+                assert_shell({'text': invalid}, 40, 14)
 
-    def test_in_process_header(self):
-        header = '◢◤ ask  ○ in-process  ⌂ ~/src/p         faux-1  ▱▱▱▱▱▱▱▱ 0%  $0.00'
-        assert_shell({'text': frame(header=header)}, COLUMNS, ROWS, 'in-process')
-        with self.assertRaises(AssertionError):
-            assert_shell({'text': frame(header=header)}, COLUMNS, ROWS, 'leader')
+    def test_footer_has_no_link_state(self):
+        # The same row shows the leader, the in-process agent, an observer and a lost link.
+        assert_shell({'text': frame()}, COLUMNS, ROWS)
+        for word in ['● leader 7c1e', '◌ leader starting', '○ in-process', '◉ observer 3f9a', '● leader lost']:
+            with self.subTest(word), self.assertRaises(AssertionError):
+                assert_shell({'text': frame(footer=f' ⌂ ~/src/p  {word}  faux/faux-1  ▱▱▱▱▱▱▱▱ 0% ')}, COLUMNS, ROWS)
+        # A directory that holds a link word is not a link state.
+        assert_shell({'text': frame(footer=' ⌂ /tmp/leader-lost  faux/faux-1  ▱▱▱▱▱▱▱▱ 0% ')}, COLUMNS, ROWS)
+
+    def test_link_comes_from_the_leader_and_the_process_table(self):
+        status = {'instanceId': '7c1e5a90b3d24f68', 'sessions': 1}
+        leader = [(10, 'ask leader')]
+        with patch('run.leader_processes', return_value=leader), patch('run.leader_status', return_value=status):
+            assert_link('ask', {}, False)
+            with self.assertRaises(AssertionError):
+                assert_link('ask', {}, True)
+        with patch('run.leader_processes', return_value=leader), patch('run.leader_status', return_value=dict(status, sessions=0)):
+            with self.assertRaises(AssertionError):
+                assert_link('ask', {}, False)
+        with patch('run.leader_processes', return_value=[]), patch('run.leader_status', return_value=None):
+            assert_link('ask', {}, True)
+            with self.assertRaises(AssertionError):
+                assert_link('ask', {}, False)
+        with patch('run.leader_processes', return_value=[]), patch('run.leader_status', return_value=status):
+            with self.assertRaises(AssertionError):
+                assert_link('ask', {}, True)
 
     def test_idle_cursor_and_placeholder(self):
-        state = {'text': frame(), 'cursor': {'x': 3, 'y': ROWS - 3}}
-        for invalid in [dict(state, cursor={'x': 4, 'y': ROWS - 3}), dict(state, cursor={'x': 3, 'y': 0}),
+        state = {'text': frame(), 'cursor': {'x': 3, 'y': ROWS - 4}}
+        for invalid in [dict(state, cursor={'x': 4, 'y': ROWS - 4}), dict(state, cursor={'x': 3, 'y': 0}),
                         dict(state, text=frame(prompt=' ❯ typed text')),
-                        dict(state, text=frame(header=HEADER.replace('faux-1', 'other')))]:
+                        dict(state, text=frame(footer=FOOTER.replace('faux/faux-1', 'other/other')))]:
             with self.subTest(text=invalid['text'][:40], cursor=invalid['cursor']), self.assertRaises(AssertionError):
                 assert_idle_screen(invalid, COLUMNS, ROWS)
 
     def test_ready(self):
         assert ask_ready({'text': frame()})
-        assert not ask_ready({'text': frame(header='◢◤ ask  ◌ leader starting')})
-        assert not ask_ready({'text': frame(header=HEADER.replace('leader 7c1e', 'in-process'))})
+        assert not ask_ready({'text': frame(footer=' ⌂ ~/src/p                       ▱▱▱▱▱▱▱▱ 0% ')}), 'no model yet'
+        assert not ask_ready({'text': frame(header='')}), 'no header row'
         assert not ask_ready({'text': frame(prompt=' ❯ draft')})
-        assert ask_ready_in_process({'text': frame(header=HEADER.replace('● leader 7c1e', '○ in-process'))})
-        assert not ask_ready_in_process({'text': frame()})
 
     def test_one_draft(self):
-        state = {'text': frame(prompt=' ❯ draft'), 'cursor': {'x': 8, 'y': ROWS - 3}}
+        state = {'text': frame(prompt=' ❯ draft'), 'cursor': {'x': 8, 'y': ROWS - 4}}
         assert_one_draft(state, 'draft', ROWS)
-        for invalid in [dict(state, cursor={'x': 7, 'y': ROWS - 3}), dict(state, cursor={'x': 8, 'y': 0}),
+        for invalid in [dict(state, cursor={'x': 7, 'y': ROWS - 4}), dict(state, cursor={'x': 8, 'y': 0}),
                         dict(state, text=frame(pane=['draft'], prompt=' ❯ draft')), dict(state, text=frame(prompt=' ❯ draf'))]:
             with self.subTest(state=invalid), self.assertRaises(AssertionError):
                 assert_one_draft(invalid, 'draft', ROWS)
@@ -110,9 +136,9 @@ class SlotControls(unittest.TestCase):
         with self.assertRaises(AssertionError):
             assert_selector_screen({'text': text}, COLUMNS + 1, ROWS)
 
-    def test_selector_keeps_the_block_pane(self):
+    def test_selector_keeps_the_footer_row(self):
         gone = slot_frame('Select model', ['⌕ type to filter', '  ● faux', '❯   faux-1' + ' ' * 40 + '128k  current'],
-                          SELECTOR_HINT, pane=())
+                          SELECTOR_HINT, footer=FOOTER.replace('faux/faux-1', 'other/other'))
         with self.assertRaises(AssertionError):
             assert_selector_screen({'text': gone}, COLUMNS, ROWS)
 
@@ -137,7 +163,7 @@ class SlotControls(unittest.TestCase):
 
 class PaneControls(unittest.TestCase):
     def collapsed(self):
-        return ['  model  faux/faux-1', '', '  ❯ echo out-01', '    out-02', '    out-03', '    … +6 lines · e to expand', '',
+        return ['  ❯ echo out-01', '    out-02', '    out-03', '    … +6 lines · e to expand', '',
                 '  ◆ echo ' + ECHO_REPLY, '', '  ' + ECHO_REPLY, '  faux-1 · 0.8s · ↑45 ↓16']
 
     def test_pane_rows_end_at_the_rule_above_the_prompt(self):
@@ -149,33 +175,33 @@ class PaneControls(unittest.TestCase):
         state = {'text': frame(pane=self.collapsed())}
         assert tool_rows(state, COLUMNS) == ['  ◆ echo ' + ECHO_REPLY]
         shown = self.collapsed()
-        shown[7:8] = ['┃ ◆ echo ' + ECHO_REPLY, *('┃   ' + line for line in ECHO_LINES[:3])]
+        shown[5:6] = ['┃ ◆ echo ' + ECHO_REPLY, *('┃   ' + line for line in ECHO_LINES[:3])]
         assert len(tool_rows({'text': frame(pane=shown)}, COLUMNS)) == 4
         with self.assertRaises(AssertionError):
             tool_rows({'text': frame(pane=['  nothing'])}, COLUMNS)
 
     def test_marker(self):
-        pane = ['row'] * 17 + ['                                     ▼ End']
+        pane = ['row'] * 16 + ['                                     ▼ End']
         state = {'text': frame(pane=pane)}
-        assert marker_row(state) == (ROWS - 5, pane[-1])
+        assert marker_row(state) == (ROWS - 6, pane[-1])
         assert_marker(state, COLUMNS, ROWS, r'▼ End')
-        for name, invalid in [('off centre', frame(pane=['row'] * 17 + ['                                       ▼ End'])),
-                              ('wrong row', frame(pane=['row'] * 16 + [pane[-1], 'row'])),
-                              ('wrong text', frame(pane=['row'] * 17 + ['                              ▼ 3 new lines · End'])),
+        for name, invalid in [('off centre', frame(pane=['row'] * 16 + ['                                       ▼ End'])),
+                              ('wrong row', frame(pane=['row'] * 15 + [pane[-1], 'row'])),
+                              ('wrong text', frame(pane=['row'] * 16 + ['                              ▼ 3 new lines · End'])),
                               ('none', frame(pane=['row']))]:
             with self.subTest(name), self.assertRaises(AssertionError):
                 assert_marker({'text': invalid}, COLUMNS, ROWS, r'▼ End')
         new = '                              ▼ 3 new lines · End'
-        assert_marker({'text': frame(pane=['row'] * 17 + [new])}, COLUMNS, ROWS, r'▼ \d+ new lines · End')
+        assert_marker({'text': frame(pane=['row'] * 16 + [new])}, COLUMNS, ROWS, r'▼ \d+ new lines · End')
 
     def test_complete_stream(self):
         words = [f'm{i:03d}' for i in range(100)]
         reply = '\n'.join('  ' + ' '.join(words[i:i + 20]) for i in range(0, 100, 20))
-        text = '◢◤ ask  ● leader 7c1e\n  ❯ ' + ' '.join(words[:20]) + '\n    … +4 lines · e to expand\n\n' + reply
+        text = ' ◢◤ ask\n' + '─' * 120 + '\n  ❯ ' + ' '.join(words[:20]) + '\n    … +4 lines · e to expand\n\n' + reply
         assert_complete_stream(text, 120)
         for name, invalid in [('missing word', text.replace('m050', 'm049', 1)), ('twice', text + '\n' + reply),
                               ('no fold', text.replace('… +4 lines · e to expand', '')),
-                              ('two headers', text + '\n◢◤ ask'), ('wide', text + '\n' + 'x' * 121)]:
+                              ('two headers', text + '\n ◢◤ ask'), ('wide', text + '\n' + 'x' * 121)]:
             with self.subTest(name), self.assertRaises(AssertionError):
                 assert_complete_stream(invalid, 120)
 
@@ -209,7 +235,7 @@ class ExitControls(unittest.TestCase):
         assert_exit_line({'text': '  ⏏ Detached from session ac86.\nask: session sess_ac86ab6cdf9e90bc\n\n'})
         for name, invalid in [('missing', '  ⏏ Detached from session ac86.'),
                               ('not last', 'ask: session sess_ac86\nafter'),
-                              ('frame left', HEADER + '\nask: session sess_ac86'),
+                              ('frame left', FOOTER + '\nask: session sess_ac86'),
                               ('bar left', BAR + '\nask: session sess_ac86'),
                               ('empty', '\n\n')]:
             with self.subTest(name), self.assertRaises(AssertionError):

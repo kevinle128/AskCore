@@ -256,12 +256,12 @@ func (g *providerRig) firstRunEnv(extra ...string) []string {
 	return append(g.env("ASK_FAUX=0"), extra...)
 }
 
-// start runs `ask` on a terminal and waits for the leader in the header row.
+// start runs `ask` on a terminal and waits for the leader in the footer row.
 func (g *providerRig) start(env []string) *askTerm {
 	g.t.Helper()
 	a := startAskTerm(g.t, g.bin, g.home, askTermOptions{}, env...)
 	a.waitText("Ask anything")
-	requireLeaderHeader(g.t, a, g.bin, g.home)
+	requireLeaderLink(g.t, a, g.bin, g.home)
 	return a
 }
 
@@ -285,7 +285,7 @@ func (g *providerRig) chatGPTLogin() {
 	g.p.mu.Unlock()
 
 	cmd := exec.Command(acpBinary(t), "auth", "login", "--provider", "openai", "--method", "openai-chatgpt")
-	cmd.Env = []string{"PATH=" + os.Getenv("PATH"), "HOME=" + t.TempDir(), "ASK_HOME=" + g.home}
+	cmd.Env = []string{"PATH=" + os.Getenv("PATH"), "HOME=" + t.TempDir(), "ASK_HOME=" + g.home, disableModelRefreshEnv + "=1"}
 	for k, v := range g.f.env() {
 		cmd.Env = append(cmd.Env, k+"="+v)
 	}
@@ -338,7 +338,7 @@ func (a *askTerm) requireNoSecret(secrets ...string) {
 
 func (a *askTerm) waitNoModelHeader() {
 	a.t.Helper()
-	a.waitFor("no model in the header row", func(rows []string) bool { return hasRow(rows, "leader ", "no model") })
+	a.waitFor("no model in the footer row", func(rows []string) bool { return footerHas(rows, "no model") })
 }
 
 // resize changes the terminal size. The process has no controlling terminal,
@@ -588,7 +588,8 @@ func TestInteractiveTokenPlanBadKeyAtFirstPrompt(t *testing.T) {
 	a.write("deepseek")
 	a.waitRow("│", "deepseek")
 	a.write("\r")
-	a.waitFor("the model in the header row", func(rows []string) bool { return hasRow(rows, "leader ", "deepseek") })
+	a.waitFor("the model in the footer row", func(rows []string) bool { return footerHas(rows, "deepseek") })
+	a.waitFor("the editor after model selection", func(rows []string) bool { return !containsRow(rows, "Select model") })
 
 	a.write("say hello\r")
 	a.waitRow("✗ Error (auth): alibaba-token-plan refused the key (HTTP 401).")
@@ -599,33 +600,19 @@ func TestInteractiveTokenPlanBadKeyAtFirstPrompt(t *testing.T) {
 	a.quitDetached()
 }
 
-// ---- start line ----
+// ---- footer row ----
 
-func TestInteractiveStartLineShowsPair(t *testing.T) {
+func TestInteractiveFooterShowsPair(t *testing.T) {
 	g := newProviderRig(t)
 	a := g.start(g.firstRunEnv("ALIBABA_TOKEN_PLAN_API_KEY=" + fakeSecret("tp-test-")))
-	pair := regexp.MustCompile(`^  model  (alibaba-token-plan/\S+)`)
-	var line string
-	var at int
-	a.waitFor("the start line", func(rows []string) bool {
-		for i, r := range rows {
-			if m := pair.FindStringSubmatch(r); m != nil {
-				line, at = m[1], i
-				return true
-			}
-		}
-		return false
+	// The footer row names the model as provider and id; the long id can be cut
+	// at the end, the provider stays whole.
+	a.waitFor("the pair in the footer row", func(rows []string) bool {
+		return footerHas(rows, "alibaba-token-plan/deepseek-v4.1")
 	})
-	// The line is the first row of the block pane: the header row and its rule
-	// come directly before it.
-	rows := a.rows()
-	require.Equal(t, strings.Repeat("─", termCols), rows[at-1], "the header rule precedes the line:\n%s", a.screen())
-	require.True(t, strings.HasPrefix(rows[at-2], "◢◤ ask"), "the header row precedes the rule:\n%s", a.screen())
-	bare := strings.TrimPrefix(line, "alibaba-token-plan/")
-	a.waitFor("the bare model in the header row", func(rows []string) bool {
-		return hasRow(rows, "leader ", bare) && !hasRow(rows, "leader ", "alibaba-token-plan/")
-	})
-	require.Equal(t, "deepseek-v4.1-flash", bare)
+	// The header row holds the logo only, and the pane has no model line.
+	require.False(t, hasRowPrefix(a.rows(), "  model  "), "the pane has a model line:\n%s", a.screen())
+	require.Equal(t, " ◢◤ ask", a.rows()[0], "the header row holds the logo only:\n%s", a.screen())
 	a.quitDetached()
 }
 
@@ -687,7 +674,7 @@ func TestInteractiveProviderBusyTwoClients(t *testing.T) {
 
 	second := startAskTerm(t, g.bin, g.home, askTermOptions{}, g.firstRunEnv()...)
 	second.waitText("Ask anything")
-	requireLeaderHeader(t, second, g.bin, g.home)
+	requireLeaderLink(t, second, g.bin, g.home)
 	second.openProviders()
 	second.pickProvider("grok")
 	second.waitRow("Could not start: another client is signing in to xai.")
@@ -706,7 +693,7 @@ func TestInteractiveLoginLeaderLost(t *testing.T) {
 	g := newProviderRig(t)
 	a := g.start(g.firstRunEnv())
 	a.startGrokLogin()
-	oldLeader := requireLeaderHeader(t, a, g.bin, g.home)
+	oldLeader := requireLeaderLink(t, a, g.bin, g.home)
 
 	ctx, cancel := context.WithTimeout(context.Background(), clientWait)
 	defer cancel()
@@ -806,13 +793,13 @@ func TestInteractiveRemoveCurrentProvider(t *testing.T) {
 	// ask for a provider.
 	env := g.firstRunEnv("ANTHROPIC_API_KEY=" + fakeSecret("sk-ant-test-"))
 	first := g.start(env)
-	first.waitFor("a model in the header row", func(rows []string) bool {
-		return hasRow(rows, "leader ", "deepseek") && !containsRow(rows, "no model")
+	first.waitFor("a model in the footer row", func(rows []string) bool {
+		return footerHas(rows, "deepseek") && !containsRow(rows, "no model")
 	})
 	second := startAskTerm(t, g.bin, g.home, askTermOptions{}, env...)
 	second.waitText("Ask anything")
-	requireLeaderHeader(t, second, g.bin, g.home)
-	second.waitFor("a model in the header row", func(rows []string) bool { return hasRow(rows, "leader ", "deepseek") })
+	requireLeaderLink(t, second, g.bin, g.home)
+	second.waitFor("a model in the footer row", func(rows []string) bool { return footerHas(rows, "deepseek") })
 
 	first.openProviders()
 	first.write("alibaba")
@@ -853,7 +840,7 @@ func TestInteractiveRemovalCancelsOtherClientSignIn(t *testing.T) {
 
 	signer := startAskTerm(t, g.bin, g.home, askTermOptions{}, g.firstRunEnv()...)
 	signer.waitText("Ask anything")
-	requireLeaderHeader(t, signer, g.bin, g.home)
+	requireLeaderLink(t, signer, g.bin, g.home)
 	signer.openProviders()
 	signer.waitFor("the signed in row", func(rows []string) bool { return hasRow(rows, "xAI Grok sign-in", "signed in") })
 	signer.write("grok")
@@ -898,18 +885,17 @@ func TestInteractiveDefaultModelSurvivesNewSession(t *testing.T) {
 	a.waitText("Default model: openai/gpt-5.5")
 	before := liveSessionIDs(t, g.bin, g.home)
 	a.write("/new\r")
-	a.waitFor("the new session starts on the saved default", func(rows []string) bool {
-		return countRows(rows, "  model  openai/gpt-5.5") == 2
-	})
-	after := liveSessionIDs(t, g.bin, g.home)
-	require.Len(t, after, len(before)+1, "the command made a new leader session")
+	var after []string
+	require.Eventually(t, func() bool {
+		after = liveSessionIDs(t, g.bin, g.home)
+		return len(after) == len(before)+1
+	}, clientWait, 50*time.Millisecond, "the command made a new leader session")
+	a.waitFor("the new session on the saved default", func(rows []string) bool { return footerHas(rows, "openai/gpt-5.5") })
+	require.False(t, hasRowPrefix(a.rows(), "  model  "), "the pane has a model line:\n%s", a.screen())
 	a.quitDetached()
 
 	b := g.start(env)
-	b.waitFor("the start line with the saved default", func(rows []string) bool {
-		return hasRow(rows, "  model  openai/gpt-5.5")
-	})
-	b.waitFor("the model in the header row", func(rows []string) bool { return hasRow(rows, "leader ", "gpt-5.5") })
+	b.waitFor("the saved default in the footer row", func(rows []string) bool { return footerHas(rows, "openai/gpt-5.5") })
 	info, err := os.Stat(filepath.Join(g.home, "settings.json"))
 	require.NoError(t, err)
 	require.Equal(t, os.FileMode(0o600), info.Mode().Perm())
@@ -925,7 +911,7 @@ func TestInteractiveDemoWorksAfterNativeDefault(t *testing.T) {
 	a.quitDetached()
 
 	b := g.start(g.env())
-	b.waitRow("  model  alibaba-token-plan/deepseek")
+	b.waitFor("the model in the footer row", func(rows []string) bool { return footerHas(rows, "alibaba-token-plan/deepseek") })
 	b.selectModel("faux-1", "faux-1", "faux-1")
 	b.write("say hello\r")
 	b.waitReplyMeta("faux-1")
@@ -954,11 +940,11 @@ func TestInteractiveFallbackNoticeWhenDefaultRemoved(t *testing.T) {
 	a.quitDetached()
 
 	b := g.start(g.firstRunEnv())
-	b.waitFor("the start line of the next choice", func(rows []string) bool {
-		return hasRow(rows, "  model  alibaba-token-plan/")
+	b.waitFor("the next choice in the footer row", func(rows []string) bool {
+		return footerHas(rows, "alibaba-token-plan/")
 	})
 	b.waitRow("Default model openai/gpt-5.5 is not usable (no credential).")
-	b.waitFor("the model in the header row", func(rows []string) bool { return hasRow(rows, "leader ", "deepseek") })
+	b.waitFor("the model in the footer row", func(rows []string) bool { return footerHas(rows, "deepseek") })
 	b.quitDetached()
 }
 
@@ -967,7 +953,7 @@ func TestInteractiveProvidersChangedSecondClient(t *testing.T) {
 	driver := g.start(g.firstRunEnv())
 	observer := startAskTerm(t, g.bin, g.home, askTermOptions{}, g.firstRunEnv()...)
 	observer.waitText("Ask anything")
-	requireLeaderHeader(t, observer, g.bin, g.home)
+	requireLeaderLink(t, observer, g.bin, g.home)
 	observer.openProviders()
 	observer.write(strings.Repeat(keyDown, 5)) // the xAI Grok row
 	observer.waitFor("the selection on the Grok row", func(rows []string) bool {

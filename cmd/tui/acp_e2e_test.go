@@ -164,7 +164,7 @@ func startE2E(t *testing.T, o e2eOptions) *e2ePeer {
 		home = filepath.Join(root, "ask-home")
 		require.NoError(t, os.MkdirAll(home, 0o700))
 	}
-	env := []string{"PATH=" + os.Getenv("PATH"), "HOME=" + root, "ASK_HOME=" + home, "ASK_FAUX=1", "TZ=Asia/Saigon"}
+	env := []string{"PATH=" + os.Getenv("PATH"), "HOME=" + root, "ASK_HOME=" + home, "ASK_FAUX=1", "TZ=Asia/Saigon", disableModelRefreshEnv + "=1"}
 	for k, v := range o.env {
 		env = append(env, k+"="+v)
 	}
@@ -947,7 +947,7 @@ func TestACPE2ERemove(t *testing.T) {
 func askAuth(t *testing.T, home, input string, args ...string) (string, error) {
 	t.Helper()
 	cmd := exec.Command(acpBinary(t), append([]string{"auth"}, args...)...)
-	cmd.Env = []string{"PATH=" + os.Getenv("PATH"), "HOME=" + t.TempDir(), "ASK_HOME=" + home}
+	cmd.Env = []string{"PATH=" + os.Getenv("PATH"), "HOME=" + t.TempDir(), "ASK_HOME=" + home, disableModelRefreshEnv + "=1"}
 	cmd.Stdin = strings.NewReader(input)
 	out, err := cmd.CombinedOutput()
 	return string(out), err
@@ -1680,7 +1680,7 @@ func TestACPE2ERetryUsageProvider(t *testing.T) {
 func startProductionOAuth(t *testing.T, home string, env map[string]string) *oauthProcess {
 	t.Helper()
 	cmd := exec.Command(acpBinary(t), "auth", "login", "--provider", "anthropic", "--method", "anthropic-oauth", "--interaction", "copy-code")
-	cmd.Env = []string{"PATH=" + os.Getenv("PATH"), "HOME=" + t.TempDir(), "ASK_HOME=" + home}
+	cmd.Env = []string{"PATH=" + os.Getenv("PATH"), "HOME=" + t.TempDir(), "ASK_HOME=" + home, disableModelRefreshEnv + "=1"}
 	for k, v := range env {
 		cmd.Env = append(cmd.Env, k+"="+v)
 	}

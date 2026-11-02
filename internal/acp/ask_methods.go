@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"slices"
 	"strings"
 
 	"AskCore/internal/agent"
@@ -153,12 +154,16 @@ func (a *Adapter) models(ctx context.Context, raw json.RawMessage) (any, error) 
 	if err != nil {
 		return nil, err
 	}
+	if a.cfg.RefreshModels != nil {
+		a.cfg.RefreshModels()
+	}
 	rows := a.cfg.Models()
 	// Only a host with provider setup can tell which providers are usable. Without
 	// them the flag is not echoed, so the client knows the list is not filtered.
 	filter := req.UsableOnly && a.cfg.ProviderSetup != nil
 	usable := map[string]bool{}
-	out := protocol.ACPModelsResult{Current: modelID(s.Agent().State().Model), Models: make([]protocol.ACPModel, 0, len(rows)), UsableOnly: filter}
+	current := s.Agent().State().Model
+	out := protocol.ACPModelsResult{Current: modelID(current), Models: make([]protocol.ACPModel, 0, len(rows)+1), UsableOnly: filter}
 	if a.cfg.DefaultModel != nil {
 		// A store that cannot be read means no default; the list still works.
 		if id, err := a.cfg.DefaultModel(ctx); err == nil {
@@ -176,13 +181,28 @@ func (a *Adapter) models(ctx context.Context, raw json.RawMessage) (any, error) 
 				continue
 			}
 		}
-		out.Models = append(out.Models, protocol.ACPModel{
-			ModelID: modelID(m), Provider: m.Provider, ID: m.ID, Name: m.Name, API: string(m.API),
-			Reasoning: m.Reasoning, Input: append([]string{}, m.Input...),
-			ContextWindow: m.ContextWindow, MaxTokens: m.MaxTokens,
-		})
+		out.Models = append(out.Models, acpModel(m))
+	}
+	// A refresh can remove the session model from the list, and the filter
+	// can hide it. The client reads the context window and the thinking
+	// support of the session model from its row, so the row always stays.
+	// The session keeps its model either way.
+	hasRow := func(m providers.Model) bool { return modelID(m) == out.Current }
+	if out.Current != "" && !slices.ContainsFunc(out.Models, func(r protocol.ACPModel) bool { return r.ModelID == out.Current }) {
+		row := acpModel(current)
+		row.NotInAccount = !slices.ContainsFunc(rows, hasRow)
+		out.Models = append(out.Models, row)
 	}
 	return out, nil
+}
+
+// acpModel is the wire row of a model.
+func acpModel(m providers.Model) protocol.ACPModel {
+	return protocol.ACPModel{
+		ModelID: modelID(m), Provider: m.Provider, ID: m.ID, Name: m.Name, API: string(m.API),
+		Reasoning: m.Reasoning, Input: append([]string{}, m.Input...),
+		ContextWindow: m.ContextWindow, MaxTokens: m.MaxTokens, CostUnknown: m.CostUnknown,
+	}
 }
 
 // setModel switches the model of an idle session. The sign-in method that the

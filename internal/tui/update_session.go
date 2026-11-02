@@ -105,7 +105,7 @@ type takeMsg struct {
 	err error
 }
 
-// refreshMsg is the result of the state, usage and catalog calls.
+// refreshMsg is the result of the state and catalog calls.
 type refreshMsg struct {
 	gen         uint64
 	runSeq      uint64
@@ -113,7 +113,6 @@ type refreshMsg struct {
 	modelSeq    uint64
 	modelsToken uint64
 	state       *protocol.ACPStateResult
-	usage       *protocol.ACPUsageResult
 	models      *protocol.ACPModelsResult
 }
 
@@ -149,7 +148,7 @@ func (s *sessionView) update(msg tea.Msg) tea.Cmd {
 	switch msg := msg.(type) {
 	case tea.WindowSizeMsg:
 		s.editor.SetWidth(msg.Width)
-		s.maybeStartLine()
+		s.maybeStartNotices()
 	case tea.KeyPressMsg:
 		cmd = s.onKey(msg)
 	case tea.PasteMsg:
@@ -223,7 +222,7 @@ func (s *sessionView) onOpened(msg openedMsg) tea.Cmd {
 		return tea.Quit
 	}
 	s.adoptClient(msg.client)
-	s.maybeStartLine()
+	s.maybeStartNotices()
 	return tea.Batch(waitClient(s.events), s.newSessionCmd(false))
 }
 
@@ -293,7 +292,7 @@ func (s *sessionView) onClient(msg Message) tea.Cmd {
 		s.info = v.Info
 		s.conn = connUp
 		s.reconnect = reconnectView{}
-		s.maybeStartLine()
+		s.maybeStartNotices()
 		return s.onBoxReconnected()
 	case ProvidersChangedMsg:
 		return s.onProvidersChanged(v)
@@ -332,28 +331,30 @@ func (s *sessionView) onClientError(v ClientErrorMsg) tea.Cmd {
 	return nil
 }
 
-// maybeStartLine adds the placeholder of the first start line once the size
-// and the link are known. The state answer replaces it with the model line.
-func (s *sessionView) maybeStartLine() {
+// maybeStartNotices adds the start notices of the transcript once the size and
+// the link are known: the placeholder of the fallback notice, which the state
+// answer fills, and the TEA_TRACE warning.
+func (s *sessionView) maybeStartNotices() {
 	if s.startShown || !s.m.sized || s.opening {
 		return
 	}
 	s.startShown = true
-	id := s.nextBlockID()
-	s.m.applyBlock(AppendBlockMsg{ID: id, Block: noRows{}, Stable: false})
-	s.starts = append(s.starts, startSlot{id: id, kind: startFirst})
+	s.addFallbackSlot()
+	if s.trace != "" {
+		s.appendBlock(noticeBlock{text: traceWarningText(s.trace), role: RoleWarning})
+	}
 	s.settleStartsIfKnown()
 }
 
 // ---- snapshot and events ----
 
-// resetSessionState forgets the run, the queue and the usage of the session
+// resetSessionState forgets the run, the queue and the context use of the session
 // that the view followed before.
 func (s *sessionView) resetSessionState() {
 	s.run = runView{seq: s.run.seq + 1}
 	s.queue = queueView{seq: s.queue.seq + 1}
 	s.failure = nil
-	s.ctxTokens, s.costMicro = 0, 0
+	s.ctxTokens = 0
 }
 
 // replaceTranscript drops the blocks. The pane draws the history again as the
@@ -362,7 +363,7 @@ func (s *sessionView) replaceTranscript() {
 	s.m.resetTranscript()
 	s.startShown = false
 	s.starts = nil
-	s.maybeStartLine()
+	s.maybeStartNotices()
 }
 
 func (s *sessionView) onSnapshot(v SnapshotMsg) tea.Cmd {
@@ -370,7 +371,7 @@ func (s *sessionView) onSnapshot(v SnapshotMsg) tea.Cmd {
 	s.baseline = v.Cursor
 	if v.Head.Epoch == v.Cursor.Epoch && v.Head.Seq > v.Cursor.Seq {
 		// A resumed follow replays what the client missed. Those events are in
-		// the state that the view reads next, so they draw no change line.
+		// the state that the view reads next, so they do not change the model.
 		s.baseline = v.Head
 	}
 	switch {
@@ -386,7 +387,7 @@ func (s *sessionView) onSnapshot(v SnapshotMsg) tea.Cmd {
 				s.promptID, s.promptSession = 0, ""
 			}
 			s.appendBlock(NewDividerBlock("session " + ShortID(v.SessionID)))
-			s.addStartSlot(startDivider, "")
+			s.addFallbackSlot()
 		}
 		s.trl.Reset()
 		s.trl.ForgetJobs()
@@ -757,7 +758,8 @@ func (s *sessionView) onDequeued(msg dequeuedMsg) {
 
 // ---- state refresh ----
 
-// refreshCmd reads the state, the usage and, when asked, the model catalog.
+// refreshCmd reads the state and, when asked, the model catalog. The screen
+// shows no session cost, so it does not read the usage totals.
 func (s *sessionView) refreshCmd(withModels bool) tea.Cmd {
 	c, gen := s.client, s.gen
 	runSeq, queueSeq, modelSeq := s.run.seq, s.queue.seq, s.modelSeq
@@ -777,9 +779,6 @@ func (s *sessionView) refreshCmd(withModels bool) tea.Cmd {
 		}
 		if res, err := c.State(ctx); err == nil {
 			out.state = &res
-		}
-		if res, err := c.Usage(ctx); err == nil {
-			out.usage = &res
 		}
 		return out
 	}
@@ -814,14 +813,11 @@ func (s *sessionView) onRefresh(msg refreshMsg) {
 			s.queue.follow = visibleQueue(st.FollowUp)
 		}
 	}
-	if msg.usage != nil {
-		s.costMicro = msg.usage.Total.Cost.Total
-	}
 	if s.modelID != "" {
 		s.hadModel = true
 	}
-	// The state of the session is known now, or the read failed; a start line
-	// must not wait for ever.
+	// The state of the session is known now, or the read failed; a fallback
+	// notice must not wait for ever.
 	s.settleStarts()
 }
 

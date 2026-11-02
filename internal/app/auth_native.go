@@ -25,7 +25,9 @@ func NewNativeAuth(home string, env func(string) (string, bool), options auth.Na
 		{providers.ProviderOpenAI, providers.APIOpenAIResponses, providers.OpenAIURL},
 		{"xai", providers.APIOpenAIResponses, "https://api.x.ai/v1"},
 	} {
-		methods = append(methods, auth.Method{Provider: row.provider, ID: "api-key", API: row.api, Profile: "api-key", Endpoint: row.endpoint})
+		// NativeKeyModelList is nil for Token Plan: its list is the plan
+		// catalog, not the models that the key can use.
+		methods = append(methods, auth.Method{Provider: row.provider, ID: "api-key", API: row.api, Profile: "api-key", Endpoint: row.endpoint, ListModels: auth.NativeKeyModelList(options, row.provider)})
 	}
 	return &auth.Service{Store: store, Methods: methods, Env: env, Now: options.Now}, nil
 }

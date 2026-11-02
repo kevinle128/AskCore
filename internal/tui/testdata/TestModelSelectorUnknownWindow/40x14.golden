@@ -1,0 +1,14 @@
+ ◢◤ ask
+────────────────────────────────────────
+
+────────────────────────────────────────
+╭─ Select model ───────────────────────╮
+│  ⌕ type to filter                    │
+│ ❯   claude-opus-4-9    ?  reasoning  │
+│     claude-sonnet-…   1M  reasoning  │
+│    … 5 more                          │
+╰──────────────────────────────────────╯
+   enter select  ·  esc close  ·  your …
+────────────────────────────────────────
+                 openai/gpt-5.4-mini 4%
+ Tab blocks · / commands

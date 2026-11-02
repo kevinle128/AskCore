@@ -1,10 +1,12 @@
 #!/usr/bin/env python3
 """Run the built `ask` through owned tui-test sessions on real terminal engines.
 
-The interactive `ask` TUI uses the alternate screen: a header row, a block pane,
-a prompt pane between two rules and a shortcut bar. Each case starts the
-program with no arguments in a session, drives it with keys and SGR mouse
-input, and checks the engine screen and the output recording.
+The interactive `ask` TUI uses the alternate screen: a header row with the logo only and its
+rule, a block pane, a prompt pane between two rules, a footer row with the status data and a
+shortcut bar. The screen shows no link state, so a case learns from `ask leader status` and the
+process table whether the program runs through a leader or in process. Each case starts the
+program with no arguments in a session, drives it with keys and SGR mouse input, and checks the
+engine screen and the output recording.
 """
 import argparse
 import base64
@@ -270,10 +272,15 @@ SELECTOR_HINT = 'enter select  ·  esc close  ·  your draft is kept'
 PROVIDER_ROW = re.compile(r'^│ [❯ ] ● (.*?)\s*│$')
 STREAM_MARKERS = 100
 STREAM_PROMPT = ' '.join(f'm{i:03d}' for i in range(STREAM_MARKERS))
-LEADER_LABEL = re.compile(r'● leader [0-9a-f]+')
-HEADER_LONG = re.compile(r'^◢◤ ask  \S+ leader [0-9a-f]+')
-HEADER_SHORT = re.compile(r'^◢◤ ask \S+ [0-9a-f]+')
-HEADER_IN_PROCESS = re.compile(r'^◢◤ ask  \S+ in-process')
+# The header row holds the logo only. The footer row of the faux model: the directory, the model
+# with its thinking level when it has one, and the context bar; under 60 columns only the model and
+# the percent, right-aligned.
+HEADER = ' ◢◤ ask'
+FOOTER_LONG = re.compile(r'^ ⌂ \S+ +faux/faux-1(?: ◐ \w+)?  [▰▱]{8} \d+%\s*$')
+FOOTER_SHORT = re.compile(r'^ +faux/faux-1 \d+%\s*$')
+# Words and glyphs that named the link in the footer row. The directory is cut out first, because
+# the directory of a case can hold any word.
+LINK_STATE = re.compile(r'[●◌○◉]|leader|starting|lost|in-process|observer')
 SHORT_WIDTH = 60
 # The usage row of a reply. Token counts of 1000 and more are written as 2.6k or 1.2M.
 USAGE_ROW = re.compile(r'^\s+faux-1(?: · [\d.]+s)? · ↑[\d.]+[kM]? ↓[\d.]+[kM]?$', re.M)
@@ -302,17 +309,19 @@ ECHO_REPLY = ' '.join(ECHO_LINES)
 HIDDEN_LINES = ECHO_LINES[3:]
 
 
+def footer_row(lines):
+    """The footer row is the second-to-last row, above the shortcut bar."""
+    return lines[-2] if len(lines) >= 2 else ''
+
+
 def ask_ready(state):
-    """The leader label and the model are in the header and the prompt is empty."""
-    lines = state['text'].split('\n')
-    return (LEADER_LABEL.search(lines[0]) is not None and 'faux-1' in lines[0] and
-            any(line.startswith(' ❯ Ask anything') for line in lines))
+    """The header row is on row 1, the model is in the footer row and the prompt is empty.
 
-
-def ask_ready_in_process(state):
-    """The in-process label is in the header: the leader connect failed at startup."""
+    The model arrives with the first state answer, so the program is connected by then. The screen
+    cannot tell a leader from the in-process agent; `assert_link` does.
+    """
     lines = state['text'].split('\n')
-    return ('in-process' in lines[0] and LEADER_LABEL.search(lines[0]) is None and 'faux-1' in lines[0] and
+    return (lines[0].rstrip() == HEADER and 'faux-1' in footer_row(lines) and
             any(line.startswith(' ❯ Ask anything') for line in lines))
 
 
@@ -326,49 +335,55 @@ def rule(columns):
 
 def pane_rows(lines, columns):
     """The rows of the block pane: between the header rule and the rule above the prompt slot."""
-    top = max((i for i in range(2, len(lines) - 2) if lines[i] == rule(columns)), default=1)
+    top = max((i for i in range(2, len(lines) - 3) if lines[i] == rule(columns)), default=1)
     return lines[2:top]
 
 
-def assert_shell(state, columns, rows, link='leader'):
+def assert_no_link_state(footer):
+    """The footer row names the work and never the link."""
+    text = re.sub(r'⌂ \S+', '', footer)
+    assert not LINK_STATE.search(text), f'the footer row shows a link state: {footer!r}'
+
+
+def assert_shell(state, columns, rows):
     """The parts that every frame of the alternate screen has.
 
-    Row 1 is the header and row 2 its rule. The last row is the shortcut bar, and the row
-    above it is the rule under the prompt slot. No row is wider than the terminal.
+    Row 1 is the header row with the logo only and row 2 its rule. The last row is the shortcut
+    bar, the row above it is the footer row, and the row above that is the rule under the prompt
+    slot. No row is wider than the terminal.
     """
     lines = screen_lines(state)
     assert len(lines) == rows, f'expected {rows} rows, got {len(lines)}: {state["text"]!r}'
-    header = lines[0]
-    if link == 'in-process':
-        assert HEADER_IN_PROCESS.match(header), f'header differs: {header!r}'
-    elif columns < SHORT_WIDTH:
-        assert HEADER_SHORT.match(header), f'short header differs: {header!r}'
-    else:
-        assert HEADER_LONG.match(header), f'header differs: {header!r}'
-    assert sum(line.startswith('◢◤ ask') for line in lines) == 1, f'header count differs: {state["text"]!r}'
+    assert lines[0].rstrip() == HEADER, f'header row differs: {lines[0]!r}'
     assert lines[1] == rule(columns), f'header rule differs: {lines[1]!r}'
-    assert lines[rows - 2] == rule(columns), f'prompt rule differs: {lines[rows - 2]!r}'
+    assert sum('◢◤ ask' in line for line in lines) == 1, f'logo count differs: {state["text"]!r}'
+    footer = lines[rows - 2]
+    pattern = FOOTER_SHORT if columns < SHORT_WIDTH else FOOTER_LONG
+    assert pattern.match(footer), f'footer differs: {footer!r}'
+    assert_no_link_state(footer)
+    assert not any(line.startswith('  model  ') for line in lines), 'the pane has a model line'
+    assert lines[rows - 3] == rule(columns), f'prompt rule differs: {lines[rows - 3]!r}'
     assert lines[rows - 1].startswith((BAR_PROMPT, BAR_LIST)), f'shortcut bar differs: {lines[rows - 1]!r}'
     too_wide = [line for line in lines if len(line) > columns]
     assert not too_wide, f'rows wider than {columns} columns: {too_wide[:2]!r}'
     return lines
 
 
-def assert_idle_screen(state, columns, rows, link='leader'):
-    """Header, one empty prompt row between two rules, the placeholder and the cursor in it."""
-    lines = assert_shell(state, columns, rows, link)
+def assert_idle_screen(state, columns, rows):
+    """One empty prompt row between two rules, the placeholder and the cursor in it, then the footer row."""
+    lines = assert_shell(state, columns, rows)
     assert lines[rows - 1].startswith(BAR_PROMPT), f'idle bar differs: {lines[rows - 1]!r}'
-    assert lines[rows - 4] == rule(columns), f'rule above the prompt differs: {lines[rows - 4]!r}'
-    assert lines[rows - 3].startswith(' ❯ Ask anything'), f'placeholder differs: {lines[rows - 3]!r}'
+    assert lines[rows - 5] == rule(columns), f'rule above the prompt differs: {lines[rows - 5]!r}'
+    assert lines[rows - 4].startswith(' ❯ Ask anything'), f'placeholder differs: {lines[rows - 4]!r}'
     if columns >= SHORT_WIDTH:
-        assert lines[rows - 3].startswith(' ❯ Ask anything  ·  / commands  ·  ctrl+l model'), lines[rows - 3]
-        assert 'faux-1' in lines[0], f'model is not in the header: {lines[0]!r}'
-    assert state['cursor'] == {'x': 3, 'y': rows - 3}, f'cursor={state["cursor"]}'
+        assert lines[rows - 4].startswith(' ❯ Ask anything  ·  / commands  ·  ctrl+l model'), lines[rows - 4]
+    assert 'faux/faux-1' in lines[rows - 2], f'model is not in the footer row: {lines[rows - 2]!r}'
+    assert state['cursor'] == {'x': 3, 'y': rows - 4}, f'cursor={state["cursor"]}'
 
 
 def assert_slot(lines, title, columns, rows, hint):
     """A selector or a box in the prompt slot: the rule above its title, full-width rows,
-    the hint under the bottom border, then the rule and the bar. The block pane stays."""
+    the hint under the bottom border, then the rule, the footer row and the bar."""
     tops = [i for i, line in enumerate(lines) if line.startswith(title)]
     assert len(tops) == 1, f'expected one {title.strip()!r}: {lines!r}'
     top = tops[0]
@@ -378,7 +393,7 @@ def assert_slot(lines, title, columns, rows, hint):
     for row in range(top, bottom + 1):
         assert len(lines[row]) == columns, f'slot row {row} is {len(lines[row])} columns, expected {columns}'
     assert lines[bottom + 1].strip() == hint, f'hint differs: {lines[bottom + 1]!r}'
-    assert bottom + 2 == rows - 2, f'the slot does not end above the bar: bottom={bottom}'
+    assert bottom + 2 == rows - 3, f'the slot does not end above the footer row: bottom={bottom}'
     assert not any(line.startswith(' ❯ Ask anything') for line in lines), 'the slot must replace the prompt'
     return top, bottom
 
@@ -391,7 +406,7 @@ def assert_selector_screen(state, columns, rows):
     current = [i for i in range(top, bottom) if lines[i].startswith('│ ❯   faux-1') and re.search(r'current\s+│$', lines[i])]
     assert len(current) == 1, f'current model row differs: {lines!r}'
     assert lines[current[0] - 1].startswith('│   ● faux'), f'provider header differs: {lines!r}'
-    assert any(line.strip() == 'model  faux/faux-1' for line in lines[2:top]), 'the block pane is gone'
+    assert 'faux/faux-1' in lines[rows - 2], f'the footer row lost the model: {lines[rows - 2]!r}'
 
 
 def provider_box(lines):
@@ -426,14 +441,14 @@ def assert_provider_box(state, columns, rows, names=PROVIDER_NAMES):
 def draft_row(lines, rows, draft):
     """The prompt row holds the draft once, and the draft is nowhere else."""
     expected = f' ❯ {draft}'
-    assert lines[rows - 3] == expected, f'prompt row differs: {lines[rows - 3]!r}'
+    assert lines[rows - 4] == expected, f'prompt row differs: {lines[rows - 4]!r}'
     assert sum(draft in line for line in lines) == 1, 'draft text is drawn more than once'
 
 
 def assert_one_draft(state, draft, rows):
     """The draft is in the prompt row once and the cursor sits after its last character."""
     draft_row(screen_lines(state), rows, draft)
-    expected = {'x': 3 + len(draft), 'y': rows - 3}
+    expected = {'x': 3 + len(draft), 'y': rows - 4}
     assert state['cursor'] == expected, f'cursor={state["cursor"]}, expected={expected}'
 
 
@@ -459,7 +474,7 @@ def words(text):
 def assert_complete_stream(text, columns):
     """The user band shows the start of the prompt, then the reply has every word once in order."""
     lines = text.split('\n')
-    assert sum(line.startswith('◢◤ ask') for line in lines) == 1, 'header is missing or drawn twice'
+    assert sum(line.startswith(' ◢◤ ask') for line in lines) == 1, 'header row is missing or drawn twice'
     assert sum(line.startswith('  ❯ m000') for line in lines) == 1, 'prompt band is missing or drawn twice'
     expected = [f'm{i:03d}' for i in range(STREAM_MARKERS)]
     found = words(text)
@@ -495,7 +510,7 @@ def assert_exit_line(state):
     rows = [line.rstrip() for line in screen_lines(state) if line.strip()]
     assert rows, 'the screen is empty after exit'
     assert EXIT_LINE.fullmatch(rows[-1]), f'last row is not the exit line: {rows[-3:]!r}'
-    assert not any(line.startswith('◢◤ ask') or line.startswith((BAR_PROMPT, BAR_LIST)) for line in rows), \
+    assert not any('◢◤ ask' in line or '⌂' in line or line.startswith((BAR_PROMPT, BAR_LIST)) for line in rows), \
         'a frame of the alternate screen is on the main screen'
 
 
@@ -592,10 +607,38 @@ def stop_leader(binary, home, env, artifacts):
         raise RuntimeError('; '.join(errors))
 
 
+def leader_status(binary, env):
+    """The status of the leader of the home, read from the leader and not from the screen.
+
+    Returns None when no leader runs. `ask leader status` never starts a leader.
+    """
+    result = subprocess.run([str(binary), 'leader', 'status', '--json'], env=env, capture_output=True,
+                            text=True, timeout=20)
+    if result.returncode != 0:
+        return None
+    return json.loads(result.stdout)
+
+
+def assert_link(binary, env, in_process):
+    """The screen shows no link state, so the leader and the process table tell the two modes apart.
+
+    A leader case needs a running leader that holds a session of the program. An in-process case
+    needs no leader process at all, and the leader of its home must not answer.
+    """
+    if in_process:
+        assert not leader_processes(binary), f'a leader runs in an in-process case: {leader_processes(binary)}'
+        assert leader_status(binary, env) is None, 'a leader answers in an in-process case'
+        return
+    assert leader_processes(binary), 'no leader process runs in a leader case'
+    status = leader_status(binary, env)
+    assert status is not None and status['instanceId'], 'the leader does not answer'
+    assert status['sessions'] >= 1, f'the leader holds no session of the program: {status}'
+
+
 class AskSession(Session):
     """A session of the built `ask`, with the screen geometry of its case."""
 
-    link = 'leader'
+    in_process = False
 
     @property
     def columns(self):
@@ -661,17 +704,17 @@ class AskSession(Session):
 
 
 def idle_screen(session):
-    # The header is drawn after the first frame and the model name comes with the
+    # The footer row is drawn from the first frame and the model name comes with the
     # state answer, so wait until the idle screen is complete.
     def idle(state):
         try:
-            assert_idle_screen(state, session.columns, session.rows, session.link)
+            assert_idle_screen(state, session.columns, session.rows)
             return True
         except AssertionError:
             return False
     session.wait(idle)
     state = session.state()
-    assert_idle_screen(state, session.columns, session.rows, session.link)
+    assert_idle_screen(state, session.columns, session.rows)
     return state
 
 
@@ -715,7 +758,7 @@ def ask_turn(session):
     columns, rows = session.columns, session.rows
     send_echo_turn(session)
     state = session.state()
-    assert_shell(state, columns, rows, session.link)
+    assert_shell(state, columns, rows)
     pane = pane_rows(screen_lines(state), columns)
     # Collapsed: one step row, the output lines are not on the screen, and the reply is
     # one paragraph with the tool text (the only row that holds it besides the step row).
@@ -769,10 +812,10 @@ def ask_turn(session):
     assert lines[rows - 1].startswith(VIEWER_BAR), f'viewer bar differs: {lines[rows - 1]!r}'
     body = [line.rstrip() for line in lines[2:rows - 2]]
     assert [line for line in body if line.strip() in ECHO_LINES] == [f'    {text}' for text in ECHO_LINES], body
-    assert not any(line.startswith('◢◤ ask') for line in lines), 'the header shows in the viewer'
+    assert not any('◢◤ ask' in line or '⌂' in line for line in lines), 'the header row or the footer row shows in the viewer'
     session.capture('viewer')
     session.key('escape')
-    state = session.wait(lambda s: screen_lines(s)[0].startswith('◢◤ ask'))
+    state = session.wait(lambda s: screen_lines(s)[0].rstrip() == HEADER)
     assert any(line.startswith('  › echo out-01') for line in screen_lines(state)), 'the selection moved'
     assert screen_lines(state)[rows - 1].startswith(BAR_LIST), 'the list lost its focus'
 
@@ -782,11 +825,11 @@ def ask_turn(session):
     assert PURGE not in session.recording(), 'the scrollback was purged'
     session.quit()
     return {'screen': 'tool turn', 'folds': ['collapsed', 'truncated', 'expanded'], 'viewer': True,
-            'in_process': session.link == 'in-process'}
+            'in_process': session.in_process}
 
 
 def ask_in_process(session):
-    session.link = 'in-process'
+    session.in_process = True
     return ask_turn(session)
 
 
@@ -890,7 +933,7 @@ def ask_providers(session):
     lines = screen_lines(state)
     assert any(line.startswith('│  key  paste or type the key; it stays hidden') for line in lines), state['text']
     assert not any(line.startswith(' ❯ Ask anything') for line in lines), 'the key box must replace the prompt'
-    assert lines[0].startswith('◢◤ ask'), 'the header is gone'
+    assert lines[0].rstrip() == HEADER, 'the header row is gone'
 
     # The pasted key shows as (hidden) and is on no row of the screen.
     session.write(PASTE_BEGIN + ASK_FAKE_KEY + PASTE_END, secret=ASK_FAKE_KEY)
@@ -923,7 +966,7 @@ def assert_marker(state, columns, rows, form):
     row, line = found
     text = line.strip()
     assert re.fullmatch(form, text), f'marker text differs: {text!r}'
-    assert row == rows - 5, f'marker is on row {row}, expected the last pane row {rows - 5}'
+    assert row == rows - 6, f'marker is on row {row}, expected the last pane row {rows - 6}'
     assert line.index('▼') == (columns - len(text)) // 2, f'marker is not centered: {line!r}'
 
 
@@ -960,7 +1003,7 @@ def ask_mouse(session):
     session.capture('new-output')
 
     # A click on the marker jumps to the end and follows again.
-    session.click(columns // 2 + 1, rows - 4)
+    session.click(columns // 2 + 1, rows - 5)
     state = session.wait(lambda s: marker_row(s) is None)
     assert any(line.strip() == 'second' for line in screen_lines(state)), 'the end is not in view'
 
@@ -1125,7 +1168,8 @@ def run_ask(args, cli, run_id, artifacts, results):
                 try:
                     session = AskSession(cli, name, backend, binary, work, case_dir, cols=cols, rows=rows, env=env,
                                          env_names=env_names,
-                                         ready=ask_ready_in_process if in_process else ask_ready, ready_timeout=30)
+                                         ready=ask_ready, ready_timeout=30)
+                    assert_link(binary, env, in_process)
                     detail = test(session)
                     record.update(result='pass', detail=detail)
                 except Exception as error:

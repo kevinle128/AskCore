@@ -1,7 +1,5 @@
-◢◤ ask  ● leader lost  ⌂ ~/src/askcore deepseek-v4.1-flash  ▰▱▱▱▱▱▱▱ 18%  $0.04
+ ◢◤ ask
 ────────────────────────────────────────────────────────────────────────────────
-  model  alibaba/deepseek-v4.1-flash
-
   ❯ why does TestLeaderStale fail on CI?                                 14:02
 
   The test waits for the stale socket check, but CI runs it with a 1 s deadline.
@@ -16,9 +14,11 @@
 
 
 
+
 ┊ ✗ Disconnected from the leader · reconnecting (attempt 2, next in 2s)
 ┊ draft kept · sending waits until the leader is back · nothing is resent
 ────────────────────────────────────────────────────────────────────────────────
  ❯ also check the lock timeout
 ────────────────────────────────────────────────────────────────────────────────
+ ⌂ ~/src/askcore                      alibaba/deepseek-v4.1-flash  ▰▱▱▱▱▱▱▱ 18%
  Tab blocks · ctrl+t thinking · ctrl+l model · / commands

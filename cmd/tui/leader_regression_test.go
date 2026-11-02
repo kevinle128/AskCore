@@ -122,7 +122,7 @@ func TestLeaderSecondSignalEscapesStartedToolDrain(t *testing.T) {
 	require.True(t, ok)
 	fp.Set(faux.Reply(faux.ToolCall("hold", nil, faux.ID("call-1"))), faux.Say("after"))
 	rt, err := app.NewLeaderRuntime(app.LeaderParams{
-		ACPParams: app.ACPParams{Home: home, Initial: model,
+		ACPParams: app.ACPParams{Home: home, Initial: model, ModelRefresh: offlineModelRefresh(t),
 			NewAgent: func(service *auth.Service, id, cwd string, _ providers.Model) (*agent.Agent, error) {
 				return app.NewNativeAgent(app.NativeAgentConfig{Auth: service, InitialStream: fp.Stream,
 					Config: agent.Config{SessionID: id, Tools: registry, LoopConfig: agent.LoopConfig{
@@ -202,7 +202,7 @@ func TestLeaderRecordsStoppingBeforeItStopsServing(t *testing.T) {
 	}
 	stops := make(chan atStop, 2)
 	rt, err := app.NewLeaderRuntime(app.LeaderParams{
-		ACPParams: app.ACPParams{Home: home, Initial: model,
+		ACPParams: app.ACPParams{Home: home, Initial: model, ModelRefresh: offlineModelRefresh(t),
 			NewAgent: func(service *auth.Service, id, cwd string, _ providers.Model) (*agent.Agent, error) {
 				return app.NewNativeAgent(app.NativeAgentConfig{Auth: service, InitialStream: fp.Stream,
 					Config: agent.Config{SessionID: id, Tools: &tools.Registry{}, LoopConfig: agent.LoopConfig{

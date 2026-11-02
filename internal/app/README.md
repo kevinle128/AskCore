@@ -21,6 +21,10 @@ The module reads no configuration, opens no database and starts no listener. `fx
 The command supplies `NewAgent`, which must call `NewNativeAgent` with the given service, so all sessions share one credential resolver and direct headless runs keep their behavior.
 `Authenticate` and `ModelAuth` only check readiness through `NativeAuthReady`; they never start a sign-in. The adapter gets function fields, never the service.
 
+The model list comes from the [model refresher](model_refresh.go), a field of `ACPRuntime`. It merges the built-in catalog, the models.dev overlay and the account lists of the cache (`<ASK_HOME>/model-cache.json`) into one `providers.ModelSet` and swaps it atomically.
+It loads the cache again when the file changed, and a model list request with a stale cache (2 h) starts one background refresh on its own root context; a failure keeps the last list and waits 5 min. There is no timer and no polling.
+A credential change of the leader broker only schedules work (the broker holds its change lock); a result from before the change is dropped. `ACPParams.ModelRefresh` turns the network part on; the zero value reads the cache only, which keeps tests offline. `Cleanup` stops the refresher before the credential refresh drain.
+
 ## Leader composition
 
 [LeaderModule](module_leader.go) provides `LeaderRuntime` for `ask leader` from `LeaderParams`. It builds the editor composition (`NewACPRuntime`) once, sets `RequireRoute`, and puts one adapter and host behind one in-process byte link, with the `leader.Server` router on the other end. `Serve` starts the router and serves a listener that the command opened. The command (`cmd/tui/leader.go`) owns the lock, the socket, the log and the signals.

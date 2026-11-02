@@ -1,6 +1,5 @@
-◢◤ ask ● 7c1e   deepseek-v4.1-flash 18%
+ ◢◤ ask
 ────────────────────────────────────────
-  ❯ giải thích lỗi               14:05
     日本語のテスト
 
   The 日本語 test fails because each
@@ -11,4 +10,5 @@
 ────────────────────────────────────────
  ❯ Ask anything
 ────────────────────────────────────────
+        alibaba/deepseek-v4.1-flash 18%
  Tab blocks · / commands

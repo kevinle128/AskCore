@@ -1,6 +1,5 @@
-◢◤ ask  ● leader 7c1e  ⌂ ~/src/p         claude-sonnet-5-5  ▰▱▱▱▱▱▱▱ 12%  $0.01
+ ◢◤ ask
 ────────────────────────────────────────────────────────────────────────────────
-
   ◆ Thought for 0.5s
   ◆ Ran seq 1 40
   ◆ Read parser.go
@@ -21,4 +20,5 @@
 ────────────────────────────────────────────────────────────────────────────────
  ❯ Ask anything  ·  / commands  ·  ctrl+l model
 ────────────────────────────────────────────────────────────────────────────────
+ ⌂ ~/src/p                            anthropic/claude-sonnet-5-5  ▰▱▱▱▱▱▱▱ 12%
  Tab blocks · ctrl+t thinking · ctrl+l model · / commands

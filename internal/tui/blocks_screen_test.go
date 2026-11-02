@@ -119,8 +119,8 @@ func requireContentGolden(t *testing.T, h *screenHarness) {
 func sketchSource(status string) fakeSource {
 	return fakeSource{
 		placeholder: true, status: status,
-		headerL: "◢◤ ask  ● leader 7c1e  ⌂ ~/src/askcore",
-		headerR: "deepseek-v4.1-flash  ▰▱▱▱▱▱▱▱ 18%  $0.04 ",
+		footerL: " ⌂ ~/src/askcore",
+		footerR: "alibaba/deepseek-v4.1-flash  ▰▱▱▱▱▱▱▱ 18% ",
 	}
 }
 

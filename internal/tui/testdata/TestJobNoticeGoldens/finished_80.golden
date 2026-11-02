@@ -1,7 +1,5 @@
-◢◤ ask  ● leader 7c1e  ⌂ ~/src/askcore  deepseek-v4.1-flash  ▱▱▱▱▱▱▱▱ 0%  $0.04
+ ◢◤ ask
 ────────────────────────────────────────────────────────────────────────────────
-  model  alibaba/deepseek-v4.1-flash
-
   ❯ run the build in the background and tell me when it is done          08:53
 
   ◆ Ran npm run build
@@ -17,8 +15,10 @@
 
 
 
+
 ┊ ◌ Working… 0s · esc to interrupt
 ────────────────────────────────────────────────────────────────────────────────
  ❯ Ask anything  ·  / commands  ·  ctrl+l model
 ────────────────────────────────────────────────────────────────────────────────
+ ⌂ ~/src/askcore                       alibaba/deepseek-v4.1-flash  ▱▱▱▱▱▱▱▱ 0%
  Tab blocks · ctrl+t thinking · ctrl+l model · / commands

@@ -484,9 +484,9 @@ func startView(t *testing.T, width, height int, ro ...rigOption) *viewRig {
 	t.Cleanup(func() { close(cfg.fc.events) })
 	if opts.Client != nil {
 		r.h.waitText("Ask anything")
-		r.h.waitText("◢◤ ask")
-		// The start line at the top of the pane comes with the first state answer.
-		r.waitCall("usage")
+		r.h.waitText("Tab blocks")
+		// The footer row and the start notices take the first state answer.
+		r.waitCall("state")
 		r.h.settle()
 	}
 	return r

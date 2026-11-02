@@ -919,7 +919,6 @@ func (s *sessionView) onLogoutDone(msg logoutDoneMsg) tea.Cmd {
 		if !msg.res.ClearPending {
 			s.modelID = ""
 			s.modelSeq++
-			s.lastRef = modelRef{}
 		}
 	}
 	s.appendBlock(NewSuccessNote("Removed the saved credential for "+provider+".", rows...))

@@ -10,11 +10,11 @@ Build the binary with the name `ask`:
 go build -o ask ./cmd/tui
 ```
 
-The TUI, `ask connect`, `ask leader`, and `/providers` need that name. A client starts the leader from a binary named `ask` that is next to the caller or on the `PATH` (`internal/leader/spawn.go`). `go run ./cmd/tui` makes a binary named `tui`. With it the TUI falls back to the in-process agent. `ask -p`, `ask auth`, `ask version`, and `ask acp` need no leader and work with `go run ./cmd/tui`.
+The TUI, `ask connect`, `ask leader`, and `/providers` need that name. A client starts the leader from a binary named `ask` that is next to the caller or on the `PATH` (`internal/leader/spawn.go`). `go run ./cmd/tui` makes a binary named `tui`. With it the TUI falls back to the in-process agent. `ask -p`, `ask auth`, `ask models`, `ask version`, and `ask acp` need no leader and work with `go run ./cmd/tui`.
 
 ## Dispatch
 
-`ask` checks the first argument against `auth`, `acp`, `connect`, `leader`, and `version`, in this order (`cmd/tui/headless.go`). Any other input goes to the root command.
+`ask` checks the first argument against `auth`, `models`, `acp`, `connect`, `leader`, and `version`, in this order (`cmd/tui/headless.go`). Any other input goes to the root command.
 
 All commands use these exit codes for signals: 130 for SIGINT, 143 for SIGTERM, and 129 for SIGHUP. A second signal ends `ask acp` and `ask leader` before the cleanup finishes.
 
@@ -87,6 +87,37 @@ ask auth --help
 
 The sign-in flows are in [README.md](../README.md#native-auth-and-headless-prompts).
 
+## `ask models`
+
+```
+ask models refresh [--provider <id>]
+ask models --help
+```
+
+The command reads the model lists of the signed-in accounts and the models.dev metadata now. It writes them to `<ASK_HOME>/model-cache.json`. It does not wait for the 2 hour cache age.
+
+- Providers: `alibaba-token-plan`, `anthropic`, `openai`, `xai`. Without `--provider`, the command refreshes all providers. The metadata is always refreshed.
+- The command needs no database and no leader. A running leader reads the new cache file at its next model list.
+- `ASK_DISABLE_MODEL_REFRESH` does not stop this command.
+- The command writes one line for each provider and one metadata line to stdout. It does not write keys, tokens, or the message text of a provider.
+
+```
+openai    12 models  known
+metadata  updated
+```
+
+| Provider state | Meaning |
+|---|---|
+| `known` | The command read the model list of the account. |
+| `unknown` | The command could not read the list, or the sign-in method has no list (Alibaba Token Plan, Anthropic subscription). The last good list stays. Without a list, all catalog models of the provider stay. |
+| `no credential` | The provider has no sign-in and no environment key. The command sent no list request. |
+
+The count is the number of models of the provider in the model list after the refresh. `/model` shows these models when the provider has a credential.
+
+The metadata line is `updated`, `not modified` (the data did not change), or `failed` (the last good data stays).
+
+Exit codes: 0 done, also when a provider is `unknown` or the metadata `failed`; 1 for a usage error or a local error, for example a cache file that the command cannot write; 130, 143, 129.
+
 ## `ask acp`
 
 ```
@@ -152,7 +183,7 @@ Exit codes: 0 left, 1 error or lost leader, 130, 143, 129.
 
 ## Interactive TUI
 
-`ask` with no arguments on a terminal opens the TUI on the alternate screen. It connects to the local leader and starts one when none runs. Only when the first connect fails does it run an agent in process; the header row then shows `in-process`. The TUI never switches to an in-process agent later. On exit the terminal is restored and the line `ask: session <id>` stays in the shell.
+`ask` with no arguments on a terminal opens the TUI on the alternate screen. It connects to the local leader and starts one when none runs. Only when the first connect fails does it run an agent in process. The screen does not show the difference: `/providers` and `/sessions` answer `Needs the leader; this session runs in process.`, and `ask leader status` reports `no leader is running`. The TUI never switches to an in-process agent later. On exit the terminal is restored and the line `ask: session <id>` stays in the shell.
 
 | Command | Purpose |
 |---|---|
@@ -164,7 +195,7 @@ Exit codes: 0 left, 1 error or lost leader, 130, 143, 129.
 | `/copy` | Copy the last reply. It uses a native command first, then OSC 52 up to 75 KiB. |
 | `/quit` | Detach and quit. |
 
-With no usable provider the session has no model. The header shows `no model`, and a prompt is refused and stays in the editor. `/providers` opens the sign-in box. The leader checks an API key before it saves it (mode 0600 `auth.json`); it cannot check the Alibaba Token Plan key, so it saves that key as it is. The key is pasted into a masked input.
+With no usable provider the session has no model. The footer row shows `no model`, and a prompt is refused and stays in the editor. `/providers` opens the sign-in box. The leader checks an API key before it saves it (mode 0600 `auth.json`); it cannot check the Alibaba Token Plan key, so it saves that key as it is. The key is pasted into a masked input.
 
 The key bindings, block folding, the viewer, and the mouse rules are in [internal/tui/README.md](../internal/tui/README.md). Terminal.app, iTerm2, and kitty were not checked by hand.
 
@@ -177,6 +208,7 @@ The key bindings, block folding, the viewer, and the mouse rules are in [interna
 | `ASK_FAUX_TPS` | `faux` provider | Pace in tokens per second. A negative value or a non-number is an error. |
 | `ASK_COMMAND_GUARD` | `ask -p`, leader, `ask acp` | `1` blocks a short list of destructive commands. It is off by default and is not a security boundary. |
 | `ASK_DISABLE_BACKGROUND_TASKS` | `ask -p`, leader, `ask acp`, in-process TUI | `1` turns background jobs off. A foreground `bash` command stops at its wait budget. A background start and `monitor` are refused. |
+| `ASK_DISABLE_MODEL_REFRESH` | leader, `ask acp`, in-process TUI, `ask auth login` | `1` turns the automatic network refresh of the model list off: no models.dev request and no account model list request. The list then comes from `<ASK_HOME>/model-cache.json` and the built-in catalog. `ask models refresh` still refreshes the list. |
 | `ASK_PRINT_BG_LIMIT_MS` | `ask -p` | The default background time limit, in milliseconds (default 600000). A value that is not a whole number above 0 is ignored. A larger value also raises the 2 hour maximum. |
 | `ASK_PRINT_BG_WAIT_CEILING_MS` | `ask -p` | The idle cap of the background wait, in milliseconds (default 600000). `0` means no cap. An empty, negative, or invalid value gives the default. |
 | `ASK_CAPTURE` | `ask -p` | A directory. The run records the provider HTTP traffic to a new cassette. Ignored for `faux`. |

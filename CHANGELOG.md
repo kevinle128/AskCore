@@ -17,6 +17,12 @@ The format follows [Keep a Changelog 1.1.0](https://keepachangelog.com/en/1.1.0/
 - **CLI:** `ASK_PRINT_BG_LIMIT_MS` sets the default background time limit of `ask -p`, and `ASK_PRINT_BG_WAIT_CEILING_MS` sets the idle cap of its wait for background work.
 - **Tools:** In `ask -p`, a background job stops after 10 minutes by default and after 2 hours at most. `bash` with `run_in_background` sets the limit with `timeout`. Every `monitor` stops after at most 10 minutes. The model gets a notice when a limit stops a job.
 - **Tools:** `ASK_DISABLE_BACKGROUND_TASKS=1` makes a foreground `bash` command stop at its wait budget and refuses background jobs and `monitor`.
+- **Models:** `/model` lists a generated model catalog. When Ask can read the model list of the signed-in account, `/model` shows only the models that the account can use.
+- **Models:** Ask refreshes the account model lists and the models.dev metadata at start, after a sign-in or a sign-out, and on `ask models refresh`. It keeps them in `<ASK_HOME>/model-cache.json` for 2 hours. A failed refresh keeps the last good list.
+- **CLI:** `ask models refresh [--provider <id>]` refreshes the model lists now. It needs no leader and no database. It prints one line for each provider and one metadata line.
+- **CLI:** `ASK_DISABLE_MODEL_REFRESH=1` turns the automatic model list refresh off. `ask models refresh` still refreshes.
+- **Protocol:** `ACPModel` has the fields `costUnknown` and `notInAccount`. A session start that cannot use the saved model because the account list does not have it gives the fallback reason `not_in_account`.
+- **TUI:** `/model` shows `?` in the window column of a model with an unknown context window. The footer row shows `?` in place of the context bar for such a model. The running model that the account list no longer has shows the note `not in account list` (the tag `unlisted` under 60 columns). A saved default that the account list does not have gives a start notice with the same reason.
 
 ### Changed
 
@@ -24,9 +30,23 @@ The format follows [Keep a Changelog 1.1.0](https://keepachangelog.com/en/1.1.0/
 - **Agent:** Task notices do not count toward `MaxQueuedInputs`. `Abort` keeps background tasks running and moves their queued notices to the context queue. A notice that arrives after `Abort` of an active run waits there until the next human input. `Reset` stops the tasks of the old conversation; `Dispose` stops and waits for every task.
 - **CLI:** `ask -p` no longer stops background jobs after the last reply. It prints that reply, waits for the jobs, prints the reply of each run that a notice starts, and stops the jobs that still run when it exits.
 - **Tools:** A background job belongs to the conversation that started it. After a conversation reset the old jobs run on until the session closes, but their notices are dropped, and `job_list`, `job_output`, and `job_kill` do not see them. The limit of 10 jobs still counts them.
+- **TUI:** The status data (working directory, model, thinking level, context use) moved from the header row at the top to a footer row above the shortcut bar. The header row stays and shows only the logo `◢◤ ask`, with a rule under it. The footer row names the model as `<provider>/<model>`, and the working directory stays from 60 columns up.
+- **TUI:** The footer row no longer shows the link (the leader id, `in-process`, an observer, `starting` or `lost`) or the session cost. A lost link still shows in the status row and in the notices. The reply meta line keeps its cost.
+- **TUI:** The block pane no longer shows the model line (`model  <provider>/<model>` at the start and the `· was` line after a change). The footer row names the model. The fallback note and the `TEA_TRACE` warning are notices of their own at the start of the transcript.
+- **CLI:** `ask -p --model` accepts the model ids of the generated catalog with no network request.
+- **CLI:** `ask auth login` reads the model list of that provider in its own process, and `ask auth logout` deletes the cached list of that provider.
+- **Providers:** `gpt-5.5` gets the thinking level `xhigh` and now sends the reasoning effort. `claude-sonnet-4-6` gets the thinking level `max`. On both models a saved `minimal` level becomes `off`.
+- **Providers:** On `grok-4.7`, thinking `off` now sends the lowest reasoning effort.
+- **Providers:** An Anthropic model without reasoning support always sends thinking as disabled.
+- **Providers:** In `ask -p`, `--thinking off` on a model that cannot turn thinking off (`grok-4.7`, `gpt-6-astra`, `gpt-6.1-sol`) sends no reasoning effort, so the vendor default applies. The `/model` selector and the thinking key of the TUI use the lowest effort instead.
+- **Providers:** The ids `gpt-6-terra` and `gpt-6.1-luna` no longer show in `/model`, because the model metadata has no row for them.
+- **TUI:** The header row and its rule take one row from a box in the prompt pane slot. On a terminal of 14 rows, the browser sign-in box shows two rows of the address and not three.
+- **Dependencies:** `charm.land/fantasy` uses the fork commit `e894229`. A reasoning effort that the caller sets now reaches the request for model ids that the library does not know, such as `gpt-6` and `grok-4.7` ([upstream pull request](https://github.com/charmbracelet/fantasy/pull/443)).
 
 ### Fixed
 
+- **Providers:** The `gpt-6` models (astra, luna, sol, terra) now send their thinking level and show it in the `/model` selector. `gpt-6-astra` and `gpt-6.1-sol` refuse "none", so thinking off in the selector uses their lowest effort.
+- **Providers:** `grok-4.7` now sends its thinking level (`low`, `medium`, `high`, `xhigh`). It cannot turn thinking off, so the selector uses `low` for off.
 - **Settings:** Two `ask` processes that use a new `ASK_HOME` at the same time no longer fail with `file exists`.
 - **Editors:** A prompt over ACP binds only to its own run. A run that a background notice started is no longer taken for the prompt.
 - **Tools:** Output lines of a `monitor` are escaped, so command output cannot close the `monitor-event` element or the `<system-reminder>` around it.

@@ -110,13 +110,17 @@ func thinkingEffort(model providers.Model, level protocol.ThinkingLevel) (string
 	return *word, true
 }
 
+// clampMaxTokens fits the output limit into the model limits. RequestLimits
+// gives the family default for a limit that the row does not know, so a row
+// with unknown limits does not send max_tokens 1.
 func clampMaxTokens(model providers.Model, opts providers.StreamOptions, estimate int) int {
-	limit := model.MaxTokens
+	modelMax, window := providers.RequestLimits(model)
+	limit := modelMax
 	if opts.MaxTokens > 0 && (limit == 0 || opts.MaxTokens < limit) {
 		limit = opts.MaxTokens
 	}
-	if model.ContextWindow > 0 {
-		room := model.ContextWindow - estimate - 4096
+	if window > 0 {
+		room := window - estimate - 4096
 		if room < 1 {
 			room = 1
 		}
@@ -127,8 +131,8 @@ func clampMaxTokens(model providers.Model, opts providers.StreamOptions, estimat
 	if limit < 1 {
 		limit = 1
 	}
-	if model.MaxTokens > 0 && limit > model.MaxTokens {
-		limit = model.MaxTokens
+	if modelMax > 0 && limit > modelMax {
+		limit = modelMax
 	}
 	return limit
 }

@@ -1,8 +1,7 @@
-◢◤ ask  ● leader 7c1e  ⌂ ~/src/askcore                                 no model
+ ◢◤ ask
 ────────────────────────────────────────────────────────────────────────────────
   ✓ alibaba-token-plan: Saved. This provider cannot be checked before use.
     Choose a model with /model.
-
 
 
 
@@ -21,4 +20,5 @@
 ────────────────────────────────────────────────────────────────────────────────
  ❯ Ask anything  ·  / commands  ·  ctrl+l model
 ────────────────────────────────────────────────────────────────────────────────
+ ⌂ ~/src/askcore                                                       no model
  Tab blocks · ctrl+t thinking · ctrl+l model · / commands

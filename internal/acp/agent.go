@@ -38,9 +38,13 @@ type Config struct {
 	// Authenticate checks that the configured credentials for methodID work.
 	// An error is reported as "not signed in", never with its own text.
 	Authenticate func(ctx context.Context, methodID string) error
-	// Models lists the compiled catalog rows.
+	// Models lists the rows that a session can select, in display order.
 	Models func() []providers.Model
-	// FindModel resolves one catalog row.
+	// RefreshModels asks for a refresh of a stale model list before the model
+	// list answers. It must return at once: the answer uses the rows that
+	// Models gives now, and a later list shows the result. Nil means no refresh.
+	RefreshModels func()
+	// FindModel resolves one row of Models.
 	FindModel func(ref providers.Ref) (providers.Model, error)
 	// ModelAuth checks that m is ready under the sign-in method that the
 	// client named. Nil means the client cannot name a method.

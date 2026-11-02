@@ -1,7 +1,5 @@
-◢◤ ask  ● leader 7c1e  ⌂ ~/src/askcore deepseek-v4.1-flash  ▰▱▱▱▱▱▱▱ 18%  $0.04
+ ◢◤ ask
 ────────────────────────────────────────────────────────────────────────────────
-  model  alibaba-token-plan/deepseek-v4.1-flash
-
   ❯ why does TestLeaderStale fail on CI?                                 14:02
 
   The test waits for the stale socket check, but CI runs it with a 1 s deadline.
@@ -14,6 +12,7 @@
 
 
 
+
 ────────────────────────────────────────────────────────────────────────────────
 ╭─ Remove ChatGPT Plus/Pro sign-in? ───────────────────────────────────────────╮
 │  This deletes the saved sign-in for openai from this leader.                 │
@@ -21,4 +20,5 @@
 ╰──────────────────────────────────────────────────────────────────────────────╯
    enter remove  ·  esc keep it
 ────────────────────────────────────────────────────────────────────────────────
+ ⌂ ~/src/askcore           alibaba-token-plan/deepseek-v4.1-flash  ▰▱▱▱▱▱▱▱ 18%
  Tab blocks · ctrl+t thinking · ctrl+l model · / commands

@@ -88,3 +88,65 @@ Recommended model: `grok-4.7` on `openai-responses`.
 The faux provider is a scripted demo. It is not in the catalog above.
 The leader, `ask acp` and the in-process TUI list it only when `ASK_FAUX=1` is set.
 `ask -p` uses it as the default provider.
+
+## Generated rows
+
+These rows come from the embedded models.dev snapshot and the family rules in `internal/providers/catalog_rules.go`, merged with the rows above.
+`/model`, `ask -p` and the leader show these rows. The model list of a signed-in account can narrow them, and a refreshed models.dev cache can change the numbers; the table shows the embedded snapshot.
+A family that has no rule, or a rule that hides it, is not in the table.
+The price is the base price in USD for each 1000000 tokens; some rows have a higher price above a context size.
+
+| Provider | Model | API | Context window | Maximum output | Thinking levels | Price (input / output) |
+|---|---|---|---|---|---|---|
+| `alibaba-token-plan` | `deepseek-v4.1-flash` | `anthropic-messages` | 1000000 | 384000 | off, minimal, low, medium, high | ? |
+| `alibaba-token-plan` | `deepseek-v4.1-flash` | `openai-completions` | 1000000 | 384000 | off, minimal, low, medium, high | ? |
+| `anthropic` | `claude-fable-5` | `anthropic-messages` | 1000000 | 128000 | low, medium, high, xhigh, max | $10 / $50 |
+| `anthropic` | `claude-fable-5-1` | `anthropic-messages` | 1000000 | 128000 | low, medium, high, xhigh, max | $10 / $50 |
+| `anthropic` | `claude-haiku-4-5` | `anthropic-messages` | 200000 | 64000 | off | $1 / $5 |
+| `anthropic` | `claude-haiku-4-5-20251001` | `anthropic-messages` | 200000 | 64000 | off | $1 / $5 |
+| `anthropic` | `claude-haiku-5-5` | `anthropic-messages` | 1000000 | 128000 | off, low, medium, high, xhigh, max | $0.1 / $0.5 |
+| `anthropic` | `claude-opus-4-5` | `anthropic-messages` | 200000 | 64000 | off | $5 / $25 |
+| `anthropic` | `claude-opus-4-5-20251101` | `anthropic-messages` | 200000 | 64000 | off | $5 / $25 |
+| `anthropic` | `claude-opus-4-6` | `anthropic-messages` | 1000000 | 128000 | off, low, medium, high, max | $5 / $25 |
+| `anthropic` | `claude-opus-4-7` | `anthropic-messages` | 1000000 | 128000 | off, low, medium, high, xhigh, max | $5 / $25 |
+| `anthropic` | `claude-opus-4-8` | `anthropic-messages` | 1000000 | 128000 | off, low, medium, high, xhigh, max | $5 / $25 |
+| `anthropic` | `claude-opus-5` | `anthropic-messages` | 1000000 | 128000 | off, low, medium, high, xhigh, max | $5 / $25 |
+| `anthropic` | `claude-opus-5-5` | `anthropic-messages` | 1000000 | 128000 | low, medium, high, xhigh, max | $4 / $20 |
+| `anthropic` | `claude-sonnet-4-5` | `anthropic-messages` | 200000 | 64000 | off | $3 / $15 |
+| `anthropic` | `claude-sonnet-4-5-20250929` | `anthropic-messages` | 200000 | 64000 | off | $3 / $15 |
+| `anthropic` | `claude-sonnet-4-6` | `anthropic-messages` | 1000000 | 128000 | off, low, medium, high, max | ? |
+| `anthropic` | `claude-sonnet-5` | `anthropic-messages` | 1000000 | 128000 | off, low, medium, high, xhigh, max | $2 / $10 |
+| `anthropic` | `claude-sonnet-5-5` | `anthropic-messages` | 1000000 | 128000 | low, medium, high, xhigh, max | $2 / $10 |
+| `openai` | `gpt-4.1` | `openai-responses` | 1047576 | 32768 | off | $2 / $8 |
+| `openai` | `gpt-4.1-mini` | `openai-responses` | 1047576 | 32768 | off | $0.4 / $1.6 |
+| `openai` | `gpt-4o` | `openai-responses` | 128000 | 16384 | off | $2.5 / $10 |
+| `openai` | `gpt-4o-2024-08-06` | `openai-responses` | 128000 | 16384 | off | $2.5 / $10 |
+| `openai` | `gpt-4o-2024-11-20` | `openai-responses` | 128000 | 16384 | off | $2.5 / $10 |
+| `openai` | `gpt-4o-mini` | `openai-responses` | 128000 | 16384 | off | $0.15 / $0.6 |
+| `openai` | `gpt-5` | `openai-responses` | 400000 | 128000 | minimal, low, medium, high | $1.25 / $10 |
+| `openai` | `gpt-5-mini` | `openai-responses` | 400000 | 128000 | minimal, low, medium, high | $0.25 / $2 |
+| `openai` | `gpt-5-nano` | `openai-responses` | 400000 | 128000 | minimal, low, medium, high | $0.05 / $0.4 |
+| `openai` | `gpt-5-pro` | `openai-responses` | 400000 | 272000 | high | $15 / $120 |
+| `openai` | `gpt-5.1` | `openai-responses` | 400000 | 128000 | off, low, medium, high | $1.25 / $10 |
+| `openai` | `gpt-5.2` | `openai-responses` | 400000 | 128000 | off, low, medium, high, xhigh | $1.75 / $14 |
+| `openai` | `gpt-5.2-pro` | `openai-responses` | 400000 | 128000 | medium, high, xhigh | $21 / $168 |
+| `openai` | `gpt-5.3-codex` | `openai-responses` | 400000 | 128000 | off, low, medium, high, xhigh | $1.75 / $14 |
+| `openai` | `gpt-5.3-codex-spark` | `openai-responses` | 128000 | 32000 | off, low, medium, high, xhigh | $1.75 / $14 |
+| `openai` | `gpt-5.4` | `openai-responses` | 1050000 | 128000 | off, low, medium, high, xhigh | $2.5 / $15 |
+| `openai` | `gpt-5.4-mini` | `openai-responses` | 400000 | 128000 | off, low, medium, high, xhigh | $0.75 / $4.5 |
+| `openai` | `gpt-5.4-nano` | `openai-responses` | 400000 | 128000 | off, low, medium, high, xhigh | $0.2 / $1.25 |
+| `openai` | `gpt-5.4-pro` | `openai-responses` | 1050000 | 128000 | medium, high, xhigh | $30 / $180 |
+| `openai` | `gpt-5.5` | `openai-responses` | 1050000 | 128000 | off, low, medium, high, xhigh | $5 / $30 |
+| `openai` | `gpt-5.5-pro` | `openai-responses` | 1050000 | 128000 | medium, high, xhigh | $30 / $180 |
+| `openai` | `gpt-5.6` | `openai-responses` | 1050000 | 128000 | off, low, medium, high, xhigh, max | $4 / $20 |
+| `openai` | `gpt-5.6-luna` | `openai-responses` | 1050000 | 128000 | off, low, medium, high, xhigh, max | $0.2 / $1.2 |
+| `openai` | `gpt-5.6-sol` | `openai-responses` | 1050000 | 128000 | off, low, medium, high, xhigh, max | $4 / $20 |
+| `openai` | `gpt-5.6-terra` | `openai-responses` | 1050000 | 128000 | off, low, medium, high, xhigh, max | $2 / $12 |
+| `openai` | `gpt-6-astra` | `openai-responses` | 1050000 | 128000 | low, medium, high, xhigh, max | $10 / $50 |
+| `openai` | `gpt-6-luna` | `openai-responses` | 1050000 | 128000 | off, low, medium, high, xhigh, max | $0.1 / $0.5 |
+| `openai` | `gpt-6-sol` | `openai-responses` | 1050000 | 128000 | off, low, medium, high, xhigh, max | $2 / $10 |
+| `openai` | `gpt-6.1-sol` | `openai-responses` | 1050000 | 128000 | low, medium, high, xhigh, max | $2 / $10 |
+| `openai` | `gpt-6.1-terra` | `openai-responses` | 1050000 | 128000 | off, low, medium, high, xhigh, max | $1 / $5 |
+| `openai` | `o3` | `openai-responses` | 200000 | 100000 | low, medium, high | $2 / $8 |
+| `openai` | `o3-pro` | `openai-responses` | 200000 | 100000 | low, medium, high | $20 / $80 |
+| `xai` | `grok-4.7` | `openai-responses` | 500000 | 500000 | low, medium, high, xhigh | ? |

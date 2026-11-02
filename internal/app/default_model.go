@@ -12,10 +12,13 @@ import (
 type startChoice struct {
 	// initial is the demo model. It is zero unless the demo provider is enabled.
 	initial providers.Model
-	// rows lists the catalog in display order.
+	// rows lists the model list in display order.
 	rows func() []providers.Model
-	// find resolves one catalog row.
+	// find resolves one row of the model list.
 	find func(providers.Ref) (providers.Model, error)
+	// inCatalog tells whether any source has the model, also when the account
+	// list does not. Nil means only the list counts.
+	inCatalog func(providers.Ref) bool
 	// usable tells whether a provider can serve models now.
 	usable func(ctx context.Context, provider string) bool
 	// saved returns the saved default model id, or "".
@@ -24,9 +27,11 @@ type startChoice struct {
 
 // pick chooses the model of a new session, in this order:
 //
-//  1. the saved default, when its provider is usable;
-//  2. the recommended model of the first usable provider in catalog order;
-//  3. the first usable row in catalog order;
+//  1. the saved default, when it is in the model list and its provider is
+//     usable;
+//  2. the recommended model of the first usable provider in display order,
+//     when the model list has it;
+//  3. the first row of that provider in display order;
 //  4. no model.
 //
 // When a saved default exists but cannot be used and another model was chosen,
@@ -58,6 +63,9 @@ func (c startChoice) savedModel(ctx context.Context, id string) (providers.Model
 	}
 	m, err := c.find(ref)
 	if err != nil {
+		if c.inCatalog != nil && c.inCatalog(ref) {
+			return providers.Model{}, protocol.ACPFallbackNotInAccount
+		}
 		return providers.Model{}, protocol.ACPFallbackNotInCatalog
 	}
 	if !c.usable(ctx, m.Provider) {
@@ -67,7 +75,8 @@ func (c startChoice) savedModel(ctx context.Context, id string) (providers.Model
 }
 
 // firstUsable returns the recommended model of the first usable provider in
-// catalog order, or that provider's first row when it has none.
+// display order, or that provider's first row when the list does not have the
+// recommended model.
 func (c startChoice) firstUsable(ctx context.Context, rows []providers.Model) (providers.Model, bool) {
 	for _, m := range rows {
 		if !c.usable(ctx, m.Provider) {
@@ -81,8 +90,8 @@ func (c startChoice) firstUsable(ctx context.Context, rows []providers.Model) (p
 	return providers.Model{}, false
 }
 
-// recommendedModel returns the recommended row of a provider. The demo provider
-// has one row, which is its recommended model.
+// recommendedModel returns the recommended row of a provider when the model
+// list has it. The demo provider has one row, which is its recommended model.
 func (c startChoice) recommendedModel(provider string) (providers.Model, bool) {
 	if c.initial.ID != "" && c.initial.Provider == provider {
 		return c.initial, true

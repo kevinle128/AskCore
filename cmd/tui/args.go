@@ -200,6 +200,7 @@ const usage = `ask - the Ask agent harness
 Usage:
   ask [options] [--] [@files...] [messages...]
   ask auth --help
+  ask models --help
   ask acp --help
   ask connect --help
   ask leader --help

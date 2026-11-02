@@ -1,4 +1,4 @@
-◢◤ ask  ● leader 7c1e                                        ▱▱▱▱▱▱▱▱ 0%  $0.00
+ ◢◤ ask
 ────────────────────────────────────────────────────────────────────────────────
   ❯ run seq 1 40, then read parser.go and fix the count of empty fields  15:20
 
@@ -17,8 +17,8 @@
   ⚓ PreToolUse hook (global/no-rm) · bash rm -rf build          ✗ blocked 0.0s
     Blocks recursive removal (rm -rf) inside the repo
 
-
 ────────────────────────────────────────────────────────────────────────────────
  ❯ Ask anything  ·  / commands  ·  ctrl+l model
 ────────────────────────────────────────────────────────────────────────────────
+                                                                    ▱▱▱▱▱▱▱▱ 0%
  Tab blocks · ctrl+t thinking · ctrl+l model · / commands

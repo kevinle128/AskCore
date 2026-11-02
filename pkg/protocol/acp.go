@@ -186,6 +186,7 @@ type ACPStateResult struct {
 
 // ACPModel is one catalog row. ModelID is "provider/id@api" and names one row,
 // because two rows can share provider and id and differ in the wire API.
+// A ContextWindow or MaxTokens of 0 means unknown.
 type ACPModel struct {
 	ModelID       string   `json:"modelId"`
 	Provider      string   `json:"provider"`
@@ -196,6 +197,13 @@ type ACPModel struct {
 	Input         []string `json:"input"`
 	ContextWindow int      `json:"contextWindow"`
 	MaxTokens     int      `json:"maxTokens"`
+	// CostUnknown is true when no source gives the prices of the model, so a
+	// cost computed from them is incomplete. An older peer omits it: known.
+	CostUnknown bool `json:"costUnknown,omitempty"`
+	// NotInAccount marks the model of the session when the account list no
+	// longer has it. The row stays, so that a client keeps the data of the
+	// running model; the session model does not change.
+	NotInAccount bool `json:"notInAccount,omitempty"`
 }
 
 // ACPModelsResult lists the catalog rows. Current is empty when the session

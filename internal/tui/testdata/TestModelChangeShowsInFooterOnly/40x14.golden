@@ -1,0 +1,14 @@
+ ◢◤ ask
+────────────────────────────────────────
+  probe can take 1.2 s.
+
+  go
+  deadline := 5 * time.Second
+  deepseek-v4.1-flash · 4.2s · ↑12.4k ↓…
+
+┊ ✓ Default model: openai/gpt-5.5
+────────────────────────────────────────
+ ❯ Ask anything
+────────────────────────────────────────
+                      openai/gpt-5.5 2%
+ Tab blocks · / commands

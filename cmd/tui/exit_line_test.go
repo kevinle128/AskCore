@@ -146,8 +146,8 @@ func (a *askTerm) requireLastLine(want string) {
 // onlySessionID returns the one live session of the home.
 func onlySessionID(t *testing.T, bin, home string) string {
 	t.Helper()
-	// The header shows the leader before the session exists, so the session
-	// is polled for.
+	// The screen draws before the leader holds the session, so the session is
+	// polled for.
 	ids := liveSessionIDs(t, bin, home)
 	for deadline := time.Now().Add(exitWait); len(ids) == 0 && time.Now().Before(deadline); {
 		time.Sleep(50 * time.Millisecond)
@@ -176,10 +176,9 @@ func TestInteractiveExitLineAndTerminalState(t *testing.T) {
 			bin, home := newE2EHome(t)
 			a := startAskTerm(t, bin, home, askTermOptions{})
 			a.waitText("Ask anything")
-			// The header shows the leader once the link is up. It must not be the
-			// in-process agent.
-			a.waitText("● leader")
-			require.False(t, containsRow(a.rows(), "in-process"))
+			// The screen does not show the link, so the leader of the home tells
+			// that the session is not the in-process agent.
+			requireLeaderLink(t, a, bin, home)
 			a.requireRaw()
 			id := onlySessionID(t, bin, home)
 			tc.end(t, a)

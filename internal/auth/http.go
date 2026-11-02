@@ -18,11 +18,14 @@ import (
 )
 
 type native struct {
-	client   *http.Client
-	now      func() time.Time
-	wait     func(context.Context, time.Duration) error
-	accessMu sync.Mutex
-	access   map[accessKey]modelAccess
+	client *http.Client
+	// openAIList sends only the OpenAI model-list GET; the ChatGPT access
+	// check and the ChatGPT model list share it.
+	openAIList *http.Client
+	now        func() time.Time
+	wait       func(context.Context, time.Duration) error
+	accessMu   sync.Mutex
+	access     map[accessKey]modelAccess
 }
 
 // ErrHTTPExchange means a request to a provider failed before an answer came.
@@ -61,11 +64,14 @@ func NativeMethods(o NativeOptions) []Method {
 			}
 		}
 	}
-	n := &native{client: client, now: now, wait: wait}
+	n := &native{client: client, openAIList: listClient(o, openAIListRoute), now: now, wait: wait}
+	// anthropic-oauth has no model list: the vendor terms do not permit a
+	// third-party app to use a subscription token for it, so its access stays
+	// unknown.
 	return []Method{
 		{Provider: "anthropic", ID: "anthropic-oauth", API: providers.APIAnthropicMessages, Profile: "claude-code", Endpoint: "https://api.anthropic.com", Lead: 10 * time.Minute, Login: n.anthropicLogin, Refresh: n.anthropicRefresh},
-		{Provider: "openai", ID: "openai-chatgpt", API: providers.APIOpenAIResponses, Profile: "chatgpt", Endpoint: providers.OpenAIURL, Lead: 8 * time.Minute, Login: n.chatGPTLogin, Refresh: n.chatGPTRefresh, CheckAccess: n.checkChatGPTAccess, Forget: n.forgetAccess},
-		{Provider: "xai", ID: "xai-oauth", API: providers.APIOpenAIResponses, Profile: "xai", Endpoint: "https://api.x.ai/v1", Lead: 10 * time.Minute, Login: n.xaiLogin, Refresh: n.xaiRefresh},
+		{Provider: "openai", ID: "openai-chatgpt", API: providers.APIOpenAIResponses, Profile: "chatgpt", Endpoint: providers.OpenAIURL, Lead: 8 * time.Minute, Login: n.chatGPTLogin, Refresh: n.chatGPTRefresh, CheckAccess: n.checkChatGPTAccess, Forget: n.forgetAccess, ListModels: modelLister(n.openAIList, openAIListRoute, nil, chatGPTPage)},
+		{Provider: "xai", ID: "xai-oauth", API: providers.APIOpenAIResponses, Profile: "xai", Endpoint: "https://api.x.ai/v1", Lead: 10 * time.Minute, Login: n.xaiLogin, Refresh: n.xaiRefresh, ListModels: modelLister(listClient(o, xaiListRoute), xaiListRoute, nil, dataPage)},
 	}
 }
 

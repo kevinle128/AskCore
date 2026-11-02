@@ -12,16 +12,23 @@ import (
 	"AskCore/internal/auth"
 	"AskCore/internal/providers"
 	"AskCore/internal/settings"
+	"AskCore/internal/testsupport"
 
 	sdk "github.com/coder/acp-go-sdk"
 )
 
+// testACPParams gives the parameters of a runtime that stays offline: the
+// model refresh is off, and the sign-in and model refresh HTTP refuse every
+// host but loopback, so a test that turns the refresh on by mistake fails.
 func testACPParams(t *testing.T) ACPParams {
 	t.Helper()
+	guard := testsupport.LoopbackOnly(t)
 	return ACPParams{
-		Home:    t.TempDir(),
-		Initial: providers.Model{ID: "faux-1", Name: "faux-1", Provider: "faux", API: "faux"},
-		Info:    sdk.Implementation{Name: "ask", Version: "test"},
+		Home:         t.TempDir(),
+		AuthHTTP:     guard,
+		ModelRefresh: ModelRefresh{Enabled: false, HTTP: guard},
+		Initial:      providers.Model{ID: "faux-1", Name: "faux-1", Provider: "faux", API: "faux"},
+		Info:         sdk.Implementation{Name: "ask", Version: "test"},
 		NewAgent: func(*auth.Service, string, string, providers.Model) (*agent.Agent, error) {
 			return nil, errors.New("not used")
 		},

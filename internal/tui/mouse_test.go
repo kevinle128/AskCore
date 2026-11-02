@@ -109,7 +109,7 @@ func TestWheelScrollsThreeRowsPerNotchAndTurnsFollowOff(t *testing.T) {
 
 func TestWheelOutsideThePaneIsIgnored(t *testing.T) {
 	m := listModelAt(t, colorprofile.NoTTY, 80, 24, longSession(40)...)
-	for _, y := range []int{0, 1, m.geo.PromptTop, 23} {
+	for _, y := range []int{0, 1, m.geo.PromptTop, 22, 23} {
 		mouse(m, tea.MouseWheelMsg(wheelAt(5, y, true)))
 	}
 	require.True(t, m.pane.Following())
@@ -190,10 +190,10 @@ func TestClickOnTheGapRowOfABlockSelectsThatBlock(t *testing.T) {
 	require.Equal(t, blockID(t, m, isPrompt), m.selectedBlock())
 }
 
-func TestClickInHeaderBarRulesAndStatusIsIgnored(t *testing.T) {
+func TestClickInHeaderFooterBarRulesAndStatusIsIgnored(t *testing.T) {
 	m := listModel(t, 80, 24)
 	typed(t, m, "draft")
-	for _, y := range []int{0, 1, m.geo.PromptTop - 1, m.geo.PromptTop + 1, 23} {
+	for _, y := range []int{0, 1, m.geo.PromptTop - 1, m.geo.PromptTop + 1, 22, 23} {
 		clickAt(m, 12, y)
 		require.Equal(t, FocusEditor, m.Focus(), "row %d", y)
 		require.Empty(t, m.list.selected)

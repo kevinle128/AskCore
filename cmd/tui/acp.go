@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"io"
+	"net/http"
 	"os"
 
 	"go.uber.org/fx"
@@ -102,6 +103,22 @@ func runACP(argv []string, stdin io.Reader, stdout, stderr io.Writer, deps runDe
 	return 0
 }
 
+// disableModelRefreshEnv turns off the network refresh of the model list when
+// its value is "1". The list then comes from the cache and the built-in
+// catalog only.
+const disableModelRefreshEnv = "ASK_DISABLE_MODEL_REFRESH"
+
+func modelRefreshOn(deps runDependencies) bool {
+	return deps.modelRefresh && deps.getenv(disableModelRefreshEnv) != "1"
+}
+
+func modelHTTP(deps runDependencies) *http.Client {
+	if deps.modelHTTP != nil {
+		return deps.modelHTTP
+	}
+	return &http.Client{}
+}
+
 // acpParams builds the facts of the shared agent host from the process
 // dependencies. ask acp and ask leader use the same ones, so both run the same
 // agent with the same native credentials.
@@ -119,7 +136,7 @@ func acpParams(deps runDependencies) (app.ACPParams, error) {
 	var initial providers.Model
 	if deps.getenv(fauxEnv) == "1" {
 		var err error
-		demoStream, initial, err = openProvider(o, deps.getenv)
+		demoStream, initial, err = openProvider(o, deps.getenv, nil)
 		if err != nil {
 			return app.ACPParams{}, err
 		}
@@ -132,6 +149,9 @@ func acpParams(deps runDependencies) (app.ACPParams, error) {
 		Wait:     deps.wait,
 		Initial:  initial,
 		Info:     sdk.Implementation{Name: "ask", Version: buildIdentity()},
+		// The leader, ask acp and the in-process TUI all compose here, so
+		// all three refresh the model list.
+		ModelRefresh: app.ModelRefresh{Enabled: modelRefreshOn(deps), HTTP: modelHTTP(deps), Now: deps.now},
 		NewAgent: func(service *auth.Service, sessionID, cwd string, start providers.Model) (*agent.Agent, error) {
 			// The job table closes through the Config.Release of the Agent.
 			ag, _, err := newNativeAgentOn(o, deps.getenv, service, sessionID, cwd, demoStream, start)

@@ -8,10 +8,34 @@ import (
 	"slices"
 	"strings"
 
+	"AskCore/internal/app"
 	"AskCore/internal/auth"
 )
 
-func runAuth(ctx context.Context, argv []string, stdin io.Reader, stdout, stderr io.Writer, service *auth.Service) int {
+// accountModelLists updates the cached model lists of a provider after its
+// credential changed. login is false for a sign-out.
+type accountModelLists func(ctx context.Context, service *auth.Service, provider string, login bool) error
+
+// authModelLists returns the model list update of `ask auth`. It deletes the
+// cached lists of the provider, because a key with no identity part does not
+// tell two accounts apart. After a sign-in, when the refresh is on, it fetches
+// the list of the new credential in this process: no leader is needed. A
+// leader sees the new cache file at its next model list.
+func authModelLists(deps runDependencies) accountModelLists {
+	home := deps.getenv("ASK_HOME")
+	refresh := modelRefreshOn(deps)
+	return func(ctx context.Context, service *auth.Service, provider string, login bool) error {
+		if err := app.ForgetAccountModels(ctx, home, provider); err != nil {
+			return err
+		}
+		if login && refresh {
+			return app.RefreshAccountModels(ctx, home, service, provider)
+		}
+		return nil
+	}
+}
+
+func runAuth(ctx context.Context, argv []string, stdin io.Reader, stdout, stderr io.Writer, service *auth.Service, models accountModelLists) int {
 	o, err := parseAuthArgs(argv)
 	if err != nil {
 		report(stderr, "Error:", err)
@@ -98,6 +122,12 @@ func runAuth(ctx context.Context, argv []string, stdin io.Reader, stdout, stderr
 		report(stderr, "Local credential removed. Environment keys can still be used.")
 	} else {
 		report(stderr, "Credential saved.")
+	}
+	if models != nil {
+		// The credential change stands; a stale list only shows more models.
+		if err := models(ctx, service, o.provider, o.action != "logout"); err != nil {
+			report(stderr, "Warning: model list not updated:", err)
+		}
 	}
 	return 0
 }

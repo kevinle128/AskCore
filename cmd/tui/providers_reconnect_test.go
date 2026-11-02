@@ -6,7 +6,6 @@ import (
 	"net"
 	"os"
 	"path/filepath"
-	"strings"
 	"sync"
 	"testing"
 	"time"
@@ -149,7 +148,7 @@ func TestInteractiveReconnectDrawsNoMissedModelChanges(t *testing.T) {
 
 	a := startAskTerm(t, bin, proxyHome, askTermOptions{})
 	a.waitText("Ask anything")
-	a.waitFor("the leader in the header row", func(rows []string) bool { return hasRow(rows, "⌂", "leader ", "faux-1") })
+	a.waitFor("the model in the footer row", func(rows []string) bool { return footerHas(rows, "faux-1") })
 	ids := liveSessionIDs(t, bin, home)
 	require.Len(t, ids, 1)
 	sid := ids[0]
@@ -179,12 +178,13 @@ func TestInteractiveReconnectDrawsNoMissedModelChanges(t *testing.T) {
 	lp.resume()
 	a.waitRow("↻ Reconnected. Session " + tui.ShortID(sid) + " restored.")
 	a.waitFor("the model the session ends on", func(rows []string) bool {
-		return hasRow(rows, "leader ", "gpt-5.5") && hasRow(rows, "  model  openai/gpt-5.5")
+		return footerHas(rows, "openai/gpt-5.5")
 	})
 	// Give any replayed event time to draw a line before the check.
 	time.Sleep(700 * time.Millisecond)
 	require.False(t, containsRow(a.rows(), "· was "), "a missed change drew a line:\n%s", a.screen())
-	require.False(t, strings.Contains(a.screen(), "model  anthropic/"), "a missed change drew a line:\n%s", a.screen())
+	require.False(t, hasRowPrefix(a.rows(), "  model  "), "a missed change drew a line:\n%s", a.screen())
+	require.False(t, footerHas(a.rows(), "anthropic/"), "the footer row shows a missed model:\n%s", a.screen())
 	a.quitDetached()
 }
 

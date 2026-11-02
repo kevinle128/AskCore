@@ -81,8 +81,8 @@ func producerDetails0() protocol.ToolResultDetails {
 func foldSource() fakeSource {
 	return fakeSource{
 		placeholder: true,
-		headerL:     "◢◤ ask  ● leader 7c1e  ⌂ ~/src/p",
-		headerR:     "claude-sonnet-5-5  ▰▱▱▱▱▱▱▱ 12%  $0.01 ",
+		footerL:     " ⌂ ~/src/p",
+		footerR:     "anthropic/claude-sonnet-5-5  ▰▱▱▱▱▱▱▱ 12% ",
 	}
 }
 

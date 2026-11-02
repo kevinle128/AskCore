@@ -1,6 +1,5 @@
-◢◤ ask  ● leader 7c1e                                        ▱▱▱▱▱▱▱▱ 0%  $0.00
+ ◢◤ ask
 ────────────────────────────────────────────────────────────────────────────────
-
   Count now skips empty fields. TestCount still fails because it expects the old
   value; shall I fix it?
   claude-sonnet-5-5 · 6.2s · ↑8.1k ↓320 · $0.006
@@ -21,4 +20,5 @@
 ────────────────────────────────────────────────────────────────────────────────
  ❯ Ask anything  ·  / commands  ·  ctrl+l model
 ────────────────────────────────────────────────────────────────────────────────
+                                                                    ▱▱▱▱▱▱▱▱ 0%
  j/k select · e fold: expanded · E all · Enter open · Tab prompt

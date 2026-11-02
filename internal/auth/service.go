@@ -40,6 +40,9 @@ type Method struct {
 	CheckAccess func(context.Context, providers.Model, settings.Credential) error
 	// Forget drops per-provider cached answers after a credential change.
 	Forget func()
+	// ListModels returns the models that a credential of this method can use.
+	// Nil means that the method has no list, so its access state stays unknown.
+	ListModels func(context.Context, settings.Credential) (AccountModels, error)
 }
 
 type Service struct {
@@ -160,53 +163,13 @@ func (s *Service) Resolve(ctx context.Context, m providers.Model, key string) (p
 	if !ok {
 		return providers.AuthSnapshot{}, fmt.Errorf("%w: %s/%s", ErrMethod, m.Provider, c.Method)
 	}
-	if c.OAuth == nil || strings.TrimSpace(c.OAuth.AccessToken) == "" {
-		return providers.AuthSnapshot{}, ErrRecovery
+	c, finish, err := s.freshOAuth(ctx, m.Provider, method, c)
+	if err != nil {
+		return providers.AuthSnapshot{}, err
 	}
-	now := s.now()
-	if !c.OAuth.ExpiresAt.After(now.Add(method.Lead)) {
-		if now.Before(c.OAuth.RefreshNotBefore) {
-			if !c.OAuth.ExpiresAt.After(now) {
-				return providers.AuthSnapshot{}, ErrNoCredential
-			}
-		} else {
-			if method.Refresh == nil {
-				return providers.AuthSnapshot{}, ErrRecovery
-			}
-			var id [16]byte
-			if _, err := rand.Read(id[:]); err != nil {
-				return providers.AuthSnapshot{}, err
-			}
-			finish, err := s.beginRefresh()
-			if err != nil {
-				return providers.AuthSnapshot{}, err
-			}
-			defer finish()
-			original := c
-			c, err = s.Store.Refresh(ctx, m.Provider, c.Generation, hex.EncodeToString(id[:]), func(exchangeCtx context.Context, current settings.Credential) (settings.Credential, error) {
-				if current.Method != original.Method || current.OAuth == nil || current.OAuth.Subject != original.OAuth.Subject || current.OAuth.ClientID != original.OAuth.ClientID || current.OAuth.Issuer != original.OAuth.Issuer {
-					return settings.Credential{}, settings.ErrConflict
-				}
-				replacement, err := method.Refresh(exchangeCtx, current)
-				if err != nil {
-					return settings.Credential{}, err
-				}
-				if err := s.validateReplacement(method, original, replacement); err != nil {
-					return settings.Credential{}, err
-				}
-				return replacement, nil
-			})
-			if err != nil {
-				return providers.AuthSnapshot{}, errors.Join(ErrRecovery, err)
-			}
-			if err := ctx.Err(); err != nil {
-				return providers.AuthSnapshot{}, err
-			}
-			if err := s.validateReplacement(method, original, c); err != nil {
-				return providers.AuthSnapshot{}, ErrRecovery
-			}
-		}
-	}
+	// The refresh slot stays held through the access check, so a shutdown
+	// drain also waits for the check that uses the new token.
+	defer finish()
 	if method.CheckAccess != nil {
 		if err := method.CheckAccess(ctx, m, c); err != nil {
 			return providers.AuthSnapshot{}, fmt.Errorf("%w: %v", ErrAccess, err)
@@ -220,6 +183,65 @@ func (s *Service) Resolve(ctx context.Context, m providers.Model, key string) (p
 		}
 	}
 	return providers.AuthSnapshot{Provider: m.Provider, Method: c.Method, Profile: method.Profile, Source: "saved", AccountID: c.OAuth.Subject, Generation: c.Generation, Endpoint: m.BaseURL, BillingHint: "subscription", AccessToken: c.OAuth.AccessToken}, nil
+}
+
+// freshOAuth returns the saved OAuth credential c, refreshed first when it
+// expires within the method lead time. When a refresh ran, finish releases its
+// shutdown slot and the caller must call it; otherwise finish does nothing.
+// On error the slot is already released.
+func (s *Service) freshOAuth(ctx context.Context, provider string, method Method, c settings.Credential) (settings.Credential, func(), error) {
+	none := func() {}
+	if c.OAuth == nil || strings.TrimSpace(c.OAuth.AccessToken) == "" {
+		return settings.Credential{}, none, ErrRecovery
+	}
+	now := s.now()
+	if c.OAuth.ExpiresAt.After(now.Add(method.Lead)) {
+		return c, none, nil
+	}
+	if now.Before(c.OAuth.RefreshNotBefore) {
+		if !c.OAuth.ExpiresAt.After(now) {
+			return settings.Credential{}, none, ErrNoCredential
+		}
+		return c, none, nil
+	}
+	if method.Refresh == nil {
+		return settings.Credential{}, none, ErrRecovery
+	}
+	var id [16]byte
+	if _, err := rand.Read(id[:]); err != nil {
+		return settings.Credential{}, none, err
+	}
+	finish, err := s.beginRefresh()
+	if err != nil {
+		return settings.Credential{}, none, err
+	}
+	original := c
+	c, err = s.Store.Refresh(ctx, provider, c.Generation, hex.EncodeToString(id[:]), func(exchangeCtx context.Context, current settings.Credential) (settings.Credential, error) {
+		if current.Method != original.Method || current.OAuth == nil || current.OAuth.Subject != original.OAuth.Subject || current.OAuth.ClientID != original.OAuth.ClientID || current.OAuth.Issuer != original.OAuth.Issuer {
+			return settings.Credential{}, settings.ErrConflict
+		}
+		replacement, err := method.Refresh(exchangeCtx, current)
+		if err != nil {
+			return settings.Credential{}, err
+		}
+		if err := s.validateReplacement(method, original, replacement); err != nil {
+			return settings.Credential{}, err
+		}
+		return replacement, nil
+	})
+	if err != nil {
+		finish()
+		return settings.Credential{}, none, errors.Join(ErrRecovery, err)
+	}
+	if err := ctx.Err(); err != nil {
+		finish()
+		return settings.Credential{}, none, err
+	}
+	if err := s.validateReplacement(method, original, c); err != nil {
+		finish()
+		return settings.Credential{}, none, ErrRecovery
+	}
+	return c, finish, nil
 }
 
 func (s *Service) keySnapshot(m providers.Model, key, source string) (providers.AuthSnapshot, error) {

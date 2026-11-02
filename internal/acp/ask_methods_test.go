@@ -4,6 +4,8 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"slices"
+	"sync"
 	"testing"
 	"time"
 
@@ -71,12 +73,19 @@ func TestAdapterCatalogRoundTripsThroughSetModel(t *testing.T) {
 	sid := p.start()
 	var cat protocol.ACPModelsResult
 	p.ok(protocol.ACPModels, map[string]any{"sessionId": sid}, &cat)
-	require.Len(t, cat.Models, len(providers.AvailableModels()))
+	// The session model is not a catalog row, so the list adds its row last,
+	// marked as not in the account list.
+	require.Len(t, cat.Models, len(providers.AvailableModels())+1)
 	st := p.state(sid)
 	require.Equal(t, st.ModelID, cat.Current)
-	require.Contains(t, cat.Current, "faux/faux-1@", "the current model is reported apart from the catalog rows")
+	require.Contains(t, cat.Current, "faux/faux-1@")
+	last := cat.Models[len(cat.Models)-1]
+	require.Equal(t, cat.Current, last.ModelID)
+	require.True(t, last.NotInAccount)
+	catalog := cat.Models[:len(cat.Models)-1]
 	seen := map[string]bool{}
-	for _, m := range cat.Models {
+	for _, m := range catalog {
+		require.False(t, m.NotInAccount, m.ModelID)
 		require.False(t, seen[m.ModelID], "duplicate %s", m.ModelID)
 		seen[m.ModelID] = true
 		require.Equal(t, fmt.Sprintf("%s/%s@%s", m.Provider, m.ID, m.API), m.ModelID)
@@ -91,7 +100,53 @@ func TestAdapterCatalogRoundTripsThroughSetModel(t *testing.T) {
 		f := p.call(protocol.ACPSetModel, map[string]any{"sessionId": sid, "modelId": bad})
 		require.Equal(t, protocol.ACPErrInvalidModel, f.errKind(t), "%q", bad)
 	}
-	require.Equal(t, cat.Models[len(cat.Models)-1].ModelID, p.state(sid).ModelID, "a refused switch keeps the model")
+	require.Equal(t, catalog[len(catalog)-1].ModelID, p.state(sid).ModelID, "a refused switch keeps the model")
+}
+
+// A refresh can remove the session model from the model list. The list still
+// has its row, marked as not in the account list, so the client keeps its
+// context window and thinking support; the session keeps its model.
+func TestModelsKeepsSessionRowAfterRefreshRemovesIt(t *testing.T) {
+	cfg := testConfig(says("x"), nil)
+	var mu sync.Mutex
+	rows := providers.AvailableModels()
+	refreshes := 0
+	cfg.Models = func() []providers.Model {
+		mu.Lock()
+		defer mu.Unlock()
+		return slices.Clone(rows)
+	}
+	cfg.RefreshModels = func() {
+		mu.Lock()
+		refreshes++
+		mu.Unlock()
+	}
+	p := newAdapterPeer(t, cfg, nil)
+	sid := p.start()
+	target := providers.AnthropicSonnet46()
+	var set protocol.ACPSetModelResult
+	p.ok(protocol.ACPSetModel, map[string]any{"sessionId": sid, "modelId": modelID(target)}, &set)
+
+	var before protocol.ACPModelsResult
+	p.ok(protocol.ACPModels, map[string]any{"sessionId": sid}, &before)
+	require.Len(t, before.Models, len(rows), "the session model is a row: nothing is added")
+
+	mu.Lock()
+	rows = slices.DeleteFunc(rows, func(m providers.Model) bool { return m.ID == target.ID })
+	mu.Unlock()
+	var after protocol.ACPModelsResult
+	p.ok(protocol.ACPModels, map[string]any{"sessionId": sid}, &after)
+	require.Equal(t, modelID(target), after.Current)
+	require.Len(t, after.Models, len(before.Models))
+	last := after.Models[len(after.Models)-1]
+	require.Equal(t, modelID(target), last.ModelID)
+	require.True(t, last.NotInAccount)
+	require.Equal(t, target.ContextWindow, last.ContextWindow)
+	require.True(t, last.Reasoning)
+	require.Equal(t, modelID(target), p.state(sid).ModelID, "the session model does not change")
+	mu.Lock()
+	require.Equal(t, 2, refreshes, "each model list asks for a refresh of a stale list")
+	mu.Unlock()
 }
 
 func TestAdapterSetModelAuthConstraintAndReadiness(t *testing.T) {
