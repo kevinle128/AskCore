@@ -7,11 +7,11 @@
   probe can take 1.2 s.
 
     deadline := 5 * time.Second
+
   deepseek-v4.1-flash · 4.2s · ↑12.4k ↓1.8k · $0.004
 
   ✓ Removed the saved credential for anthropic.
     ANTHROPIC_API_KEY is still set, so anthropic stays usable.
-
 
 
 

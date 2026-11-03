@@ -119,6 +119,7 @@ func TestReplyFirstRowEndsWithItsTime(t *testing.T) {
 		"",
 		"  tool_coordinator.go runs one batch of tool calls: it prepares them,    17:30",
 		"  runs them in parallel with a limit, and commits them in order.",
+		"",
 		"  claude-sonnet-5-5 · 14s · ↑10.2k ↓1.8k",
 	})
 	for _, row := range r.h.text() {

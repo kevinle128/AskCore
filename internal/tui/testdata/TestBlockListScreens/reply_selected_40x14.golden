@@ -5,8 +5,8 @@
 │ TestCount still fails because it     │
 │ expects the old value; shall I fix   │
 │ it?                                  │
-│ claude-sonnet-5-5 · 6.2s · ↑8.1k ↓3… │
-└                                      ┘
+┆                                      ┆
+                 ▼ End
 ────────────────────────────────────────
  ❯ Ask anything
 ────────────────────────────────────────

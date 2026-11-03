@@ -130,7 +130,9 @@ func TestStreamingThinkingShowsTheLastLinesForEverySetting(t *testing.T) {
 }
 
 func TestEndedThinkingShowsAllLinesAt40x14(t *testing.T) {
-	m, _ := sessionModel(t, colorprofile.NoTTY, 40, 14, ThinkingExpanded, thinkingTurnEvents(true)...)
+	// One more row than 40x14 keeps the first wrapped row in view above the
+	// reply, its blank row and its usage line.
+	m, _ := sessionModel(t, colorprofile.NoTTY, 40, 15, ThinkingExpanded, thinkingTurnEvents(true)...)
 	rows := screenOf(m)
 	i := rowIndexOf(t, rows, "I will edit Count and run the")
 	require.Equal(t, "    I will edit Count and run the", rows[i], "the thinking wraps at column 4")

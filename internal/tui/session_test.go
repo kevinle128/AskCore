@@ -954,7 +954,9 @@ func TestFooterUsageThresholds(t *testing.T) {
 		for _, row := range r.h.text() {
 			require.LessOrEqual(t, displayWidth(row), 40, row)
 		}
-		require.GreaterOrEqual(t, r.h.count("日本語のテスト"), 1)
+		// The reply keeps its wide characters on the screen; the prompt rows
+		// scroll above the window at this height.
+		require.GreaterOrEqual(t, r.h.count("The 日本語 test fails"), 1)
 		requireContentGolden(t, r.h)
 	})
 }

@@ -938,8 +938,8 @@ func TestPaneReplyParagraphsAndUsageLineAreOneUnit(t *testing.T) {
 		newAssistantTextBlock("two", newMarkdownStream(), false),
 		NewMetaLineBlock("m · 1.0s"),
 	)
-	require.Equal(t, []string{"  one", "", "  two", "  m · 1.0s", "", "", ""}, plainFrame(p),
-		"the break between paragraphs is part of the reply; the usage row follows without a gap")
+	require.Equal(t, []string{"  one", "", "  two", "", "  m · 1.0s", "", ""}, plainFrame(p),
+		"the break between paragraphs is part of the reply; one blank row of the reply comes before the usage row")
 }
 
 func TestPaneGapRowFollowsAReplyThatEndsWithAnEmptyParagraph(t *testing.T) {

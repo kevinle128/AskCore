@@ -195,6 +195,7 @@ func TestTranslateReplyStream(t *testing.T) {
 		promptRow("why does it fail?", promptClock),
 		"",
 		"  The test waits for the stale socket.",
+		"",
 		"  claude-opus-5-5 · 4.2s · ↑12.4k ↓1.8k · $0.004",
 	}, x.rows())
 	require.Equal(t, x.tr.Len(), x.tr.Frontier(), "every block is final after the run settles")
@@ -278,7 +279,7 @@ func TestTranslateReplyWithoutMessageStartOrUpdates(t *testing.T) {
 	// A follower that joins late sees only the end of a message.
 	x := newTx(t)
 	x.feed(assistantEnd("m", protocol.StopStop, 0, protocol.Text{Text: "Only the end."}))
-	require.Equal(t, []string{"  Only the end.", "  m · ↑12.4k ↓1.8k · $0.004"}, x.rows())
+	require.Equal(t, []string{"  Only the end.", "", "  m · ↑12.4k ↓1.8k · $0.004"}, x.rows())
 }
 
 func TestTranslateUpdatesWithoutStartKeepWorking(t *testing.T) {
@@ -302,6 +303,7 @@ func TestTranslateThinkingThenReply(t *testing.T) {
 		"    The stale check runs first.",
 		"",
 		"  Look at the probe.",
+		"",
 		"  m · 1.0s · ↑12.4k ↓1.8k · $0.004",
 	}, x.rows(), "an empty row separates the step from the reply")
 }
@@ -599,6 +601,7 @@ func TestTranslateEmptyThinkingMakesNoBlock(t *testing.T) {
 	x.feed(assistantEnd("m", protocol.StopStop, 1000, protocol.Thinking{Thinking: ""}, protocol.Text{Text: "ok"}))
 	require.Equal(t, []string{
 		"  ok",
+		"",
 		"  m · 1.0s · ↑12.4k ↓1.8k · $0.004",
 	}, x.rows())
 	require.NotContains(t, strings.Join(plain(finalRows(x.tr, x.rc)), "\n"), "Thought", "no thinking row for an empty summary")
@@ -608,7 +611,7 @@ func TestTranslateEmptyThinkingOnlyInEndEvent(t *testing.T) {
 	x := newTx(t)
 	x.feed(assistantStart("m", 0))
 	x.feed(assistantEnd("m", protocol.StopStop, 1000, protocol.Thinking{Thinking: " \n"}, protocol.Text{Text: "ok"}))
-	require.Equal(t, []string{"  ok", "  m · 1.0s · ↑12.4k ↓1.8k · $0.004"}, x.rows())
+	require.Equal(t, []string{"  ok", "", "  m · 1.0s · ↑12.4k ↓1.8k · $0.004"}, x.rows())
 }
 
 // The pane puts one empty row between the note and the reply, never two.

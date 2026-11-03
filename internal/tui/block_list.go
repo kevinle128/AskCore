@@ -33,6 +33,14 @@ func joinsPrevious(prev, cur Block) bool {
 	return false
 }
 
+// gapInUnit reports whether a block that joins the unit before it keeps one
+// empty row above it. The usage line of a reply stays apart from the reply
+// text, but it is still part of the reply unit.
+func gapInUnit(b Block) bool {
+	_, ok := b.(metaLineBlock)
+	return ok
+}
+
 // selectable reports whether the user can select the unit that starts at block
 // i. A block that draws no rows has no content to select.
 func (m *Model) selectable(i int) bool { return m.pane.RowsOf(i) > 0 }

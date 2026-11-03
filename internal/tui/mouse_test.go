@@ -480,7 +480,8 @@ func TestDragAtThePaneEdgeScrollsOneRowEachTickAndTurnsFollowOff(t *testing.T) {
 }
 
 func TestDragSelectionStaysOnTheSameTextWhenThePaneScrolls(t *testing.T) {
-	m := listModelAt(t, colorprofile.NoTTY, 80, 24, longSession(40)...)
+	// The height puts a step row, not a gap row, at the top of the end window.
+	m := listModelAt(t, colorprofile.NoTTY, 80, 25, longSession(40)...)
 	withFakeClipboard(m)
 	top := m.geo.PaneTop
 	y := rowIndex(t, m, "◆ Ran step 38")

@@ -78,6 +78,7 @@ var firstTurnRows = []string{
 	"  probe can take 1.2 s.",
 	"",
 	"    deadline := 5 * time.Second",
+	"",
 	"  deepseek-v4.1-flash · 4.2s · ↑12.4k ↓1.8k · $0.004",
 	"",
 }
@@ -297,6 +298,7 @@ var thinkingExpandedRows = []string{
 	"",
 	"  The probe lives in internal/leader/client.go. It dials the socket, then",
 	"  sends an initialize frame and waits.",
+	"",
 	"  claude-opus-5-5 · 7.9s · ↑14.1k ↓2.6k · $0.031",
 	"",
 }
@@ -308,6 +310,7 @@ var thinkingCollapsedRows = []string{
 	"",
 	"  The probe lives in internal/leader/client.go. It dials the socket, then",
 	"  sends an initialize frame and waits.",
+	"",
 	"  claude-opus-5-5 · 7.9s · ↑14.1k ↓2.6k · $0.031",
 	"",
 }

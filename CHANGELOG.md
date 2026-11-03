@@ -38,6 +38,7 @@ The format follows [Keep a Changelog 1.1.0](https://keepachangelog.com/en/1.1.0/
 - **TUI:** The block pane no longer shows the model line (`model  <provider>/<model>` at the start and the `· was` line after a change). The footer row names the model. The fallback note and the `TEA_TRACE` warning are notices of their own at the start of the transcript.
 - **TUI:** An ended thinking step now shows all its lines by default, below its header row and one blank row, at column 4 and without a rail. Its text is no longer italic, except without color. A step that is open or selected shows `›` in place of its own mark.
 - **TUI:** Exactly one blank row separates any two blocks of the block pane. A selected block gets a thin box (`┌ ┐`, `│`, `└ ┘`) in place of the accent `┃` gutter and the shade of a selected step. A selection does not move any row.
+- **TUI:** The reply meta line (model, time, tokens, cost) now has one blank row above it, so it stays apart from the reply text.
 - **TUI:** Replies show markdown without raw syntax: headings without `#` in a color for each level, inline code in blue bold without backticks, `•` bullets, tables in a box, and code blocks on the code panel without a language row.
 - **TUI:** `ctrl+t` now also sets the fold mode of the thinking steps that end later in the same TUI process.
 - **CLI:** `ask -p --model` accepts the model ids of the generated catalog with no network request.

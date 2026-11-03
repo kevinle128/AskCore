@@ -27,8 +27,8 @@
   • cloneToolResult deep-copies before emit.
 
     body, e = p.tool.Execute(bodyCtx, tc, args)
-  claude-sonnet-5-5 · 14s · ↑10.2k ↓1.8k
 
+  claude-sonnet-5-5 · 14s · ↑10.2k ↓1.8k
 
 
 

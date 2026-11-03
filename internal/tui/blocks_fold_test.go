@@ -253,7 +253,8 @@ func TestToolWithFiveLinesShowsAllAndNoHintAfterOneCycle(t *testing.T) {
 }
 
 func TestExpandedFailedToolShowsCommandRowThenAllOutput(t *testing.T) {
-	m := foldModel(t, 80, 24)
+	// The height leaves room for the header row above the whole output.
+	m := foldModel(t, 80, 26)
 	m.View()
 	id := toolID(t, m, "bash", 1)
 	require.NoError(t, m.pane.CycleFold(id))

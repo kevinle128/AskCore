@@ -20,7 +20,8 @@ import (
 // in the last block touches only the blocks near the window.
 //
 // The pane owns the spacing between blocks: one empty row after each unit,
-// and blocks draw no empty row of their own at their edges. A unit is what the
+// and blocks draw no empty row of their own at their edges. Inside a unit, a
+// block for which gapInUnit is true also has one empty row above it. A unit is what the
 // user sees as one block: a prompt, a step, a note, or a whole reply (see
 // joinsPrevious). The gap row belongs to the last block of the unit that draws
 // rows, so that there is one empty row between any two units and one after the
@@ -295,9 +296,10 @@ func (p *Pane) measure(i int) int {
 }
 
 // endsUnit draws block i and reports whether it gets the gap row: it drew
-// rows, and no later block of its unit drew rows. A unit can end with a block
-// that draws no rows, such as the empty paragraph that a streaming reply opens
-// next.
+// rows, and no later block of its unit drew rows, or the next block of its
+// unit that draws rows keeps an empty row above it (gapInUnit). A unit can end
+// with a block that draws no rows, such as the empty paragraph that a
+// streaming reply opens next.
 func (p *Pane) endsUnit(i int) bool {
 	if p.draw(i) == 0 {
 		return false
@@ -305,7 +307,7 @@ func (p *Pane) endsUnit(i int) bool {
 	es := p.tr.entries
 	for j := i + 1; j < len(p.items) && joinsPrevious(es[j-1].block, es[j].block); j++ {
 		if p.draw(j) > 0 {
-			return false
+			return gapInUnit(es[j].block)
 		}
 	}
 	return true

@@ -580,7 +580,7 @@ func TestSelectedReplyHasAThinBoxAndNoRail(t *testing.T) {
 	m := listModelAt(t, colorprofile.TrueColor, 80, 24)
 	press(t, m, "tab")
 	first, last := rowIndex(t, m, "Count now skips"), rowIndex(t, m, "claude-sonnet-5-5 · 6.2s")
-	require.Equal(t, 2, last-first, "two text rows and the usage row")
+	require.Equal(t, 3, last-first, "two text rows, the blank row and the usage row")
 	requireBox(t, m, first, last)
 	rows, plain := rawRows(m), screenOf(m)
 	for i, r := range rows {
@@ -603,20 +603,21 @@ func TestSelectedReplyBoxCoversTheEmptyRowBetweenParagraphs(t *testing.T) {
 	m := listModelAt(t, colorprofile.NoTTY, 80, 24, events...)
 	press(t, m, "tab")
 	first, last := rowIndex(t, m, "para one"), rowIndex(t, m, "m · 0.1s")
-	require.Equal(t, 3, last-first, "paragraph, break, paragraph and the usage row")
+	require.Equal(t, 4, last-first, "paragraph, break, paragraph, the blank row and the usage row")
 	requireBox(t, m, first, last)
 	require.Equal(t, "│", strings.TrimSpace(string(screenCells(m)[first+1][:m.width-1])), "the break between paragraphs is inside the box")
 }
 
 func TestSelectedReplyBoxCoversWrappedRows(t *testing.T) {
-	m := listModel(t, 40, 14)
+	// The height leaves room for the whole reply and both corner rows.
+	m := listModel(t, 40, 16)
 	press(t, m, "tab")
 	last := rowIndex(t, m, "claude-sonnet-5-5")
 	n := 0
 	for i := last; i >= 0 && screenCells(m)[i][0] == '│'; i-- {
 		n++
 	}
-	require.Equal(t, 5, n, "four wrapped rows and the usage row")
+	require.Equal(t, 6, n, "four wrapped rows, the blank row and the usage row")
 	requireBoxEdges(t, m, last+1, '└', '┘')
 }
 
