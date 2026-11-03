@@ -53,7 +53,7 @@ type promptBlock struct{ text, at string }
 
 func (b promptBlock) Lines(rc RenderContext) []string {
 	rows := wrapLines(b.text, max(1, rc.Width-4))
-	out := make([]string, 0, len(rows)+1)
+	out := make([]string, 0, len(rows))
 	for i, r := range rows {
 		if i == 0 {
 			line := "  ❯ " + r
@@ -65,14 +65,14 @@ func (b promptBlock) Lines(rc RenderContext) []string {
 		}
 		out = append(out, "    "+r)
 	}
-	return append(out, "")
+	return out
 }
 
 type replyBlock struct{ text string }
 
 func (b replyBlock) Lines(rc RenderContext) []string {
 	rows := wrapLines(b.text, max(1, rc.Width-4))
-	out := make([]string, 0, len(rows)+1)
+	out := make([]string, 0, len(rows))
 	for i, r := range rows {
 		if i == 0 {
 			out = append(out, "  ◆ "+r)
@@ -80,7 +80,7 @@ func (b replyBlock) Lines(rc RenderContext) []string {
 		}
 		out = append(out, "    "+r)
 	}
-	return append(out, "")
+	return out
 }
 
 func newTestModel(src SlotSource) *Model {
@@ -331,7 +331,7 @@ func TestCursorStaysOnTheDraftWhileBlocksArrive(t *testing.T) {
 // A row from a block that is wider than the terminal is wrapped, not cut and
 // not left to the terminal, so the row count of the pane stays right.
 func TestWideBlockRowsAreWrapped(t *testing.T) {
-	h := startScreen(t, newTestModel(fakeSource{placeholder: true}), 30, 12)
+	h := startScreen(t, newTestModel(fakeSource{placeholder: true}), 30, 14)
 	appendBlock(h, "long", rawBlock{strings.Repeat("x", 70)}, true)
 	appendBlock(h, "after", textBlock{"after"}, true)
 	h.waitText("after")
@@ -375,7 +375,9 @@ func TestResizeKeepsAScrolledWindow(t *testing.T) {
 	}
 	m.View()
 	require.True(t, m.pane.Following())
-	m.pane.ScrollBy(-30)
+	// Each block is one row and its gap row; the window top lands on a row of
+	// text.
+	m.pane.ScrollBy(-31)
 	require.False(t, m.pane.Following())
 	top := func() string {
 		rows := strings.Split(ansi.Strip(m.View().Content), "\n")

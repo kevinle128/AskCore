@@ -22,7 +22,14 @@ type sessionRig struct {
 
 func startSession(t *testing.T, width, height int, src fakeSource) *sessionRig {
 	t.Helper()
-	m := New(Options{Slots: src, Profile: colorprofile.NoTTY})
+	return startSessionFold(t, width, height, src, ThinkingExpanded)
+}
+
+// startSessionFold is startSession with a first session mode for thinking
+// steps that end.
+func startSessionFold(t *testing.T, width, height int, src fakeSource, fold ThinkingFold) *sessionRig {
+	t.Helper()
+	m := New(Options{Slots: src, Profile: colorprofile.NoTTY, ThinkingFold: fold})
 	return &sessionRig{h: startScreen(t, m, width, height), trl: NewTranslator(TranslatorOptions{Location: time.UTC})}
 }
 
@@ -66,12 +73,11 @@ func (r *sessionRig) firstTurn() {
 var firstTurnRows = []string{
 	promptRow("why does TestLeaderStale fail on CI?", "14:02"),
 	"",
-	"  The test waits for the stale socket check, but CI runs it with a 1 s deadline.",
-	"  The leader removes the stale socket after the lock probe, and the probe can",
-	"  take 1.2 s.",
+	"  The test waits for the stale socket check, but CI runs it with a 1 s",
+	"  deadline. The leader removes the stale socket after the lock probe, and the",
+	"  probe can take 1.2 s.",
 	"",
-	"  go",
-	"  deadline := 5 * time.Second",
+	"    deadline := 5 * time.Second",
 	"  deepseek-v4.1-flash · 4.2s · ↑12.4k ↓1.8k · $0.004",
 	"",
 }
@@ -146,10 +152,10 @@ func TestBlockGoldens(t *testing.T) {
 		requireRows(t, r.h.text(), append(append([]string{}, firstTurnRows...),
 			promptRow("show me the probe code", "14:03"),
 			"",
-			"  ◆ echo probe code request"+strings.Repeat(" ", 80-displayWidth("  ◆ echo probe code request")-2)+"⠋",
+			"  ◆ echo probe code request"+strings.Repeat(" ", 80-displayWidth("  ◆ echo probe code request")-1-textRightPad)+"⠋",
 			"",
-			"  The probe lives in internal/leader/client.go. It dials the socket, then sends",
-			"  an initialize frame and waits",
+			"  The probe lives in internal/leader/client.go. It dials the socket, then",
+			"  sends an initialize frame and waits",
 		))
 		requireContentGolden(t, r.h)
 	})
@@ -171,8 +177,8 @@ func TestBlockGoldens(t *testing.T) {
 			"",
 			"  ◆ echo probe code request",
 			"",
-			"  The probe lives in internal/leader/client.go. It dials the socket, then sends",
-			"  an initialize frame and waits",
+			"  The probe lives in internal/leader/client.go. It dials the socket, then",
+			"  sends an initialize frame and waits",
 		))
 		requireContentGolden(t, r.h)
 	})
@@ -209,8 +215,8 @@ func TestBlockGoldens(t *testing.T) {
 		requireRows(t, r.h.text(), append(append([]string{}, firstTurnRows...),
 			promptRow("show me the probe code", "14:03"),
 			"",
-			"  The probe lives in internal/leader/client.go. It dials the socket, then sends",
-			"  an initialize frame and waits.",
+			"  The probe lives in internal/leader/client.go. It dials the socket, then",
+			"  sends an initialize frame and waits.",
 			"",
 			"  ✗ Error (auth): anthropic token expired and refresh failed.",
 			"    Run in a shell: ask auth login --provider anthropic. Then send again.",
@@ -235,8 +241,9 @@ func TestBlockGoldens(t *testing.T) {
 		requireRows(t, r.h.text(), append(append([]string{}, firstTurnRows...),
 			promptRow("show me the probe code", "14:03"),
 			"",
-			"  The probe lives in internal/leader/client.go. It dials the socket, then sends",
-			"  an initialize frame and waits",
+			"  The probe lives in internal/leader/client.go. It dials the socket, then",
+			"  sends an initialize frame and waits",
+			"",
 			"  ⊘ Cancelled by you. Partial reply kept above.",
 			"",
 		))
@@ -244,9 +251,16 @@ func TestBlockGoldens(t *testing.T) {
 	})
 
 	t.Run("thinking_collapsed", func(t *testing.T) {
-		r := startSession(t, 80, 40, sketchSource(""))
+		r := startSessionFold(t, 80, 40, sketchSource(""), ThinkingCollapsed)
 		r.thinkingTurn()
 		requireRows(t, r.h.text(), thinkingCollapsedRows)
+		requireContentGolden(t, r.h)
+	})
+
+	t.Run("thinking_expanded", func(t *testing.T) {
+		r := startSession(t, 80, 40, sketchSource(""))
+		r.thinkingTurn()
+		requireRows(t, r.h.text(), thinkingExpandedRows)
 		requireContentGolden(t, r.h)
 	})
 }
@@ -257,7 +271,6 @@ const probeReply = "The probe lives in internal/leader/client.go. It dials the s
 func (r *sessionRig) thinkingTurn() {
 	r.h.send(AppendBlockMsg{ID: "p0", Block: NewUserPromptBlock("why does TestLeaderStale fail on CI?", "14:02"), Stable: true})
 	r.h.send(AppendBlockMsg{ID: "r0", Block: NewAssistantTextBlock("The test waits for the stale socket check."), Stable: true})
-	r.h.send(AppendBlockMsg{ID: "s0", Block: NewSpacerBlock(), Stable: true})
 	usage := protocol.Usage{Input: 14_100, Output: 2_600, Cost: protocol.Cost{Total: 31_000}}
 	r.play(flat(
 		&protocol.AgentStart{},
@@ -271,19 +284,36 @@ func (r *sessionRig) thinkingTurn() {
 	)...)
 }
 
+// thinkingExpandedRows are the rows of the thinking turn in the default
+// session mode: the ended step shows all its lines.
+var thinkingExpandedRows = []string{
+	promptRow("show me the probe code", "14:03"),
+	"",
+	"  › Thought",
+	"",
+	"    The stale check runs before the deadline starts, so the deadline is too",
+	"    short only when the probe is slow. I should look at the probe timing",
+	"    first.",
+	"",
+	"  The probe lives in internal/leader/client.go. It dials the socket, then",
+	"  sends an initialize frame and waits.",
+	"  claude-opus-5-5 · 7.9s · ↑14.1k ↓2.6k · $0.031",
+	"",
+}
+
 var thinkingCollapsedRows = []string{
 	promptRow("show me the probe code", "14:03"),
 	"",
 	"  ◆ Thought",
 	"",
-	"  The probe lives in internal/leader/client.go. It dials the socket, then sends",
-	"  an initialize frame and waits.",
+	"  The probe lives in internal/leader/client.go. It dials the socket, then",
+	"  sends an initialize frame and waits.",
 	"  claude-opus-5-5 · 7.9s · ↑14.1k ↓2.6k · $0.031",
 	"",
 }
 
 func TestStreamingThinkingShowsLastLinesThenFoldsToOneRow(t *testing.T) {
-	r := startSession(t, 80, 40, sketchSource(""))
+	r := startSessionFold(t, 80, 40, sketchSource(""), ThinkingCollapsed)
 	r.play(flat(
 		&protocol.AgentStart{},
 		userAt("show me the probe code", sketchTime(14, 3)),
@@ -295,10 +325,11 @@ func TestStreamingThinkingShowsLastLinesThenFoldsToOneRow(t *testing.T) {
 	requireRows(t, r.h.text(), []string{
 		promptRow("show me the probe code", "14:03"),
 		"",
-		"  ◆ Thinking…" + strings.Repeat(" ", 80-displayWidth("  ◆ Thinking…")-2) + "⠋",
-		"  ┃ …",
-		"  ┃ second line",
-		"  ┃ third line",
+		"  › Thinking…" + strings.Repeat(" ", 80-displayWidth("  › Thinking…")-1-textRightPad) + "⠋",
+		"",
+		"    …",
+		"    second line",
+		"    third line",
 	})
 	require.Zero(t, r.h.count("first line"), "only the last two lines show while it streams")
 	require.Zero(t, r.h.count("Thought for"))
@@ -313,6 +344,7 @@ func TestStreamingThinkingShowsLastLinesThenFoldsToOneRow(t *testing.T) {
 		promptRow("show me the probe code", "14:03"),
 		"",
 		"  ◆ Thought for 2.0s",
+		"",
 		"  m · 2.1s",
 	})
 	require.Zero(t, r.h.count("second line"))
@@ -346,6 +378,7 @@ func TestCancelMarkerAtSettleOnly(t *testing.T) {
 	r.h.waitText("⊘ Cancelled by you. Partial reply kept above.")
 	requireRows(t, r.h.text(), []string{
 		"  The probe lives in internal/leader/client.go. It dials the socket, then",
+		"",
 		"  ⊘ Cancelled by you. Partial reply kept above.",
 		"",
 	})

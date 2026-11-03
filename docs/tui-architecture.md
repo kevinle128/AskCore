@@ -226,6 +226,7 @@ The window top is an anchor (a block and a row in it), not a row number, so a bl
 Follow mode keeps the window at the end of the transcript. A scroll away from the end turns it off and a bottom marker shows how to return.
 The display budget of a frame must not discard source content: the transcript stays whole in application state.
 A selection never changes the row count of a block, so the screen does not reflow when the selection moves.
+The pane owns the blank gap rows between blocks and after the last block, and it draws the selection box on these rows and on the rows of the selected block; a block draws no gap rows and no selection mark of its own.
 Widgets and prompt-slot dialogs must fit a bounded region and preserve cursor and focus correctness.
 The frame budget was measured in a [spike report](../plans/reports/spike-261012-1529-pane-frame-budget.md).
 

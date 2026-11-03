@@ -149,7 +149,7 @@ func TestClickSelectsTheBlockAndFocusesTheList(t *testing.T) {
 	require.Equal(t, FocusBlocks, m.Focus())
 	require.Equal(t, blockID(t, m, isReply), m.selectedBlock())
 	require.False(t, m.viewerOpen(), "a reply has no viewer")
-	require.Contains(t, strings.Join(screenOf(m), "\n"), "┃ value; shall I fix it?", "the rail marks the selection")
+	require.Contains(t, strings.Join(screenOf(m), "\n"), "│ old value; shall I fix it?", "the box marks the selection")
 }
 
 func TestClickOnTheFirstRowOfAStepSelectsAndOpensTheViewer(t *testing.T) {
@@ -343,11 +343,11 @@ func TestDragWithoutColorReversesTheRange(t *testing.T) {
 func TestDragAcrossTheWrapPointCopiesOneLine(t *testing.T) {
 	m, _ := listModelWithClipboard(t, 80, 24)
 	y := rowIndex(t, m, "Count now skips empty fields.")
-	require.Contains(t, screenOf(m)[y+1], "value; shall I fix it?", "the reply wraps after 'old'")
-	x0 := colOf(t, screenOf(m)[y], "the old")
+	require.Contains(t, screenOf(m)[y+1], "old value; shall I fix it?", "the reply wraps after 'the'")
+	x0 := colOf(t, screenOf(m)[y], "expects the")
 	x1 := colOf(t, screenOf(m)[y+1], "shall") + len("shall") - 1
 	text := dragText(t, m, x0, y, x1, y+1)
-	require.Equal(t, "the old value; shall", text)
+	require.Equal(t, "expects the old value; shall", text)
 }
 
 func TestDragOverRowsThatAreSeparateLinesKeepsTheLineBreaks(t *testing.T) {
@@ -363,24 +363,24 @@ func TestDragOverRowsThatAreSeparateLinesKeepsTheLineBreaks(t *testing.T) {
 	require.Equal(t, "1\n2\n3", text)
 }
 
-func TestDragCopiesNoGutterRailNoIndicatorAndNoTrailingSpaces(t *testing.T) {
+func TestDragCopiesNoSelectionBoxNoIndicatorAndNoTrailingSpaces(t *testing.T) {
 	m, _ := listModelWithClipboard(t, 80, 24)
 	press(t, m, "tab", "k") // the failed test run: a step at its lowest mode, shown with its indicator
 	y := rowIndex(t, m, "Ran go test ./...")
-	require.Regexp(t, `^  › Ran go test`, screenOf(m)[y])
+	require.Regexp(t, `^│ › Ran go test`, screenOf(m)[y])
 	text := dragText(t, m, 0, y, 79, y)
-	require.Equal(t, "◆ Ran go test ./...                                                  ✗ exit 1", text, "the glyph is the clean one")
+	require.Equal(t, "◆ Ran go test ./...                                                 ✗ exit 1", text, "the glyph is the clean one")
 	require.NotContains(t, text, "›")
 	require.False(t, strings.HasSuffix(text, " "))
 }
 
-func TestDragOverTheRailOfAReplyCopiesNoRail(t *testing.T) {
+func TestDragOverTheBoxOfAReplyCopiesNoBox(t *testing.T) {
 	m, _ := listModelWithClipboard(t, 80, 24)
 	press(t, m, "tab")
 	y := rowIndex(t, m, "Count now skips empty fields.")
-	require.True(t, strings.HasPrefix(screenOf(m)[y], "┃"))
+	require.True(t, strings.HasPrefix(screenOf(m)[y], "│"))
 	text := dragText(t, m, 0, y, 79, y+1)
-	require.NotContains(t, text, "┃")
+	require.NotContains(t, text, "│")
 	require.Equal(t, "Count now skips empty fields. TestCount still fails because it expects the old value; shall I fix it?", text)
 }
 
@@ -490,16 +490,17 @@ func TestDragSelectionStaysOnTheSameTextWhenThePaneScrolls(t *testing.T) {
 	mouse(m, tea.MouseClickMsg(leftAt(10, y)))
 	m.Update(tea.MouseMotionMsg(leftAt(10, top)))
 	m.View()
-	for range 3 {
+	for range 4 {
 		mouse(m, dragTickMsg{gen: m.mouse.tickGen})
 	}
 	cmd := m.sv.onMouse(tea.MouseReleaseMsg(leftAt(10, top)))
 	require.NotNil(t, cmd)
 	lines := strings.Split(cmd().(clipboardDoneMsg).text, "\n")
-	// The head went up with the pane: three rows above the first row that the
-	// pane showed, and the anchor row is still the last line.
-	require.Equal(t, 38-(topStep-3)+1, len(lines), strings.Join(lines, "|"))
-	require.Equal(t, fmt.Sprintf("ep %d", topStep-3), lines[0], "the first line starts at the cell of the head")
+	// The head went up with the pane: four rows above the first row that the
+	// pane showed, which is two steps with their gap rows, and the anchor row
+	// is still the last line.
+	require.Equal(t, 38-(topStep-2)+1, len(lines), strings.Join(lines, "|"))
+	require.Equal(t, fmt.Sprintf("ep %d", topStep-2), lines[0], "the first line starts at the cell of the head")
 	require.Equal(t, "◆ Ran ste", lines[len(lines)-1])
 }
 

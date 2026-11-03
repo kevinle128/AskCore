@@ -24,6 +24,8 @@ The format follows [Keep a Changelog 1.1.0](https://keepachangelog.com/en/1.1.0/
 - **CLI:** `ASK_DISABLE_MODEL_REFRESH=1` turns the automatic model list refresh off. `ask models refresh` still refreshes.
 - **Protocol:** `ACPModel` has the fields `costUnknown` and `notInAccount`. A session start that cannot use the saved model because the account list does not have it gives the fallback reason `not_in_account`.
 - **TUI:** `/model` shows `?` in the window column of a model with an unknown context window. The footer row shows `?` in place of the context bar for such a model. The running model that the account list no longer has shows the note `not in account list` (the tag `unlisted` under 60 columns). A saved default that the account list does not have gives a start notice with the same reason.
+- **TUI:** The key `thinkingFold` in `<ASK_HOME>/settings.json` sets the fold mode of an ended thinking step: `"expanded"` (the default), `"truncated"` or `"collapsed"`. An unknown value gives `"expanded"`. The TUI reads the key when it starts and does not write it.
+- **TUI:** The first row of a reply shows the 24h time of the reply at the right, as the prompt band does. A reply that starts with a table or a code block shows no time.
 
 ### Changed
 
@@ -34,6 +36,10 @@ The format follows [Keep a Changelog 1.1.0](https://keepachangelog.com/en/1.1.0/
 - **TUI:** The status data (working directory, model, thinking level, context use) moved from the header row at the top to a footer row above the shortcut bar. The header row stays and shows only the logo `◢◤ ask`, with a rule under it. The footer row names the model as `<provider>/<model>`, and the working directory stays from 60 columns up.
 - **TUI:** The footer row no longer shows the link (the leader id, `in-process`, an observer, `starting` or `lost`) or the session cost. A lost link still shows in the status row and in the notices. The reply meta line keeps its cost.
 - **TUI:** The block pane no longer shows the model line (`model  <provider>/<model>` at the start and the `· was` line after a change). The footer row names the model. The fallback note and the `TEA_TRACE` warning are notices of their own at the start of the transcript.
+- **TUI:** An ended thinking step now shows all its lines by default, below its header row and one blank row, at column 4 and without a rail. Its text is no longer italic, except without color. A step that is open or selected shows `›` in place of its own mark.
+- **TUI:** Exactly one blank row separates any two blocks of the block pane. A selected block gets a thin box (`┌ ┐`, `│`, `└ ┘`) in place of the accent `┃` gutter and the shade of a selected step. A selection does not move any row.
+- **TUI:** Replies show markdown without raw syntax: headings without `#` in a color for each level, inline code in blue bold without backticks, `•` bullets, tables in a box, and code blocks on the code panel without a language row.
+- **TUI:** `ctrl+t` now also sets the fold mode of the thinking steps that end later in the same TUI process.
 - **CLI:** `ask -p --model` accepts the model ids of the generated catalog with no network request.
 - **CLI:** `ask auth login` reads the model list of that provider in its own process, and `ask auth logout` deletes the cached list of that provider.
 - **Providers:** `gpt-5.5` gets the thinking level `xhigh` and now sends the reasoning effort. `claude-sonnet-4-6` gets the thinking level `max`. On both models a saved `minimal` level becomes `off`.

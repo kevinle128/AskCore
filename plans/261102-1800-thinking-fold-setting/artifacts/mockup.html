@@ -1,0 +1,378 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Ask TUI mockup</title>
+<style>
+:root {
+  --bg:#13141c; --fg:#d9dbe8; --muted:#6f7390; --dim:#4c4f66; --border:#4c4f66; --panel:#1d1f2b;
+  --code-panel:#252838; --selected:#2d3150; --accent:#f472b6; --assistant:#a78bfa; --tool:#2dd4bf;
+  --thinking:#8f95b3; --code:#fb923c; --success:#4ade80; --h1:#2dd4bf; --h2:#7aa2f7; --h3:#a78bfa;
+}
+body { margin:0; background:#0b0c11; color:#cfd2e3; font-family:system-ui,sans-serif; }
+.wrap { display:flex; gap:24px; padding:20px; align-items:flex-start; flex-wrap:wrap; }
+.side { width:300px; font-size:13px; line-height:1.5; }
+.side h1 { font-size:17px; margin:0 0 8px; }
+.side h2 { font-size:13px; margin:16px 0 6px; color:#e6e8f5; }
+.side kbd { background:#22253a; border:1px solid #33364d; border-radius:4px; padding:0 5px; font-size:12px; color:#e6e8f5; }
+.side select, .side button { background:#1d1f2b; color:#e6e8f5; border:1px solid #33364d; border-radius:6px; padding:5px 8px; font-size:13px; }
+.side button { cursor:pointer; margin:3px 0; width:100%; text-align:left; }
+.side button:hover { border-color:var(--accent); }
+.term { background:var(--bg); color:var(--fg); font:14px/1.2 Menlo,"SF Mono",monospace;
+  padding:14px 16px; border-radius:12px; border:1px solid #23253a; box-shadow:0 10px 40px rgba(0,0,0,.5); outline:none; }
+.term:focus { border-color:#3a3d58; }
+.row { white-space:pre; height:calc(14px * 1.2); line-height:calc(14px * 1.2); }
+.logo { background:linear-gradient(90deg,var(--assistant),var(--accent),var(--code)); -webkit-background-clip:text;
+  background-clip:text; color:transparent; font-weight:700; }
+.fg{color:var(--fg)} .muted{color:var(--muted)} .dim{color:var(--dim)} .border{color:var(--border)}
+.accent{color:var(--accent)} .assistant{color:var(--assistant)} .tool{color:var(--tool)} .thinking{color:var(--thinking)} /* not italic */
+.code{color:var(--code)} .success{color:var(--success)} .h1{color:var(--h1)} .h2{color:var(--h2)} .h3{color:var(--h3)}
+.b{font-weight:700} .bg-panel{background:var(--panel)} .bg-code{background:var(--code-panel)} .bg-sel{background:var(--selected)}
+.hint { color:#8b8fa8; font-size:12px; margin-top:10px; }
+.log { font-family:"SF Mono",Menlo,monospace; font-size:12px; color:#8b8fa8; white-space:pre-wrap; }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <div>
+    <div id="term" class="term" tabindex="0"></div>
+    <div class="hint">Click the terminal, then use the keys. The page reads the keys only while the terminal has focus.</div>
+  </div>
+  <div class="side">
+    <h1>Ask TUI mockup (style A)</h1>
+    <h2>settings.json</h2>
+    <label>"thinkingFold":
+      <select id="fold">
+        <option value="expanded" selected>"expanded" (default)</option>
+        <option value="truncated">"truncated"</option>
+        <option value="collapsed">"collapsed"</option>
+      </select>
+    </label>
+    <button id="restart">Restart TUI (read the setting again)</button>
+    <h2>Actions</h2>
+    <button id="send">Send a new prompt (streams thinking, then a reply)</button>
+    <button id="reset">Reset the transcript</button>
+    <h2>Keys</h2>
+    <div><kbd>Tab</kbd> prompt ↔ block list</div>
+    <div><kbd>j</kbd>/<kbd>k</kbd> or <kbd>↓</kbd>/<kbd>↑</kbd> select a block (list focus)</div>
+    <div><kbd>e</kbd> cycle fold · <kbd>→</kbd>/<kbd>l</kbd> expand · <kbd>←</kbd>/<kbd>h</kbd> collapse</div>
+    <div><kbd>ctrl+t</kbd> (any focus) or <kbd>ctrl+e</kbd> (list): all thinking; sets the session mode</div>
+    <div><kbd>Esc</kbd> back to the prompt · <kbd>Enter</kbd> (prompt focus) sends a new prompt</div>
+    <h2>State</h2>
+    <div id="state" class="log"></div>
+  </div>
+</div>
+<script>
+const W = 100, H = 40;
+const term = document.getElementById("term");
+
+// ---------------------------------------------------------------- content
+
+const TURN1 = {
+  prompt: "explain internal/agent/tool_coordinator.go", time: "17:30", secs: "2.1s",
+  thinking: ["Read tool_coordinator.go to see what it holds."],
+  preamble: "I will read the file and summarize it for you.",
+  tool: ["Read", "internal/agent/tool_coordinator.go"],
+  reply: [
+    ["p", "`tool_coordinator.go` runs **one batch of tool calls**: it prepares them, runs them in parallel with a limit, and commits the results in order."],
+    ["blank"], ["h2", "Types"],
+    ["table", [["Type", "Job"], ["toolSlot", "State of one call: prepared, ready, outcome"], ["toolDone", "A worker is done: index, outcome, invoked"], ["updater", "Progress that never blocks: keeps the newest value"]]],
+    ["blank"], ["h2", "The batch loop"],
+    ["ol", ["Find the last assistant entry in the session log.", "`MaxParallelTools` (default 10) limits the workers.", "Commit in order: `progress`, `afterTool`, `emitToolEnd`."]],
+    ["blank"], ["h3", "Safety"],
+    ["ul", ["`toolGuarded` turns a panic into an error.", "`cloneToolResult` deep-copies a result before emit."]],
+    ["blank"], ["code", ["body, e = p.tool.Execute(bodyCtx, tc, bytes.Clone(p.args))"]],
+  ],
+  meta: "claude-sonnet-5-5 · 14s · ↑10.2k ↓1.8k · $0.012",
+};
+const NEXT = [
+  { prompt: "now add a test for a trailing comma", time: "17:33", secs: "1.8s",
+    thinking: ["A trailing comma gives one empty part at the end.", "The new test wants 2 for \"a,b,\".", "I will add it next to TestCount and run go test."],
+    tool: ["Edited", "parser_test.go  +9"],
+    reply: [["p", "Added `TestCountTrailingComma`; `go test ./...` passes."]],
+    meta: "claude-sonnet-5-5 · 5.1s · ↑9.0k ↓220 · $0.004" },
+  { prompt: "why does the loop commit in order?", time: "17:35", secs: "3.4s",
+    thinking: ["Workers finish in any order.", "The session log must match the order of the tool calls.", "So the loop waits for the next index before it commits."],
+    tool: null,
+    reply: [["p", "Workers finish in any order, but the **session log** must keep the order of the calls."], ["blank"],
+            ["ul", ["A slot waits until all earlier slots are committed.", "`progress` still streams while it waits."]]],
+    meta: "claude-sonnet-5-5 · 6.0s · ↑11.3k ↓310 · $0.005" },
+];
+
+// ---------------------------------------------------------------- state
+
+let S;
+function freshState() {
+  return { blocks: [], focus: "prompt", sel: -1, setting: fold.value, sessionMode: fold.value,
+           notice: "", noticeUntil: 0, streaming: false, nextIdx: 0, scrollTop: null };
+}
+const fold = document.getElementById("fold");
+
+function addTurn(t, streamedThinking) {
+  S.blocks.push({ type: "prompt", text: t.prompt, time: t.time });
+  const th = { type: "thinking", lines: streamedThinking ? [] : t.thinking, secs: t.secs,
+               mode: streamedThinking ? "truncated" : S.sessionMode, userSet: false, streaming: !!streamedThinking, elapsed: 0 };
+  S.blocks.push(th);
+  // The model's text before a tool call is its own reply block (bright text), not part of the thinking.
+  if (t.preamble && !streamedThinking) S.blocks.push({ type: "reply", md: [["p", t.preamble]], time: t.time, meta: null });
+  if (t.tool && !streamedThinking) S.blocks.push({ type: "tool", verb: t.tool[0], what: t.tool[1] });
+  if (!streamedThinking) S.blocks.push({ type: "reply", md: t.reply, time: t.time, meta: t.meta });
+  return th;
+}
+
+// ---------------------------------------------------------------- text helpers
+
+const seg = (t, c = "") => ({ t, c });
+const len = segs => segs.reduce((n, s) => n + [...s.t].length, 0);
+const plain = segs => segs.map(s => s.t).join("");
+function padTo(segs, w, c = "") { const n = len(segs); return n >= w ? segs : segs.concat([seg(" ".repeat(w - n), c)]); }
+
+function inline(text) {
+  const out = [];
+  for (const part of text.split(/(`[^`]+`|\*\*[^*]+\*\*)/)) {
+    if (!part) continue;
+    if (part.startsWith("`")) out.push(seg(part.slice(1, -1), "h2 b"));
+    else if (part.startsWith("**")) out.push(seg(part.slice(2, -2), "fg b"));
+    else out.push(seg(part, ""));
+  }
+  return out;
+}
+
+function wrapSegs(segs, first, rest) {
+  const rows = []; let cur = [], used = 0, limit = first;
+  for (const s of segs) {
+    for (const word of s.t.split(/( )/)) {
+      if (word === "" || (word === " " && used === 0)) continue;
+      if (word !== " " && used + [...word].length > limit) {
+        while (cur.length && cur[cur.length - 1].t === " ") cur.pop();
+        rows.push(cur); cur = []; used = 0; limit = rest;
+      }
+      cur.push(seg(word, s.c)); used += [...word].length;
+    }
+  }
+  rows.push(cur);
+  return rows;
+}
+
+function mdRows(blocks, inner, firstRoom) {
+  const rows = [];
+  for (const [kind, val] of blocks) {
+    const room = rows.length ? inner : firstRoom;
+    if (kind === "p") rows.push(...wrapSegs(inline(val), room, inner));
+    else if (kind === "blank") rows.push([]);
+    // One blank row under each heading (user decision of 2026-11-03).
+    else if (kind === "h1" || kind === "h2" || kind === "h3") rows.push([seg(val, kind + " b")], []);
+    else if (kind === "ol" || kind === "ul") {
+      val.forEach((item, i) => {
+        const mark = kind === "ol" ? `${i + 1}. ` : "• ";
+        wrapSegs(inline(item), inner - mark.length, inner - mark.length).forEach((r, j) =>
+          rows.push([seg(j ? " ".repeat(mark.length) : mark, "muted")].concat(r)));
+      });
+    } else if (kind === "table") {
+      const widths = val[0].map((_, i) => Math.max(...val.map(r => [...r[i]].length)));
+      const line = (l, m, r) => [seg(l + widths.map(x => "─".repeat(x + 2)).join(m) + r, "dim")];
+      const cells = (r, c) => { const out = [seg("│", "dim")]; r.forEach((x, i) => { out.push(seg(" " + x + " ".repeat(widths[i] - [...x].length) + " ", c)); out.push(seg("│", "dim")); }); return out; };
+      rows.push(line("┌", "┬", "┐"), cells(val[0], "fg b"), line("├", "┼", "┤"));
+      val.slice(1).forEach(r => rows.push(cells(r, "")));
+      rows.push(line("└", "┴", "┘"));
+    } else if (kind === "code") {
+      for (const c of val) rows.push([seg("  " + c, "code bg-code"), seg(" ".repeat(inner - c.length - 2), "bg-code")]);
+    }
+  }
+  return rows;
+}
+
+// ---------------------------------------------------------------- block rows
+
+const SPIN = "⠋⠙⠹⠸⠼⠴⠦⠧⠇⠏";
+const isSel = i => S.focus === "list" && S.sel === i;
+function blockRows(b, i) {
+  if (b.type === "prompt") {
+    const left = [seg("  ❯ ", "accent b bg-panel"), seg(b.text, "fg b bg-panel")];
+    return [left.concat([seg(" ".repeat(W - len(left) - b.time.length - 2), "bg-panel"), seg(b.time, "dim bg-panel"), seg("  ", "bg-panel")])];
+  }
+  if (b.type === "thinking") {
+    // › when the step is open (with or without focus) or selected; ◆ only when collapsed and not selected (user decision).
+    const glyph = (b.mode !== "collapsed" || isSel(i)) ? "  › " : "  ◆ ";
+    const head = b.streaming
+      ? [seg(glyph, "thinking"), seg("Thinking…", "fg b"), seg(` ${b.elapsed}s`, "muted")]
+      : [seg(glyph, "thinking"), seg("Thought", "fg b"), seg(` for ${b.secs}`, "muted")];
+    let rows = [b.streaming ? padTo(head, W - 1).concat([seg(SPIN[b.elapsed % SPIN.length], "accent")]) : head];
+    let body = [];
+    for (const l of b.lines) wrapSegs([seg(l)], W - 6, W - 6).forEach(r => body.push(plain(r)));
+    if (b.mode === "collapsed") body = [];
+    if (b.mode === "truncated" && body.length > 3) body = ["…"].concat(body.slice(-3));
+    if (b.streaming && b.mode === "truncated" && body.length && body[0] !== "…" && b.lines.length > 3) body = ["…"].concat(body.slice(-3));
+    // Open: the header, one blank row, then the body (Grok: maybe_prepend_header).
+    if (!body.length) return rows;
+    return rows.concat([[]], body.map(t => [seg("    " + t, "thinking")]));
+  }
+  if (b.type === "tool") return [[seg(isSel(i) ? "  › " : "  ◆ ", "tool"), seg(b.verb, "fg b"), seg(" " + b.what, "muted")]];
+  if (b.type === "reply") {
+    const inner = W - 4;
+    // The time shows only when the first row is a text row, not a table or a code block.
+    const timed = b.md.length > 0 && ["p", "h1", "h2", "h3", "ol", "ul"].includes(b.md[0][0]);
+    const rows = mdRows(b.md, inner, timed ? inner - b.time.length - 2 : inner).map(r => [seg("  ")].concat(r));
+    if (rows.length && timed) rows[0] = padTo(rows[0], W - b.time.length - 2).concat([seg(b.time, "dim"), seg("  ")]);
+    if (b.meta) rows.push([seg("  " + b.meta, "dim")]);
+    return rows;
+  }
+  return [];
+}
+
+// Layout: exactly one blank row between any two blocks, as Grok draws its scrollback.
+function layout() {
+  const rows = [], spans = [];
+  S.blocks.forEach((b, i) => {
+    if (i > 0) rows.push({ segs: [], blank: true });
+    const start = rows.length;
+    blockRows(b, i).forEach(segs => rows.push({ segs, blank: false, block: i }));
+    spans[i] = [start, rows.length];
+  });
+  // The last block keeps one blank row after it (Grok: trailing gap_after = 1), so its box has room for └ ┘.
+  if (rows.length) rows.push({ segs: [], blank: true });
+  return { rows, spans };
+}
+
+// The thin box, as Grok's SelectionBox: │ beside each block row, ┌ ┐ one row above the block and └ ┘ one row below
+// it, in the edge columns, whatever that row holds. When the viewport clips the block, the edge row shows ┆.
+function frameRow(segs, l, rt, lc = "border") {
+  segs = padTo(segs.map(s => ({ ...s })), W);
+  segs[0] = { ...segs[0], t: [...segs[0].t].slice(1).join("") };
+  const last = segs.length - 1;
+  segs[last] = { ...segs[last], t: [...segs[last].t].slice(0, -1).join("") };
+  return [seg(l, lc)].concat(segs.filter(s => s.t !== "")).concat([seg(rt, lc)]);
+}
+function boxVisible(pane, spans, off) {
+  if (S.focus !== "list" || S.sel < 0) return pane;
+  const [a, b] = spans[S.sel];
+  const top = a - 1, bottom = b;                  // the corner rows
+  const first = off, lastVis = off + pane.length - 1;
+  for (let r = Math.max(top, first); r <= Math.min(bottom, lastVis); r++) {
+    let l = "│", rt = "│";
+    if (r === top) { l = "┌"; rt = "┐"; }
+    if (r === bottom) { l = "└"; rt = "┘"; }
+    if (r === first && top < first) { l = rt = "┆"; }         // clipped at the top
+    if (r === lastVis && bottom > lastVis) { l = rt = "┆"; }  // clipped at the bottom
+    pane[r - off] = frameRow(pane[r - off], l, rt);
+  }
+  return pane;
+}
+
+// ---------------------------------------------------------------- screen
+
+function render() {
+  const { rows, spans } = layout();
+  const now = Date.now();
+  const status = S.notice && now < S.noticeUntil ? [seg("┊ ", "muted"), seg(S.notice, "muted")] : null;
+  const bottom = [
+    [seg("─".repeat(W), "border")],
+    S.focus === "prompt" ? [seg(" ❯ ", "accent"), seg("▌", "accent")].concat(S.streaming ? [] : [seg("Ask anything  ·  / commands  ·  ctrl+l model", "muted")]) : [seg(" ❯ ", "accent"), seg("Ask anything  ·  / commands  ·  ctrl+l model", "muted")],
+    [seg("─".repeat(W), "border")],
+    padTo([seg(" ⌂ ~/src/AskCore", "muted")], W - 39).concat([seg("anthropic/claude-sonnet-5-5", "assistant"), seg("  "), seg("▰▱▱▱▱▱▱▱", "success"), seg(" 9%", "muted")]),
+    [seg(S.focus === "list" ? " j/k select · e fold · ctrl+e thinking · Enter open · Tab prompt" : " Tab blocks · ctrl+t thinking · ctrl+l model · / commands", "muted")],
+  ];
+  const top = [[seg(" ◢◤ ask", "logo")], [seg("─".repeat(W), "border")]];
+  const room = H - top.length - bottom.length - (status ? 1 : 0);
+  // Scroll: follow the end, or keep the selected block in view.
+  let off = Math.max(0, rows.length - room);
+  if (S.focus === "list" && S.sel >= 0) {
+    const [a, b] = spans[S.sel];
+    if (S.scrollTop === null) S.scrollTop = off;
+    if (a - 1 < S.scrollTop) S.scrollTop = Math.max(0, a - 1);
+    if (b + 1 > S.scrollTop + room) S.scrollTop = Math.max(0, b + 1 - room);
+    off = Math.min(S.scrollTop, Math.max(0, rows.length - room));
+  } else S.scrollTop = null;
+  let pane = rows.slice(off, off + room).map(r => r.segs);
+  while (pane.length < room) pane.push([]);
+  if (off + room > rows.length) for (let k = rows.length; k < off + room; k++) {} // rows past the end are blank
+  pane = boxVisible(pane, spans, off);
+  const all = top.concat(pane, status ? [status] : [], bottom);
+  term.innerHTML = all.map(r => '<div class="row">' + padTo(r, W).map(s =>
+    `<span class="${s.c}">${s.t.replace(/&/g, "&amp;").replace(/</g, "&lt;")}</span>`).join("") + "</div>").join("");
+  document.getElementById("state").textContent =
+    `settings.json thinkingFold: ${S.setting}\nsession mode: ${S.sessionMode}\nfocus: ${S.focus}\n` +
+    (S.sel >= 0 && S.focus === "list" ? `selected: block ${S.sel} (${S.blocks[S.sel].type}${S.blocks[S.sel].mode ? ", " + S.blocks[S.sel].mode : ""})` : "selected: none");
+}
+
+// ---------------------------------------------------------------- actions
+
+function note(text) { S.notice = text; S.noticeUntil = Date.now() + 3000; setTimeout(render, 3050); }
+
+function toggleAllThinking() {
+  const th = S.blocks.filter(b => b.type === "thinking");
+  const expand = th.length > 0 && th.some(b => b.mode !== "expanded");
+  th.forEach(b => { b.mode = expand ? "expanded" : "collapsed"; if (b.streaming) b.userSet = true; });
+  S.sessionMode = expand ? "expanded" : "collapsed";
+  note(expand ? "Thinking blocks: expanded · ctrl+t to collapse" : "Thinking blocks: collapsed · ctrl+t to expand");
+}
+
+function setFold(b, mode) {
+  if (!b || (b.type !== "thinking" && b.type !== "reply")) return;
+  if (b.type === "thinking") { b.mode = mode; if (b.streaming) b.userSet = true; }
+}
+function cycle(b) {
+  if (!b || b.type !== "thinking") return;
+  const order = ["expanded", "truncated", "collapsed"];
+  setFold(b, order[(order.indexOf(b.mode) + 1) % 3]);
+}
+
+function send() {
+  if (S.streaming) return;
+  const t = NEXT[S.nextIdx % NEXT.length]; S.nextIdx++;
+  S.streaming = true; S.focus = S.focus === "list" ? "list" : "prompt";
+  const th = addTurn(t, true);
+  let i = 0;
+  const tick = setInterval(() => {
+    th.elapsed++;
+    if (i < t.thinking.length) { th.lines.push(t.thinking[i++]); render(); return; }
+    clearInterval(tick);
+    th.streaming = false;
+    if (!th.userSet) th.mode = S.sessionMode;        // an ended step takes the session mode
+    if (t.preamble) S.blocks.push({ type: "reply", md: [["p", t.preamble]], time: t.time, meta: null });
+    if (t.tool) S.blocks.push({ type: "tool", verb: t.tool[0], what: t.tool[1] });
+    S.blocks.push({ type: "reply", md: t.reply, time: t.time, meta: t.meta });
+    S.streaming = false;
+    render();
+  }, 900);
+  render();
+}
+
+function reset(keepMode) {
+  const mode = keepMode;
+  S = freshState();
+  if (mode) S.sessionMode = mode;
+  addTurn(TURN1, false);
+  render();
+}
+
+term.addEventListener("keydown", ev => {
+  const k = ev.key;
+  if (ev.ctrlKey && (k === "t" || (k === "e" && S.focus === "list"))) { toggleAllThinking(); ev.preventDefault(); render(); return; }
+  if (k === "Tab") { S.focus = S.focus === "prompt" ? "list" : "prompt"; if (S.focus === "list" && S.sel < 0) S.sel = S.blocks.length - 1; ev.preventDefault(); render(); return; }
+  if (S.focus === "list") {
+    const b = S.blocks[S.sel];
+    if (k === "Escape") S.focus = "prompt";
+    else if (k === "j" || k === "ArrowDown") S.sel = Math.min(S.blocks.length - 1, S.sel + 1);
+    else if (k === "k" || k === "ArrowUp") S.sel = Math.max(0, S.sel - 1);
+    else if (k === "e") cycle(b);
+    else if (k === "ArrowRight" || k === "l") setFold(b, "expanded");
+    else if (k === "ArrowLeft" || k === "h") setFold(b, "collapsed");
+    else if (k === "g") S.sel = 0;
+    else if (k === "G") S.sel = S.blocks.length - 1;
+    else return;
+    ev.preventDefault(); render();
+  } else if (k === "Enter") { send(); ev.preventDefault(); }
+});
+
+document.getElementById("send").onclick = () => { send(); term.focus(); };
+document.getElementById("reset").onclick = () => { const m = S.sessionMode, set = S.setting; reset(m); S.setting = set; render(); term.focus(); };
+document.getElementById("restart").onclick = () => { reset(); term.focus(); };
+fold.onchange = () => { S.setting = fold.value; render(); };
+
+reset();
+term.focus();
+</script>
+</body>
+</html>

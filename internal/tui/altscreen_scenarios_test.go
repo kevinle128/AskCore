@@ -26,24 +26,16 @@ func plainScreen(m *Model) []string {
 	return strings.Split(ansi.Strip(m.View().Content), "\n")
 }
 
-// requireReplyRail checks that every row of the selected reply, with its usage
-// row, has the rail and that no row of the screen is shaded.
-func requireReplyRail(t *testing.T, m *Model) {
+// requireReplyBox checks that the selected reply, with its usage row, is in
+// the selection box and that no row of the screen is shaded.
+func requireReplyBox(t *testing.T, m *Model) {
 	t.Helper()
 	require.Equal(t, blockID(t, m, isReply), m.selectedBlock())
 	raw, plain := rawRows(m), screenOf(m)
-	var marked []string
 	for i, r := range raw {
 		require.False(t, hasShade(m.theme, r), "no row is shaded: %q", plain[i])
-		if strings.HasPrefix(plain[i], "┃") {
-			marked = append(marked, plain[i])
-		}
 	}
-	require.Equal(t, []string{
-		"┃ Count now skips empty fields. TestCount still fails because it expects the old",
-		"┃ value; shall I fix it?",
-		"┃ claude-sonnet-5-5 · 6.2s · ↑8.1k ↓320 · $0.006",
-	}, marked)
+	requireBox(t, m, rowIndex(t, m, "Count now skips"), rowIndex(t, m, "claude-sonnet-5-5 · 6.2s"))
 }
 
 func TestRunningToolShowsTheSpinnerAndTheWorkingStatusAt80x24(t *testing.T) {
@@ -84,8 +76,9 @@ func TestStreamingThinkingFoldsToOneThoughtRowWhenTheTurnEndsAt80x24(t *testing.
 			updateAt(10, protocol.ThinkingDeltaEvent{ContentIndex: 0, Delta: "Split on \",\" gives an empty string.\nSo the loop must skip f == \"\".\nThen the count is right."}),
 		)...)
 	text := strings.Join(screenOf(m), "\n")
-	require.Regexp(t, `(?m)^  ◆ Thinking…`, text)
-	require.Contains(t, text, "  ┃ …\n  ┃ So the loop must skip f == \"\".\n  ┃ Then the count is right.")
+	require.Regexp(t, `(?m)^  › Thinking…`, text)
+	require.Contains(t, text, "  › Thinking…")
+	require.Contains(t, text, "⠋\n\n    …\n    So the loop must skip f == \"\".\n    Then the count is right.", "one blank row, then the body at column 4")
 
 	playEvents(m, trl, flat(
 		updateAt(1200, protocol.ThinkingEndEvent{ContentIndex: 0, Content: "Split on \",\" gives an empty string.\nSo the loop must skip f == \"\".\nThen the count is right."}),
@@ -94,7 +87,7 @@ func TestStreamingThinkingFoldsToOneThoughtRowWhenTheTurnEndsAt80x24(t *testing.
 	)...)
 	text = strings.Join(screenOf(m), "\n")
 	require.Equal(t, 1, strings.Count(text, "◆ Thought for 1.2s"))
-	require.NotContains(t, text, "┃", "the folded thinking has no body rows")
+	require.NotContains(t, text, "    …", "the folded thinking has no body rows")
 	require.NotContains(t, text, "Thinking…")
 	require.NotContains(t, text, "skip f ==")
 }
@@ -103,11 +96,11 @@ func TestSecondFoldKeyOnTheFailedToolShowsTheCommandRowThenEveryOutputLine(t *te
 	m := listModel(t, 80, 24)
 	press(t, m, "tab", "k", "e", "e")
 	require.Contains(t, barOf(m), "e fold: expanded")
-	rows := screenOf(m)
+	rows := unboxedScreen(m)
 	at := rowIndexOf(t, rows, "Ran go test ./...")
-	want := []string{"┃   $ go test ./..."}
+	want := []string{"│", "│   $ go test ./..."}
 	for _, line := range foldTestOutput {
-		want = append(want, "┃   "+line)
+		want = append(want, "│   "+line)
 	}
 	require.Equal(t, want, rows[at+1:at+1+len(want)])
 }
@@ -138,12 +131,12 @@ func TestFoldKeyOnAnEditOfALaterLineShowsTheDiffRowsThenOneRow(t *testing.T) {
 	press(t, m, "tab")
 	require.Equal(t, toolID(t, m, "edit", 0), m.selectedBlock())
 	press(t, m, "e", "e")
-	rows := screenOf(m)
+	rows := unboxedScreen(m)
 	i := rowIndexOf(t, rows, "Edited parser.go  +3 -1")
-	require.Contains(t, rows[i], "⌄ Edited parser.go")
+	require.Contains(t, rows[i], "› Edited parser.go")
 	body := strings.Join(rows[i+1:], "\n")
-	require.Regexp(t, `(?m)^┃\s+10 - +n\+\+$`, body)
-	require.Regexp(t, `(?m)^┃\s+10 \+ +if f != ""`, body)
+	require.Regexp(t, `(?m)^│\s+10 - +n\+\+$`, body)
+	require.Regexp(t, `(?m)^│\s+10 \+ +if f != ""`, body)
 	require.Contains(t, barOf(m), "e fold: expanded")
 
 	press(t, m, "e")
@@ -153,7 +146,7 @@ func TestFoldKeyOnAnEditOfALaterLineShowsTheDiffRowsThenOneRow(t *testing.T) {
 	require.Contains(t, barOf(m), "e fold: collapsed")
 }
 
-func TestSelectedReplyHasTheRailOnEveryRowWhenReachedFromBelowAndWithG(t *testing.T) {
+func TestSelectedReplyHasTheBoxWhenReachedFromBelowAndWithG(t *testing.T) {
 	t.Run("k from the block below", func(t *testing.T) {
 		events := flat(
 			foldSessionEvents(),
@@ -165,12 +158,12 @@ func TestSelectedReplyHasTheRailOnEveryRowWhenReachedFromBelowAndWithG(t *testin
 		press(t, m, "tab")
 		require.Equal(t, toolID(t, m, "bash", 2), m.selectedBlock(), "the step below the reply is selected first")
 		press(t, m, "k")
-		requireReplyRail(t, m)
+		requireReplyBox(t, m)
 	})
 	t.Run("Tab then G", func(t *testing.T) {
 		m := listModelAt(t, colorprofile.TrueColor, 80, 24)
 		press(t, m, "tab", "g", "G")
-		requireReplyRail(t, m)
+		requireReplyBox(t, m)
 	})
 }
 
@@ -220,7 +213,7 @@ func TestEnterOnTheSelectedToolRowOpensTheViewerAndEscReturnsToTheSameList(t *te
 	press(t, m, "tab", "k", "k", "k", "k")
 	require.Equal(t, toolID(t, m, "bash", 0), m.selectedBlock())
 	before := screenOf(m)
-	require.Regexp(t, `(?m)^  › Ran seq 1 40$`, strings.Join(before, "\n"))
+	require.Regexp(t, `(?m)^│ › Ran seq 1 40$`, strings.Join(unboxedScreen(m), "\n"))
 
 	require.Contains(t, strings.Join(before, "\n"), " ◢◤ ask", "the header row is on the screen before")
 
@@ -400,11 +393,11 @@ func TestResizeTo120x40KeepsTheSelectedBlockInViewAndTheBarOnTheLastRow(t *testi
 	}
 	sel := m.selectedBlock()
 	require.False(t, m.pane.Following())
-	selectedRow := regexp.MustCompile(`(?m)^  › Ran step \d+`)
-	require.Regexp(t, selectedRow, strings.Join(screenOf(m), "\n"))
+	selectedRow := regexp.MustCompile(`(?m)^│ › Ran step \d+`)
+	require.Regexp(t, selectedRow, strings.Join(unboxedScreen(m), "\n"))
 
 	m.Update(tea.WindowSizeMsg{Width: 120, Height: 40})
-	rows := screenOf(m)
+	rows := unboxedScreen(m)
 	require.Len(t, rows, 40)
 	require.Equal(t, sel, m.selectedBlock())
 	f := m.pane.Frame()
@@ -446,12 +439,12 @@ func TestResizeKeepsFreeScrollWhenTheSelectedReplyWasBelowTheWindow(t *testing.T
 	m := listModelAt(t, colorprofile.NoTTY, 80, 24, longSession(40)...)
 	h := startScreen(t, m, 80, 24)
 	h.send(keyNamed(t, "tab"))
-	h.waitText("┃ all done")
+	h.waitText("│ all done")
 	h.send(tea.MouseWheelMsg(wheelAt(10, 5, true)))
 	h.waitText("▼ End")
 	h.resize(40, 14)
 	rows := strings.Join(h.settle(), "\n")
-	require.Contains(t, rows, "┃ all done")
+	require.Contains(t, rows, "│ all done")
 	require.Contains(t, rows, "▼ End")
 	final := h.stop().(*Model)
 	require.False(t, final.pane.Following())

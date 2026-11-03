@@ -2,7 +2,7 @@
 ────────────────────────────────────────────────────────────────────────────────
   ❯ run all tests and tell me what fails                                 15:31
 
-  ◆ Running go test ./... -count=1                                         ⠋ 4s
+  ◆ Running go test ./... -count=1                                        ⠋ 4s
 
 
 

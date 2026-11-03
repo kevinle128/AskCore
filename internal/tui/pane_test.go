@@ -106,7 +106,7 @@ func (p *Pane) SetFold(id string, m FoldMode) error {
 func TestPaneShortContentPadsToHeightWithoutMarker(t *testing.T) {
 	r := newPaneRig(t, 40, 6, 2, 1)
 	f := r.pane.Frame()
-	require.Equal(t, []string{"b0.0", "b0.1", "b1.0", "", "", ""}, f.Rows)
+	require.Equal(t, []string{"b0.0", "b0.1", "", "b1.0", "", ""}, f.Rows, "one gap row after each block")
 	require.True(t, r.pane.Following())
 	require.False(t, f.Marker.Show)
 }
@@ -114,8 +114,8 @@ func TestPaneShortContentPadsToHeightWithoutMarker(t *testing.T) {
 func TestPaneFollowShowsTheTail(t *testing.T) {
 	r := newPaneRig(t, 40, 5, 3, 3, 3, 3)
 	f := r.pane.Frame()
-	require.Equal(t, []string{"b2.1", "b2.2", "b3.0", "b3.1", "b3.2"}, f.Rows)
-	require.Equal(t, 2, f.FirstBlock)
+	require.Equal(t, []string{"", "b3.0", "b3.1", "b3.2", ""}, f.Rows, "the window ends with the gap row of the last block")
+	require.Equal(t, 2, f.FirstBlock, "the first row is the gap row of block 2")
 	require.False(t, f.Marker.Show)
 }
 
@@ -125,7 +125,7 @@ func TestPaneScrollUpTurnsFollowOffAndShowsEndMarker(t *testing.T) {
 	f := r.pane.Frame()
 	require.False(t, r.pane.Following())
 	// The last row is the marker slot: the pane draws no content there.
-	require.Equal(t, []string{"b1.1", "b1.2", "b2.0", "b2.1", ""}, f.Rows)
+	require.Equal(t, []string{"b2.0", "b2.1", "b2.2", "", ""}, f.Rows)
 	require.Equal(t, PaneMarker{Show: true, Text: "▼ End", Pad: (40 - 5) / 2}, f.Marker)
 }
 
@@ -140,21 +140,21 @@ func TestPaneScrollClampsAtBothEnds(t *testing.T) {
 	r.pane.ScrollBy(1000)
 	f = r.pane.Frame()
 	require.True(t, r.pane.Following())
-	require.Equal(t, "b3.2", f.Rows[4])
+	require.Equal(t, []string{"b3.2", ""}, f.Rows[3:])
 	require.False(t, f.Marker.Show)
 }
 
 func TestPaneScrollDownToLastRowTurnsFollowOn(t *testing.T) {
 	r := newPaneRig(t, 40, 5, 3, 3, 3, 3)
 	// The window holds height-1 rows while follow is off, so the last row is in
-	// view from top row 8; the end window starts at row 7.
+	// view from top row 12; the end window starts at row 11.
 	r.pane.ScrollBy(-4)
 	require.False(t, r.pane.Following())
 	r.pane.ScrollBy(4)
 	require.False(t, r.pane.Following())
 	r.pane.ScrollBy(1)
 	require.True(t, r.pane.Following())
-	require.Equal(t, "b3.2", r.pane.Frame().Rows[4])
+	require.Equal(t, "b3.2", r.pane.Frame().Rows[3])
 }
 
 func TestPaneScrollOnShortContentKeepsFollow(t *testing.T) {
@@ -174,18 +174,20 @@ func TestPaneNewOutputWithFollowOffKeepsTopAndCountsRowsBelow(t *testing.T) {
 	after := r.pane.Frame()
 	require.Equal(t, before.Rows, after.Rows)
 	require.Equal(t, before.FirstBlock, after.FirstBlock)
-	require.Equal(t, PaneMarker{Show: true, New: true, N: 8, Text: "▼ 8 new lines · End", Pad: (40 - 19) / 2}, after.Marker)
+	// Below the window: the gap row of b2, b3 and its gap row, b4 and its gap
+	// row.
+	require.Equal(t, PaneMarker{Show: true, New: true, N: 9, Text: "▼ 9 new lines · End", Pad: (40 - 19) / 2}, after.Marker)
 
 	// A delta of the last block grows N and does not move the window.
 	r.grow("b4", labelRows("b4", 6))
 	after = r.pane.Frame()
 	require.Equal(t, before.Rows, after.Rows)
-	require.Equal(t, 10, after.Marker.N)
+	require.Equal(t, 11, after.Marker.N)
 }
 
 func TestPaneChangeInsideTheWindowKeepsRowsBelowCounted(t *testing.T) {
 	r := newPaneRig(t, 40, 5, 3, 3, 3, 3)
-	r.pane.ScrollBy(-3)
+	r.pane.ScrollBy(-6)
 	// Block 1 is in the window. A change there is output: the marker shows
 	// the rows below the window, never zero.
 	r.grow("b1", labelRows("b1", 4))
@@ -196,17 +198,17 @@ func TestPaneChangeInsideTheWindowKeepsRowsBelowCounted(t *testing.T) {
 }
 
 func TestPaneContentThatShrinksIntoTheWindowTurnsFollowOn(t *testing.T) {
-	r := newPaneRig(t, 40, 5, 3, 3, 3, 3)
+	r := newPaneRig(t, 40, 9, 3, 3, 3, 3)
 	r.pane.ScrollBy(-3)
 	require.False(t, r.pane.Following())
-	// Only 4 rows remain: the whole content fits the window.
+	// Only 8 rows remain, gap rows too: the whole content fits the window.
 	for _, id := range []string{"b0", "b1", "b2", "b3"} {
 		r.grow(id, labelRows(id, 1))
 	}
 	f := r.pane.Frame()
 	require.True(t, r.pane.Following())
 	require.False(t, f.Marker.Show)
-	require.Equal(t, []string{"b0.0", "b1.0", "b2.0", "b3.0", ""}, f.Rows)
+	require.Equal(t, []string{"b0.0", "", "b1.0", "", "b2.0", "", "b3.0", "", ""}, f.Rows)
 }
 
 func TestPaneNewOutputWithFollowOnStaysAtTheBottom(t *testing.T) {
@@ -214,7 +216,7 @@ func TestPaneNewOutputWithFollowOnStaysAtTheBottom(t *testing.T) {
 	r.pane.Frame()
 	r.add(2)
 	f := r.pane.Frame()
-	require.Equal(t, []string{"b3.0", "b3.1", "b3.2", "b4.0", "b4.1"}, f.Rows)
+	require.Equal(t, []string{"b3.2", "", "b4.0", "b4.1", ""}, f.Rows)
 	require.False(t, f.Marker.Show)
 }
 
@@ -228,7 +230,7 @@ func TestPaneScrollToBottomTurnsFollowOnAndClearsMarker(t *testing.T) {
 	f := r.pane.Frame()
 	require.True(t, r.pane.Following())
 	require.False(t, f.Marker.Show)
-	require.Equal(t, "b4.1", f.Rows[4])
+	require.Equal(t, "b4.1", f.Rows[3])
 
 	// The marker form starts again from "End" after the next scroll up.
 	r.pane.ScrollBy(-1)
@@ -240,12 +242,12 @@ func TestPaneMarkerIsShortUnderThirtyColumns(t *testing.T) {
 	r.pane.ScrollBy(-3)
 	r.add(14)
 	m := r.pane.Frame().Marker
-	require.Equal(t, "▼ 18 · End", m.Text)
+	require.Equal(t, "▼ 19 · End", m.Text)
 	require.Equal(t, (28-displayWidth(m.Text))/2, m.Pad)
 
-	// The window at the first row shows 4 rows; 22 rows are below it.
+	// The window at the first row shows 4 rows; 27 rows are below it.
 	r.pane.ScrollBy(-1000)
-	require.Equal(t, "▼ 22 · End", r.pane.Frame().Marker.Text)
+	require.Equal(t, "▼ 27 · End", r.pane.Frame().Marker.Text)
 }
 
 func TestPaneRowsFitTheWidthWithWideCharacters(t *testing.T) {
@@ -293,11 +295,12 @@ func TestPaneResizeWithFollowStaysAtTheBottom(t *testing.T) {
 		r.pane.SetSize(w, 3)
 		f := r.pane.Frame()
 		require.True(t, r.pane.Following())
-		require.NotEmpty(t, f.Rows[2])
+		require.NotEmpty(t, f.Rows[1])
+		require.Empty(t, f.Rows[2], "the window ends with the gap row of the last block")
 		if w == 120 {
 			// One row for each block: the window ends with the last block.
-			require.True(t, strings.HasPrefix(f.Rows[2], "b3 "), f.Rows[2])
-			require.True(t, strings.HasPrefix(f.Rows[1], "b2 "), f.Rows[1])
+			require.True(t, strings.HasPrefix(f.Rows[1], "b3 "), f.Rows[1])
+			require.Empty(t, f.Rows[0], "the gap row of b2")
 		}
 	}
 }
@@ -335,29 +338,46 @@ func TestPaneFoldChangeAboveTheWindowKeepsTheTopRow(t *testing.T) {
 }
 
 func TestPaneRevealMovesTheWindowByTheLeastRows(t *testing.T) {
-	r := newPaneRig(t, 40, 5, 3, 3, 3, 3, 3, 3)
+	r := newPaneRig(t, 40, 7, 3, 3, 3, 3, 3, 3)
 	r.pane.ScrollBy(-100)
 	require.Equal(t, "b0.0", r.pane.Frame().Rows[0])
 
-	// Block 3 is at rows 9-11: the window moves so that its last row is the
-	// last content row. The last pane row is the marker.
+	// Block 3 is at rows 12-14, with the gap row of b2 above it and its own
+	// gap row below it. The window moves so that its gap row is the last
+	// content row. The last pane row is the marker.
 	r.pane.Reveal(3)
 	f := r.pane.Frame()
 	require.False(t, r.pane.Following())
-	require.Equal(t, "b3.2", f.Rows[3])
+	require.Equal(t, []string{"b2.2", "", "b3.0", "b3.1", "b3.2", "", ""}, f.Rows)
 
 	// A block in view does not move the window.
 	r.pane.Reveal(3)
 	require.Equal(t, f.Rows, r.pane.Frame().Rows)
 
-	// A block above the window goes to the first row.
+	// A block above the window goes to the second row, below the row above it.
 	r.pane.Reveal(1)
-	require.Equal(t, "b1.0", r.pane.Frame().Rows[0])
+	require.Equal(t, []string{"", "b1.0"}, r.pane.Frame().Rows[:2])
 
-	// A block taller than the window shows its first rows.
+	// The first block has no row above it.
+	r.pane.Reveal(0)
+	require.Equal(t, "b0.0", r.pane.Frame().Rows[0])
+
+	// A block taller than the window shows the row above it and its first rows.
 	r.add(20)
 	r.pane.Reveal(6)
-	require.Equal(t, "b6.0", r.pane.Frame().Rows[0])
+	require.Equal(t, []string{"", "b6.0"}, r.pane.Frame().Rows[:2])
+}
+
+func TestPaneRevealKeepsBothGapRowsOfABlockThatFits(t *testing.T) {
+	r := newPaneRig(t, 40, 6, 2, 2, 2, 2, 2, 2)
+	r.pane.ScrollBy(-100)
+	// Block 2 is at rows 6-7, its gap row is row 8 and the gap row of b1 is
+	// row 5. The window of 5 content rows moves down by the fewest rows.
+	r.pane.Reveal(2)
+	require.Equal(t, []string{"b1.1", "", "b2.0", "b2.1", "", ""}, r.pane.Frame().Rows,
+		"the gap row above and the gap row below are in view")
+	r.pane.Reveal(4)
+	require.Equal(t, []string{"b3.1", "", "b4.0", "b4.1", "", ""}, r.pane.Frame().Rows)
 }
 
 // --- cache ---
@@ -487,26 +507,20 @@ func newPaneSessionRig(tb testing.TB, blocks, width, height int) *paneSession {
 	// The last block is a reply that streams.
 	s.last = "stream"
 	s.text = "Streaming. " + reply
-	require.NoError(tb, s.tr.Append(s.last, foldedBlock{inner: newAssistantTextBlock(s.text, s.stream, true, false)}, false))
+	require.NoError(tb, s.tr.Append(s.last, foldedBlock{inner: newAssistantTextBlock(s.text, s.stream, true)}, false))
 	s.ids = append(s.ids, s.last)
 
 	s.pane = NewPane(s.tr)
 	s.pane.SetTheme(NewTheme(colorprofile.TrueColor))
-	s.pane.DefaultFold = func(id string, _ Block) FoldMode {
-		// Replies draw expanded; tool rows are one row. Every 25th long output
-		// is open, so that a window can meet 200 rows of one block.
-		if id == s.last {
-			return FoldExpanded
-		}
-		var n int
-		_, _ = fmt.Sscanf(id, "blk%d", &n)
+	// Replies draw expanded; tool rows are one row. Every 25th long output is
+	// open, so that a window can meet 200 rows of one block.
+	for n, id := range s.ids {
+		fold := FoldCollapsed
 		switch {
-		case n%5 == 3:
-			return FoldExpanded
-		case n%5 == 4 && n%25 == 4:
-			return FoldExpanded
+		case id == s.last, n%5 == 3, n%5 == 4 && n%25 == 4:
+			fold = FoldExpanded
 		}
-		return FoldCollapsed
+		require.NoError(tb, s.pane.SetFold(id, fold))
 	}
 	s.pane.SetSize(width, height)
 	return s
@@ -515,7 +529,7 @@ func newPaneSessionRig(tb testing.TB, blocks, width, height int) *paneSession {
 // delta streams one word into the last block.
 func (s *paneSession) delta(i int) {
 	s.text += fmt.Sprintf(" word%d", i)
-	_ = s.tr.Replace(s.last, foldedBlock{inner: newAssistantTextBlock(s.text, s.stream, true, false)})
+	_ = s.tr.Replace(s.last, foldedBlock{inner: newAssistantTextBlock(s.text, s.stream, true)})
 }
 
 // frame draws and joins the rows, as the screen does.
@@ -788,8 +802,9 @@ func BenchmarkPaneResize(b *testing.B) {
 func TestPaneBlockAtMapsRowsToBlocksWithFollowOn(t *testing.T) {
 	r := newPaneRig(t, 40, 5, 3, 3, 3, 3)
 	r.pane.Frame()
-	// Follow on: the window is b2.1 .. b3.2.
-	for row, want := range []struct{ block, offset int }{{2, 1}, {2, 2}, {3, 0}, {3, 1}, {3, 2}} {
+	// Follow on: the window is the gap row of b2, b3.0 .. b3.2, and the gap
+	// row of b3. A gap row belongs to the block above it.
+	for row, want := range []struct{ block, offset int }{{2, 3}, {3, 0}, {3, 1}, {3, 2}, {3, 3}} {
 		b, off, ok := r.pane.BlockAt(row)
 		require.True(t, ok, "row %d", row)
 		require.Equal(t, want.block, b, "row %d", row)
@@ -804,13 +819,16 @@ func TestPaneBlockAtMapsRowsToBlocksWithFollowOn(t *testing.T) {
 func TestPaneBlockAtAfterScrollWithFollowOffLeavesTheMarkerRowEmpty(t *testing.T) {
 	r := newPaneRig(t, 40, 5, 3, 3, 3, 3)
 	r.pane.ScrollBy(-3)
-	// Window: b1.1 b1.2 b2.0 b2.1, then the marker row.
+	// Window: b2.0 b2.1 b2.2 and the gap row of b2, then the marker row.
 	b, off, ok := r.pane.BlockAt(0)
 	require.True(t, ok)
-	require.Equal(t, [2]int{1, 1}, [2]int{b, off})
+	require.Equal(t, [2]int{2, 0}, [2]int{b, off})
+	b, off, ok = r.pane.BlockAt(2)
+	require.True(t, ok)
+	require.Equal(t, [2]int{2, 2}, [2]int{b, off})
 	b, off, ok = r.pane.BlockAt(3)
 	require.True(t, ok)
-	require.Equal(t, [2]int{2, 1}, [2]int{b, off})
+	require.Equal(t, [2]int{2, 3}, [2]int{b, off}, "the gap row belongs to the block above it")
 	_, _, ok = r.pane.BlockAt(4)
 	require.False(t, ok, "the marker row holds no block")
 	row, shown := r.pane.MarkerRow()
@@ -820,21 +838,24 @@ func TestPaneBlockAtAfterScrollWithFollowOffLeavesTheMarkerRowEmpty(t *testing.T
 
 func TestPaneBlockAtBelowShortContentIsEmpty(t *testing.T) {
 	r := newPaneRig(t, 40, 6, 2, 1)
-	b, off, ok := r.pane.BlockAt(2)
+	b, off, ok := r.pane.BlockAt(3)
 	require.True(t, ok)
 	require.Equal(t, [2]int{1, 0}, [2]int{b, off})
-	_, _, ok = r.pane.BlockAt(3)
+	b, off, ok = r.pane.BlockAt(4)
+	require.True(t, ok)
+	require.Equal(t, [2]int{1, 1}, [2]int{b, off}, "the gap row after the last block")
+	_, _, ok = r.pane.BlockAt(5)
 	require.False(t, ok)
 	_, shown := r.pane.MarkerRow()
 	require.False(t, shown, "follow is on")
 }
 
 func TestPaneBlockAtSkipsBlocksWithoutRows(t *testing.T) {
-	r := newPaneRig(t, 40, 4, 2, 0, 2)
+	r := newPaneRig(t, 40, 5, 2, 0, 2)
 	r.pane.ScrollBy(-100)
-	b, _, ok := r.pane.BlockAt(2)
+	b, _, ok := r.pane.BlockAt(3)
 	require.True(t, ok)
-	require.Equal(t, 2, b)
+	require.Equal(t, 2, b, "a block without rows has no gap row")
 }
 
 func TestPaneBlockAtFollowsABlockThatGrewAboveTheWindow(t *testing.T) {
@@ -844,7 +865,7 @@ func TestPaneBlockAtFollowsABlockThatGrewAboveTheWindow(t *testing.T) {
 	r.grow("b0", labelRows("b0", 9))
 	b, off, ok := r.pane.BlockAt(0)
 	require.True(t, ok)
-	require.Equal(t, [2]int{1, 1}, [2]int{b, off}, "the top row does not move")
+	require.Equal(t, [2]int{2, 0}, [2]int{b, off}, "the top row does not move")
 }
 
 func TestPaneNewOutputIsSetOnlyWhileFollowIsOff(t *testing.T) {
@@ -881,4 +902,136 @@ func TestPaneHoverMoveDrawsAtMostTwoBlocksAndStaysUnderTheFrameBudget(t *testing
 		s.frame()
 	})
 	checkBudget(t, "hover over many rows", d)
+}
+
+// --- gap rows ---
+
+// blockPane returns a pane at a size over the blocks, with ids "k0", "k1", ...
+func blockPane(t *testing.T, width, height int, blocks ...Block) *Pane {
+	t.Helper()
+	tr := NewTranscript()
+	for i, b := range blocks {
+		require.NoError(t, tr.Append(fmt.Sprintf("k%d", i), b, true))
+	}
+	p := NewPane(tr)
+	p.SetTheme(NewTheme(colorprofile.NoTTY))
+	p.SetSize(width, height)
+	return p
+}
+
+func plainFrame(p *Pane) []string { return plain(p.Frame().Rows) }
+
+func TestPaneGapRowsSeparateUnitsAndFollowTheLast(t *testing.T) {
+	p := blockPane(t, 40, 8,
+		NewUserPromptBlock("go", ""),
+		NewToolLineBlock("bash", "ls", ToolSucceeded, "", "", NewTranscriptView()),
+		NewAssistantTextBlock("done"),
+	)
+	require.Equal(t, []string{"  ❯ go", "", "  ◆ Ran ls", "", "  done", "", "", ""}, plainFrame(p),
+		"one empty row between any two blocks and one after the last, none above the first")
+}
+
+func TestPaneReplyParagraphsAndUsageLineAreOneUnit(t *testing.T) {
+	stream := newMarkdownStream()
+	p := blockPane(t, 40, 7,
+		newAssistantTextBlock("one", stream, true),
+		newAssistantTextBlock("two", newMarkdownStream(), false),
+		NewMetaLineBlock("m · 1.0s"),
+	)
+	require.Equal(t, []string{"  one", "", "  two", "  m · 1.0s", "", "", ""}, plainFrame(p),
+		"the break between paragraphs is part of the reply; the usage row follows without a gap")
+}
+
+func TestPaneGapRowFollowsAReplyThatEndsWithAnEmptyParagraph(t *testing.T) {
+	// A streaming reply opens its next paragraph before it has text. The gap
+	// row stays after the last row that the reply drew.
+	p := blockPane(t, 40, 5,
+		newAssistantTextBlock("partial", newMarkdownStream(), true),
+		newAssistantTextBlock("", newMarkdownStream(), false),
+		NewCancelMarker("Cancelled by you."),
+	)
+	require.Equal(t, []string{"  partial", "", "  ⊘ Cancelled by you.", "", ""}, plainFrame(p))
+}
+
+func TestPaneBlockWithoutRowsHasNoGapRow(t *testing.T) {
+	p := blockPane(t, 40, 5, noRows{}, NewRetryNote("again"), noRows{}, NewRetryNote("more"))
+	require.Equal(t, []string{"  ↻ again", "", "  ↻ more", "", ""}, plainFrame(p),
+		"no empty row above the first block, one between the two notes")
+}
+
+// --- selection box ---
+
+// boxRig is a pane over five blocks of two rows each, with the text at the
+// columns that blocks use: column 0 and the last column are blank.
+func boxRig(t *testing.T, height int) *paneRig {
+	t.Helper()
+	r := newPaneRig(t, 20, height)
+	for range 5 {
+		id := r.add(0)
+		r.grow(id, []string{"  " + id + " one", "  " + id + " two"})
+	}
+	return r
+}
+
+func TestPaneSelectionBoxUsesTheGapRowsAndKeepsTheRowCount(t *testing.T) {
+	r := boxRig(t, 15)
+	r.pane.ScrollToTop()
+	before := plainFrame(r.pane)
+	r.pane.SetSelected("b2")
+	f := r.pane.Frame()
+	got := plain(f.Rows)
+	require.Len(t, got, len(before))
+	require.Equal(t, []string{
+		"┌                  ┐",
+		"│ b2 one           │",
+		"│ b2 two           │",
+		"└                  ┘",
+	}, got[5:9])
+	for i, row := range got {
+		if i < 5 || i > 8 {
+			require.Equal(t, before[i], row, "row %d outside the box does not change", i)
+		}
+	}
+	for _, row := range f.Rows[5:9] {
+		require.Equal(t, 20, displayWidth(row))
+	}
+}
+
+func TestPaneSelectionBoxShowsTheClipMarkAtTheWindowEdges(t *testing.T) {
+	r := boxRig(t, 6)
+	r.pane.ScrollToTop()
+	r.pane.ScrollBy(7) // The window starts at the second row of b2.
+	r.pane.SetSelected("b2", "b3")
+	got := plainFrame(r.pane)
+	require.Equal(t, []string{
+		"┆ b2 two           ┆",
+		"│                  │",
+		"│ b3 one           │",
+		"│ b3 two           │",
+		"└                  ┘",
+		"",
+	}, got, "the top edge is above the window; the marker row stays empty")
+
+	r.pane.ScrollToTop()
+	r.pane.SetSelected("b1")
+	got = plainFrame(r.pane)
+	require.Equal(t, "┌                  ┐", got[2])
+	require.Equal(t, "┆ b1 two           ┆", got[4], "the bottom edge is below the window")
+
+	r.pane.SetSelected("b0")
+	got = plainFrame(r.pane)
+	require.Equal(t, "┆ b0 one           ┆", got[0], "the first block has no row above it")
+	require.Equal(t, "└                  ┘", got[2])
+}
+
+func TestPaneSelectionBelowTheWindowDrawsNoBox(t *testing.T) {
+	r := boxRig(t, 7)
+	r.pane.ScrollToTop()
+	// The window shows b0 and b1 with their gap rows. b2 is between them and
+	// the selection, so no edge of the box is in the window.
+	r.pane.SetSelected("b3")
+	for _, row := range plainFrame(r.pane) {
+		require.NotContains(t, row, "┆")
+		require.NotContains(t, row, "┌")
+	}
 }

@@ -10,7 +10,7 @@ from run import (ASK_FAKE_KEY, ECHO_LINES, ECHO_REPLY, PROVIDER_HINT, PROVIDER_N
                  assert_complete_stream, assert_exit_line, assert_idle_screen, assert_link, assert_marker,
                  assert_mouse_enabled, assert_one_draft, assert_provider_box, assert_selector_screen, assert_shell,
                  assert_terminal_restored, ask_environment, ask_ready, hide_typed_secret, marker_row, output_bytes,
-                 pane_rows, provider_names, scan_secrets, secret_values, tool_rows)
+                 box_span, pane_rows, provider_names, row_text, scan_secrets, secret_values, tool_rows)
 
 COLUMNS, ROWS = 80, 24
 RULE = '─' * COLUMNS
@@ -174,11 +174,23 @@ class PaneControls(unittest.TestCase):
     def test_tool_rows(self):
         state = {'text': frame(pane=self.collapsed())}
         assert tool_rows(state, COLUMNS) == ['  ◆ echo ' + ECHO_REPLY]
+        def boxed(text):
+            return ('│' + text[1:]).ljust(COLUMNS - 1) + '│'
         shown = self.collapsed()
-        shown[5:6] = ['┃ ◆ echo ' + ECHO_REPLY, *('┃   ' + line for line in ECHO_LINES[:3])]
-        assert len(tool_rows({'text': frame(pane=shown)}, COLUMNS)) == 4
+        shown[4:7] = ['┌'.ljust(COLUMNS - 1) + '┐', boxed('  › echo ' + ECHO_REPLY), boxed(''),
+                      *(boxed('    ' + line) for line in ECHO_LINES[:3]), '└'.ljust(COLUMNS - 1) + '┘']
+        assert tool_rows({'text': frame(pane=shown)}, COLUMNS) == [
+            '  › echo ' + ECHO_REPLY, '', *('    ' + line for line in ECHO_LINES[:3])]
+        assert box_span(pane_rows(frame(pane=shown).split('\n'), COLUMNS)) == (5, 9)
+        assert box_span(pane_rows(frame(pane=self.collapsed()).split('\n'), COLUMNS)) is None
         with self.assertRaises(AssertionError):
             tool_rows({'text': frame(pane=['  nothing'])}, COLUMNS)
+
+    def test_row_text_drops_the_reply_time(self):
+        assert row_text('  ' + ECHO_REPLY + ' ' * 7 + '15:58  ') == ECHO_REPLY
+        assert row_text('  second') == 'second'
+        # A time needs two blank columns before it; a text that ends in a time keeps it.
+        assert row_text('  at 15:58') == 'at 15:58'
 
     def test_marker(self):
         pane = ['row'] * 16 + ['                                     ▼ End']

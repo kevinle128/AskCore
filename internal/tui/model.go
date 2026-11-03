@@ -55,6 +55,10 @@ type Options struct {
 	// Clipboard holds the machine parts of /copy. Zero fields use the real
 	// machine.
 	Clipboard ClipboardOptions
+	// ThinkingFold is the first session mode: the mode that a thinking step
+	// takes when it ends. The zero value is ThinkingExpanded. The caller reads
+	// it from the settings; the package does not read files.
+	ThinkingFold ThinkingFold
 }
 
 // Model is the root model of the TUI.
@@ -93,6 +97,11 @@ type Model struct {
 	quitting bool
 	// resized keeps the selected block visible when the pane gets its new size.
 	resized bool
+	// thinkingFold is the session mode: the mode that a thinking step takes
+	// when it ends, also in history that loads. Options.ThinkingFold gives its
+	// first value and toggleAllThinking changes it. The model owns it and gives
+	// it to each pane, as it does with the theme.
+	thinkingFold FoldMode
 }
 
 var _ tea.Model = (*Model)(nil)
@@ -100,8 +109,9 @@ var _ tea.Model = (*Model)(nil)
 // New returns a Model.
 func New(o Options) *Model {
 	m := &Model{
-		slots: o.Slots,
-		theme: NewTheme(o.Profile),
+		slots:        o.Slots,
+		theme:        NewTheme(o.Profile),
+		thinkingFold: o.ThinkingFold.Fold(),
 	}
 	m.resetTranscript()
 	if o.Client != nil || o.Open != nil {
@@ -128,6 +138,20 @@ func (m *Model) resetTranscript() {
 	// A block that has no fold mode of its own draws the same rows in every
 	// mode, so the default shows each block as it draws itself.
 	m.pane = NewPane(m.transcript)
+	m.pane.SetThinkingFold(m.thinkingFold)
+}
+
+// toggleAllThinking expands all thinking steps, or collapses them all when all
+// are expanded, and makes the result the session mode. It returns true when
+// the steps are expanded now.
+func (m *Model) toggleAllThinking() bool {
+	expanded := m.pane.ToggleAllThinking()
+	m.thinkingFold = FoldCollapsed
+	if expanded {
+		m.thinkingFold = FoldExpanded
+	}
+	m.pane.SetThinkingFold(m.thinkingFold)
+	return expanded
 }
 
 // Transcript returns the transcript. Change it only from Update.

@@ -41,6 +41,8 @@ type terminalConfig struct {
 	home    string
 	version string
 	open    func(ctx context.Context) (tui.Client, error)
+	// thinkingFold is the first session mode of thinking steps that end.
+	thinkingFold tui.ThinkingFold
 }
 
 // runInteractive is the entry for `ask` on a terminal without a prompt. It
@@ -63,6 +65,7 @@ func runInteractive(stdin io.Reader, stdout, stderr io.Writer, deps runDependenc
 	exe, _ := os.Executable()
 	return runTerminal(terminalConfig{
 		in: in, out: out, stderr: stderr, sigs: sigs, cwd: cwd, home: home, version: buildIdentity(),
+		thinkingFold: thinkingFoldSetting(deps.getenv("ASK_HOME")),
 		open: func(ctx context.Context) (tui.Client, error) {
 			// No warning callback: a line written to the terminal while the
 			// program draws would break the screen.
@@ -176,7 +179,8 @@ func runTerminal(c terminalConfig) (code int) {
 		Profile: colorprofile.Detect(c.out, os.Environ()),
 		// Bubble Tea writes raw input to this file when it is set. The TUI
 		// warns about it where a key or a code is typed.
-		TraceFile: os.Getenv("TEA_TRACE"),
+		TraceFile:    os.Getenv("TEA_TRACE"),
+		ThinkingFold: c.thinkingFold,
 	})
 	// Bubble Tea would end SIGTERM with exit code 0 and ignores SIGHUP, so ask
 	// handles the signals itself.

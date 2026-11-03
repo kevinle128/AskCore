@@ -304,6 +304,15 @@ STREAM_TPS = 20
 ECHO_LINES = [f'out-{i:02d}' for i in range(1, 10)]
 ECHO_PROMPT = 'echo ' + '\n'.join(ECHO_LINES)
 ECHO_REPLY = ' '.join(ECHO_LINES)
+# The first row of a reply ends with its 24h time when the row has room for it.
+REPLY_TIME = re.compile(r'\s{2,}\d{2}:\d{2}$')
+
+
+def row_text(line):
+    """The text of a screen row without its indent and without a reply time at its right."""
+    return REPLY_TIME.sub('', line.rstrip()).strip()
+
+
 # The user band folds the prompt after three rows, so these lines are on a row of their
 # own only when the tool block shows its output.
 HIDDEN_LINES = ECHO_LINES[3:]
@@ -738,18 +747,64 @@ def send_echo_turn(session):
     session.wait_empty_prompt()
 
 
-TOOL_ROW = re.compile(r'^(?:┃ |  )([◆›⌄]) echo out-01')
+TOOL_ROW = re.compile(r'^  ([◆›]) echo out-01')
+# The selection box: a mark in column 0 and in the last column of each row of the
+# selected block, the corners on the gap rows above and below it.
+BOX_LEFT, BOX_RIGHT = '│┌└┆', '│┐┘┆'
+SELECTED_STEP = '  › echo out-01'
+
+
+def unboxed(lines):
+    """The rows without the marks of the selection box and without trailing spaces."""
+    out = []
+    for line in lines:
+        text = line.rstrip()
+        if len(text) >= 2 and text[0] in BOX_LEFT and text[-1] in BOX_RIGHT:
+            text = (' ' + text[1:-1]).rstrip()
+        out.append(text)
+    return out
+
+
+def box_span(lines):
+    """The first and the last row inside the selection box, or None when no box shows."""
+    rows = [line.rstrip() for line in lines]
+    top = next((i for i, line in enumerate(rows) if line.startswith('┌') and line.endswith('┐')), None)
+    if top is None:
+        return None
+    bottom = next((i for i in range(top + 1, len(rows)) if rows[i].startswith('└') and rows[i].endswith('┘')), None)
+    assert bottom is not None, f'the box has no bottom edge: {rows!r}'
+    inside = rows[top + 1:bottom]
+    assert inside and all(line.startswith('│') and line.endswith('│') for line in inside), f'the box sides differ: {rows!r}'
+    return top + 1, bottom - 1
+
+
+def selected_step_shown(state):
+    """The echo step is selected: its first row shows the open mark inside the box."""
+    return any(line.startswith(SELECTED_STEP) for line in unboxed(screen_lines(state)))
 
 
 def tool_rows(state, columns):
-    """Rows of the echo tool block, from its first row to the blank row that ends it."""
-    lines = pane_rows(screen_lines(state), columns)
+    """Rows of the echo tool block without the box: the header row, and for an open step the
+    one blank row and the body rows at column 4."""
+    lines = unboxed(pane_rows(screen_lines(state), columns))
     start = next((i for i, line in enumerate(lines) if TOOL_ROW.match(line)), None)
     assert start is not None, f'no tool row: {lines!r}'
     end = start + 1
+    if end + 1 < len(lines) and not lines[end] and lines[end + 1].startswith('    '):
+        end += 1
     while end < len(lines) and lines[end].strip():
         end += 1
     return lines[start:end]
+
+
+def assert_box_around_tool(state, columns, block):
+    """The box goes around every row of the echo tool block and no other row."""
+    pane = pane_rows(screen_lines(state), columns)
+    span = box_span(pane)
+    assert span is not None, f'no box: {pane!r}'
+    first, last = span
+    assert TOOL_ROW.match(unboxed(pane)[first]), f'the box starts on another row: {pane!r}'
+    assert last - first + 1 == len(block), f'the box does not end with the block: {pane!r}'
 
 
 def ask_turn(session):
@@ -765,36 +820,44 @@ def ask_turn(session):
     assert sum(bool(TOOL_ROW.match(line)) for line in pane) == 1, f'expected one tool row: {pane!r}'
     assert len(tool_rows(state, columns)) == 1, f'the tool block has output rows: {pane!r}'
     assert not any(line.strip() in HIDDEN_LINES for line in pane), f'tool output is visible: {pane!r}'
-    assert not any(line.startswith('┃') for line in pane), 'a block is selected before Tab'
-    assert sum(line == '  ' + ECHO_REPLY for line in pane) == 1, f'reply row differs: {pane!r}'
+    assert box_span(pane) is None, f'a block is selected before Tab: {pane!r}'
+    assert sum(REPLY_TIME.sub('', line.rstrip()) == '  ' + ECHO_REPLY for line in pane) == 1, \
+        f'reply row differs: {pane!r}'
+    assert any(REPLY_TIME.search(line.rstrip()) and ECHO_REPLY in line for line in pane), \
+        f'the reply row shows no time: {pane!r}'
     session.capture('collapsed')
 
     # Tab selects the last block, the reply, which cannot fold. k selects the tool step.
     session.key('tab')
     state = session.wait(lambda s: screen_lines(s)[rows - 1].startswith(BAR_LIST))
     pane = pane_rows(screen_lines(state), columns)
-    assert sum(line == '┃ ' + ECHO_REPLY for line in pane) == 1, f'the reply is not selected: {pane!r}'
+    span = box_span(pane)
+    assert span is not None and pane[span[0]].rstrip().startswith('│ ' + ECHO_REPLY), f'the reply is not selected: {pane!r}'
     session.key('k')
-    state = session.wait(lambda s: any(line.startswith('  › echo out-01') for line in screen_lines(s)))
-    assert not any(line.startswith('┃') for line in pane_rows(screen_lines(state), columns)), 'a collapsed step has a rail'
+    state = session.wait(selected_step_shown)
+    block = tool_rows(state, columns)
+    assert block == [block[0]], f'a collapsed step has body rows: {block!r}'
+    assert_box_around_tool(state, columns, block)
 
     # e: Truncated. Nine lines show as the first three, a hint and the last three.
     session.key('e')
     state = session.wait(lambda s: 'e fold: truncated' in screen_lines(s)[rows - 1])
     block = tool_rows(state, columns)
-    assert block[0].startswith('┃ ◆ echo out-01'), block[0]
-    assert [line.rstrip() for line in block[1:]] == [
-        '┃   out-01', '┃   out-02', '┃   out-03', '┃   ⋮ 3 more lines · e to expand · Enter full screen',
-        '┃   out-07', '┃   out-08', '┃   out-09'], f'truncated rows differ: {block!r}'
-    assert not any(line.lstrip('┃ ').startswith('$ ') for line in block), 'a command row shows in Truncated'
+    assert block[0].startswith(SELECTED_STEP), block[0]
+    assert block[1:] == [
+        '', '    out-01', '    out-02', '    out-03', '    ⋮ 3 more lines · e to expand · Enter full screen',
+        '    out-07', '    out-08', '    out-09'], f'truncated rows differ: {block!r}'
+    assert not any(line.lstrip().startswith('$ ') for line in block), 'a command row shows in Truncated'
+    assert_box_around_tool(state, columns, block)
     session.capture('truncated')
 
     # e again: Expanded shows every line and the open mark.
     session.key('e')
     state = session.wait(lambda s: 'e fold: expanded' in screen_lines(s)[rows - 1])
     block = tool_rows(state, columns)
-    assert block[0].startswith('┃ ⌄ echo out-01'), block[0]
-    assert [line.rstrip() for line in block[1:]] == [f'┃   {text}' for text in ECHO_LINES], f'expanded rows differ: {block!r}'
+    assert block[0].startswith(SELECTED_STEP), block[0]
+    assert block[1:] == [''] + [f'    {text}' for text in ECHO_LINES], f'expanded rows differ: {block!r}'
+    assert_box_around_tool(state, columns, block)
 
     # e once more: back to one row.
     session.key('e')
@@ -816,7 +879,7 @@ def ask_turn(session):
     session.capture('viewer')
     session.key('escape')
     state = session.wait(lambda s: screen_lines(s)[0].rstrip() == HEADER)
-    assert any(line.startswith('  › echo out-01') for line in screen_lines(state)), 'the selection moved'
+    assert selected_step_shown(state), 'the selection moved'
     assert screen_lines(state)[rows - 1].startswith(BAR_LIST), 'the list lost its focus'
 
     # Esc in the list returns to the prompt.
@@ -1005,7 +1068,7 @@ def ask_mouse(session):
     # A click on the marker jumps to the end and follows again.
     session.click(columns // 2 + 1, rows - 5)
     state = session.wait(lambda s: marker_row(s) is None)
-    assert any(line.strip() == 'second' for line in screen_lines(state)), 'the end is not in view'
+    assert any(row_text(line) == 'second' for line in screen_lines(state)), 'the end is not in view'
 
     # The wheel up and then down to the last row follows again without a click.
     session.wheel('up')
@@ -1022,7 +1085,7 @@ def reply_text(session, prompt, reply):
     """Send one prompt and wait until the reply (`reply` is the text of the faux answer) is done."""
     session.write(prompt)
     session.key('enter')
-    session.wait(lambda s: any(line.strip() == reply for line in screen_lines(s)) and
+    session.wait(lambda s: any(row_text(line) == reply for line in screen_lines(s)) and
                  USAGE_ROW.search(s['text']) is not None, timeout=40)
     session.wait_empty_prompt()
 
@@ -1063,7 +1126,7 @@ def open_viewer(session):
     session.key('tab')
     session.wait(lambda s: screen_lines(s)[session.rows - 1].startswith(BAR_LIST))
     session.key('k')
-    session.wait(lambda s: any(line.startswith('  › echo out-01') for line in screen_lines(s)))
+    session.wait(selected_step_shown)
     session.key('enter')
     session.wait(lambda s: screen_lines(s)[0].startswith(' ← back  echo out-01'))
 

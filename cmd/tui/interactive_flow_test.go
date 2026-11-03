@@ -4,7 +4,9 @@ import (
 	"context"
 	"net/http"
 	"os"
+	"path/filepath"
 	"regexp"
+	"slices"
 	"sort"
 	"strconv"
 	"strings"
@@ -310,7 +312,9 @@ func TestInteractiveEchoToolLine(t *testing.T) {
 	// argument. The right column is empty after a success.
 	const stepRow = "  ◆ echo tool output words"
 	a.waitFor("the tool step row", func(rows []string) bool { return containsExactRow(rows, stepRow) })
-	a.waitFor("the reply after the tool", func(rows []string) bool { return containsExactRow(rows, replyPrefix+"tool output words") })
+	// The first row of the reply ends with its 24h time.
+	replyRow := regexp.MustCompile(`^` + replyPrefix + `tool output words +[0-2][0-9]:[0-5][0-9]$`)
+	a.waitFor("the reply after the tool", func(rows []string) bool { return slices.ContainsFunc(rows, replyRow.MatchString) })
 	a.waitReplyMeta("faux-1")
 	rows := a.rows()
 	require.Equal(t, 1, countRows(rows, "◆ echo"), "one tool row:\n%s", a.screen())
@@ -516,9 +520,10 @@ data:{"type":"message_stop"}
 `
 }
 
-func TestInteractiveThinkingToggle(t *testing.T) {
-	bin, home := newE2EHome(t)
-	const thought = "Check the stale socket before the deadline."
+// thinkingTerm starts the built ask against a fixture provider whose every
+// reply has one line of thinking, with the anthropic model selected.
+func thinkingTerm(t *testing.T, bin, home, thought string) *askTerm {
+	t.Helper()
 	f := newProviderFixture(t)
 	f.inference = func(int, *http.Request, []byte) (int, string, string) {
 		return http.StatusOK, "text/event-stream", sseThinking(thought, "The probe is slow.")
@@ -528,24 +533,68 @@ func TestInteractiveThinkingToggle(t *testing.T) {
 	a.waitText("Ask anything")
 	requireLeaderLink(t, a, bin, home)
 	a.selectModel("anthropic/"+sonnetModel, "anthropic/"+sonnetModel, sonnetModel)
+	return a
+}
+
+func TestInteractiveThinkingToggle(t *testing.T) {
+	bin, home := newE2EHome(t)
+	const thought = "Check the stale socket before the deadline."
+	a := thinkingTerm(t, bin, home, thought)
 
 	a.write("why is the probe slow\r")
 	a.waitFor("the reply", func(rows []string) bool { return hasRowPrefix(rows, replyPrefix+"The probe is slow.") })
 	a.waitReplyMeta(sonnetModel)
-	// A finished thinking step is one collapsed row; its text is not on screen.
-	a.waitFor("the collapsed thinking row", func(rows []string) bool {
-		return hasRowPrefix(rows, "  ◆ Thought for ") && !containsRow(rows, thought)
+	// Without a setting, a finished thinking step shows all its lines.
+	a.waitFor("the expanded thinking", func(rows []string) bool {
+		return hasRowPrefix(rows, "  › Thought for ") && hasRowPrefix(rows, "    "+thought)
 	})
-
-	a.write(keyCtrlT)
-	a.waitFor("expanded thinking", func(rows []string) bool {
-		return hasRow(rows, "┃", thought) && containsRow(rows, tui.ThinkingNotice(true))
-	})
-	require.True(t, hasRowPrefix(a.rows(), replyPrefix+"The probe is slow."), "the reply stays:\n%s", a.screen())
 
 	a.write(keyCtrlT)
 	a.waitFor("collapsed thinking", func(rows []string) bool {
 		return hasRowPrefix(rows, "  ◆ Thought for ") && !containsRow(rows, thought) && containsRow(rows, tui.ThinkingNotice(false))
+	})
+	require.True(t, hasRowPrefix(a.rows(), replyPrefix+"The probe is slow."), "the reply stays:\n%s", a.screen())
+
+	a.write(keyCtrlT)
+	a.waitFor("expanded thinking", func(rows []string) bool {
+		return hasRowPrefix(rows, "  › Thought for ") && hasRowPrefix(rows, "    "+thought) && containsRow(rows, tui.ThinkingNotice(true))
+	})
+	a.quitDetached()
+}
+
+func TestInteractiveThinkingFoldSettingCollapsed(t *testing.T) {
+	bin, home := newE2EHome(t)
+	// The settings file of the Ask home must be private, as the leader keeps it.
+	require.NoError(t, os.MkdirAll(home, 0o700))
+	require.NoError(t, os.WriteFile(filepath.Join(home, "settings.json"), []byte(`{"thinkingFold":"collapsed"}`), 0o600))
+	const thought = "Check the stale socket before the deadline."
+	a := thinkingTerm(t, bin, home, thought)
+
+	a.write("why is the probe slow\r")
+	a.waitFor("the reply", func(rows []string) bool { return hasRowPrefix(rows, replyPrefix+"The probe is slow.") })
+	a.waitReplyMeta(sonnetModel)
+	// The setting folds the finished thinking step to one row.
+	a.waitFor("the collapsed thinking row", func(rows []string) bool {
+		return hasRowPrefix(rows, "  ◆ Thought for ") && !containsRow(rows, thought)
+	})
+
+	// ctrl+t opens all thinking and makes later steps end open too.
+	a.write(keyCtrlT)
+	a.waitFor("expanded thinking", func(rows []string) bool {
+		return hasRowPrefix(rows, "  › Thought for ") && containsRow(rows, tui.ThinkingNotice(true))
+	})
+	a.write("and the second probe\r")
+	a.waitFor("the second step open", func(rows []string) bool {
+		// The rows after the second prompt: an open step with its line, then
+		// the reply.
+		for i, r := range rows {
+			if strings.Contains(r, "and the second probe") {
+				after := rows[i+1:]
+				return hasRowPrefix(after, "  › Thought for ") && hasRowPrefix(after, "    "+thought) &&
+					hasRowPrefix(after, replyPrefix+"The probe is slow.")
+			}
+		}
+		return false
 	})
 	a.quitDetached()
 }

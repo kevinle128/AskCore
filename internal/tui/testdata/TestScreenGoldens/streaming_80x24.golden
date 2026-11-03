@@ -9,9 +9,9 @@
   ❯ show me the probe code                                               14:03
 
   ◇ echo  probe code request                                          running ⠋
+
   ◆ The probe lives in internal/leader/client.go. It dials the socket, then
     sends an initialize frame and waits
-
 
 
 

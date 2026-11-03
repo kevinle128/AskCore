@@ -86,7 +86,8 @@ func foldSource() fakeSource {
 	}
 }
 
-// foldModel returns the model after the session events, at a size.
+// foldModel returns the model after the session events, at a size. The session
+// mode is collapsed, so that every ended step is one row.
 func foldModel(t *testing.T, width, height int, parts ...any) *Model {
 	t.Helper()
 	return foldModelAt(t, width, height, 0, parts...)
@@ -96,7 +97,7 @@ func foldModel(t *testing.T, width, height int, parts ...any) *Model {
 // milliseconds, so that running steps show their seconds.
 func foldModelAt(t *testing.T, width, height int, nowMs int64, parts ...any) *Model {
 	t.Helper()
-	m := New(Options{Slots: foldSource(), Profile: colorprofile.NoTTY})
+	m := New(Options{Slots: foldSource(), Profile: colorprofile.NoTTY, ThinkingFold: ThinkingCollapsed})
 	m.Update(tea.WindowSizeMsg{Width: width, Height: height})
 	trl := NewTranslator(TranslatorOptions{Location: time.UTC})
 	events := foldSessionEvents()
@@ -185,18 +186,6 @@ func TestCompactSessionAt40x14(t *testing.T) {
 	requireScreenGolden(t, m)
 }
 
-func TestFailedToolRowIsExactlyTheWidth(t *testing.T) {
-	m := foldModel(t, 80, 40)
-	var row string
-	for _, r := range strings.Split(ansi.Strip(m.View().Content), "\n") {
-		if strings.Contains(r, "◆ Ran go test") {
-			row = r
-		}
-	}
-	require.Equal(t, 80, displayWidth(row), "the right column ends one column before the edge")
-	require.True(t, strings.HasSuffix(row, "✗ exit 1 "), row)
-}
-
 func TestRunningToolRowHasVerbAndSpinnerAt80x24(t *testing.T) {
 	m := foldModelAt(t, 80, 24, baseMs+4_000,
 		&protocol.AgentStart{},
@@ -219,8 +208,8 @@ func TestStreamingThinkingRowsAt80x24(t *testing.T) {
 		updateAt(20, protocol.ThinkingDeltaEvent{ContentIndex: 0, Delta: "\nThen the count is right."}),
 	)
 	text := strings.Join(screenOf(m), "\n")
-	require.Regexp(t, `(?m)^  ◆ Thinking… 2s +⠋$`, text)
-	require.Contains(t, text, "  ┃ …\n  ┃ So the loop must skip f == \"\".\n  ┃ Then the count is right.")
+	require.Regexp(t, `(?m)^  › Thinking… 2s +⠋$`, text)
+	require.Contains(t, text, "⠋\n\n    …\n    So the loop must skip f == \"\".\n    Then the count is right.")
 	requireScreenGolden(t, m)
 }
 
@@ -233,15 +222,16 @@ func TestTruncatedFailedToolOnTheScreen(t *testing.T) {
 	require.NoError(t, m.pane.CycleFold(id))
 	rows := screenOf(m)
 	text := strings.Join(rows, "\n")
-	at := strings.Index(text, "◆ Ran go test ./...")
+	at := strings.Index(text, "› Ran go test ./...")
 	body := strings.Split(text[at:], "\n")
-	require.Equal(t, "    --- FAIL: TestCount (0.00s)", body[1], "the first body row is the first output line")
-	require.Equal(t, "        parser_test.go:12: want 2, got 3", body[2])
-	require.Equal(t, "    === RUN   TestCountEmpty", body[3])
-	require.Equal(t, "    ⋮ 3 more lines · e to expand · Enter full screen", body[4])
-	require.Equal(t, "    FAIL", body[5])
-	require.Equal(t, "    FAIL    example.com/p/parser    0.012s", body[6])
-	require.Equal(t, "    FAIL", body[7])
+	require.Empty(t, body[1], "one blank row follows the header")
+	require.Equal(t, "    --- FAIL: TestCount (0.00s)", body[2], "the first body row is the first output line")
+	require.Equal(t, "        parser_test.go:12: want 2, got 3", body[3])
+	require.Equal(t, "    === RUN   TestCountEmpty", body[4])
+	require.Equal(t, "    ⋮ 3 more lines · e to expand · Enter full screen", body[5])
+	require.Equal(t, "    FAIL", body[6])
+	require.Equal(t, "    FAIL    example.com/p/parser    0.012s", body[7])
+	require.Equal(t, "    FAIL", body[8])
 	require.NotContains(t, text, "$ go test ./...", "no command row in the truncated form")
 	requireScreenGolden(t, m)
 }
@@ -269,11 +259,12 @@ func TestExpandedFailedToolShowsCommandRowThenAllOutput(t *testing.T) {
 	require.NoError(t, m.pane.CycleFold(id))
 	require.NoError(t, m.pane.CycleFold(id))
 	text := strings.Join(screenOf(m), "\n")
-	at := strings.Index(text, "◆ Ran go test ./...")
+	at := strings.Index(text, "› Ran go test ./...")
 	body := strings.Split(text[at:], "\n")
-	require.Equal(t, "    $ go test ./...", body[1])
+	require.Empty(t, body[1], "one blank row follows the header")
+	require.Equal(t, "    $ go test ./...", body[2])
 	for i, line := range foldTestOutput {
-		require.Equal(t, "    "+line, body[2+i])
+		require.Equal(t, "    "+line, body[3+i])
 	}
 	require.NoError(t, m.pane.CycleFold(id))
 	require.Equal(t, FoldCollapsed, m.pane.Fold(id), "a third cycle returns to one row")
@@ -285,9 +276,10 @@ func TestExpandedEditShowsTheDiffOnTheScreen(t *testing.T) {
 	m.View()
 	id := toolID(t, m, "edit", 0)
 	require.NoError(t, m.pane.ExpandBlock(id))
+	m.pane.Reveal(m.transcript.index[id])
 	rows := screenOf(m)
 	text := strings.Join(rows, "\n")
-	require.Contains(t, text, "◆ Edited parser.go  +3 -1")
+	require.Contains(t, text, "› Edited parser.go  +3 -1")
 	require.Regexp(t, `(?m)^ +4 - +n\+\+$`, text)
 	require.Regexp(t, `(?m)^ +4 \+ +if f != ""`, text)
 	require.NotContains(t, text, "$ ", "an edit has no command row")
@@ -436,16 +428,19 @@ func TestThinkingFoldsWhenItEndsUnlessTheUserSetAMode(t *testing.T) {
 		}
 	}
 	for _, tc := range []struct {
-		name   string
-		user   bool
-		before FoldMode
-		after  FoldMode
+		name    string
+		session ThinkingFold
+		user    bool
+		before  FoldMode
+		after   FoldMode
 	}{
-		{"automatic", false, FoldTruncated, FoldCollapsed},
-		{"set by the user", true, FoldExpanded, FoldExpanded},
+		{"automatic, session expanded", ThinkingExpanded, false, FoldTruncated, FoldExpanded},
+		{"automatic, session truncated", ThinkingTruncated, false, FoldTruncated, FoldTruncated},
+		{"automatic, session collapsed", ThinkingCollapsed, false, FoldTruncated, FoldCollapsed},
+		{"set by the user, session collapsed", ThinkingCollapsed, true, FoldExpanded, FoldExpanded},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
-			m := New(Options{Slots: foldSource(), Profile: colorprofile.NoTTY})
+			m := New(Options{Slots: foldSource(), Profile: colorprofile.NoTTY, ThinkingFold: tc.session})
 			m.Update(tea.WindowSizeMsg{Width: 80, Height: 24})
 			trl := NewTranslator(TranslatorOptions{Location: time.UTC})
 			stream(m, trl, assistantStart("m", 0),
@@ -566,13 +561,13 @@ func TestStepRowNarrowWidthsDropPartsInOrder(t *testing.T) {
 		return plain(renderRows(b, RenderContext{Width: w, Theme: noColor()}))[0]
 	}
 	// Wide: path, line counts and failure.
-	require.Equal(t, "  ◆ Edited internal/tui/a/very/long/path/status.go  +1 -1"+strings.Repeat(" ", 80-displayWidth("  ◆ Edited internal/tui/a/very/long/path/status.go  +1 -1")-displayWidth("✗ no match")-1)+"✗ no match", row(80))
+	require.Equal(t, "  ◆ Edited internal/tui/a/very/long/path/status.go  +1 -1"+strings.Repeat(" ", 80-displayWidth("  ◆ Edited internal/tui/a/very/long/path/status.go  +1 -1")-displayWidth("✗ no match")-textRightPad)+"✗ no match", row(80))
 	// Narrower: the path is cut with an ellipsis; the verb, the counts and the right column stay.
 	r40 := row(40)
 	require.Contains(t, r40, "…  +1 -1")
 	require.True(t, strings.HasSuffix(r40, "✗ no match"), r40)
 	require.True(t, strings.HasPrefix(r40, "  ◆ Edited "), r40)
-	// Under 30 columns the right column goes first.
+	// Under 30 columns of text the right column goes first.
 	r29 := row(29)
 	require.NotContains(t, r29, "✗")
 	require.Contains(t, r29, "+1 -1")
@@ -619,8 +614,8 @@ func TestExpandedToolWithACutPathShowsThePathInFull(t *testing.T) {
 	mid := "internal/tui/a/very/long/path/x.go"
 	rows = plain(renderRows(NewToolLineBlock("read", mid, ToolSucceeded, "", "", nil), RenderContext{Width: 40, Theme: noColor(), Fold: FoldExpanded}))
 	require.Contains(t, rows[0], "…")
-	require.Equal(t, []string{"    " + mid}, rows[1:], "the full path shows under the row")
+	require.Equal(t, []string{"", "    " + mid}, rows[1:], "the full path shows under the row, after the blank row")
 
 	short := plain(renderRows(NewToolLineBlock("read", "a.go", ToolSucceeded, "", "", nil), RenderContext{Width: 40, Theme: noColor(), Fold: FoldExpanded}))
-	require.Equal(t, []string{"  ◆ Read a.go"}, short, "no extra row when nothing was cut")
+	require.Equal(t, []string{"  › Read a.go"}, short, "no extra row when nothing was cut")
 }

@@ -34,10 +34,10 @@ A resize does not change the editor state or the follow state of the pane.
 |---|---|
 | Root composition and Update dispatch | [model.go](model.go), [messages.go](messages.go) |
 | Window size | [update_window.go](update_window.go) |
-| Block pane (window anchor, follow mode, row cache, bottom marker data) | [pane.go](pane.go) |
-| Fold modes and the fold interface of blocks | [fold.go](fold.go) |
+| Block pane (window anchor, follow mode, row cache, bottom marker data, the gap rows between blocks, the session mode of thinking steps) | [pane.go](pane.go) |
+| Fold modes, the fold interface of blocks and the `thinkingFold` mode type (`ThinkingFold`) | [fold.go](fold.go) |
 | Block list (selection units, reveal, select by turn) and its keys | [block_list.go](block_list.go), [keys.go](keys.go) |
-| Selection marks and expand indicators (shade or `┃` rail, `›`, `⌄`) | [blocks_mark.go](blocks_mark.go) |
+| Selection box (`│`, `┌ ┐`, `└ ┘`, `┆` when clipped) | [blocks_mark.go](blocks_mark.go) |
 | Mouse (wheel, click, hover, drag, scroll at the edge) | [mouse.go](mouse.go) |
 | Text selection and what a drag copies | [selection.go](selection.go) |
 | Text width, wrap, truncate | [width.go](width.go) |
@@ -51,13 +51,15 @@ A resize does not change the editor state or the follow state of the pane.
 | Editor keys and pastes | [editor_keys.go](editor_keys.go), [editor_paste.go](editor_paste.go) |
 | Editor state, layout and history | [editor.go](editor.go), [editor_layout.go](editor_layout.go), [editor_history.go](editor_history.go) |
 | Transcript state (ordered blocks and content versions) | [transcript.go](transcript.go) |
-| Transcript blocks and their text formats | [blocks.go](blocks.go), [blocks_format.go](blocks_format.go) |
-| Step blocks (step row, verbs, thinking, tool forms: collapsed, truncated, expanded) | [blocks_step.go](blocks_step.go) |
+| Transcript blocks and their text formats (prompt band, reply block, text margins) | [blocks.go](blocks.go), [blocks_format.go](blocks_format.go) |
+| Step blocks (step row and its `›` mark, the open body at column 4, verbs, thinking, tool forms: collapsed, truncated, expanded) | [blocks_step.go](blocks_step.go) |
 | Hook blocks (hook row, description row, detail fields; built from `HookRun` fixtures) | [blocks_hook.go](blocks_hook.go) |
 | Tool output (truncated rows, hint, truncation rows) | [blocks_preview.go](blocks_preview.go) |
 | Line diff of a file change (counts and unified diff rows) | [blocks_diff.go](blocks_diff.go) |
 | Viewer (one block on the whole screen: title row, body, key row) | [transcript_view.go](transcript_view.go) |
-| Markdown for replies (stable-prefix cache, chunks, code) | [markdown.go](markdown.go), [markdown_split.go](markdown_split.go), [markdown_code.go](markdown_code.go) |
+| Markdown for replies (stable-prefix cache, chunks, style, code panel, tables, list numbers) | [markdown.go](markdown.go), [markdown_split.go](markdown_split.go), [markdown_code.go](markdown_code.go), [markdown_table.go](markdown_table.go), [markdown_list.go](markdown_list.go) |
+| Table box (plain text cells in a box; knows nothing of markdown) | [table_box.go](table_box.go) |
+| Time at the right of the first row of a prompt band or a reply | [row_time.go](row_time.go) |
 | Event translation (events, errors, history snapshot) | [translate.go](translate.go), [translate_errors.go](translate_errors.go), [translate_snapshot.go](translate_snapshot.go) |
 | Background jobs (job lines, running jobs) | [translate_jobs.go](translate_jobs.go) |
 | Queue and execution presentation | [pending.go](pending.go), [status.go](status.go) |
@@ -94,10 +96,10 @@ Core packages must not import this package.
 - Session code changes the transcript with `AppendBlockMsg`, `ReplaceBlockMsg` and `FinishBlockMsg`. Blocks draw themselves for a `RenderContext` and use `RenderContext.Width`, which is the full terminal width.
 - The whole program runs on the alternate screen (`View.AltScreen`) with `MouseModeAllMotion`. The model writes nothing outside the frame.
 - There is no commit path: the model never writes rows to the terminal outside the frame, and a resize needs no replay. The only renderer change in `third_party/bubbletea` is a guard against a frame drawn for the old size (see its `PATCH.txt`).
-- The mouse is handled in [mouse.go](mouse.go) and [selection.go](selection.go) against the geometry of the last frame (`Frame.Geo`). The wheel scrolls 3 rows. A press on text acts on the release, and only on the cell of the press: it selects a block, and on the first row of a step it also opens the viewer. The bottom marker, `← back` and the prompt pane act on the press (the prompt pane places the cursor). A drag selects cells and copies their plain text through the `/copy` clipboard path on release; a drag at the first or last row of the pane scrolls it. Motion without a button sets the hover indicator. A selector or box ignores the mouse. Terminals keep their own selection behind `shift`+drag (or `option`+drag on macOS).
+- The mouse is handled in [mouse.go](mouse.go) and [selection.go](selection.go) against the geometry of the last frame (`Frame.Geo`). The wheel scrolls 3 rows. A press on text acts on the release, and only on the cell of the press: it selects a block, and on the first row of a step it also opens the viewer. The bottom marker, `← back` and the prompt pane act on the press (the prompt pane places the cursor). A drag selects cells and copies their plain text through the `/copy` clipboard path on release; a drag at the first or last row of the pane scrolls it. Motion without a button marks the block under the pointer: a step there shows `›`. A selector or box ignores the mouse. Terminals keep their own selection behind `shift`+drag (or `option`+drag on macOS).
 - The block pane follows the end of the transcript; a scroll away from the end turns follow off and the last pane row shows the bottom marker. The marker count may be approximate for a frame or two after a resize: the pane settles the rows below the window in a few frames. A block that depends on display state reports it in `drawState`, so the pane draws it again when the state changes.
 - Fold modes are Collapsed, Truncated and Expanded. The pane keeps the mode of each block, and the block draws its rows for that mode. `e` cycles the mode, `→`/`l` expands, `←`/`h` collapses, and `E` moves all steps. The block drawing is the owner of what each mode shows; the [style guide](../../docs/tui-style-guide.md#patterns) names the forms.
-- Block list keys are in [keys.go](keys.go): `Tab` moves focus between the prompt and the list; in the list, `j`/`k` and the arrows select, `e` `E` `→` `←` `l` `h` fold, `Enter` opens the viewer, `Esc` returns to the prompt, `g` `G` `Home` `End` and `PgUp` `PgDn` move, `shift+←`/`shift+→` (or `H`/`L`) select the previous or next prompt. `ctrl+t` or `ctrl+e` in the list toggles all thinking, and `ctrl+End` jumps to the end in any focus. A printable key that the list does not own moves focus to the prompt and is typed there.
+- Block list keys are in [keys.go](keys.go): `Tab` moves focus between the prompt and the list; in the list, `j`/`k` and the arrows select, `e` `E` `→` `←` `l` `h` fold, `Enter` opens the viewer, `Esc` returns to the prompt, `g` `G` `Home` `End` and `PgUp` `PgDn` move, `shift+←`/`shift+→` (or `H`/`L`) select the previous or next prompt. `ctrl+t` (any focus) or `ctrl+e` in the list toggles all thinking and sets the session mode: a thinking step that ends or loads later takes the same mode. The session mode starts from `Options.ThinkingFold` (the `thinkingFold` setting; see [settings](../settings/README.md)). `ctrl+End` jumps to the end in any focus. A printable key that the list does not own moves focus to the prompt and is typed there.
 - The viewer takes every key while it is open: `Esc` closes it, and the scroll keys move its window. `ctrl+c` closes it first, then follows the quit rule.
 - Tests render the model in a real Bubble Tea program, feed the output to an `x/vt` emulator and compare the plain grid with `testdata/*.golden`. Refresh with `go test ./internal/tui -run TestScreenGoldens -update` and review the diff.
 

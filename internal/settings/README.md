@@ -61,6 +61,14 @@ The leader writes it when a client sets a model with `saveDefault` (the `/model`
 A missing file means no default.
 A file that is not owner-only, or not a JSON object, is refused and never overwritten.
 
+## Thinking fold
+
+`SettingsStore.ThinkingFold` reads the `thinkingFold` key of `settings.json` in the Ask home (not the project `.ask/settings.json`): the fold mode that a thinking step of the TUI takes when it ends.
+The values are `"expanded"` (all lines, the default), `"truncated"` (the last lines) and `"collapsed"` (one row).
+A missing file, a missing key, a value that is not a string, or an unknown word gives `"expanded"` and no error. A file that cannot be read gives `"expanded"` and the error.
+The read takes the same lock as `defaultModel`, so it creates the home (mode 0700) and `settings.json.lock` when they are missing.
+The TUI entry ([cmd/tui/thinking_fold.go](../../cmd/tui/thinking_fold.go)) reads the key once at start, with a 500 ms bound, shows no notice for an error, and passes the mode in `tui.Options.ThinkingFold`. Nothing writes the key: the TUI and `ctrl+t` do not change the file, and a change takes effect at the next start of the TUI.
+
 ## Model cache
 
 [ModelCache](model_cache.go) keeps `model-cache.json` in the home.

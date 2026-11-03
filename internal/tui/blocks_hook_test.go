@@ -73,18 +73,16 @@ func TestBlockedHookShowsItsRowAndDescriptionAt80Columns(t *testing.T) {
 	m := hookModel(t, colorprofile.NoTTY, 80, 24, noRmHook())
 	rows := screenOf(m)
 	i := rowIndexOf(t, rows, "⚓ PreToolUse hook")
-	require.Equal(t, "  ⚓ PreToolUse hook (global/no-rm) · bash rm -rf build          ✗ blocked 0.0s", rows[i])
+	require.Equal(t, "  ⚓ PreToolUse hook (global/no-rm) · bash rm -rf build         ✗ blocked 0.0s", rows[i])
 	require.Equal(t, "    Blocks recursive removal (rm -rf) inside the repo", rows[i+1])
-
-	raw := strings.Split(ansi.Strip(m.View().Content), "\n")
-	require.Equal(t, 80, displayWidth(raw[i]), "the two-column glyph is reserved: the row is the terminal width")
+	require.Equal(t, 80-textRightPad, displayWidth(rows[i]), "the two-column glyph is reserved: the result ends textRightPad columns before the edge")
 }
 
 func TestAllowedHookShowsASuccessResult(t *testing.T) {
 	m := hookModel(t, colorprofile.NoTTY, 80, 24, lintGuardHook())
 	rows := screenOf(m)
 	i := rowIndexOf(t, rows, "⚓ PreToolUse hook")
-	require.Equal(t, "  ⚓ PreToolUse hook (project/lint-guard) · edit parser.go       ✓ allowed 0.1s", rows[i])
+	require.Equal(t, "  ⚓ PreToolUse hook (project/lint-guard) · edit parser.go      ✓ allowed 0.1s", rows[i])
 }
 
 func TestHookWithoutDescriptionShowsItsCommandOnTheSecondRow(t *testing.T) {
@@ -117,37 +115,25 @@ func TestHookRolesAreHookGlyphSuccessAndErrorResult(t *testing.T) {
 	require.NotEqual(t, th.Style(RoleHook).Render("x"), th.Style(RoleTool).Render("x"))
 }
 
-func TestSelectedCollapsedHookIsShadedOnBothRows(t *testing.T) {
+func TestSelectedCollapsedHookHasTheBoxOnBothRows(t *testing.T) {
 	m := hookModel(t, colorprofile.TrueColor, 80, 24, noRmHook())
 	press(t, m, "tab")
 	require.Equal(t, "hk-12", m.selectedBlock())
-	plain, rows := screenOf(m), rawRows(m)
-	var shaded []string
-	for i, r := range rows {
-		if hasShade(m.theme, r) {
-			shaded = append(shaded, plain[i])
-			require.Equal(t, 80, displayWidth(ansi.Strip(r)), "the shade covers the whole row")
-		}
-	}
-	require.Equal(t, []string{
-		"  ›  PreToolUse hook (global/no-rm) · bash rm -rf build          ✗ blocked 0.0s",
-		"    Blocks recursive removal (rm -rf) inside the repo",
-	}, shaded)
-	for _, p := range plain {
-		require.False(t, strings.HasPrefix(p, "┃"), "a shaded block has no rail")
+	first := rowIndex(t, m, "PreToolUse hook (global/no-rm)")
+	require.Equal(t, first+1, rowIndex(t, m, "Blocks recursive removal"))
+	requireBox(t, m, first, first+1)
+	plain := screenOf(m)
+	for i, r := range rawRows(m) {
+		require.False(t, hasShade(m.theme, r), "no row is shaded: %q", plain[i])
 	}
 }
 
-func TestSelectedCollapsedHookWithoutColorIsReversed(t *testing.T) {
+func TestSelectedCollapsedHookWithoutColorIsNotReversed(t *testing.T) {
 	m := hookModel(t, colorprofile.NoTTY, 80, 24, noRmHook())
 	press(t, m, "tab")
-	n := 0
 	for _, r := range rawRows(m) {
-		if strings.HasPrefix(r, ansiRev) {
-			n++
-		}
+		require.False(t, strings.HasPrefix(r, ansiRev), "%q", r)
 	}
-	require.Equal(t, 2, n)
 }
 
 func TestHookIndicatorReplacesTheGlyphOnHoverAndKeepsTheColumns(t *testing.T) {
@@ -161,38 +147,41 @@ func TestHookIndicatorReplacesTheGlyphOnHoverAndKeepsTheColumns(t *testing.T) {
 	require.Regexp(t, `^  ›  PreToolUse hook \(project/lint-guard\)`, after)
 	require.Equal(t, displayWidth(before), displayWidth(after))
 	require.Equal(t, strings.TrimPrefix(before, "  ⚓ "), strings.TrimPrefix(after, "  ›  "), "the text does not move")
-	require.NotContains(t, strings.Join(screenOf(m), "\n"), "┃", "a hover is no selection")
+	require.NotContains(t, strings.Join(screenOf(m), "\n"), "┐", "a hover is no selection")
 
 	m.list.hover = ""
 	m.View()
 	require.Regexp(t, `^  ⚓ PreToolUse hook`, rowWith(t, m, "lint-guard"))
 }
 
-func TestExpandedHookShowsOpenIndicatorOnlyWhenPointed(t *testing.T) {
+func TestExpandedHookShowsTheOpenMarkWithAndWithoutSelection(t *testing.T) {
 	m := hookModel(t, colorprofile.NoTTY, 80, 24, noRmHook())
 	press(t, m, "tab", "right")
-	require.Regexp(t, `(?m)^┃ ⌄  PreToolUse hook`, strings.Join(screenOf(m), "\n"))
+	require.Regexp(t, `(?m)^│ ›  PreToolUse hook`, strings.Join(unboxedScreen(m), "\n"))
 	press(t, m, "esc")
-	require.Regexp(t, `(?m)^  ⚓ PreToolUse hook`, strings.Join(screenOf(m), "\n"))
+	require.Regexp(t, `(?m)^  ›  PreToolUse hook`, strings.Join(screenOf(m), "\n"), "an open hook keeps the open mark")
+	press(t, m, "tab", "left", "esc")
+	require.Regexp(t, `(?m)^  ⚓ PreToolUse hook`, strings.Join(screenOf(m), "\n"), "a folded hook shows its own mark")
 }
 
 func TestExpandedHookShowsDetailFieldsThenTheOutput(t *testing.T) {
 	m := hookModel(t, colorprofile.NoTTY, 80, 24, noRmHook())
 	press(t, m, "tab", "right")
-	rows := screenOf(m)
+	rows := unboxedScreen(m)
 	i := rowIndexOf(t, rows, "PreToolUse hook (global/no-rm)")
 	want := []string{
-		"┃ ⌄  PreToolUse hook (global/no-rm) · bash rm -rf build          ✗ blocked 0.0s",
-		"┃   Blocks recursive removal (rm -rf) inside the repo",
-		"┃   Event    PreToolUse",
-		"┃   Matcher  tool bash",
-		"┃   Does     Blocks recursive removal (rm -rf) inside the repo",
-		"┃   Source   ~/.ask/hooks.json (global)",
-		"┃   Command  ask-hook-no-rm · timeout 5s",
-		"┃   Result   blocked · exit 2 · 0.0s",
-		"┃   Reason   recursive removal is not allowed in this repo",
-		"┃   ── output ──",
-		`┃   no-rm: blocked "rm -rf build"`,
+		"│ ›  PreToolUse hook (global/no-rm) · bash rm -rf build         ✗ blocked 0.0s",
+		"│   Blocks recursive removal (rm -rf) inside the repo",
+		"│",
+		"│   Event    PreToolUse",
+		"│   Matcher  tool bash",
+		"│   Does     Blocks recursive removal (rm -rf) inside the repo",
+		"│   Source   ~/.ask/hooks.json (global)",
+		"│   Command  ask-hook-no-rm · timeout 5s",
+		"│   Result   blocked · exit 2 · 0.0s",
+		"│   Reason   recursive removal is not allowed in this repo",
+		"│   ── output ──",
+		`│   no-rm: blocked "rm -rf build"`,
 	}
 	require.Equal(t, want, rows[i:i+len(want)])
 }
@@ -235,18 +224,18 @@ func TestExpandedHookWrapsLongValuesAndCutsNothing(t *testing.T) {
 	run.Reason = "recursive removal is not allowed in this repo because the build directory holds the only copy of the release artifacts"
 	m := hookModel(t, colorprofile.NoTTY, 80, 24, run)
 	press(t, m, "tab", "right")
-	rows := screenOf(m)
+	rows := unboxedScreen(m)
 	for _, r := range rows {
 		require.LessOrEqual(t, displayWidth(r), 80)
 	}
 	text := strings.Join(rows, "\n")
 	// Continuation rows hold the value under its first column: 4 + 9 = 13.
-	flat := strings.Join(strings.Fields(strings.ReplaceAll(text, "┃", "")), " ")
+	flat := strings.Join(strings.Fields(strings.ReplaceAll(text, "│", "")), " ")
 	require.Contains(t, flat, "--deny-glob 'dist/*' · timeout 5s")
 	require.Contains(t, flat, "holds the only copy of the release artifacts")
 	require.NotContains(t, text, "…")
 	i := rowIndexOf(t, rows, "Command  ask-hook-no-rm --policy")
-	require.True(t, strings.HasPrefix(rows[i+1], "┃"+strings.Repeat(" ", 12)), "continuation rows keep the value column: %q", rows[i+1])
+	require.True(t, strings.HasPrefix(rows[i+1], "│"+strings.Repeat(" ", 12)), "continuation rows keep the value column: %q", rows[i+1])
 }
 
 func hookOutput(n int) string {
@@ -262,18 +251,19 @@ func TestTruncatedHookShowsFirstThreeHintAndLastThree(t *testing.T) {
 	run.Output = hookOutput(10)
 	m := hookModel(t, colorprofile.NoTTY, 80, 24, run)
 	press(t, m, "tab", "e")
-	rows := screenOf(m)
+	rows := unboxedScreen(m)
 	i := rowIndexOf(t, rows, "PreToolUse hook (global/no-rm)")
 	want := []string{
-		"┃ ⚓ PreToolUse hook (global/no-rm) · bash rm -rf build          ✗ blocked 0.0s",
-		"┃   Blocks recursive removal (rm -rf) inside the repo",
-		"┃   line 1",
-		"┃   line 2",
-		"┃   line 3",
-		"┃   ⋮ 4 more lines · e to expand · Enter full screen",
-		"┃   line 8",
-		"┃   line 9",
-		"┃   line 10",
+		"│ ›  PreToolUse hook (global/no-rm) · bash rm -rf build         ✗ blocked 0.0s",
+		"│   Blocks recursive removal (rm -rf) inside the repo",
+		"│",
+		"│   line 1",
+		"│   line 2",
+		"│   line 3",
+		"│   ⋮ 4 more lines · e to expand · Enter full screen",
+		"│   line 8",
+		"│   line 9",
+		"│   line 10",
 	}
 	require.Equal(t, want, rows[i:i+len(want)])
 	require.NotContains(t, strings.Join(rows, "\n"), "Event    ", "no detail fields in Truncated")
@@ -382,18 +372,21 @@ func TestHookRowCutsTargetThenOwnerThenResultWhenNarrow(t *testing.T) {
 		width int
 		want  string
 	}{
-		{80, "  ⚓ PreToolUse hook (global/no-rm) · bash rm -rf build          ✗ blocked 0.0s"},
+		// The row text ends textRightPad columns before the edge.
+		{82, "  ⚓ PreToolUse hook (global/no-rm) · bash rm -rf build           ✗ blocked 0.0s"},
 		// The target is cut with an ellipsis first.
-		{60, "  ⚓ PreToolUse hook (global/no-rm) · bash … ✗ blocked 0.0s"},
-		{57, "  ⚓ PreToolUse hook (global/no-rm) · ba… ✗ blocked 0.0s"},
+		{62, "  ⚓ PreToolUse hook (global/no-rm) · bash r… ✗ blocked 0.0s"},
+		{59, "  ⚓ PreToolUse hook (global/no-rm) · bas… ✗ blocked 0.0s"},
 		// Under three columns for the target, it goes; then the owner is cut.
-		{50, "  ⚓ PreToolUse hook (global/no-r… ✗ blocked 0.0s"},
-		{40, "  ⚓ PreToolUse hook (g… ✗ blocked 0.0s"},
-		// The owner goes when no room is left; the result stays down to 30.
-		{36, "  ⚓ PreToolUse hook ✗ blocked 0.0s"},
-		// Under 30 columns the result is dropped and the owner has room again.
-		{29, "  ⚓ PreToolUse hook (global…"},
-		{20, "  ⚓ PreToolUse hook"},
+		{51, "  ⚓ PreToolUse hook (global/no-r… ✗ blocked 0.0s"},
+		{41, "  ⚓ PreToolUse hook (g… ✗ blocked 0.0s"},
+		// The owner goes when no room is left; the result stays down to 30
+		// columns of text.
+		{37, "  ⚓ PreToolUse hook ✗ blocked 0.0s"},
+		// Under 30 columns of text the result is dropped and the owner has room
+		// again.
+		{31, "  ⚓ PreToolUse hook (global…"},
+		{22, "  ⚓ PreToolUse hook"},
 	}
 	for _, c := range cases {
 		got := hookRowAt(c.width, run)
@@ -406,7 +399,7 @@ func TestHookScreenAt40x14HoldsEveryRowInsideTheWidth(t *testing.T) {
 	m := hookModel(t, colorprofile.NoTTY, 40, 14, lintGuardHook(), noRmHook())
 	for _, r := range strings.Split(ansi.Strip(m.View().Content), "\n") {
 		if strings.Contains(r, "⚓ PreToolUse hook") {
-			require.Equal(t, 40, displayWidth(r), "the header row is the whole width")
+			require.Equal(t, 40-textRightPad, displayWidth(r), "the header row ends textRightPad columns before the edge")
 		}
 	}
 	checkWidth := func() {
@@ -425,7 +418,7 @@ func TestHookDescriptionRowIsCutWithAnEllipsisAtNarrowWidth(t *testing.T) {
 	m := hookModel(t, colorprofile.NoTTY, 40, 14, noRmHook())
 	rows := screenOf(m)
 	i := rowIndexOf(t, rows, "⚓ PreToolUse hook")
-	require.Equal(t, "    Blocks recursive removal (rm -rf) i…", rows[i+1])
+	require.Equal(t, "    Blocks recursive removal (rm -rf)…", rows[i+1])
 }
 
 func TestHookViewerAt40ColumnsCutsTheTitleAndWrapsTheFields(t *testing.T) {

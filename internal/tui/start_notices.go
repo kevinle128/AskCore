@@ -95,7 +95,7 @@ func (s *sessionView) pairText(r modelRef) (pair, api string) {
 }
 
 // noticeBlock is a notice of the client in the pane: no glyph, indented by
-// glyphIndent at every width and wrapped at spaces, then one empty row.
+// glyphIndent at every width and wrapped at spaces.
 type noticeBlock struct {
 	text string
 	role Role
@@ -104,10 +104,10 @@ type noticeBlock struct {
 func (b noticeBlock) Lines(rc RenderContext) []string {
 	pad := strings.Repeat(" ", glyphIndent)
 	var out []string
-	for _, r := range wrapLines(b.text, max(1, rc.Width-glyphIndent)) {
+	for _, r := range wrapLines(b.text, textWidth(rc, glyphIndent)) {
 		out = append(out, pad+rc.Theme.Render(b.role, r))
 	}
-	return append(out, "")
+	return out
 }
 
 // traceWarningText is the warning of a set trace file.
@@ -128,8 +128,8 @@ type restoredNote struct {
 
 func (b restoredNote) Lines(rc RenderContext) []string {
 	th := rc.Theme
-	body := styleRows(th, RoleFg, wrapUntrusted(b.text, bodyWidth(rc)))
-	return append(leadRows(th.Render(RoleSuccess, GlyphRetry), body), "")
+	body := styleRows(th, RoleFg, wrapUntrusted(b.text, textWidth(rc, textIndent)))
+	return leadRows(th.Render(RoleSuccess, GlyphRetry), body)
 }
 
 // fallbackReasonText words why the saved default was not used.

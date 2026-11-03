@@ -23,8 +23,8 @@ import (
 // the block of that tool call: the hook decides whether the call runs.
 //
 // The glyph is two columns wide. The header row reserves both columns, so the
-// expand indicator, which is one column, is padded to the same width and the
-// text does not move.
+// open mark, which is one column, is padded to the same width and the text
+// does not move.
 
 // Hook decisions.
 const (
@@ -103,9 +103,9 @@ func (b hookBlock) drawState() uint64 {
 	return b.view.runningState(b.run.StartMs)
 }
 
-func (b hookBlock) foldable(int) bool      { return true }
-func (b hookBlock) defaultFold() FoldMode  { return FoldCollapsed }
-func (b hookBlock) collapseFold() FoldMode { return FoldCollapsed }
+func (b hookBlock) foldable(int) bool                 { return true }
+func (b hookBlock) defaultFold(foldDefaults) FoldMode { return FoldCollapsed }
+func (b hookBlock) collapseFold() FoldMode            { return FoldCollapsed }
 
 // foldGroup puts a hook with the tool steps: the fold-all commands move both.
 func (b hookBlock) foldGroup() foldGroup { return groupTool }
@@ -160,12 +160,11 @@ func (b hookBlock) result() (text string, role Role) {
 	return GlyphFail + " " + text, RoleError
 }
 
-func (b hookBlock) row(rc RenderContext) stepRow {
+func (b hookBlock) row() stepRow {
 	right, role := b.result()
 	return stepRow{
 		glyph: GlyphHook, glyphRole: RoleHook,
-		indicator: indicatorFor(rc, FoldCollapsed),
-		verb:      b.verb(), what: b.what(), fitWhat: b.fitWhat,
+		verb: b.verb(), what: b.what(), fitWhat: b.fitWhat,
 		right: right, rightRole: role,
 	}
 }
@@ -273,17 +272,20 @@ func (b hookBlock) outputRows(rc RenderContext) []string {
 	return append([]string{rule}, rows...)
 }
 
+// Lines draws the hook step. The description row is part of the folded form,
+// so it stays right under the header row and the body comes after it.
 func (b hookBlock) Lines(rc RenderContext) []string {
-	head, _ := b.row(rc).render(rc)
-	rows := append([]string{head}, b.aboutRow(rc)...)
-	switch rc.Fold {
-	case FoldCollapsed:
-		return rows
-	case FoldTruncated:
-		return append(rows, b.out.truncatedRows(rc)...)
-	}
-	rows = append(rows, b.detailRows(rc)...)
-	return append(rows, b.outputRows(rc)...)
+	return stepDraw{
+		head: b.row(),
+		open: rc.Fold != FoldCollapsed,
+		lead: b.aboutRow,
+		body: func(inner RenderContext, _ bool) []string {
+			if rc.Fold == FoldTruncated {
+				return b.out.truncatedRows(inner)
+			}
+			return append(b.detailRows(inner), b.outputRows(inner)...)
+		},
+	}.lines(rc)
 }
 
 // viewerHead is the title of the viewer: the header row without its glyph, and

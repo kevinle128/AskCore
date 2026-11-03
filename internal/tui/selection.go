@@ -16,9 +16,10 @@ import (
 // text when the pane scrolls under a drag at its edge.
 //
 // What a selection copies is the plain text of its cells. The copy draws the
-// blocks again without the selection mark and without the expand indicator, so
-// the rail, the shade, the indicator and its padding are never part of the
-// text. Column 0 of the pane is the gutter and is not copied.
+// blocks again without the selection box and without the pointer mark, so the
+// box lines and the GlyphStepOpen of a pointed step are never part of the
+// text. A step that is open copies GlyphStepOpen; a folded step copies its own
+// glyph. Column 0 of the pane is the gutter and is not copied.
 
 // textSurface names where a selection lives.
 type textSurface int

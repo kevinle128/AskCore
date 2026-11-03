@@ -14,7 +14,8 @@ import (
 
 // listModelAt returns a model that has a session view and the compact session
 // of the fold tests, at a size and with a color profile. No program runs: the
-// tests call Update and read View.
+// tests call Update and read View. The session mode is collapsed, so that every
+// ended step is one row; a test of another session mode makes its own model.
 func listModelAt(t *testing.T, p colorprofile.Profile, width, height int, events ...protocol.Event) *Model {
 	t.Helper()
 	m, _ := listModelWithTranslator(t, p, width, height, events...)
@@ -25,7 +26,14 @@ func listModelAt(t *testing.T, p colorprofile.Profile, width, height int, events
 // a test can play more events into the same transcript.
 func listModelWithTranslator(t *testing.T, p colorprofile.Profile, width, height int, events ...protocol.Event) (*Model, *Translator) {
 	t.Helper()
-	m := New(Options{Client: newFakeClient(), Profile: p, Location: time.UTC, TickInterval: -1})
+	return sessionModel(t, p, width, height, ThinkingCollapsed, events...)
+}
+
+// sessionModel is listModelWithTranslator with a first session mode for
+// thinking steps that end.
+func sessionModel(t *testing.T, p colorprofile.Profile, width, height int, fold ThinkingFold, events ...protocol.Event) (*Model, *Translator) {
+	t.Helper()
+	m := New(Options{Client: newFakeClient(), Profile: p, Location: time.UTC, TickInterval: -1, ThinkingFold: fold})
 	m.Update(tea.WindowSizeMsg{Width: width, Height: height})
 	trl := NewTranslator(TranslatorOptions{Location: time.UTC})
 	if len(events) == 0 {

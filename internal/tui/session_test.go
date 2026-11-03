@@ -588,17 +588,18 @@ func TestCtrlTExpandsAndCollapsesThinkingBlocks(t *testing.T) {
 			protocol.Thinking{Thinking: thinkingText}, protocol.Text{Text: probeReply}),
 		&protocol.AgentEnd{}, &protocol.AgentSettled{},
 	)...)
-	r.h.waitText("◆ Thought")
-	require.Zero(t, r.h.count("The stale check runs"), "a finished thinking is one row")
-
-	r.key("ctrl+t")
-	r.h.waitText("┊ Thinking blocks: expanded · ctrl+t to collapse")
+	r.h.waitText("› Thought")
 	r.h.waitText("The stale check runs before the deadline starts")
-	r.h.waitText("┃ ")
 
 	r.key("ctrl+t")
-	r.h.waitText("Thinking blocks: collapsed · ctrl+t to expand")
+	r.h.waitText("┊ Thinking blocks: collapsed · ctrl+t to expand")
+	r.h.waitText("◆ Thought")
 	r.waitGone("The stale check runs")
+
+	r.key("ctrl+t")
+	r.h.waitText("Thinking blocks: expanded · ctrl+t to collapse")
+	r.h.waitText("The stale check runs before the deadline starts")
+	r.h.waitText("› Thought")
 }
 
 // ---- connection states ----
@@ -1026,7 +1027,7 @@ func TestScreens120Goldens(t *testing.T) {
 		r.clock.advance(4 * time.Second)
 		r.event(&protocol.QueueUpdate{})
 		r.h.waitText("Working… 4s")
-		running := "  ◆ echo probe code request" + strings.Repeat(" ", w-displayWidth("  ◆ echo probe code request")-displayWidth("⠋")-1) + "⠋"
+		running := "  ◆ echo probe code request" + strings.Repeat(" ", w-displayWidth("  ◆ echo probe code request")-displayWidth("⠋")-textRightPad) + "⠋"
 		// The pane is taller than its content: empty rows sit between the
 		// content and the status row.
 		requireRows(t, r.h.grid(), []string{

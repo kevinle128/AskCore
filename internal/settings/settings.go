@@ -15,6 +15,7 @@ import (
 const (
 	settingsFile       = "settings.json"
 	defaultModelKey    = "defaultModel"
+	thinkingFoldKey    = "thinkingFold"
 	maxModelIDLen      = 256
 	maxSettingsFileLen = 1 << 20
 )
@@ -67,6 +68,52 @@ func (s *SettingsStore) SetDefaultModel(ctx context.Context, modelID string) err
 		fields[defaultModelKey] = value
 		return true, nil
 	})
+}
+
+// ThinkingFold is the fold mode that an ended thinking step takes in the TUI.
+// The zero value is not valid; use one of the constants.
+type ThinkingFold string
+
+const (
+	// ThinkingFoldExpanded shows all lines of an ended thinking step. It is the
+	// default.
+	ThinkingFoldExpanded ThinkingFold = "expanded"
+	// ThinkingFoldTruncated shows the last lines of an ended thinking step.
+	ThinkingFoldTruncated ThinkingFold = "truncated"
+	// ThinkingFoldCollapsed shows an ended thinking step as one row.
+	ThinkingFoldCollapsed ThinkingFold = "collapsed"
+)
+
+// parseThinkingFold returns the fold of a raw thinkingFold value. A value that
+// is not one of the known words gives ThinkingFoldExpanded.
+func parseThinkingFold(raw json.RawMessage) ThinkingFold {
+	var word string
+	if json.Unmarshal(raw, &word) != nil {
+		return ThinkingFoldExpanded
+	}
+	switch f := ThinkingFold(word); f {
+	case ThinkingFoldExpanded, ThinkingFoldTruncated, ThinkingFoldCollapsed:
+		return f
+	}
+	return ThinkingFoldExpanded
+}
+
+// ThinkingFold returns the saved thinkingFold value. A missing file, a missing
+// key or an unknown value gives ThinkingFoldExpanded and no error. A file that
+// cannot be read gives ThinkingFoldExpanded and the error, so that a caller
+// that does not report the error still gets a valid value.
+func (s *SettingsStore) ThinkingFold(ctx context.Context) (ThinkingFold, error) {
+	fold := ThinkingFoldExpanded
+	err := s.locked(ctx, func(fields map[string]json.RawMessage) (bool, error) {
+		if raw, ok := fields[thinkingFoldKey]; ok {
+			fold = parseThinkingFold(raw)
+		}
+		return false, nil
+	})
+	if err != nil {
+		return ThinkingFoldExpanded, err
+	}
+	return fold, nil
 }
 
 func validModelID(id string) bool {

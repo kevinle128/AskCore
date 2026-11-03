@@ -549,11 +549,12 @@ func (s *sessionView) onThinking(msg thinkingMsg) {
 	}
 }
 
-// toggleThinking expands all thinking blocks, or collapses them all when none
-// is collapsed. The pane draws the changed blocks again, and the selected block
-// stays in view when the block list has focus.
+// toggleThinking expands all thinking blocks, or collapses them all when all
+// are expanded, and sets the session mode to the result. The pane draws the
+// changed blocks again, and the selected block stays in view when the block
+// list has focus.
 func (s *sessionView) toggleThinking() tea.Cmd {
-	expanded := s.m.pane.ToggleAllThinking()
+	expanded := s.m.toggleAllThinking()
 	s.setNotice(ThinkingNotice(expanded), false)
 	s.m.revealSelected()
 	return nil

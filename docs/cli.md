@@ -198,6 +198,10 @@ Exit codes: 0 left, 1 error or lost leader, 130, 143, 129.
 
 With no usable provider the session has no model. The footer row shows `no model`, and a prompt is refused and stays in the editor. `/providers` opens the sign-in box. The leader checks an API key before it saves it (mode 0600 `auth.json`); it cannot check the Alibaba Token Plan key, so it saves that key as it is. The key is pasted into a masked input.
 
+The key `thinkingFold` in `<ASK_HOME>/settings.json` sets the fold mode that a thinking step takes when it ends: `"expanded"` (all lines, the default), `"truncated"` (the last lines), or `"collapsed"` (one row). A missing key, an unknown value, or a file that cannot be read gives `"expanded"` with no notice. The TUI reads the key once when it starts and never writes it, so a change takes effect at the next start. A streaming thinking step always shows its last lines.
+
+`ctrl+t` opens or folds all thinking steps and also sets the mode for the thinking steps that end later in the same TUI process. It does not change `settings.json`.
+
 The key bindings, block folding, the viewer, and the mouse rules are in [internal/tui/README.md](../internal/tui/README.md). Terminal.app, iTerm2, and kitty were not checked by hand.
 
 ## Environment variables

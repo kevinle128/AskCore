@@ -145,7 +145,7 @@ func (s *sessionView) onWheel(mo tea.Mouse) {
 }
 
 // onHover marks the block under the pointer. Only a block that can fold shows
-// the indicator. A hover is a repaint: it changes no selection.
+// GlyphStepOpen for it. A hover is a repaint: it changes no selection.
 func (s *sessionView) onHover(y int) {
 	m := s.m
 	id := ""

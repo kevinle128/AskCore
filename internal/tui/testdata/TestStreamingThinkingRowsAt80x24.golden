@@ -2,11 +2,11 @@
 ────────────────────────────────────────────────────────────────────────────────
   ❯ run all tests and tell me what fails                                 15:31
 
-  ◆ Thinking… 2s                                                              ⠋
-  ┃ …
-  ┃ So the loop must skip f == "".
-  ┃ Then the count is right.
+  › Thinking… 2s                                                             ⠋
 
+    …
+    So the loop must skip f == "".
+    Then the count is right.
 
 
 

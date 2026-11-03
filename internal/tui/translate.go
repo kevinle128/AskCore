@@ -59,10 +59,6 @@ type Translator struct {
 	// lastReply is the text of the last finished assistant message that had
 	// text, for /copy.
 	lastReply string
-	// afterStep is true while the last block that the translator added is a
-	// tool or thinking step. A reply that follows a step starts with an empty
-	// row.
-	afterStep bool
 }
 
 // RunningJob is a background job that the session view knows to run.
@@ -93,7 +89,6 @@ func (t *Translator) View() *TranscriptView { return t.view }
 // reset.
 func (t *Translator) Reset() {
 	t.lastReply = ""
-	t.afterStep = false
 	t.reply = nil
 	t.tools = map[string]*toolState{}
 	t.run = runState{}
@@ -133,8 +128,6 @@ type partState struct {
 	// shown is true when the open block is in the transcript. A thinking part
 	// is added with its first text, so an empty reasoning summary draws nothing.
 	shown bool
-	// lead is true when the part follows a step and needs an empty row above.
-	lead bool
 	// startTS and lastTS are the times of the first and the last event of the
 	// part, in milliseconds. They give the duration of a thinking.
 	startTS, lastTS int64
@@ -227,7 +220,6 @@ func (t *Translator) Event(ev protocol.Event) []tea.Msg {
 	case *protocol.ToolExecutionEnd:
 		t.onToolEnd(e, &out)
 	case *protocol.AutoRetryStart:
-		t.afterStep = false
 		emitAppend(&out, t.nextID("n"), NewRetryNote(retryText(e)), true)
 	case *protocol.AutoRetryEnd:
 		if !e.Success {
@@ -284,7 +276,6 @@ func (t *Translator) userPrompt(m protocol.UserMessage, out *[]tea.Msg) {
 		t.reminder(body, out)
 		return
 	}
-	t.afterStep = false
 	emitAppend(out, t.nextID("u"), NewUserPromptBlock(userText(m), clockTime(m.Timestamp, t.loc)), true)
 }
 
@@ -318,7 +309,10 @@ func (t *Translator) segBlock(p *partState, text string) Block {
 		known := p.startTS > 0 && p.lastTS >= p.startTS
 		return newThinkingBlock(text, t.view, !p.done, p.startTS, p.lastTS-p.startTS, known)
 	}
-	return newAssistantTextBlock(text, p.md, p.segments == 0, p.lead)
+	if p.segments == 0 {
+		return newTimedReplyBlock(text, p.md, clockTime(p.startTS, t.loc))
+	}
+	return newAssistantTextBlock(text, p.md, false)
 }
 
 // part returns the part for a content index. A missing part is added as an
@@ -336,7 +330,6 @@ func (t *Translator) part(r *replyState, index int, thinking bool, out *[]tea.Ms
 	r.order = append(r.order, index)
 	if !thinking {
 		p.shown = true
-		p.lead, t.afterStep = t.afterStep, false
 		emitAppend(out, p.cur, t.segBlock(p, ""), false)
 	}
 	return p
@@ -358,7 +351,6 @@ func (t *Translator) setText(p *partState, raw string, out *[]tea.Msg) {
 			return
 		}
 		p.shown = true
-		t.afterStep = true
 		p.curText = rest
 		emitAppend(out, p.cur, t.segBlock(p, rest), false)
 		return
@@ -443,7 +435,7 @@ func (t *Translator) closeReply(out *[]tea.Msg) {
 func (t *Translator) onAssistantEnd(e *protocol.MessageEnd, am protocol.AssistantMessage, out *[]tea.Msg) {
 	t.noteReply(am)
 	r := t.ensureReply(e.TS)
-	visible, lastIsText := false, false
+	visible := false
 	for i, blk := range am.Content {
 		var (
 			text     string
@@ -470,7 +462,6 @@ func (t *Translator) onAssistantEnd(e *protocol.MessageEnd, am protocol.Assistan
 		t.finishPart(p, out)
 		if p.shown {
 			visible = true
-			lastIsText = !thinking
 		}
 	}
 	t.closeReply(out)
@@ -485,16 +476,10 @@ func (t *Translator) onAssistantEnd(e *protocol.MessageEnd, am protocol.Assistan
 			msg = *am.ErrorMessage
 		}
 		t.run.lastErr = &errorInfo{text: msg, provider: am.Provider}
-		if lastIsText {
-			t.afterStep = false
-			emitAppend(out, t.nextID("s"), NewSpacerBlock(), true)
-		}
 	case protocol.StopAborted:
-		// The cancel marker follows the partial reply without an empty row.
 	default:
 		if visible {
 			if text := metaText(am, e.TS, r.startTS); text != "" {
-				t.afterStep = false
 				emitAppend(out, t.nextID("m"), NewMetaLineBlock(text), true)
 			}
 		}
@@ -539,7 +524,6 @@ func (t *Translator) onToolStart(e *protocol.ToolExecutionStart, out *[]tea.Msg)
 		key = st.id
 	}
 	t.tools[key] = st
-	t.afterStep = true
 	emitAppend(out, st.id, newToolCallBlock(st.call(), ToolRunning, "", "", toolOutput{}, t.view), false)
 }
 
@@ -571,7 +555,6 @@ func (t *Translator) onToolEnd(e *protocol.ToolExecutionEnd, out *[]tea.Msg) {
 	st, ok := t.tools[e.ToolCallID]
 	if !ok {
 		// The start event was not seen: show the outcome as a final line.
-		t.afterStep = true
 		emitAppend(out, t.nextID("t"), toolOutcome(toolCall{name: e.ToolName}, failed, "", reason, output, t.view), true)
 		return
 	}
@@ -656,12 +639,10 @@ func (t *Translator) writeError(code string, out *[]tea.Msg) {
 		msg = "The request failed."
 	}
 	kind, next := classifyError(code, provider)
-	t.afterStep = false
 	emitAppend(out, t.nextID("e"), NewErrorBlock(ErrorHeadline(kind, sentence(providerErrorText(msg, provider))), next), true)
 }
 
 func (t *Translator) writeNotice(kind, msg, next string, out *[]tea.Msg) {
-	t.afterStep = false
 	emitAppend(out, t.nextID("e"), NewErrorBlock(ErrorHeadline(kind, msg), next), true)
 }
 
@@ -705,7 +686,6 @@ func (t *Translator) onSettled(out *[]tea.Msg) {
 		t.writeError("", out)
 	}
 	if t.run.cancelled {
-		t.afterStep = false
 		emitAppend(out, t.nextID("c"), NewCancelMarker(cancelText(t.run.cause, t.run.hadReply)), true)
 	}
 	t.run = runState{}
