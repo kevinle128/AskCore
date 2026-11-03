@@ -140,7 +140,7 @@ func TestPrepareRowThatRefusesOffSendsItsLowestEffort(t *testing.T) {
 		pr, body := prepareAndEncode(t, m, providers.StreamOptions{Reasoning: level})
 		assert.Equal(t, protocol.ThinkingLow, pr.Thinking, "level %q", level)
 		assert.Equal(t, "low", pr.Effort, "level %q", level)
-		assert.Equal(t, map[string]any{"type": "adaptive"}, body["thinking"], "level %q", level)
+		assert.Equal(t, map[string]any{"type": "adaptive", "display": "summarized"}, body["thinking"], "level %q", level)
 		assert.Equal(t, map[string]any{"effort": "low"}, body["output_config"], "level %q", level)
 	}
 }

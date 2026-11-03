@@ -45,6 +45,7 @@ The format follows [Keep a Changelog 1.1.0](https://keepachangelog.com/en/1.1.0/
 
 ### Fixed
 
+- **Providers:** Anthropic models now show their thinking. Ask asks for a summary of the thinking (`display: "summarized"`). From Claude Opus 4.7 on, the thinking text was empty without it.
 - **Providers:** The `gpt-6` models (astra, luna, sol, terra) now send their thinking level and show it in the `/model` selector. `gpt-6-astra` and `gpt-6.1-sol` refuse "none", so thinking off in the selector uses their lowest effort.
 - **Providers:** `grok-4.7` now sends its thinking level (`low`, `medium`, `high`, `xhigh`). It cannot turn thinking off, so the selector uses `low` for off.
 - **Settings:** Two `ask` processes that use a new `ASK_HOME` at the same time no longer fail with `file exists`.

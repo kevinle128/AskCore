@@ -70,7 +70,10 @@ func buildDocument(msgs []protocol.Message, model providers.Model, pr *providers
 	} else {
 		extra["output_config"] = map[string]any{"effort": pr.Effort}
 		if model.Provider == providers.ProviderAnthropic && model.Reasoning {
-			extra["thinking"] = map[string]any{"type": "adaptive"}
+			// From Claude Opus 4.7 on, the default display is "omitted": the
+			// thinking blocks come back with empty text. "summarized" asks for
+			// a readable summary, so the user can see the reasoning.
+			extra["thinking"] = map[string]any{"type": "adaptive", "display": "summarized"}
 		}
 		if pr.Temperature != nil {
 			diags = append(diags, protocol.Diagnostic{
