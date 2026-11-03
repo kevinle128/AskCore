@@ -46,7 +46,8 @@ type terminalConfig struct {
 // runInteractive is the entry for `ask` on a terminal without a prompt. It
 // runs the alternate-screen TUI against the leader of the Ask home, or against
 // an agent in this process when the leader cannot be reached at startup.
-func runInteractive(stdin io.Reader, stdout, stderr io.Writer, deps runDependencies, sigs <-chan os.Signal) int {
+// noLeader skips the leader and always runs the agent in this process.
+func runInteractive(stdin io.Reader, stdout, stderr io.Writer, deps runDependencies, sigs <-chan os.Signal, noLeader bool) int {
 	in, inOK := stdin.(*os.File)
 	out, outOK := stdout.(*os.File)
 	if !inOK || !outOK {
@@ -65,7 +66,7 @@ func runInteractive(stdin io.Reader, stdout, stderr io.Writer, deps runDependenc
 		open: func(ctx context.Context) (tui.Client, error) {
 			// No warning callback: a line written to the terminal while the
 			// program draws would break the screen.
-			c, err := openTUIClient(ctx, deps, tuiClientOptions{callerExe: exe})
+			c, err := openTUIClient(ctx, deps, tuiClientOptions{callerExe: exe, noLeader: noLeader})
 			if err != nil {
 				return nil, err
 			}

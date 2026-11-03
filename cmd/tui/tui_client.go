@@ -35,7 +35,13 @@ type tuiClientOptions struct {
 	// design values, 1 s doubling to 30 s.
 	initialBackoff time.Duration
 	maxBackoff     time.Duration
+	// noLeader skips the leader: no connect and no start. The agent runs in
+	// this process, and FallbackReason is errLeaderDisabled.
+	noLeader bool
 }
+
+// errLeaderDisabled is the fallback reason when the user gave --no-leader.
+var errLeaderDisabled = errors.New("leader: disabled by --no-leader")
 
 // openedClient is the client that openTUIClient chose and why.
 type openedClient struct {
@@ -50,6 +56,13 @@ type openedClient struct {
 // This is the one place that makes the choice: a client that lost its leader
 // later keeps reconnecting and never turns into an in-process agent.
 func openTUIClient(ctx context.Context, deps runDependencies, o tuiClientOptions) (*openedClient, error) {
+	if o.noLeader {
+		c, err := openInProcessClient(ctx, deps)
+		if err != nil {
+			return nil, fmt.Errorf("in-process agent: %w", err)
+		}
+		return &openedClient{Client: c, FallbackReason: errLeaderDisabled}, nil
+	}
 	reason := error(nil)
 	paths, err := leader.ResolvePaths(deps.getenv("ASK_HOME"))
 	if err == nil {

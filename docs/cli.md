@@ -39,6 +39,7 @@ The mode is chosen in this order:
 | `--api-key <key>` | Key for this run. It needs `--model`, except for `alibaba-token-plan`. A key in the arguments is visible to other processes. Prefer the environment or `ask auth login`. |
 | `--thinking <level>` | `off`, `minimal`, `low`, `medium`, `high`, `xhigh`, or `max`. `alibaba-token-plan` defaults to `medium`. |
 | `--max-turns <n>` | Print and JSON mode. End the run after `n` turns. `n` is a whole number above 0, or the command exits 1. See [Background work in print mode](#background-work-in-print-mode). |
+| `--no-leader` | TUI only. Run the agent in this process. Do not connect to a leader and do not start one. Use it to debug the agent, because the tools then run in this process. Print mode already runs in process and ignores the flag. |
 | `--` | End of options. |
 | `-h`, `--help` | Show the usage text. |
 
@@ -183,7 +184,7 @@ Exit codes: 0 left, 1 error or lost leader, 130, 143, 129.
 
 ## Interactive TUI
 
-`ask` with no arguments on a terminal opens the TUI on the alternate screen. It connects to the local leader and starts one when none runs. Only when the first connect fails does it run an agent in process. The screen does not show the difference: `/providers` and `/sessions` answer `Needs the leader; this session runs in process.`, and `ask leader status` reports `no leader is running`. The TUI never switches to an in-process agent later. On exit the terminal is restored and the line `ask: session <id>` stays in the shell.
+`ask` with no arguments on a terminal opens the TUI on the alternate screen. It connects to the local leader and starts one when none runs. Only when the first connect fails does it run an agent in process. With `--no-leader` it always runs the agent in process and starts no leader. The screen does not show the difference: `/providers` and `/sessions` answer `Needs the leader; this session runs in process.`, and `ask leader status` reports `no leader is running`. The TUI never switches to an in-process agent later. On exit the terminal is restored and the line `ask: session <id>` stays in the shell.
 
 | Command | Purpose |
 |---|---|

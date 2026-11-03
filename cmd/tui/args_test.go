@@ -35,6 +35,7 @@ func TestArgs(t *testing.T) {
 			o.files = []string{"b"}
 		}), nil},
 		{"@file and message", []string{"@a.md", "hi"}, base(func(o *options) { o.files = []string{"a.md"}; o.messages = []string{"hi"} }), nil},
+		{"--no-leader", []string{"--no-leader"}, base(func(o *options) { o.noLeader = true }), nil},
 		{"--mode text", []string{"--mode", "text"}, base(func(o *options) { o.mode = outputText }), nil},
 		{"--mode json", []string{"--mode", "json"}, base(func(o *options) { o.mode = outputJSON }), nil},
 		{"--mode missing", []string{"--mode"}, base(nil), []string{"Error: --mode requires text or json"}},

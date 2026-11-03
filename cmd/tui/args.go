@@ -54,6 +54,10 @@ type options struct {
 	// bgLimit is the background limit of the job table. Only print mode sets
 	// it; the TUI, the leader and ask acp have none.
 	bgLimit jobs.BackgroundLimit
+	// noLeader makes the TUI run its agent in this process. It never connects
+	// to a leader and never starts one, so a debugger on this process sees the
+	// tool calls.
+	noLeader bool
 }
 
 // diagnostic is one parse problem. Any error ends the program with exit 1; a
@@ -144,6 +148,8 @@ func parseArgs(argv []string) (options, []diagnostic) {
 			i = len(argv)
 		case arg == "--help" || arg == "-h":
 			o.help = true
+		case arg == "--no-leader":
+			o.noLeader = true
 		case arg == "--print" || arg == "-p":
 			o.print = true
 			if i+1 < len(argv) {
@@ -214,6 +220,7 @@ Options:
   --api-key <key>       API key for the provider (requires --model)
   --thinking <level>    Thinking level: off, minimal, low, medium, high, xhigh, max
   --max-turns <n>       Print mode: end the run after n turns, turns of background notices included
+  --no-leader           TUI: run the agent in this process; do not connect to or start a leader
   --                    End option parsing; the rest are messages and @files
   --help, -h            Show this help
 `

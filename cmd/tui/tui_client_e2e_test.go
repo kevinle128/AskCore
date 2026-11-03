@@ -638,6 +638,17 @@ func makeHomeUnsafe(t *testing.T, home string) {
 	require.NoError(t, os.Symlink(t.TempDir(), home))
 }
 
+// --no-leader runs the agent in process on a healthy home, and no leader starts.
+func TestClientNoLeaderRunsInProcess(t *testing.T) {
+	bin, home := newE2EHome(t)
+	c, err := openTUIClient(context.Background(), inProcessDeps(home, nil), tuiClientOptions{callerExe: bin, env: leaderEnv(home), noLeader: true})
+	require.NoError(t, err)
+	require.Equal(t, tui.ModeInProcess, c.Info().Mode)
+	require.ErrorIs(t, c.FallbackReason, errLeaderDisabled)
+	require.Empty(t, leaderProcesses(bin), "no leader process is started")
+	require.NoError(t, c.Close())
+}
+
 func TestClientStartupFallbackOnlyAtStartup(t *testing.T) {
 	bin, home := newE2EHome(t)
 	opts := tuiClientOptions{callerExe: bin, env: leaderEnv(home), initialBackoff: 20 * time.Millisecond, maxBackoff: 100 * time.Millisecond}
