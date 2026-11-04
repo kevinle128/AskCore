@@ -1,0 +1,59 @@
+{
+	"version": 1,
+	"budget": "small",
+	"families": [
+		{
+			"id": "claude",
+			"provider": "anthropic",
+			"match": "^claude-(?!fable)",
+			"default": "anthropic/claude-opus-5-5"
+		},
+		{
+			"id": "codex",
+			"provider": "openai-codex",
+			"default": "openai-codex/gpt-6.1-sol"
+		},
+		{
+			"id": "fable",
+			"provider": "anthropic",
+			"match": "fable",
+			"default": "anthropic/claude-fable-5-1"
+		}
+	],
+	"roles": {
+		"feature": "anthropic/claude-sonnet-5-5",
+		"bug-fix": "anthropic/claude-sonnet-5-5",
+		"perf-issue": "anthropic/claude-sonnet-5-5",
+		"hillclimb": "anthropic/claude-sonnet-5-5",
+		"hardest": "anthropic/claude-opus-5-5",
+		"judgment": "anthropic/claude-opus-5-5",
+		"how-explorer": "anthropic/claude-haiku-4-5:xhigh",
+		"how-explainer": "anthropic/claude-opus-5-5",
+		"why-investigator": "anthropic/claude-sonnet-5-5",
+		"why-synthesizer": "anthropic/claude-opus-5-5",
+		"reflect-tooling": "anthropic/claude-sonnet-5-5",
+		"reflect-judgment": "anthropic/claude-opus-5-5",
+		"swarm-worker": "anthropic/claude-sonnet-5-5"
+	},
+	"panels": {
+		"arena-runner": [
+			"anthropic/claude-opus-5-5",
+			"openai-codex/gpt-6.1-sol",
+			"anthropic/claude-fable-5-1"
+		],
+		"architect-runner": [
+			"anthropic/claude-opus-5-5",
+			"openai-codex/gpt-6.1-sol",
+			"anthropic/claude-fable-5-1"
+		],
+		"interrogate-reviewer": [
+			"anthropic/claude-opus-5-5",
+			"openai-codex/gpt-6.1-sol",
+			"anthropic/claude-fable-5-1"
+		]
+	},
+	"judges": [
+		"anthropic/claude-opus-5-5",
+		"openai-codex/gpt-6.1-sol"
+	]
+}
