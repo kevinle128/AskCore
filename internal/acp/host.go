@@ -45,6 +45,8 @@ type SessionRequest struct {
 	Cwd string
 	// Trust is the trust override of this session, or empty.
 	Trust protocol.ACPTrustOverride
+	// Flags are the per-session flags of this session, or the zero value.
+	Flags protocol.ACPSessionOptions
 }
 
 // Factory builds one independent Agent for a new session.

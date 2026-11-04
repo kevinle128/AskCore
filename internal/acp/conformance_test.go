@@ -261,7 +261,7 @@ func TestACPConformanceMetaPrecision(t *testing.T) {
 		typed <- r
 		return sdk.NewSessionResponse{SessionId: "s1"}, nil
 	}}, 1<<20, nil)
-	p2.send(`{"jsonrpc":"2.0","id":1,"method":"session/new","params":{"cwd":"/","mcpServers":[],"_meta":{"seq":"18446744073709551615","num":9007199254740993,"nil":null,"nested":{"a":[1]}}}}`)
+	p2.send(`{"jsonrpc":"2.0","id":1,"method":"session/new","params":{"cwd":"/","mcpServers":[],"_meta":{"seq":"18446744073709551615","num":9007199254740993,"nil":null,"nested":{"a":[1]},"ask.dev/session":{"systemPrompt":"p","appendSystemPrompt":["a","b"],"tools":["read"],"noTools":false,"future":9007199254740993}}}}`)
 	p2.next()
 	r := <-typed
 	require.Equal(t, "18446744073709551615", r.Meta["seq"])
@@ -269,6 +269,9 @@ func TestACPConformanceMetaPrecision(t *testing.T) {
 	require.Contains(t, r.Meta, "nil")
 	t.Logf("typed numeric _meta decodes as %T %v", r.Meta["num"], r.Meta["num"])
 	require.NotEqual(t, "9007199254740993", fmt.Sprintf("%.0f", r.Meta["num"]), "limit documented: typed _meta is not exact")
+	flags, err := flagsFromMeta(r.Meta)
+	require.NoError(t, err)
+	require.Equal(t, protocol.ACPSessionOptions{SystemPrompt: "p", AppendSystemPrompt: []string{"a", "b"}, Tools: []string{"read"}}, flags, "session flags survive typed _meta and unknown fields are ignored")
 }
 
 func TestACPConformanceAskDispatch(t *testing.T) {

@@ -302,10 +302,14 @@ func (a *Adapter) NewSession(ctx context.Context, req sdk.NewSessionRequest) (sd
 	if err == nil {
 		trust, err = trustFromMeta(req.Meta)
 	}
+	var flags protocol.ACPSessionOptions
+	if err == nil {
+		flags, err = flagsFromMeta(req.Meta)
+	}
 	if err != nil {
 		return sdk.NewSessionResponse{}, requestError(err)
 	}
-	s, err := a.host.NewSessionWith(ctx, SessionRequest{Cwd: req.Cwd, Trust: trust})
+	s, err := a.host.NewSessionWith(ctx, SessionRequest{Cwd: req.Cwd, Trust: trust, Flags: flags})
 	if err != nil {
 		return sdk.NewSessionResponse{}, requestError(err)
 	}
@@ -328,6 +332,12 @@ func (a *Adapter) NewSession(ctx context.Context, req sdk.NewSessionRequest) (sd
 		// The router needs the generation that the host committed. The editor link has no router.
 		s.setDriver(route)
 		res.Meta = map[string]any{protocol.ACPRouteMetaKey: protocol.ACPRouteMeta{DriverGen: s.Gen()}}
+	}
+	if !flags.IsZero() {
+		if res.Meta == nil {
+			res.Meta = map[string]any{}
+		}
+		res.Meta[protocol.ACPSessionOptionsMetaKey] = true
 	}
 	return res, nil
 }
