@@ -1,9 +1,13 @@
 package main
 
 import (
+	"os"
+	"path/filepath"
+	"strings"
 	"testing"
 
 	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
 
 	"AskCore/internal/providers/anthropic"
 	"AskCore/pkg/protocol"
@@ -136,4 +140,62 @@ func TestParseApproveFlags(t *testing.T) {
 	assert.Equal(t, protocol.ACPTrustApprove, o.trust)
 	assert.Contains(t, usage, "--approve, -a")
 	assert.Contains(t, usage, "--no-approve, -na")
+}
+
+func TestParseSessionFlags(t *testing.T) {
+	dir := t.TempDir()
+	promptFile := filepath.Join(dir, "prompt.md")
+	require.NoError(t, os.WriteFile(promptFile, []byte("from a file\n"), 0o644))
+	big := filepath.Join(dir, "big.md")
+	require.NoError(t, os.WriteFile(big, []byte(strings.Repeat("x", protocol.ACPSessionPromptMaxBytes+1)), 0o644))
+	third := filepath.Join(dir, "third.md")
+	require.NoError(t, os.WriteFile(third, []byte(strings.Repeat("y", protocol.ACPSessionPromptMaxBytes/2+1)), 0o644))
+
+	for _, tc := range []struct {
+		name  string
+		argv  []string
+		want  protocol.ACPSessionOptions
+		diags []string
+	}{
+		{"none", nil, protocol.ACPSessionOptions{}, nil},
+		{"system prompt text", []string{"--system-prompt", "be brief"}, protocol.ACPSessionOptions{SystemPrompt: "be brief"}, nil},
+		{"system prompt file is read", []string{"--system-prompt", promptFile}, protocol.ACPSessionOptions{SystemPrompt: "from a file\n"}, nil},
+		{"a missing path is text", []string{"--system-prompt", "no/such/file.md"}, protocol.ACPSessionOptions{SystemPrompt: "no/such/file.md"}, nil},
+		{"a folder is text", []string{"--system-prompt", dir}, protocol.ACPSessionOptions{SystemPrompt: dir}, nil},
+		{"append repeats", []string{"--append-system-prompt", "one", "--append-system-prompt", promptFile}, protocol.ACPSessionOptions{AppendSystemPrompt: []string{"one", "from a file\n"}}, nil},
+		{"tools list", []string{"--tools", "read,grep"}, protocol.ACPSessionOptions{Tools: []string{"read", "grep"}}, nil},
+		{"-t repeats", []string{"-t", "read", "-t", "ls, bash"}, protocol.ACPSessionOptions{Tools: []string{"read", "ls", "bash"}}, nil},
+		{"no tools", []string{"-nt"}, protocol.ACPSessionOptions{NoTools: true}, nil},
+		{"--no-tools", []string{"--no-tools"}, protocol.ACPSessionOptions{NoTools: true}, nil},
+		{"tools with no tools", []string{"-t", "read", "-nt"}, protocol.ACPSessionOptions{Tools: []string{"read"}, NoTools: true},
+			[]string{"Error: --tools and --no-tools cannot be used together"}},
+		{"empty tool name", []string{"-t", ""}, protocol.ACPSessionOptions{Tools: []string{""}}, []string{`Error: --tools: invalid tool name ""`}},
+		{"bad tool syntax", []string{"-t", "Read"}, protocol.ACPSessionOptions{Tools: []string{"Read"}}, []string{`Error: --tools: invalid tool name "Read"`}},
+		{"tool needs a value", []string{"-t"}, protocol.ACPSessionOptions{}, []string{"Error: -t requires a value"}},
+		{"a prompt file over the cap", []string{"--system-prompt", big}, protocol.ACPSessionOptions{SystemPrompt: strings.Repeat("x", protocol.ACPSessionPromptMaxBytes+1)},
+			[]string{"Error: the prompt flags are 262145 bytes; the limit is 262144"}},
+		{"the cap covers all prompt flags", []string{"--system-prompt", third, "--append-system-prompt", third},
+			protocol.ACPSessionOptions{SystemPrompt: strings.Repeat("y", protocol.ACPSessionPromptMaxBytes/2+1), AppendSystemPrompt: []string{strings.Repeat("y", protocol.ACPSessionPromptMaxBytes/2+1)}},
+			[]string{"Error: the prompt flags are 262146 bytes; the limit is 262144"}},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			o, diags := parseArgs(tc.argv)
+			assert.Equal(t, tc.want, o.session)
+			var texts []string
+			for _, d := range diags {
+				texts = append(texts, d.String())
+			}
+			assert.Equal(t, tc.diags, texts)
+		})
+	}
+	for _, flag := range []string{"--system-prompt <text|file>", "--append-system-prompt <text|file>", "--tools, -t <names>", "--no-tools, -nt"} {
+		assert.Contains(t, usage, flag)
+	}
+}
+
+func TestACPCommandStillRejectsSessionFlags(t *testing.T) {
+	for _, flag := range []string{"--system-prompt", "--append-system-prompt", "--tools", "-t", "-nt", "--no-tools"} {
+		_, _, err := parseACPArgs([]string{flag})
+		assert.Error(t, err, flag)
+	}
 }

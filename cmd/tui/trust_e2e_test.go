@@ -23,6 +23,7 @@ import (
 	"AskCore/internal/acp"
 	"AskCore/internal/leader"
 	"AskCore/internal/providers"
+	"AskCore/internal/tui"
 	"AskCore/internal/tuiclient"
 	"AskCore/pkg/protocol"
 )
@@ -475,7 +476,7 @@ func TestTrustE2ECorruptTrustStore(t *testing.T) {
 	assert.Contains(t, st.Warning, storePath)
 	_, err = c.SetTrust(ctx, protocol.ACPTrustSetRequest{Cwd: root, Target: protocol.ACPTrustTargetFolder, Decision: protocol.ACPTrustDecisionTrust})
 	require.Error(t, err, "a grant on a corrupt store is refused")
-	_, err = c.NewSession(ctx, root, "")
+	_, err = c.NewSession(ctx, root, tui.NewSessionOptions{})
 	require.NoError(t, err)
 	state, err := c.State(ctx)
 	require.NoError(t, err)
@@ -506,7 +507,7 @@ func TestTrustE2ECorruptSettingsNeverOverwritten(t *testing.T) {
 	c := r.client()
 	ctx, cancel := callCtx()
 	defer cancel()
-	_, err := c.NewSession(ctx, root, "")
+	_, err := c.NewSession(ctx, root, tui.NewSessionOptions{})
 	require.NoError(t, err)
 	state, err := c.State(ctx)
 	require.NoError(t, err)
@@ -586,7 +587,7 @@ func TestTrustE2ELeaderOwnsDecision(t *testing.T) {
 	stB, err = b.TrustState(ctx, root)
 	require.NoError(t, err)
 	assert.Equal(t, protocol.ACPTrustStateResult{Root: root, Trusted: true, Source: "saved", Gated: []string{".ask/settings.json"}, EntryPath: root}, stB)
-	_, err = b.NewSession(ctx, root, "")
+	_, err = b.NewSession(ctx, root, tui.NewSessionOptions{})
 	require.NoError(t, err)
 	state, err = b.State(ctx)
 	require.NoError(t, err)
@@ -605,12 +606,12 @@ func TestTrustE2ELeaderOwnsDecision(t *testing.T) {
 	// The leader re-reads trust.json at each session: a decision that another
 	// process saved applies to the next session.
 	r.writeTrust(`{"` + root + `":false}`)
-	_, err = a.NewSession(ctx, root, "")
+	_, err = a.NewSession(ctx, root, tui.NewSessionOptions{})
 	require.NoError(t, err)
 	state, err = a.State(ctx)
 	require.NoError(t, err)
 	assert.Equal(t, &protocol.ACPSessionTrust{Trusted: false, Source: "saved"}, state.Trust)
-	_, err = a.NewSession(ctx, root, protocol.ACPTrustApprove)
+	_, err = a.NewSession(ctx, root, tui.NewSessionOptions{Trust: protocol.ACPTrustApprove})
 	require.NoError(t, err)
 	state, err = a.State(ctx)
 	require.NoError(t, err)
@@ -620,13 +621,13 @@ func TestTrustE2ELeaderOwnsDecision(t *testing.T) {
 	// An implicit trust is never saved: a plain folder that gets a gated file
 	// is untrusted at the next session.
 	plain := trustProject(t, nil)
-	_, err = a.NewSession(ctx, plain, "")
+	_, err = a.NewSession(ctx, plain, tui.NewSessionOptions{})
 	require.NoError(t, err)
 	state, err = a.State(ctx)
 	require.NoError(t, err)
 	assert.Equal(t, &protocol.ACPSessionTrust{Trusted: true, Source: "no_gated_files"}, state.Trust)
 	writeFiles(t, plain, map[string]string{".ask/settings.json": `{}`})
-	_, err = a.NewSession(ctx, plain, "")
+	_, err = a.NewSession(ctx, plain, tui.NewSessionOptions{})
 	require.NoError(t, err)
 	state, err = a.State(ctx)
 	require.NoError(t, err)

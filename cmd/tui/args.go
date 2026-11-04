@@ -4,7 +4,9 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"io"
 	"net/http"
+	"os"
 	"slices"
 	"strconv"
 	"strings"
@@ -13,6 +15,7 @@ import (
 	"AskCore/internal/jobs"
 	"AskCore/internal/providers"
 	"AskCore/internal/providers/anthropic"
+	"AskCore/internal/tools"
 	"AskCore/pkg/protocol"
 )
 
@@ -65,6 +68,11 @@ type options struct {
 	// modelGiven is true when --provider or --model is on the command line.
 	// Then print mode does not use the saved default model.
 	modelGiven bool
+	// session holds the flags of one session: the prompt text (a file given on
+	// the command line is already read) and the tool selection. The TUI sends
+	// them to the host in session/new _meta, and print mode applies them
+	// itself.
+	session protocol.ACPSessionOptions
 }
 
 // diagnostic is one parse problem. Any error ends the program with exit 1; a
@@ -116,6 +124,48 @@ var valueFlags = map[string]func(o *options, v string) *diagnostic{
 		o.maxTurns = n
 		return nil
 	},
+	"--system-prompt": func(o *options, v string) *diagnostic {
+		text, d := promptFlagText("--system-prompt", v)
+		o.session.SystemPrompt = text
+		return d
+	},
+	"--append-system-prompt": func(o *options, v string) *diagnostic {
+		text, d := promptFlagText("--append-system-prompt", v)
+		o.session.AppendSystemPrompt = append(o.session.AppendSystemPrompt, text)
+		return d
+	},
+	"--tools": addToolNames,
+	"-t":      addToolNames,
+}
+
+// addToolNames adds the names of a comma list to the tool selection. A name
+// that is not valid shows later, when the whole selection is parsed.
+func addToolNames(o *options, v string) *diagnostic {
+	for name := range strings.SplitSeq(v, ",") {
+		o.session.Tools = append(o.session.Tools, strings.TrimSpace(name))
+	}
+	return nil
+}
+
+// promptFlagText returns the text of a prompt flag. A value that names an
+// existing regular file is replaced by the content of that file, so the wire
+// carries text and the host never reads a path of the client. Any other value
+// is the text.
+func promptFlagText(flag, v string) (string, *diagnostic) {
+	info, err := os.Stat(v)
+	if err != nil || !info.Mode().IsRegular() {
+		return v, nil
+	}
+	f, err := os.Open(v)
+	if err != nil {
+		return "", &diagnostic{err: true, msg: fmt.Sprintf("%s: cannot read %s", flag, v)}
+	}
+	defer func() { _ = f.Close() }()
+	data, err := io.ReadAll(io.LimitReader(f, protocol.ACPSessionPromptMaxBytes+1))
+	if err != nil {
+		return "", &diagnostic{err: true, msg: fmt.Sprintf("%s: cannot read %s", flag, v)}
+	}
+	return string(data), nil
 }
 
 // parseArgs parses argv without the program name. Unlike Pi, an unknown
@@ -158,6 +208,8 @@ func parseArgs(argv []string) (options, []diagnostic) {
 			o.help = true
 		case arg == "--no-leader":
 			o.noLeader = true
+		case arg == "--no-tools" || arg == "-nt":
+			o.session.NoTools = true
 		case trustFlags[arg] != "":
 			trust = append(trust, trustFlags[arg])
 		case arg == "--print" || arg == "-p":
@@ -195,6 +247,12 @@ func parseArgs(argv []string) (options, []diagnostic) {
 		fail("%s", err)
 	} else {
 		o.trust = t
+	}
+	if _, err := tools.FlagSelection(o.session.Tools, o.session.NoTools); err != nil {
+		fail("%s", err)
+	}
+	if size := o.session.PromptBytes(); size > protocol.ACPSessionPromptMaxBytes {
+		fail("the prompt flags are %d bytes; the limit is %d", size, protocol.ACPSessionPromptMaxBytes)
 	}
 	if o.apiKey != "" && o.model == "" && o.provider != anthropic.ProviderID {
 		fail("--api-key requires a model to be specified via --model")
@@ -258,6 +316,12 @@ Options:
   --api-key <key>       API key for the provider (requires --model)
   --thinking <level>    Thinking level: off, minimal, low, medium, high, xhigh, max
   --max-turns <n>       Print mode: end the run after n turns, turns of background notices included
+  --system-prompt <text|file>
+                        Replace the default system prompt (a file path is read now)
+  --append-system-prompt <text|file>
+                        Add text after the system prompt; repeat it to add more
+  --tools, -t <names>   Built-in tools to keep, comma separated (for example read,grep)
+  --no-tools, -nt       Keep no built-in tools
   --no-leader           TUI: run the agent in this process; do not connect to or start a leader
   --approve, -a         Trust the project settings of this folder for this run; saves nothing
   --no-approve, -na     Do not trust the project settings of this folder for this run

@@ -230,11 +230,13 @@ func (s *sessionView) onOpened(msg openedMsg) tea.Cmd {
 	return tea.Batch(waitClient(s.events), s.startSessionCmd(false))
 }
 
-// newSessionCmd creates a session with a trust override. With detach set it
-// leaves the current one first; the in-process client and a client without a
-// session answer with an error that does not matter here.
+// newSessionCmd creates a session with a trust override and the flags of the
+// command line. With detach set it leaves the current one first; the
+// in-process client and a client without a session answer with an error that
+// does not matter here.
 func (s *sessionView) newSessionCmd(detach bool, trust protocol.ACPTrustOverride) tea.Cmd {
 	c, cwd, gen := s.client, s.cwd, s.gen
+	opts := NewSessionOptions{Trust: trust, Flags: s.session.Flags}
 	return func() tea.Msg {
 		ctx, cancel := callContext()
 		defer cancel()
@@ -243,7 +245,7 @@ func (s *sessionView) newSessionCmd(detach bool, trust protocol.ACPTrustOverride
 				return newSessionMsg{gen: gen, err: fmt.Errorf("leave the session: %w", err)}
 			}
 		}
-		info, err := c.NewSession(ctx, cwd, trust)
+		info, err := c.NewSession(ctx, cwd, opts)
 		return newSessionMsg{gen: gen, info: info, err: err}
 	}
 }
@@ -271,7 +273,18 @@ func (s *sessionView) onNewSession(msg newSessionMsg) tea.Cmd {
 		return nil
 	}
 	s.useSession(msg.info)
+	s.warnFlagsIgnored(msg.info)
 	return s.refreshCmd(true)
+}
+
+const flagsIgnoredText = "Warning: the leader ignored the prompt and tool flags of this command line (it is older than this build). They are not applied in this session."
+
+// warnFlagsIgnored tells that the host did not apply the flags of the command
+// line: an older leader drops them without an error.
+func (s *sessionView) warnFlagsIgnored(info SessionInfo) {
+	if info.FlagsIgnored {
+		s.appendBlock(noticeBlock{text: flagsIgnoredText, role: RoleWarning})
+	}
 }
 
 // useSession makes a session the current one.
@@ -574,6 +587,7 @@ func (s *sessionView) onPromptCalled(msg promptCalledMsg) tea.Cmd {
 		// The session came from the trust record of the last start.
 		s.start.session = msg.session.ID
 		s.useSession(*msg.session)
+		s.warnFlagsIgnored(*msg.session)
 		cmd = s.refreshCmd(true)
 	}
 	s.send.calling = false

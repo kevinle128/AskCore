@@ -262,7 +262,7 @@ func TestTrustPromptSkippedWithFlag(t *testing.T) {
 	t.Run("deny", func(t *testing.T) {
 		fc := undecidedFake()
 		r := startView(t, 80, 24, withFake(fc), withOptions(func(o *Options) {
-			o.Cwd, o.Trust = acmeRoot, protocol.ACPTrustDeny
+			o.Cwd, o.Session.Trust = acmeRoot, protocol.ACPTrustDeny
 		}))
 		r.h.waitText("The project files of ~/src/acme are not loaded (--no-approve).")
 		r.requireNotOnScreen("Trust this project folder?")
@@ -275,7 +275,7 @@ func TestTrustPromptSkippedWithFlag(t *testing.T) {
 	t.Run("approve", func(t *testing.T) {
 		fc := undecidedFake()
 		r := startView(t, 80, 24, withFake(fc), withOptions(func(o *Options) {
-			o.Cwd, o.Trust = acmeRoot, protocol.ACPTrustApprove
+			o.Cwd, o.Session.Trust = acmeRoot, protocol.ACPTrustApprove
 		}))
 		require.Zero(t, r.fc.count("trust_state"))
 		require.Equal(t, []protocol.ACPTrustOverride{protocol.ACPTrustApprove}, r.fc.sentOverrides())
@@ -466,7 +466,7 @@ func TestUntrustedNoticeShowsSource(t *testing.T) {
 		t.Run(c.name, func(t *testing.T) {
 			fc := newFakeClient()
 			fc.trust, fc.trustErr, fc.state.Trust = c.trust, c.err, c.state
-			r := startView(t, 80, 24, withFake(fc), withOptions(func(o *Options) { o.Cwd, o.Trust = acmeRoot, c.flag }))
+			r := startView(t, 80, 24, withFake(fc), withOptions(func(o *Options) { o.Cwd, o.Session.Trust = acmeRoot, c.flag }))
 			if c.want == "" {
 				r.requireNotOnScreen("not loaded", "Trusted", "Warning")
 				return

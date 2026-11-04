@@ -89,9 +89,9 @@ func (s *sessionView) startPending() bool { return s.opening || s.starting }
 // set). Without an override of the command line it asks the trust state first.
 func (s *sessionView) startSessionCmd(detach bool) tea.Cmd {
 	s.starting = true
-	if s.trustFlag != "" {
-		s.start = trustStart{sent: sentFlag, override: s.trustFlag, root: s.cwd}
-		return s.newSessionCmd(detach, s.trustFlag)
+	if s.session.Trust != "" {
+		s.start = trustStart{sent: sentFlag, override: s.session.Trust, root: s.cwd}
+		return s.newSessionCmd(detach, s.session.Trust)
 	}
 	return s.trustStateCmd(trustForStart, detach)
 }
@@ -483,7 +483,7 @@ func (s *sessionView) savedText(root string, ch trustChoice) string {
 
 // appliesText says when a /trust save applies.
 func (s *sessionView) appliesText() string {
-	switch s.trustFlag {
+	switch s.session.Trust {
 	case protocol.ACPTrustApprove:
 		return "--approve still applies in this process"
 	case protocol.ACPTrustDeny:

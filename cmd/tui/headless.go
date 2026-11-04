@@ -149,7 +149,7 @@ func runWithDependencies(argv []string, stdin io.Reader, stdout, stderr io.Write
 	stdinTTY := isTerminal(stdin)
 	mode := selectMode(o, stdinTTY, isTerminal(stdout))
 	if mode == modeInteractive {
-		return runInteractive(stdin, stdout, stderr, deps, sigs, o.noLeader, o.trust)
+		return runInteractive(stdin, stdout, stderr, deps, sigs, o.noLeader, o.trust, o.session)
 	}
 	defer guardStdout(stderr)()
 

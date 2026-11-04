@@ -173,7 +173,14 @@ func (a *fakeAgent) respond(req agentRequest) {
 		sid = fmt.Sprintf("s%d", a.sessions)
 		a.gens[sid] = 1
 		a.mu.Unlock()
-		a.result(req.ID, map[string]any{"sessionId": sid, "_meta": map[string]any{protocol.ACPRouteMetaKey: protocol.ACPRouteMeta{DriverGen: 1}}})
+		meta := map[string]any{protocol.ACPRouteMetaKey: protocol.ACPRouteMeta{DriverGen: 1}}
+		var in map[string]json.RawMessage
+		if json.Unmarshal(req.Params["_meta"], &in) == nil {
+			if _, ok := in[protocol.ACPSessionOptionsMetaKey]; ok {
+				meta[protocol.ACPSessionOptionsMetaKey] = true
+			}
+		}
+		a.result(req.ID, map[string]any{"sessionId": sid, "_meta": meta})
 	case protocol.ACPFollow:
 		a.subs++
 		sub := fmt.Sprintf("sub%d", a.subs)

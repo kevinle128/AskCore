@@ -79,7 +79,7 @@ func TestTrustCommandAppliesToNextSession(t *testing.T) {
 	})
 	t.Run("flag", func(t *testing.T) {
 		r := startView(t, 80, 24, withFake(inheritedFake()), withOptions(func(o *Options) {
-			o.Cwd, o.Trust = acmeRoot, protocol.ACPTrustApprove
+			o.Cwd, o.Session.Trust = acmeRoot, protocol.ACPTrustApprove
 		}))
 		r.openTrustCommand()
 		r.requireOnScreen("This session: trusted (--approve)")

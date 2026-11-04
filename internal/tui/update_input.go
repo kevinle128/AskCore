@@ -156,12 +156,13 @@ func (s *sessionView) submit(sub Submit) tea.Cmd {
 // with the trust override of the last start, and asks no trust question; the
 // earlier prompt is never sent again.
 func (s *sessionView) promptCmd(sub Submit) tea.Cmd {
-	c, cwd, fresh, gen, trust := s.client, s.cwd, s.needNew, s.gen, s.start.override
+	c, cwd, fresh, gen := s.client, s.cwd, s.needNew, s.gen
+	opts := NewSessionOptions{Trust: s.start.override, Flags: s.session.Flags}
 	return func() tea.Msg {
 		out := promptCalledMsg{gen: gen, sub: sub}
 		if fresh {
 			ctx, cancel := callContext()
-			info, err := c.NewSession(ctx, cwd, trust)
+			info, err := c.NewSession(ctx, cwd, opts)
 			cancel()
 			if err != nil {
 				out.err = fmt.Errorf("start a new session: %w", err)
