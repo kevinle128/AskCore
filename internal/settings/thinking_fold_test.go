@@ -111,6 +111,40 @@ func TestThinkingFoldReadKeepsTheFileAndSetDefaultModelKeepsIt(t *testing.T) {
 	}
 }
 
+// The store read keeps the rules of the store: it creates a missing home with
+// mode 0700 and the lock sidecar, and it corrects the mode of a home that the
+// user owns. The layered read does neither.
+func TestThinkingFoldReadKeepsTheHomeRules(t *testing.T) {
+	home := filepath.Join(t.TempDir(), "home")
+	s, err := NewSettingsStore(home)
+	if err != nil {
+		t.Fatal(err)
+	}
+	ctx := context.Background()
+	if got, err := s.ThinkingFold(ctx); err != nil || got != ThinkingFoldExpanded {
+		t.Fatalf("missing home: %q %v", got, err)
+	}
+	info, err := os.Stat(home)
+	if err != nil || info.Mode().Perm() != 0700 {
+		t.Fatalf("home not created with mode 0700: %v %v", info, err)
+	}
+	if _, err = os.Stat(filepath.Join(home, settingsFile+".lock")); err != nil {
+		t.Fatalf("lock sidecar not created: %v", err)
+	}
+	if err = os.WriteFile(filepath.Join(home, settingsFile), []byte(`{"thinkingFold":"collapsed"}`), 0600); err != nil {
+		t.Fatal(err)
+	}
+	if err = os.Chmod(home, 0755); err != nil {
+		t.Fatal(err)
+	}
+	if got, err := s.ThinkingFold(ctx); err != nil || got != ThinkingFoldCollapsed {
+		t.Fatalf("home with mode 0755: %q %v", got, err)
+	}
+	if info, err = os.Stat(home); err != nil || info.Mode().Perm() != 0700 {
+		t.Fatalf("home mode not corrected: %v %v", info, err)
+	}
+}
+
 func TestThinkingFoldStopsWithTheContext(t *testing.T) {
 	home := t.TempDir()
 	s, err := NewSettingsStore(home)

@@ -265,17 +265,27 @@ func (s *AuthStore) writeDocument(ctx context.Context, path, provider string, d 
 	return d.revision, nil
 }
 
+// commit replaces path, a file in the home, with b and mode 0600.
 func (s *AuthStore) commit(ctx context.Context, path string, b []byte) error {
+	return s.commitIn(ctx, s.home, path, b, 0600)
+}
+
+// commitIn replaces path, a file in dir, with b and mode. It writes a
+// temporary file in dir, syncs it, renames it over path and syncs dir. A
+// failure before the rename keeps the old file and removes the temporary
+// file. A failure after the rename returns ErrIndeterminate, because the new
+// file can be visible.
+func (s *AuthStore) commitIn(ctx context.Context, dir, path string, b []byte, mode os.FileMode) error {
 	if err := ctx.Err(); err != nil {
 		return err
 	}
-	f, err := os.CreateTemp(s.home, ".auth-*")
+	f, err := os.CreateTemp(dir, ".auth-*")
 	if err != nil {
 		return err
 	}
 	name := f.Name()
 	defer func() { _ = os.Remove(name) }()
-	if err = f.Chmod(0600); err != nil {
+	if err = f.Chmod(mode); err != nil {
 		_ = f.Close()
 		return err
 	}
@@ -315,16 +325,16 @@ func (s *AuthStore) commit(ctx context.Context, path string, b []byte) error {
 	if err = ctx.Err(); err != nil {
 		return fmt.Errorf("%w: %w", ErrIndeterminate, err)
 	}
-	dir, err := os.Open(s.home)
+	d, err := os.Open(dir)
 	if err != nil {
 		return fmt.Errorf("%w: %v", ErrIndeterminate, err)
 	}
 	if err = ctx.Err(); err != nil {
-		_ = dir.Close()
+		_ = d.Close()
 		return fmt.Errorf("%w: %w", ErrIndeterminate, err)
 	}
-	err = s.ops.syncDir(dir)
-	closeErr := dir.Close()
+	err = s.ops.syncDir(d)
+	closeErr := d.Close()
 	if err != nil {
 		return fmt.Errorf("%w: %v", ErrIndeterminate, err)
 	}

@@ -16,6 +16,8 @@ const settingsReadWait = 500 * time.Millisecond
 // mode that a thinking step takes when it ends. An empty home uses ASK_HOME
 // or ~/.ask. A home or a file that cannot be read gives the default and no
 // notice, so that the TUI starts as it does without the setting.
+// The user file gives the first frame only: a trusted project can override
+// the value, and the session state then gives the effective value.
 func thinkingFoldSetting(askHome string) tui.ThinkingFold {
 	store, err := settings.NewSettingsStore(askHome)
 	if err != nil {
