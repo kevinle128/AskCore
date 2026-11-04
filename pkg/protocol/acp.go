@@ -182,6 +182,14 @@ type ACPStateResult struct {
 	// ModelFallback is set when the session started on another model because
 	// the saved default was not usable. It stays until the model changes.
 	ModelFallback *ACPModelFallback `json:"modelFallback,omitempty"`
+	// Trust is the project trust decision that the session started with. An
+	// older host omits it.
+	Trust *ACPSessionTrust `json:"trust,omitempty"`
+	// Diagnostics are the settings problems that the session start found.
+	Diagnostics []ACPDiagnostic `json:"diagnostics,omitempty"`
+	// ThinkingFold is the effective thinkingFold setting of the session:
+	// "expanded", "truncated" or "collapsed". An older host omits it.
+	ThinkingFold string `json:"thinkingFold,omitempty"`
 }
 
 // ACPModel is one catalog row. ModelID is "provider/id@api" and names one row,
@@ -219,10 +227,13 @@ type ACPModelsResult struct {
 
 // ACPSetModelResult names the model and thinking level now in force.
 // DefaultSaved is true when the choice was also saved as the leader default.
+// DefaultNotSaved gives the reason when a requested save did not happen; an
+// older host omits it.
 type ACPSetModelResult struct {
-	ModelID       string        `json:"modelId"`
-	ThinkingLevel ThinkingLevel `json:"thinkingLevel"`
-	DefaultSaved  bool          `json:"defaultSaved,omitempty"`
+	ModelID         string             `json:"modelId"`
+	ThinkingLevel   ThinkingLevel      `json:"thinkingLevel"`
+	DefaultSaved    bool               `json:"defaultSaved,omitempty"`
+	DefaultNotSaved ACPDefaultNotSaved `json:"defaultNotSaved,omitempty"`
 }
 
 type ACPThinkingResult struct {
