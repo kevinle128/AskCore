@@ -290,7 +290,7 @@ func TestProjectKeyCaseMismatchGivesDidYouMean(t *testing.T) {
 
 func TestInvalidKnownValueGivesDefaultAndDiagnostic(t *testing.T) {
 	f := newLayeredFixture(t)
-	f.writeUser(t, `{"thinkingFold":3,"defaultModel":" x","defaultProjectTrust":"maybe"}`)
+	f.writeUser(t, `{"thinkingFold":3,"defaultModel":" x","defaultProjectTrust":"maybe","defaultTools":["read","-bash"]}`)
 
 	eff := f.load(t, false)
 	if eff.ThinkingFold != ThinkingFoldExpanded || eff.DefaultModel != "" || eff.DefaultProjectTrust != ProjectTrustAsk {
@@ -302,8 +302,8 @@ func TestInvalidKnownValueGivesDefaultAndDiagnostic(t *testing.T) {
 		}
 	}
 	got := diagnosticsFor(eff, LayerUser)
-	if len(got) != 3 {
-		t.Fatalf("want three diagnostics, got %+v", eff.Diagnostics)
+	if len(got) != 4 {
+		t.Fatalf("want four diagnostics, got %+v", eff.Diagnostics)
 	}
 	seen := map[string]bool{}
 	for _, d := range got {

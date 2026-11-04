@@ -75,8 +75,9 @@ The match ignores letter case. The typed read takes the exact key names from the
 | `defaultModel` | `provider/id@api` | user, project |
 | `thinkingFold` | `expanded` (default), `truncated`, `collapsed` | user, project |
 | `defaultProjectTrust` | `ask` (default), `always`, `never` | user only |
+| `defaultTools` | array of tool names (`["read","grep"]`), or of `+name`/`-name` entries over every built-in (`["-bash"]`); not both. `[]` selects no built-in tools. Unset is `Effective.DefaultTools == nil` | user, project |
 
-A bad value of a known key gives the default and a diagnostic for the layer that set it.
+A bad value of a known key gives the default and a diagnostic for the layer that set it. A bad `defaultTools` value (not an array of strings matching `^[+-]?[a-z][a-z0-9_]*$`, or plain names mixed with `+`/`-` entries) leaves it unset. The array replaces across layers, so a trusted project's `defaultTools` replaces the user's. Entry names are checked against the built-in tools by `tools.Selection.Resolve`, not here.
 
 ## Settings writes
 
