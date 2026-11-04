@@ -18,12 +18,19 @@ Auth and inference use separate HTTP clients so capture cannot record token exch
 
 [ACPModule](module_acp.go) provides `ACPRuntime` for `ask acp` from `ACPParams`: the native auth service (`NewNativeAuth`), the adapter callbacks and `Cleanup`, which stops the credential refresh and waits for `AuthWait`.
 The module reads no configuration, opens no database and starts no listener. `fx.ValidateApp` in [module_acp_test.go](module_acp_test.go) proves that the graph stands alone.
-The command supplies `NewAgent`, which must call `NewNativeAgent` with the given service, so all sessions share one credential resolver and direct headless runs keep their behavior.
+The command supplies `NewAgent(service, AgentSpec)`, which must call `NewNativeAgent` with the given service, so all sessions share one credential resolver and direct headless runs keep their behavior. `AgentSpec` holds the session ID, the cwd, the start model and the `SessionStart` of the session.
 `Authenticate` and `ModelAuth` only check readiness through `NativeAuthReady`; they never start a sign-in. The adapter gets function fields, never the service.
 
 The model list comes from the [model refresher](model_refresh.go), a field of `ACPRuntime`. It merges the built-in catalog, the models.dev overlay and the account lists of the cache (`<ASK_HOME>/model-cache.json`) into one `providers.ModelSet` and swaps it atomically.
 It loads the cache again when the file changed, and a model list request with a stale cache (2 h) starts one background refresh on its own root context; a failure keeps the last list and waits 5 min. There is no timer and no polling.
 A credential change of the leader broker only schedules work (the broker holds its change lock); a result from before the change is dropped. `ACPParams.ModelRefresh` turns the network part on; the zero value reads the cache only, which keeps tests offline. `Cleanup` stops the refresher before the credential refresh drain.
+
+## Session start
+
+[PrepareSession](session_start.go) does all the file reads of one session start, for print mode, `ask settings show` and the ACP Factory (so the leader, the in-process TUI and `ask acp`). The order is fixed: the trust decision and the settings layers (no project file opens before the decision), the tool selection (`defaultTools` setting, then `--tools`/`--no-tools` on top), the prompt files (`SYSTEM.md`, `APPEND_SYSTEM.md` and the prompt flags; the project folder only when the project is trusted), the context files (`AGENTS.md` and `CLAUDE.md`, for every project) and the skills. Project skill folders come from the gated list that the trust decision used, and only for a trusted project.
+The Factory reads the flags from the session request, never from process-wide state, because sessions start concurrently. `SessionInput.Now` (`ACPParams.Now`) sets the date once for the session.
+`SessionStart.Render(snapshot)` is pure. It builds the system prompt (sections in the order of `agent.SystemPrompt`) and the seed items (`context-file`, then `skill-list` when `read` or `bash` is registered). The tool set is known only after `Selection.Resolve` ran on the built-in tools, so the caller renders after it registers them.
+`Warnings` gives one fixed-text line for each trust, settings, context-file and skill problem. `sessionTrust` sends the context and skill problems to the TUI in the diagnostic list of the session, with the key `context` or `skills`. A tool name that the flags or the settings give and that no built-in tool has fails the session start with `invalid_params` and the list of the known names.
 
 ## Leader composition
 

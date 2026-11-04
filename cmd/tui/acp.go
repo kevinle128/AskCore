@@ -168,9 +168,9 @@ func acpParams(deps runDependencies, trust protocol.ACPTrustOverride) (app.ACPPa
 		// The leader, ask acp and the in-process TUI all compose here, so
 		// all three refresh the model list.
 		ModelRefresh: app.ModelRefresh{Enabled: modelRefreshOn(deps), HTTP: modelHTTP(deps), Now: deps.now},
-		NewAgent: func(service *auth.Service, sessionID, cwd string, start providers.Model) (*agent.Agent, error) {
+		NewAgent: func(service *auth.Service, spec app.AgentSpec) (*agent.Agent, error) {
 			// The job table closes through the Config.Release of the Agent.
-			ag, _, err := newNativeAgentOn(o, deps.getenv, service, sessionID, cwd, demoStream, start)
+			ag, _, err := newNativeAgentOn(o, deps.getenv, service, spec, demoStream)
 			return ag, err
 		},
 	}, nil

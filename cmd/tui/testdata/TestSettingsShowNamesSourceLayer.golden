@@ -27,6 +27,11 @@
       "key": "defaultProjectTrust",
       "value": "ask",
       "source": "default"
+    },
+    {
+      "key": "defaultTools",
+      "value": "",
+      "source": "default"
     }
   ],
   "diagnostics": [
@@ -36,5 +41,7 @@
       "key": "env",
       "text": "a project file cannot set this key; it is ignored"
     }
-  ]
+  ],
+  "context": [],
+  "skillDiagnostics": []
 }

@@ -60,7 +60,8 @@ func fauxLeaderParams(t *testing.T, steps func() []faux.Step) LeaderParams {
 func fauxLeaderParamsWith(t *testing.T, steps func() []faux.Step, edit func(*agent.Config)) LeaderParams {
 	t.Helper()
 	p := testACPParams(t)
-	p.NewAgent = func(_ *auth.Service, id, cwd string, start providers.Model) (*agent.Agent, error) {
+	p.NewAgent = func(_ *auth.Service, spec AgentSpec) (*agent.Agent, error) {
+		id, cwd, start := spec.SessionID, spec.Cwd, spec.Start
 		fp, err := faux.New(faux.WithChunk(1000, 1000))
 		if err != nil {
 			return nil, err

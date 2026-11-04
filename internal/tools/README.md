@@ -71,8 +71,15 @@ A session owns one `FileState` and one `jobs.Table`; both are created by the com
 The tools take the working directory from the call context and the child environment from the job table.
 
 A tool that implements `PromptContributor` adds one line and some guidelines to the system prompt.
-`PromptSection` renders them sorted by tool name; a tool with an empty snippet is not listed.
-The composition root sets the result as the system prompt.
+`PromptList` renders the `Available tools:` list and `PromptGuidelines` the `Guidelines:` block, both sorted by tool name; a tool with an empty snippet is in neither, and a repeated guideline appears once.
+The composition root joins them into the system prompt.
+
+`Selection` picks the built-in tools of a session ([selection.go](selection.go)).
+`ParseDefaultTools` reads the `defaultTools` setting: plain names are the base set, `+name` and `-name` apply on top of all built-ins, mixing the two is an error, and an empty non-nil list selects none.
+`FlagSelection` reads `--tools` (plain names) or `--no-tools`; giving both is an error.
+`Over` lets a non-zero flag selection replace the setting while the setting's removals still apply.
+`Resolve` is pure: it keeps the order of the built-ins it is given, `-name` wins over every other entry, and an unknown name returns `*SelectionError` with the known names.
+Callers pass built-ins only; extra tools are registered outside the selection.
 
 ## Package boundaries
 

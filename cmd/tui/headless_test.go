@@ -35,6 +35,12 @@ import (
 // each ask binary that a test starts with this environment, so no test calls
 // models.dev or a vendor model list.
 func TestMain(m *testing.M) {
+	var err error
+	packageDir, err = os.Getwd()
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "tui tests: %v\n", err)
+		os.Exit(1)
+	}
 	restore, err := isolateHome()
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "tui tests: %v\n", err)
@@ -53,16 +59,28 @@ func TestMain(m *testing.M) {
 	os.Exit(code)
 }
 
+// packageDir is the folder of this package, where the tests start. The tests
+// run in a project folder of their own (see isolateHome), so a path of the
+// package is built from packageDir.
+var packageDir string
+
 // isolatedHomeMarker is set by the process that isolated ASK_HOME.
 const isolatedHomeMarker = "ASK_TUI_TEST_HOME_ISOLATED"
 
-// isolateHome sets ASK_HOME to a fresh private directory. An Agent without an
-// explicit home reads ASK_HOME and then ~/.ask, so without it the tests would
-// sweep and write the task output of the developer. Some tests start this test
-// binary again as a helper process and pass it an ASK_HOME of their own. That
-// helper sees isolatedHomeMarker, which the first process set, and leaves the
-// value alone. The returned function restores the environment and removes the
-// directory.
+// isolateHome sets ASK_HOME and HOME to fresh private directories. An Agent
+// without an explicit home reads ASK_HOME and then ~/.ask, so without it the
+// tests would sweep and write the task output of the developer. A session
+// start also reads the skills and context files of the user's real home, so
+// HOME is private too. The Go build and module caches live under HOME by
+// default, so they are pinned to their current locations first: the tests
+// that run go build must not start from an empty cache. Some tests start this
+// test binary again as a helper process and pass it an ASK_HOME of their own.
+// That helper sees isolatedHomeMarker, which the first process set, and leaves
+// the values alone. The tests also start in a project folder inside the private
+// user home: the checkout of a developer can sit below a home folder with
+// .agents/skills, and every ancestor folder of the working directory is a
+// project skills folder. The returned function restores the environment and
+// the working directory and removes the directories.
 func isolateHome() (restore func(), err error) {
 	if os.Getenv(isolatedHomeMarker) != "" {
 		return func() {}, nil
@@ -71,20 +89,80 @@ func isolateHome() (restore func(), err error) {
 	if err != nil {
 		return nil, fmt.Errorf("make home: %w", err)
 	}
+	userHome, err := os.MkdirTemp("", "ask-tui-test-user-")
+	if err != nil {
+		_ = os.RemoveAll(home)
+		return nil, fmt.Errorf("make user home: %w", err)
+	}
+	cleanup := func() {
+		_ = os.RemoveAll(home)
+		_ = os.RemoveAll(userHome)
+	}
 	// MkdirTemp gives 0700 already; the call makes the mode independent of it.
 	if err := os.Chmod(home, 0o700); err != nil {
-		_ = os.RemoveAll(home)
+		cleanup()
 		return nil, fmt.Errorf("private home: %w", err)
 	}
-	prev, had := os.LookupEnv("ASK_HOME")
-	if err := os.Setenv("ASK_HOME", home); err != nil {
-		_ = os.RemoveAll(home)
-		return nil, fmt.Errorf("set ASK_HOME: %w", err)
+	goEnv, err := exec.Command("go", "env", "GOCACHE", "GOMODCACHE", "GOPATH").Output()
+	if err != nil {
+		cleanup()
+		return nil, fmt.Errorf("go env: %w", err)
+	}
+	goDirs := strings.Split(strings.TrimSpace(string(goEnv)), "\n")
+	if len(goDirs) != 3 {
+		cleanup()
+		return nil, fmt.Errorf("go env: want 3 lines, got %q", goEnv)
+	}
+	pinned := []struct{ key, value string }{
+		{"ASK_HOME", home},
+		{"HOME", userHome},
+		{"GOCACHE", goDirs[0]},
+		{"GOMODCACHE", goDirs[1]},
+		{"GOPATH", goDirs[2]},
+	}
+	type previous struct {
+		value string
+		had   bool
+	}
+	prevs := make([]previous, len(pinned))
+	for i, p := range pinned {
+		prevs[i].value, prevs[i].had = os.LookupEnv(p.key)
+	}
+	restoreEnv := func() {
+		for i, p := range pinned {
+			if prevs[i].had {
+				_ = os.Setenv(p.key, prevs[i].value)
+			} else {
+				_ = os.Unsetenv(p.key)
+			}
+		}
+	}
+	for _, p := range pinned {
+		if err := os.Setenv(p.key, p.value); err != nil {
+			restoreEnv()
+			cleanup()
+			return nil, fmt.Errorf("set %s: %w", p.key, err)
+		}
 	}
 	_ = os.Setenv(isolatedHomeMarker, "1")
 	if err := trustModuleRoot(home); err != nil {
-		_ = os.RemoveAll(home)
+		_ = os.Unsetenv(isolatedHomeMarker)
+		restoreEnv()
+		cleanup()
 		return nil, err
+	}
+	project := filepath.Join(userHome, "project")
+	if err := os.Mkdir(project, 0o700); err != nil {
+		_ = os.Unsetenv(isolatedHomeMarker)
+		restoreEnv()
+		cleanup()
+		return nil, fmt.Errorf("make project: %w", err)
+	}
+	if err := os.Chdir(project); err != nil {
+		_ = os.Unsetenv(isolatedHomeMarker)
+		restoreEnv()
+		cleanup()
+		return nil, fmt.Errorf("enter project: %w", err)
 	}
 	// A helper process inherits the switch and may clear it for a test of the
 	// refresh, so only the first process sets it.
@@ -96,13 +174,10 @@ func isolateHome() (restore func(), err error) {
 		} else {
 			_ = os.Unsetenv(disableModelRefreshEnv)
 		}
+		_ = os.Chdir(packageDir)
 		_ = os.Unsetenv(isolatedHomeMarker)
-		if had {
-			_ = os.Setenv("ASK_HOME", prev)
-		} else {
-			_ = os.Unsetenv("ASK_HOME")
-		}
-		_ = os.RemoveAll(home)
+		restoreEnv()
+		cleanup()
 	}, nil
 }
 
@@ -203,9 +278,10 @@ func TestPrintBadPaceEnv(t *testing.T) {
 	assert.Equal(t, result{"", "Error: ASK_FAUX_TPS must be a non-negative number, got \"fast\"\n", 1}, got)
 }
 
-var volatileFields = regexp.MustCompile(`"(ts|timestamp)":\d+|"runId":"[0-9a-f]{32}"|"sessionId":"[0-9a-fA-F-]{36}"|"(cycleId|attemptId)":"[0-9a-f]{32}"`)
+var volatileFields = regexp.MustCompile(`"(ts|timestamp)":\d+|"(input|cacheWrite|totalTokens)":\d+|"runId":"[0-9a-f]{32}"|"sessionId":"[0-9a-fA-F-]{36}"|"(cycleId|attemptId)":"[0-9a-f]{32}"`)
 
 // normalize replaces the clock, run, session, cycle and attempt id values, which change per run.
+// It also zeroes the faux token estimate of the input side, which grows with the length of the system prompt (it holds the cwd).
 func normalize(jsonl string) string {
 	return volatileFields.ReplaceAllStringFunc(jsonl, func(s string) string {
 		if strings.HasPrefix(s, `"runId"`) {
@@ -248,18 +324,18 @@ func TestJSONHelloLines(t *testing.T) {
 {"seq":4,"ts":0,"sessionId":"","runId":"R","type":"message_start","message":{"role":"user","content":[{"type":"text","text":"hello"}],"timestamp":0}}
 {"seq":5,"ts":0,"sessionId":"","runId":"R","type":"message_end","message":{"role":"user","content":[{"type":"text","text":"hello"}],"timestamp":0}}
 {"seq":6,"ts":0,"sessionId":"","runId":"R","type":"attempt_start","attemptId":"A","cycleId":"C","number":1}
-{"seq":7,"ts":0,"sessionId":"","runId":"R","type":"message_start","message":{"role":"assistant","content":[],"api":"faux","provider":"faux","model":"faux-1","usage":{"input":2622,"output":0,"cacheRead":0,"cacheWrite":2622,"totalTokens":5244,"cost":{"input":0,"output":0,"cacheRead":0,"cacheWrite":0,"total":0}},"stopReason":"pending","timestamp":0}}
-{"seq":8,"ts":0,"sessionId":"","runId":"R","type":"message_update","assistantMessageEvent":{"type":"text_start","contentIndex":0,"content":{"type":"text","text":""}},"usage":{"input":2622,"output":2,"cacheRead":0,"cacheWrite":2622,"totalTokens":5246,"cost":{"input":0,"output":0,"cacheRead":0,"cacheWrite":0,"total":0}}}
-{"seq":9,"ts":0,"sessionId":"","runId":"R","type":"message_update","assistantMessageEvent":{"type":"text_delta","contentIndex":0,"delta":"hello"},"usage":{"input":2622,"output":2,"cacheRead":0,"cacheWrite":2622,"totalTokens":5246,"cost":{"input":0,"output":0,"cacheRead":0,"cacheWrite":0,"total":0}}}
-{"seq":10,"ts":0,"sessionId":"","runId":"R","type":"message_update","assistantMessageEvent":{"type":"text_end","contentIndex":0,"content":"hello"},"usage":{"input":2622,"output":2,"cacheRead":0,"cacheWrite":2622,"totalTokens":5246,"cost":{"input":0,"output":0,"cacheRead":0,"cacheWrite":0,"total":0}}}
-{"seq":11,"ts":0,"sessionId":"","runId":"R","type":"message_end","message":{"role":"assistant","content":[{"type":"text","text":"hello"}],"api":"faux","provider":"faux","model":"faux-1","thinkingLevel":"off","usage":{"input":2622,"output":2,"cacheRead":0,"cacheWrite":2622,"totalTokens":5246,"cost":{"input":0,"output":0,"cacheRead":0,"cacheWrite":0,"total":0}},"stopReason":"stop","timestamp":0}}
+{"seq":7,"ts":0,"sessionId":"","runId":"R","type":"message_start","message":{"role":"assistant","content":[],"api":"faux","provider":"faux","model":"faux-1","usage":{"input":2745,"output":0,"cacheRead":0,"cacheWrite":2745,"totalTokens":5490,"cost":{"input":0,"output":0,"cacheRead":0,"cacheWrite":0,"total":0}},"stopReason":"pending","timestamp":0}}
+{"seq":8,"ts":0,"sessionId":"","runId":"R","type":"message_update","assistantMessageEvent":{"type":"text_start","contentIndex":0,"content":{"type":"text","text":""}},"usage":{"input":2745,"output":2,"cacheRead":0,"cacheWrite":2745,"totalTokens":5492,"cost":{"input":0,"output":0,"cacheRead":0,"cacheWrite":0,"total":0}}}
+{"seq":9,"ts":0,"sessionId":"","runId":"R","type":"message_update","assistantMessageEvent":{"type":"text_delta","contentIndex":0,"delta":"hello"},"usage":{"input":2745,"output":2,"cacheRead":0,"cacheWrite":2745,"totalTokens":5492,"cost":{"input":0,"output":0,"cacheRead":0,"cacheWrite":0,"total":0}}}
+{"seq":10,"ts":0,"sessionId":"","runId":"R","type":"message_update","assistantMessageEvent":{"type":"text_end","contentIndex":0,"content":"hello"},"usage":{"input":2745,"output":2,"cacheRead":0,"cacheWrite":2745,"totalTokens":5492,"cost":{"input":0,"output":0,"cacheRead":0,"cacheWrite":0,"total":0}}}
+{"seq":11,"ts":0,"sessionId":"","runId":"R","type":"message_end","message":{"role":"assistant","content":[{"type":"text","text":"hello"}],"api":"faux","provider":"faux","model":"faux-1","thinkingLevel":"off","usage":{"input":2745,"output":2,"cacheRead":0,"cacheWrite":2745,"totalTokens":5492,"cost":{"input":0,"output":0,"cacheRead":0,"cacheWrite":0,"total":0}},"stopReason":"stop","timestamp":0}}
 {"seq":12,"ts":0,"sessionId":"","runId":"R","type":"attempt_end","attemptId":"A","outcome":"completed"}
-{"seq":13,"ts":0,"sessionId":"","runId":"R","type":"turn_end","cycleId":"C","message":{"role":"assistant","content":[{"type":"text","text":"hello"}],"api":"faux","provider":"faux","model":"faux-1","thinkingLevel":"off","usage":{"input":2622,"output":2,"cacheRead":0,"cacheWrite":2622,"totalTokens":5246,"cost":{"input":0,"output":0,"cacheRead":0,"cacheWrite":0,"total":0}},"stopReason":"stop","timestamp":0},"toolResults":[]}
+{"seq":13,"ts":0,"sessionId":"","runId":"R","type":"turn_end","cycleId":"C","message":{"role":"assistant","content":[{"type":"text","text":"hello"}],"api":"faux","provider":"faux","model":"faux-1","thinkingLevel":"off","usage":{"input":2745,"output":2,"cacheRead":0,"cacheWrite":2745,"totalTokens":5492,"cost":{"input":0,"output":0,"cacheRead":0,"cacheWrite":0,"total":0}},"stopReason":"stop","timestamp":0},"toolResults":[]}
 {"seq":14,"ts":0,"sessionId":"","runId":"R","type":"cycle_end","cycleId":"C","reason":"completed"}
-{"seq":15,"ts":0,"sessionId":"","runId":"R","type":"agent_end","messages":[{"role":"user","content":[{"type":"text","text":"hello"}],"timestamp":0},{"role":"assistant","content":[{"type":"text","text":"hello"}],"api":"faux","provider":"faux","model":"faux-1","thinkingLevel":"off","usage":{"input":2622,"output":2,"cacheRead":0,"cacheWrite":2622,"totalTokens":5246,"cost":{"input":0,"output":0,"cacheRead":0,"cacheWrite":0,"total":0}},"stopReason":"stop","timestamp":0}],"willRetry":false}
+{"seq":15,"ts":0,"sessionId":"","runId":"R","type":"agent_end","messages":[{"role":"user","content":[{"type":"text","text":"hello"}],"timestamp":0},{"role":"assistant","content":[{"type":"text","text":"hello"}],"api":"faux","provider":"faux","model":"faux-1","thinkingLevel":"off","usage":{"input":2745,"output":2,"cacheRead":0,"cacheWrite":2745,"totalTokens":5492,"cost":{"input":0,"output":0,"cacheRead":0,"cacheWrite":0,"total":0}},"stopReason":"stop","timestamp":0}],"willRetry":false}
 {"seq":16,"ts":0,"sessionId":"","runId":"R","type":"agent_settled"}
 `
-	assert.Equal(t, result{want, "", 0}, result{normalize(got.stdout), got.stderr, got.code})
+	assert.Equal(t, result{normalize(want), "", 0}, result{normalize(got.stdout), got.stderr, got.code})
 }
 
 func decodeJSONL(t *testing.T, stdout string) []protocol.Event {
@@ -579,7 +655,9 @@ func TestSignalInProcess(t *testing.T) {
 func buildBinary(t *testing.T) string {
 	t.Helper()
 	bin := filepath.Join(t.TempDir(), "ask")
-	out, err := exec.Command("go", "build", "-o", bin, ".").CombinedOutput()
+	build := exec.Command("go", "build", "-o", bin, ".")
+	build.Dir = packageDir
+	out, err := build.CombinedOutput()
 	require.NoError(t, err, string(out))
 	// The first exec of a new binary can be slow (macOS assesses it), and a
 	// signal that lands before signal.Notify kills the process instead.

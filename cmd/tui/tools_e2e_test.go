@@ -26,8 +26,8 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
+	"AskCore/internal/app"
 	"AskCore/internal/jobs"
-	"AskCore/internal/providers"
 	"AskCore/internal/providers/anthropic"
 )
 
@@ -818,7 +818,7 @@ func TestPrintReadImageForNonVisionModelAddsNote(t *testing.T) {
 		return ""
 	}
 	o := options{provider: anthropic.ProviderID, model: anthropic.ModelID, transport: m}
-	ag, jt, err := newNativeAgentOn(o, getenv, nil, newSessionID(), repo, stream, row)
+	ag, jt, err := newNativeAgentOn(o, getenv, nil, app.AgentSpec{SessionID: newSessionID(), Cwd: repo, Start: row}, stream)
 	require.NoError(t, err)
 
 	var stdout, stderr bytes.Buffer
@@ -1584,7 +1584,7 @@ func TestPrintExitKillsBackgroundJobs(t *testing.T) {
 func orphanJobAgent(t *testing.T, o options) {
 	t.Helper()
 	getenv := func(string) string { return "" }
-	ag, jt, err := newNativeAgentOn(o, getenv, nil, newSessionID(), t.TempDir(), nil, providers.Model{})
+	ag, jt, err := newNativeAgentOn(o, getenv, nil, app.AgentSpec{SessionID: newSessionID(), Cwd: t.TempDir()}, nil)
 	require.NoError(t, err)
 	t.Cleanup(func() { _ = ag.Dispose() })
 	// Nobody waits for the job, so its end produces a notice.

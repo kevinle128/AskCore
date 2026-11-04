@@ -25,11 +25,12 @@ func testACPParams(t *testing.T) ACPParams {
 	guard := testsupport.LoopbackOnly(t)
 	return ACPParams{
 		Home:         t.TempDir(),
+		UserHome:     t.TempDir(),
 		AuthHTTP:     guard,
 		ModelRefresh: ModelRefresh{Enabled: false, HTTP: guard},
 		Initial:      providers.Model{ID: "faux-1", Name: "faux-1", Provider: "faux", API: "faux"},
 		Info:         sdk.Implementation{Name: "ask", Version: "test"},
-		NewAgent: func(*auth.Service, string, string, providers.Model) (*agent.Agent, error) {
+		NewAgent: func(*auth.Service, AgentSpec) (*agent.Agent, error) {
 			return nil, errors.New("not used")
 		},
 	}

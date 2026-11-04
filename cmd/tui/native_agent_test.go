@@ -21,6 +21,7 @@ import (
 	"github.com/stretchr/testify/require"
 
 	"AskCore/internal/agent"
+	"AskCore/internal/app"
 	"AskCore/internal/jobs"
 	"AskCore/internal/providers/anthropic"
 	"AskCore/internal/tasks"
@@ -107,7 +108,7 @@ func tokenPlanOptions(rt http.RoundTripper) options {
 // at the end of the test.
 func newTestSession(t *testing.T, o options, getenv func(string) string) (*agent.Agent, *jobs.Table) {
 	t.Helper()
-	ag, jt, err := newNativeAgent(o, getenv, nil, newSessionID(), t.TempDir())
+	ag, jt, err := newNativeAgent(o, getenv, nil, app.AgentSpec{SessionID: newSessionID(), Cwd: t.TempDir()})
 	require.NoError(t, err)
 	t.Cleanup(func() { _ = ag.Dispose() })
 	return ag, jt
@@ -139,7 +140,7 @@ func TestNativeAgentKeepsExtraTools(t *testing.T) {
 	model := &scriptedModel{}
 	o := tokenPlanOptions(model)
 	extra := &stuckTool{started: make(chan struct{}), release: make(chan struct{})}
-	ag, jt, err := newNativeAgent(o, nativeEnv(nil), nil, newSessionID(), t.TempDir(), extra)
+	ag, jt, err := newNativeAgent(o, nativeEnv(nil), nil, app.AgentSpec{SessionID: newSessionID(), Cwd: t.TempDir()}, extra)
 	require.NoError(t, err)
 	t.Cleanup(func() { _ = ag.Dispose() })
 	require.NotNil(t, jt)
@@ -255,7 +256,7 @@ func TestNativeAgentJobsGetSessionEnvironment(t *testing.T) {
 	o.environ = func() []string {
 		return []string{"PATH=" + os.Getenv("PATH"), "FIXTURE_API_KEY=hunter2", "ASK_HOME=/leader/home", "KEEP_ME=1"}
 	}
-	ag, jt, err := newNativeAgent(o, nativeEnv(nil), nil, "session-env-1", t.TempDir())
+	ag, jt, err := newNativeAgent(o, nativeEnv(nil), nil, app.AgentSpec{SessionID: "session-env-1", Cwd: t.TempDir()})
 	require.NoError(t, err)
 	t.Cleanup(func() { _ = ag.Dispose() })
 

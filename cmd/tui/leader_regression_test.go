@@ -123,7 +123,8 @@ func TestLeaderSecondSignalEscapesStartedToolDrain(t *testing.T) {
 	fp.Set(faux.Reply(faux.ToolCall("hold", nil, faux.ID("call-1"))), faux.Say("after"))
 	rt, err := app.NewLeaderRuntime(app.LeaderParams{
 		ACPParams: app.ACPParams{Home: home, Initial: model, ModelRefresh: offlineModelRefresh(t),
-			NewAgent: func(service *auth.Service, id, cwd string, _ providers.Model) (*agent.Agent, error) {
+			NewAgent: func(service *auth.Service, spec app.AgentSpec) (*agent.Agent, error) {
+				id, cwd := spec.SessionID, spec.Cwd
 				return app.NewNativeAgent(app.NativeAgentConfig{Auth: service, InitialStream: fp.Stream,
 					Config: agent.Config{SessionID: id, Tools: registry, LoopConfig: agent.LoopConfig{
 						Model: model, Stream: fp.Stream, Cwd: cwd, Options: providers.StreamOptions{APIKey: "test-key"},
@@ -203,7 +204,8 @@ func TestLeaderRecordsStoppingBeforeItStopsServing(t *testing.T) {
 	stops := make(chan atStop, 2)
 	rt, err := app.NewLeaderRuntime(app.LeaderParams{
 		ACPParams: app.ACPParams{Home: home, Initial: model, ModelRefresh: offlineModelRefresh(t),
-			NewAgent: func(service *auth.Service, id, cwd string, _ providers.Model) (*agent.Agent, error) {
+			NewAgent: func(service *auth.Service, spec app.AgentSpec) (*agent.Agent, error) {
+				id, cwd := spec.SessionID, spec.Cwd
 				return app.NewNativeAgent(app.NativeAgentConfig{Auth: service, InitialStream: fp.Stream,
 					Config: agent.Config{SessionID: id, Tools: &tools.Registry{}, LoopConfig: agent.LoopConfig{
 						Model: model, Stream: fp.Stream, Cwd: cwd, Options: providers.StreamOptions{APIKey: "test-key"},

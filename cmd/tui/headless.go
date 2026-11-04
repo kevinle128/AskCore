@@ -24,7 +24,6 @@ import (
 	"AskCore/internal/providers"
 	"AskCore/internal/providers/anthropic"
 	"AskCore/internal/sandbox"
-	"AskCore/internal/settings"
 	"AskCore/internal/tasks"
 	"AskCore/internal/tools"
 	"AskCore/internal/workspace"
@@ -171,27 +170,41 @@ func runWithDependencies(argv []string, stdin io.Reader, stdout, stderr io.Write
 			return 1
 		}
 	}
-	eff, err := reportPrintTrust(stderr, deps, o.trust)
+	cwd, err := os.Getwd()
 	if err != nil {
 		report(stderr, "Error:", err)
 		return 1
+	}
+	// Without a user home, every .agents/skills folder counts as a project
+	// resource, which fails closed.
+	userHome, _ := os.UserHomeDir()
+	session, err := app.PrepareSession(context.Background(), app.SessionInput{
+		Home: deps.getenv("ASK_HOME"), UserHome: userHome, Cwd: cwd,
+		Trust: workspace.Override(o.trust), Flags: o.session, Now: deps.now,
+	})
+	if err != nil {
+		report(stderr, "Error:", err)
+		return 1
+	}
+	for _, line := range session.Warnings() {
+		report(stderr, line)
 	}
 	// Without --provider and --model, the saved default model of the
 	// settings selects the model. The project layer counts only when the
 	// project is trusted.
 	var start providers.Model
-	if !o.modelGiven && eff.DefaultModel != "" {
+	if !o.modelGiven && session.Settings.DefaultModel != "" {
 		if service, err = newAuth(); err != nil {
 			report(stderr, "Error:", err)
 			return 1
 		}
-		if start, err = savedStartModel(&o, deps.getenv, service, eff.DefaultModel, stderr); err != nil {
+		if start, err = savedStartModel(&o, deps.getenv, service, session.Settings.DefaultModel, stderr); err != nil {
 			report(stderr, "Error:", err)
 			return 1
 		}
 	}
 	o.bgLimit = printBackgroundLimit(deps.getenv)
-	ag, jt, err := newPrintAgent(o, deps.getenv, service, start)
+	ag, jt, err := newPrintAgent(o, deps.getenv, service, app.AgentSpec{SessionID: newSessionID(), Cwd: cwd, Start: start, Session: session})
 	if err != nil {
 		report(stderr, "Error:", err)
 		return 1
@@ -214,29 +227,6 @@ func runWithDependencies(argv []string, stdin io.Reader, stdout, stderr io.Write
 	// grace of a job, so a job that traps SIGTERM can still live here.
 	jt.KillRemaining()
 	return code
-}
-
-// reportPrintTrust decides the project trust of the cwd with no UI, as print
-// mode has none: the project is untrusted unless --approve, a saved decision
-// or defaultProjectTrust "always" trusts it. It loads the settings layers,
-// writes each warning as one stderr line, in text and in JSON mode, and
-// returns the effective settings.
-func reportPrintTrust(stderr io.Writer, deps runDependencies, trust protocol.ACPTrustOverride) (settings.Effective, error) {
-	cwd, err := os.Getwd()
-	if err != nil {
-		return settings.Effective{}, err
-	}
-	// Without a user home, every .agents/skills folder counts as a project
-	// resource, which fails closed.
-	userHome, _ := os.UserHomeDir()
-	decision, eff, err := app.LoadSessionSettings(context.Background(), deps.getenv("ASK_HOME"), userHome, cwd, workspace.Override(trust))
-	if err != nil {
-		return settings.Effective{}, err
-	}
-	for _, line := range app.SessionWarnings(decision, eff) {
-		report(stderr, line)
-	}
-	return eff, nil
 }
 
 // savedStartModel chooses the model of a print-mode run from the saved
@@ -266,15 +256,11 @@ func savedStartModel(o *options, getenv func(string) string, service *auth.Servi
 // newPrintAgent builds the agent of a print-mode run. A zero start model
 // opens the provider of the command line; another start model is a catalog
 // model, which the native wires serve.
-func newPrintAgent(o options, getenv func(string) string, service *auth.Service, start providers.Model) (*agent.Agent, *jobs.Table, error) {
-	if start.ID == "" {
-		return newHeadlessAgentWithAuth(o, getenv, service)
+func newPrintAgent(o options, getenv func(string) string, service *auth.Service, spec app.AgentSpec) (*agent.Agent, *jobs.Table, error) {
+	if spec.Start.ID == "" {
+		return newNativeAgent(o, getenv, service, spec)
 	}
-	cwd, err := os.Getwd()
-	if err != nil {
-		return nil, nil, err
-	}
-	return newNativeAgentOn(o, getenv, service, newSessionID(), cwd, nil, start)
+	return newNativeAgentOn(o, getenv, service, spec, nil)
 }
 
 // selectMode follows Pi's resolveAppMode. --mode text does not force print
@@ -367,31 +353,36 @@ func newHeadlessAgentWithAuth(o options, getenv func(string) string, service *au
 	if err != nil {
 		return nil, nil, err
 	}
-	return newNativeAgent(o, getenv, service, newSessionID(), cwd, extra...)
+	return newNativeAgent(o, getenv, service, app.AgentSpec{SessionID: newSessionID(), Cwd: cwd}, extra...)
 }
 
 // newNativeAgent builds one independent agent for the session and directory.
 // The headless run and every ACP session use it, so both share one composition.
-func newNativeAgent(o options, getenv func(string) string, service *auth.Service, sessionID, cwd string, extra ...tools.Tool) (*agent.Agent, *jobs.Table, error) {
+// The model of the command line replaces spec.Start.
+func newNativeAgent(o options, getenv func(string) string, service *auth.Service, spec app.AgentSpec, extra ...tools.Tool) (*agent.Agent, *jobs.Table, error) {
 	stream, model, err := openProvider(o, getenv, service)
 	if err != nil {
 		return nil, nil, err
 	}
-	return newNativeAgentOn(o, getenv, service, sessionID, cwd, stream, model, extra...)
+	spec.Start = model
+	return newNativeAgentOn(o, getenv, service, spec, stream, extra...)
 }
 
 // commandGuardEnv enables the command-guard when its value is "1".
 const commandGuardEnv = "ASK_COMMAND_GUARD"
 
-// newNativeAgentOn builds the agent on a given model. stream serves the demo
-// model and may be nil when the model is a catalog model or when the agent has
-// no model.
+// newNativeAgentOn builds the agent on the model spec.Start. stream serves the
+// demo model and may be nil when the model is a catalog model or when the
+// agent has no model. The tool selection of spec.Session picks the built-in
+// tools before they are registered, and the prompt and the seed are rendered
+// over the registered tools.
 //
 // The agent owns a file state and a job table of its own. The table closes
 // when the Agent is disposed (Config.Release), which kills the background jobs
 // of the session. The caller gets the table too, for a last sweep at exit. A
 // failed constructor closes it before it returns.
-func newNativeAgentOn(o options, getenv func(string) string, service *auth.Service, sessionID, cwd string, stream providers.StreamFn, model providers.Model, extra ...tools.Tool) (*agent.Agent, *jobs.Table, error) {
+func newNativeAgentOn(o options, getenv func(string) string, service *auth.Service, spec app.AgentSpec, stream providers.StreamFn, extra ...tools.Tool) (*agent.Agent, *jobs.Table, error) {
+	sessionID, cwd, model := spec.SessionID, spec.Cwd, spec.Start
 	reasoning := o.thinking
 	if o.provider == anthropic.ProviderID && reasoning == "" {
 		reasoning = protocol.ThinkingMedium
@@ -432,7 +423,11 @@ func newNativeAgentOn(o options, getenv func(string) string, service *auth.Servi
 	}
 	modelInput := func() []string { return ag.State().Model.Input }
 	reg := &tools.Registry{}
-	for _, t := range sessionTools(jt, tools.NewFileState(), modelInput) {
+	builtins, err := spec.Session.Tools.Resolve(sessionTools(jt, tools.NewFileState(), modelInput))
+	if err != nil {
+		return fail(err)
+	}
+	for _, t := range builtins {
 		if err := reg.Register(t, tools.SourceInfo{Kind: tools.SourceBuiltin}); err != nil {
 			return fail(err)
 		}
@@ -443,6 +438,7 @@ func newNativeAgentOn(o options, getenv func(string) string, service *auth.Servi
 			return fail(err)
 		}
 	}
+	systemPrompt, seed := spec.Session.Render(reg.Snapshot())
 	bound := providers.BoundKey{}
 	if o.apiKey != "" {
 		bound = providers.BoundKey{Provider: o.provider, Secret: o.apiKey}
@@ -457,7 +453,8 @@ func newNativeAgentOn(o options, getenv func(string) string, service *auth.Servi
 			Wait:     o.wait,
 		},
 		Tools:        reg,
-		SystemPrompt: tools.PromptSection(reg.Snapshot()),
+		SystemPrompt: systemPrompt,
+		Seed:         seed,
 		SessionID:    sessionID,
 		Release:      jt.Close,
 		Background:   jt,

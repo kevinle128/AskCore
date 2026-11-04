@@ -52,7 +52,9 @@ func acpBinary(t *testing.T) string {
 			return
 		}
 		acpBuildPath = filepath.Join(acpBuildDir, "ask")
-		out, err := exec.Command("go", "build", "-o", acpBuildPath, ".").CombinedOutput()
+		build := exec.Command("go", "build", "-o", acpBuildPath, ".")
+		build.Dir = packageDir
+		out, err := build.CombinedOutput()
 		if err != nil {
 			acpBuildErr = fmt.Errorf("go build: %w\n%s", err, out)
 		}
