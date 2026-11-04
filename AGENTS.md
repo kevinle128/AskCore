@@ -47,16 +47,16 @@ The users/posts demo is the reference example for a new entity (see design secti
 AskCore/
 ├── cmd/
 │   ├── server/            # Daemon: HTTP + gRPC today; `-migrate` applies migrations and exits
-│   └── tui/               # `ask` binary: TUI, headless `ask -p`, `ask auth`, `ask models`, `ask acp`, `ask leader`, `ask connect`, `ask version`. See docs section 7.3
+│   └── tui/               # `ask` binary: TUI, headless `ask -p`, `ask auth`, `ask models`, `ask settings`, `ask acp`, `ask leader`, `ask connect`, `ask version`. See docs section 7.3
 ├── internal/              # Package map: internal/README.md (the owner)
 │   ├── app/               # Composition root (fx)
 │   ├── config/  logs/     # Config (viper) and zap logger
 │   ├── gateway/           # HTTP (echo) and gRPC servers, gRPC services; methods/ for WS RPC (not built)
 │   ├── http/              # REST handlers (import alias httpapi)
-│   ├── agent/ pipeline/ sessions/ bus/ workspace/    # Runtime core (implemented; workspace in part)
+│   ├── agent/ pipeline/ sessions/ bus/ workspace/    # Runtime core (implemented; workspace in part: project root, gated files, trust decision)
 │   ├── tasks/             # Per-Agent async task registry; completions wake the agent by push (docs/async-task-runtime.md)
 │   ├── scheduler/ cron/                              # Runtime core (scaffold)
-│   ├── auth/ settings/ providers/ tools/ sandbox/ jobs/   # Capabilities (implemented); sandbox = process runner, jobs = per-session job table
+│   ├── auth/ settings/ providers/ tools/ sandbox/ jobs/   # Capabilities (implemented); sandbox = process runner, jobs = per-session job table; settings = user and project settings files and trust.json bytes
 │   ├── acp/ leader/       # Process model: ACP adapter, local router
 │   ├── tui/ tuiclient/ tuiext/   # Terminal UI, its client implementation, extension host (tuiext is a scaffold)
 │   ├── mcp/ skills/ memory/ bootstrap/ hooks/ permissions/ crypto/ channels/ tracing/   # Scaffold or parked
@@ -109,15 +109,17 @@ For TUI design files, follow the skill `.claude/skills/ask-tui-design`.
 
 ### The `ask` binary
 
-The leader flows need a binary named `ask`. A client starts the leader from a binary named `ask` that is next to the caller or on the `PATH` (`internal/leader/spawn.go`). `go run ./cmd/tui` makes a binary named `tui`, so the TUI falls back to the in-process agent and `/providers` is refused. Build a named binary for the TUI, `connect`, and `leader`: `go build -o ask ./cmd/tui`. `ask -p`, `ask auth`, `ask models`, `ask version`, and `ask acp` need no leader and work with `go run ./cmd/tui`. The full CLI reference is `docs/cli.md`.
+The leader flows need a binary named `ask`. A client starts the leader from a binary named `ask` that is next to the caller or on the `PATH` (`internal/leader/spawn.go`). `go run ./cmd/tui` makes a binary named `tui`, so the TUI falls back to the in-process agent and `/providers` is refused. Build a named binary for the TUI, `connect`, and `leader`: `go build -o ask ./cmd/tui`. `ask -p`, `ask auth`, `ask models`, `ask settings`, `ask version`, and `ask acp` need no leader and work with `go run ./cmd/tui`. The full CLI reference is `docs/cli.md`.
 
 - `ask` (no arguments, on a terminal) - Open the full-screen TUI on the alternate screen. It connects to the local leader and starts one when none runs. Only when that connect fails at startup does it run an agent in process. The screen does not show the difference: `/providers` answers `Needs the leader; this session runs in process.` and `ask leader status` reports `no leader is running`. With no usable provider the session has no model: use `/providers` to sign in. Keys, folding, mouse, `/copy`, and `TEA_TRACE` are in `internal/tui/README.md` and `docs/cli.md`.
 - `ask models refresh [--provider P]` - Read the model lists of the signed-in accounts and the models.dev metadata now, and write `<ASK_HOME>/model-cache.json`. It starts no leader and no database, and `ASK_DISABLE_MODEL_REFRESH` does not stop it. It prints one `<provider>  <n> models  <known|unknown|no credential>` line for each provider and one `metadata  <updated|not modified|failed>` line. Exit codes: 0 done (also with an `unknown` provider), 1 usage or local error such as a cache write that fails, 130, 143, 129.
 - `ask acp` (`go run ./cmd/tui acp`) - Serve ACP v1 over stdio. One Agent per session.
-  It dispatches before prompt and mode parsing and takes no other argument.
+  It dispatches before prompt and mode parsing. It takes only `--approve` (`-a`) or `--no-approve` (`-na`), which apply to every session of the process.
   It uses `internal/app.ACPModule` with the shared native auth composition: no listener, no database, no leader, and no credential input on the protocol connection.
   Sign in on the host with `ask auth login`; `authenticate` only checks readiness. It serves no provider-setup methods, and `faux` needs `ASK_FAUX=1`.
   Exit codes: 0 input ended, 1 error or lost output, 130 SIGINT, 143 SIGTERM, 129 SIGHUP. See [the ACP owner](internal/acp/README.md#stdio-server).
+- `ask settings show [--json]` - Print the trust decision of the cwd, each settings key with its value and layer (`default`, `user`, `project`), and each settings problem. It reads files only, starts no leader and no database, and never reads an untrusted project settings file. Exit codes: 0 done, 1 usage or read error, 130, 143, 129.
+- Project settings and trust: `<project>/.ask/settings.json` loads only after a trust decision for the canonical cwd, and it overrides `<ASK_HOME>/settings.json` except for `defaultProjectTrust` and the deny list. The leader owns `<ASK_HOME>/trust.json`. `AGENTS.md` and `CLAUDE.md` are not gated. `ask`, `ask -p`, and `ask acp` take `--approve`/`-a` and `--no-approve`/`-na`; the TUI asks at session start and has `/trust`. See [Project trust](docs/cli.md#project-trust).
 - `ask leader` - Run the local leader: one agent for all local clients on `<ASK_HOME>/leader.sock`, owner only.
   `ask leader status|list|stop` never start a leader. Clients start it on demand through `leader.ConnectOrSpawn`.
   A client of a newer build replaces an older leader that a client started, also when it is busy (its sessions and background jobs end). For `go run` builds the binary written last wins unless its bytes are the same. On Linux a leader that holds the lock without a socket is stopped.

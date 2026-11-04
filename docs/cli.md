@@ -10,11 +10,11 @@ Build the binary with the name `ask`:
 go build -o ask ./cmd/tui
 ```
 
-The TUI, `ask connect`, `ask leader`, and `/providers` need that name. A client starts the leader from a binary named `ask` that is next to the caller or on the `PATH` (`internal/leader/spawn.go`). `go run ./cmd/tui` makes a binary named `tui`. With it the TUI falls back to the in-process agent. `ask -p`, `ask auth`, `ask models`, `ask version`, and `ask acp` need no leader and work with `go run ./cmd/tui`.
+The TUI, `ask connect`, `ask leader`, and `/providers` need that name. A client starts the leader from a binary named `ask` that is next to the caller or on the `PATH` (`internal/leader/spawn.go`). `go run ./cmd/tui` makes a binary named `tui`. With it the TUI falls back to the in-process agent. `ask -p`, `ask auth`, `ask models`, `ask settings`, `ask version`, and `ask acp` need no leader and work with `go run ./cmd/tui`.
 
 ## Dispatch
 
-`ask` checks the first argument against `auth`, `models`, `acp`, `connect`, `leader`, and `version`, in this order (`cmd/tui/headless.go`). Any other input goes to the root command.
+`ask` checks the first argument against `auth`, `models`, `settings`, `acp`, `connect`, `leader`, and `version`, in this order (`cmd/tui/headless.go`). Any other input goes to the root command.
 
 All commands use these exit codes for signals: 130 for SIGINT, 143 for SIGTERM, and 129 for SIGHUP. A second signal ends `ask acp` and `ask leader` before the cleanup finishes.
 
@@ -34,12 +34,14 @@ The mode is chosen in this order:
 |---|---|
 | `-p`, `--print` | Run the prompt, print the reply, and exit. A token right after `-p` that does not start with `-` and is not an `@file` is the first message. |
 | `--mode text\|json` | Output format. `json` writes one JSON line for each agent event. Another value is an error. |
-| `--provider <name>` | `faux` (default), `alibaba-token-plan`, `anthropic`, `openai`, or `xai`. |
+| `--provider <name>` | `faux` (default), `alibaba-token-plan`, `anthropic`, `openai`, or `xai`. Without `--provider` and `--model`, print mode uses the saved `defaultModel`; see below. |
 | `--model <id>` | Model id. Defaults: `faux-1` (faux), `deepseek-v4.1-flash` (alibaba-token-plan), `claude-sonnet-4-6` (anthropic), `gpt-5.5` (openai), `grok-4.7` (xai). The model list is in [reference/providers.md](reference/providers.md). |
 | `--api-key <key>` | Key for this run. It needs `--model`, except for `alibaba-token-plan`. A key in the arguments is visible to other processes. Prefer the environment or `ask auth login`. |
 | `--thinking <level>` | `off`, `minimal`, `low`, `medium`, `high`, `xhigh`, or `max`. `alibaba-token-plan` defaults to `medium`. |
 | `--max-turns <n>` | Print and JSON mode. End the run after `n` turns. `n` is a whole number above 0, or the command exits 1. See [Background work in print mode](#background-work-in-print-mode). |
 | `--no-leader` | TUI only. Run the agent in this process. Do not connect to a leader and do not start one. Use it to debug the agent, because the tools then run in this process. Print mode already runs in process and ignores the flag. |
+| `-a`, `--approve` | Trust the project of the current folder for this run. The TUI then shows no trust question. Nothing is saved. See [Project trust](#project-trust). |
+| `-na`, `--no-approve` | Do not trust the project of the current folder for this run. Nothing is saved. The two flags together are an error (exit 1). |
 | `--` | End of options. |
 | `-h`, `--help` | Show the usage text. |
 
@@ -53,6 +55,8 @@ Input rules:
 Exit codes: 0 done; 1 for an argument or setup error, and in print mode for an assistant error; `--mode json` exits 0 on an assistant error. In print mode the code comes from the last reply that the run printed. SIGINT, SIGTERM, and SIGHUP end the run, also during the wait for background work, with 130, 143, and 129.
 
 The demo provider `faux` is the default of `ask -p`. It runs a script: `echo <text>` calls the echo tool, `fail <text>` ends in an assistant error, and any other text is said back.
+
+When you give no `--provider` and no `--model`, `ask -p` uses the `defaultModel` of the settings (the value that `/model` saves). The project layer counts only when the project is trusted. The rules are the same as for a new TUI session. When the model is not in the model list, or its provider has no credential, `ask -p` writes one line to stderr, for example `Warning: default model <id> is not usable (no credential); using faux/faux-1@faux.`, and runs on `faux`. When no `defaultModel` is set, `ask -p` runs on `faux`. `--provider` or `--model` always wins.
 
 ### Background work in print mode
 
@@ -122,13 +126,72 @@ Exit codes: 0 done, also when a provider is `unknown` or the metadata `failed`; 
 ## `ask acp`
 
 ```
-ask acp
+ask acp [--approve | --no-approve]
 ask acp --help
 ```
 
-The command serves ACP v1 as JSON-RPC lines on stdin and stdout. Diagnostics go to stderr. It opens no listener and no database. Each session has its own agent. No credentials pass over the connection: sign in first with `ask auth login`. Any other argument is an error.
+The command serves ACP v1 as JSON-RPC lines on stdin and stdout. Diagnostics go to stderr. It opens no listener and no database. Each session has its own agent. No credentials pass over the connection: sign in first with `ask auth login`.
+
+`--approve` (`-a`) trusts the project of every session of this process, and `--no-approve` (`-na`) trusts none. Without a flag, each session decides with no UI (see [Project trust](#project-trust)). The two flags together, or any other argument, are an error. The command answers `unsupported` for `_ask/trust/state` and `_ask/trust/set`, because an editor link has no trust question.
 
 Exit codes: 0 input ended, 1 error or lost output, 130, 143, 129. The owner is [internal/acp/README.md](../internal/acp/README.md).
+
+## `ask settings`
+
+```
+ask settings show [--json] [--approve | --no-approve]
+ask settings --help
+```
+
+The command prints the settings of the current folder. It reads files only. It writes nothing, and it starts no leader and no database. It decides the project trust as `ask -p` does (with no UI), and the trust flags change that decision for this run only. It does not read the project settings file of a project that is not trusted. It prints only the shipped keys, never other keys, file content, or credentials.
+
+The text form shows, in this order:
+
+1. The Ask home, the user settings file, the project root, the trust decision with its source (and the saved entry that applies), the gated files, and the state of the project settings: `loaded`, `not read (untrusted)`, or `none` (the `.ask` folder of the cwd is the Ask home).
+2. `Settings:` one row for each key, with the value and the layer that sets it (`default`, `user`, or `project`). `(none)` means that no `defaultModel` is set.
+3. A `Warning:` line for a trust store that cannot be read.
+4. `Problems:` one row for each settings diagnostic: the layer, the path, the key, and a fixed text.
+
+`--json` prints one JSON object with this shape. Arrays are always present, also when they are empty.
+
+```json
+{
+  "home": "/home/u/.ask",
+  "userFile": "/home/u/.ask/settings.json",
+  "project": {
+    "root": "/work/repo",
+    "layer": "loaded",
+    "trusted": true,
+    "source": "saved",
+    "entry": "/work/repo",
+    "gated": [".ask/settings.json"],
+    "warning": ""
+  },
+  "settings": [
+    {"key": "defaultModel", "value": "openai/gpt-5.5@responses", "source": "project"},
+    {"key": "thinkingFold", "value": "collapsed", "source": "user"},
+    {"key": "defaultProjectTrust", "value": "ask", "source": "default"}
+  ],
+  "diagnostics": [
+    {"layer": "project", "path": "/work/repo/.ask/settings.json", "key": "env", "text": "a project file cannot set this key; it is ignored"}
+  ]
+}
+```
+
+| Field | Values |
+|---|---|
+| `project.layer` | `loaded`, `untrusted` (the file is not read), or `none`. |
+| `project.source` | `flag`, `no_gated_files`, `store_error`, `saved`, `saved_ancestor`, `default_always`, `default_never`, or `no_ui`. |
+| `project.entry` | The folder of the saved trust entry that applies, or empty. |
+| `project.gated` | The gated entries that exist: relative to the root in the root, absolute in a parent folder. |
+| `project.warning` | A fixed text with the path of a trust store that cannot be read, or empty. |
+| `settings[].value` | The effective value. An empty `defaultModel` means that no default model is set. |
+| `settings[].source` | `default`, `user`, or `project`. |
+| `diagnostics[].key` | The key, or empty for a problem with the whole file. |
+
+A bad value of a known key gives the default and a diagnostic. A corrupt user file or trust store is reported and keeps its bytes.
+
+Exit codes: 0 done, also with diagnostics or a trust store warning; 1 for a usage error, a cwd that cannot be read, or an output that cannot be written; 130, 143, 129.
 
 ## `ask leader`
 
@@ -188,27 +251,71 @@ Exit codes: 0 left, 1 error or lost leader, 130, 143, 129.
 
 | Command | Purpose |
 |---|---|
-| `/model` | Select a model. The list has only the models of usable providers. The choice is saved as `defaultModel` in `settings.json`. |
+| `/model` | Select a model. The list has only the models of usable providers. The choice is saved as `defaultModel` in the user `settings.json`. The save is refused, and the file does not change, when the trusted project settings set another `defaultModel`, or when the user file is not safe or has a known key with a bad value. The model switch still applies. |
 | `/providers` | Add or remove a provider sign-in. It needs the leader. |
 | `/new` | Start a new session in this directory. |
 | `/sessions` | Watch another live session. It needs the leader. |
+| `/trust` | Show the saved trust decision of this folder and change it: trust this folder, trust the parent folder, do not trust, or forget the saved choice. The change applies to the next session. An older leader answers `/trust is not available`. |
 | `/take` | Take control of this session. |
 | `/copy` | Copy the last reply. It uses a native command first, then OSC 52 up to 75 KiB. |
 | `/quit` | Detach and quit. |
 
 With no usable provider the session has no model. The footer row shows `no model`, and a prompt is refused and stays in the editor. `/providers` opens the sign-in box. The leader checks an API key before it saves it (mode 0600 `auth.json`); it cannot check the Alibaba Token Plan key, so it saves that key as it is. The key is pasted into a masked input.
 
-The key `thinkingFold` in `<ASK_HOME>/settings.json` sets the fold mode that a thinking step takes when it ends: `"expanded"` (all lines, the default), `"truncated"` (the last lines), or `"collapsed"` (one row). A missing key, an unknown value, or a file that cannot be read gives `"expanded"` with no notice. The TUI reads the key once when it starts and never writes it, so a change takes effect at the next start. A streaming thinking step always shows its last lines.
+The key `thinkingFold` in the settings sets the fold mode that a thinking step takes when it ends: `"expanded"` (all lines, the default), `"truncated"` (the last lines), or `"collapsed"` (one row). A missing key, an unknown value, or a file that cannot be read gives `"expanded"`. The TUI reads `<ASK_HOME>/settings.json` once when it starts, for the first frame. Then it uses the value of the session state, so a trusted project file can override the user value. The TUI never writes the key, so a change takes effect at the next start. A streaming thinking step always shows its last lines.
 
 `ctrl+t` opens or folds all thinking steps and also sets the mode for the thinking steps that end later in the same TUI process. It does not change `settings.json`.
 
+At the start of a session (also after `/new`), a folder that needs a trust decision opens the box `Trust this project folder?` in the prompt pane slot. The options are **Not now** (the first and highlighted option: this session is untrusted and nothing is saved), **Trust this folder**, **Trust parent folder**, and **Do not trust**. Esc and ctrl+c act as Not now. `--approve` or `--no-approve` skips the question. The leader saves the choice in `trust.json`.
+
 The key bindings, block folding, the viewer, and the mouse rules are in [internal/tui/README.md](../internal/tui/README.md). Terminal.app, iTerm2, and kitty were not checked by hand.
+
+## Settings files
+
+Ask reads two settings layers for each session:
+
+| Layer | File | Rules |
+|---|---|---|
+| user | `<ASK_HOME>/settings.json` | Mode 0600 in a home of mode 0700. |
+| project | `<project>/.ask/settings.json` | Read only when the project is trusted. The project is the canonical cwd (symbolic links resolved). Ask does not search parent folders for `.ask`. When `<cwd>/.ask` is the Ask home, the session has no project layer. The file must be a regular file of at most 1 MiB. |
+
+The project file overrides the user file. JSON objects merge key by key. A project array, string, number, or bool replaces the user value. A project `null` is ignored. Two kinds of keys are an exception: a project file cannot set `defaultProjectTrust`, and it cannot set a key of the deny list (`trust`, `httpProxy`, `env`, `shellPath`, `shellCommandPrefix`, `npmCommand`, `providers`, `hooks`, `cacheWarming`, `deviceId`). The match ignores letter case. Ask drops such a key with one diagnostic, and the rest of the project file still applies.
+
+| Key | Values | Layers |
+|---|---|---|
+| `defaultModel` | A model id `provider/id@api`. `/model` saves it. | user, project |
+| `thinkingFold` | `"expanded"` (default), `"truncated"`, `"collapsed"` | user, project |
+| `defaultProjectTrust` | `"ask"` (default), `"always"`, `"never"`: the trust of a project with gated files and no saved decision | user only |
+
+Ask keeps unknown keys when it writes a file. A write reads the file again under a lock, changes only its own key, and replaces the file atomically. Ask never overwrites a corrupt file: it refuses the write and names the path. A file that cannot be read, or a bad value of a known key, gives the default and a diagnostic. `ask -p` writes each diagnostic as one `Warning: settings:` line to stderr; `ask settings show` lists them. A diagnostic never contains file content.
+
+## Project trust
+
+A project needs a trust decision when one of these entries exists (Ask uses `Lstat` and opens no file):
+
+- In `<project>/.ask/`: `settings.json`, `SYSTEM.md`, `APPEND_SYSTEM.md`, `mcp.json`, `models.json`, `skills`, `prompts`, `extensions`.
+- `.agents/skills` in the project folder and in each parent folder, except `~/.agents/skills`.
+
+Context files such as `AGENTS.md` and `CLAUDE.md` are not gated. They always load, also in a project that is not trusted. Ask reads no gated file of a project before the decision.
+
+The first rule that matches decides:
+
+1. `--approve` or `--no-approve` (or the session choice of the trust box).
+2. A folder with no gated files is trusted. Ask saves nothing for it.
+3. A `trust.json` that cannot be read or is not safe gives untrusted, with one warning that names the path. `defaultProjectTrust` does not apply then. Ask refuses each grant and keeps the bytes of the file.
+4. The saved entry of the folder, or else of the nearest parent folder.
+5. `defaultProjectTrust: "always"` or `"never"` in the user settings.
+6. The TUI asks. `ask -p`, `ask acp`, `ask settings show`, `ask connect`, and older clients have no question: the project is untrusted.
+
+`<ASK_HOME>/trust.json` is one JSON object: a canonical folder path to `true` (trusted) or `false` (not trusted). It has mode 0600. The leader (or the in-process TUI) writes it; a client asks the leader with `_ask/trust/state` and `_ask/trust/set`. The leader reads the file at each session start, so a change applies to the next session. `ask -p` prints `Warning: project settings ignored: <root> is not trusted. Use --approve, or save a decision in the TUI with /trust.` on stderr when it does not trust a project with gated files.
+
+Trust is not a security boundary against the tools of the agent. A `bash` command can change `trust.json` or the project files.
 
 ## Environment variables
 
 | Variable | Used by | Effect |
 |---|---|---|
-| `ASK_HOME` | all `ask` commands | Home directory (default `~/.ask`). It holds `auth.json`, `settings.json`, `leader.sock`, and `leader.log`. It must be an absolute path. For the leader it must be short enough for a Unix socket path. |
+| `ASK_HOME` | all `ask` commands | Home directory (default `~/.ask`). It holds `auth.json`, `settings.json`, `trust.json`, `model-cache.json`, `leader.sock`, and `leader.log`. It must be an absolute path. For the leader it must be short enough for a Unix socket path. |
 | `ASK_FAUX` | leader, `ask acp`, in-process TUI | `1` lists the demo provider `faux`. `ask -p` has it by default and ignores the variable. |
 | `ASK_FAUX_TPS` | `faux` provider | Pace in tokens per second. A negative value or a non-number is an error. |
 | `ASK_COMMAND_GUARD` | `ask -p`, leader, `ask acp` | `1` blocks a short list of destructive commands. It is off by default and is not a security boundary. |

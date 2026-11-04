@@ -1,22 +1,23 @@
 # `internal/workspace`
 
-The place where a session works. It owns the session cwd, the canonical project root and the project trust store. Every tool and every trust decision uses an explicit cwd from here.
+The place where a session works. It owns the path rules of a session cwd: the canonical project root, the gated project files and the pure project trust decision. Every tool and every trust decision uses an explicit cwd from here.
 
 ## What belongs here
 
-Implemented: path resolution for tools (`path.go`). Planned: the cwd, project root, trust store and resolvers below.
+Implemented: path resolution for tools (`path.go`), the project root and the gated files (`project.go`), and the trust decision (`trust.go`). Planned: the resolvers below.
 
 - Path resolution: `ResolvePath` and `PathVariants` (`path.go`)
-- The session cwd and the canonical project root (`resolver.go`, `workspace_context.go`)
-- The project trust store: which project folders the user trusts (`trust.go`)
-- A resolver for each run kind: agent default, subagent, cron
+- The canonical project root and the gated files: `ProjectRoot` and `GatedFiles` (`project.go`)
+- The trust decision rule: `NearestEntry` and `Decide` (`trust.go`)
+- Planned: the session cwd and a resolver for each run kind: agent default, subagent, cron (`resolver.go`, `workspace_context.go`)
 
 ## What does not belong here
 
 | Code | Put it in |
 |---|---|
 | File tools | `internal/tools` |
-| Settings files | `internal/settings` (it reads the trust decision from here, or receives it through the constructor) |
+| Settings files and the bytes of `trust.json` | [internal/settings](../settings/README.md) (it receives the trust decision through `NewLayered`) |
+| The composition: read the store, decide, load the settings | [internal/app/trust.go](../app/trust.go) |
 | Role-based access | `internal/permissions` |
 
 ## Path resolution rules
@@ -33,14 +34,39 @@ Implemented: path resolution for tools (`path.go`). Planned: the cwd, project ro
 File and search tools try the variants in order and use the first that exists.
 `write` creates the given path when no existing variant is found.
 
+## Project root and gated files
+
+`ProjectRoot(cwd, askHome)` returns the canonical cwd: the absolute path with its symbolic links resolved, or the clean absolute path when it does not resolve. It does not search the parent folders for `.ask`. When `<root>/.ask` is the Ask home, the session has no project layer (`hasLayer` is false).
+
+`GatedFiles(root, hasLayer, userHome)` lists the entries that need a trust decision. It uses `Lstat` only and never opens a file:
+
+- in `<root>/.ask/` (only when `hasLayer`): `settings.json`, `SYSTEM.md`, `APPEND_SYSTEM.md`, `mcp.json`, `models.json`, `skills`, `prompts`, `extensions`;
+- `.agents/skills` in the root and in each parent folder, except `<user home>/.agents/skills`.
+
+An entry that `Lstat` cannot check counts as gated. `AGENTS.md`, `CLAUDE.md` and other context files are not gated.
+
+## Trust decision
+
+`NearestEntry` finds the saved entry of the root or of its nearest parent folder: a `false` entry on a child beats a `true` entry on a parent. `Decide` applies the first rule that matches:
+
+1. An override (`--approve`, `--no-approve`, or a session choice of the trust box).
+2. No gated files: trusted.
+3. A corrupt or unsafe trust store: untrusted. The default does not apply.
+4. The saved entry.
+5. `defaultProjectTrust` `always` or `never`.
+6. With a UI, the user must answer (`prompt`); without a UI, untrusted (`no_ui`).
+
+`Decide` never saves a decision. The source words (`flag`, `no_gated_files`, `store_error`, `saved`, `saved_ancestor`, `default_always`, `default_never`, `prompt`, `no_ui`) are wire words; do not change them.
+
 ## Main interfaces
 
 - `ResolvePath`, `PathVariants`
+- `ProjectRoot`, `GatedFiles`, `NearestEntry`, `Decide`
 - Resolver interface (planned)
 
 ## File names
 
-`path.go`; planned: `resolver.go`, `workspace_context.go`, `trust.go`
+`path.go`, `project.go`, `trust.go`; planned: `resolver.go`, `workspace_context.go`
 
 ## Imports
 
@@ -52,6 +78,7 @@ File and search tools try the variants in order and use the first that exists.
 - One model is shared everywhere. Add a DTO or a separate type with a mapper only when the data is really different (design section 6).
 - Receive dependencies and typed config through constructors. `internal/app` wires them with fx.
 - Create an interface only when there is a second implementation or a test seam.
-- Project-level files (`.ask/settings.json`, project skills, project `AGENTS.md`) load only after the project is trusted.
+- The gated project files (`.ask/settings.json`, project skills, `SYSTEM.md`, extensions) load only after the project is trusted.
+- Project `AGENTS.md` and `CLAUDE.md` are not gated: they load also in a project that is not trusted. A cloned repository can put instructions there that steer the model. The prompt assembly must handle that surface; see the [hand-off note](../../plans/261103-2158-h6a-settings-trust/plan.md#hand-off-note-for-h6b-ungated-context-files).
 
 Design reference: [docs/ask-architecture-reference.md](../../docs/ask-architecture-reference.md)

@@ -8,6 +8,19 @@ The format follows [Keep a Changelog 1.1.0](https://keepachangelog.com/en/1.1.0/
 
 ### Added
 
+- **CLI:** `ask -p` uses the saved `defaultModel` when you give no `--provider` and no `--model`. The project value counts only in a trusted project. A default that is not usable gives one stderr warning, and the run uses `faux`.
+- **Settings:** Ask reads the project settings file `<project>/.ask/settings.json` on top of `<ASK_HOME>/settings.json`. The project file overrides the user file: objects merge key by key, and other values replace. A trusted project can set `defaultModel` and `thinkingFold`.
+- **Settings:** A project file cannot set `defaultProjectTrust` or a key of the deny list (`trust`, `httpProxy`, `env`, `shellPath`, `shellCommandPrefix`, `npmCommand`, `providers`, `hooks`, `cacheWarming`, `deviceId`). Ask drops such a key with one diagnostic, and the rest of the file applies.
+- **Settings:** Ask reads the project settings only after a trust decision for the folder. A folder with gated files (for example `.ask/settings.json` or `.agents/skills`) needs the decision, and a folder with none is trusted with no question. `AGENTS.md` and `CLAUDE.md` are not gated and always load.
+- **Settings:** `<ASK_HOME>/trust.json` keeps the trust decision of each folder, and the nearest saved parent folder applies. The leader writes it. A corrupt or unsafe `trust.json` makes every project untrusted with one warning, and Ask never overwrites it.
+- **Settings:** The user key `defaultProjectTrust` (`"ask"`, `"always"`, `"never"`) sets the trust of a project with gated files and no saved decision.
+- **TUI:** At a session start in a folder that needs a trust decision, the TUI asks `Trust this project folder?` with the options Not now, Trust this folder, Trust parent folder, and Do not trust. Not now saves nothing.
+- **TUI:** `/trust` shows the saved trust decision of the folder and changes it for the next session.
+- **TUI:** When `/model` cannot save the choice as the default, the status row gives the reason: a project setting overrides it, the settings file is not safe, or the write failed. The session model changes all the same.
+- **CLI:** `ask`, `ask -p`, and `ask acp` accept `--approve` (`-a`) and `--no-approve` (`-na`) to trust or not trust the project for this run only. The two flags together exit 1.
+- **CLI:** `ask -p` writes one stderr warning when it does not trust a project with gated files, and one `Warning: settings:` line for each settings problem.
+- **CLI:** `ask settings show [--json]` prints the trust decision of the current folder, each settings key with its value and its layer (`default`, `user`, or `project`), and each settings problem. It does not read the settings of an untrusted project, and it starts no leader.
+- **Protocol:** The methods `_ask/trust/state` and `_ask/trust/set` read and save the trust of a folder, and `session/new` takes the override `_meta["ask.dev/trust"]`. `_ask/session/state` has the optional fields `trust`, `diagnostics`, and `thinkingFold`, and `set_model` has `defaultNotSaved`.
 - **CLI:** `ask --no-leader` opens the TUI with an agent in this process. It does not connect to a leader and does not start one, so a debugger on the process sees the tool calls.
 - **Agent:** `internal/tasks` is a per-Agent registry for background work. Each task ends in exactly one terminal state and produces exactly one notice. No tool uses it yet ([design](docs/async-task-runtime.md), [ADR 0004](docs/adr/0004-agent-owned-async-task-runtime.md)).
 - **Agent:** `Agent.Notify` delivers task notices. A notice joins the next turn of a running agent or starts a run on an idle agent. Nothing sleeps or polls to detect completion.
@@ -24,11 +37,13 @@ The format follows [Keep a Changelog 1.1.0](https://keepachangelog.com/en/1.1.0/
 - **CLI:** `ASK_DISABLE_MODEL_REFRESH=1` turns the automatic model list refresh off. `ask models refresh` still refreshes.
 - **Protocol:** `ACPModel` has the fields `costUnknown` and `notInAccount`. A session start that cannot use the saved model because the account list does not have it gives the fallback reason `not_in_account`.
 - **TUI:** `/model` shows `?` in the window column of a model with an unknown context window. The footer row shows `?` in place of the context bar for such a model. The running model that the account list no longer has shows the note `not in account list` (the tag `unlisted` under 60 columns). A saved default that the account list does not have gives a start notice with the same reason.
-- **TUI:** The key `thinkingFold` in `<ASK_HOME>/settings.json` sets the fold mode of an ended thinking step: `"expanded"` (the default), `"truncated"` or `"collapsed"`. An unknown value gives `"expanded"`. The TUI reads the key when it starts and does not write it.
+- **TUI:** The key `thinkingFold` in `<ASK_HOME>/settings.json` sets the fold mode of an ended thinking step: `"expanded"` (the default), `"truncated"` or `"collapsed"`. An unknown value gives `"expanded"`. The TUI reads the key when it starts and does not write it. A trusted project `.ask/settings.json` can override it.
 - **TUI:** The first row of a reply shows the 24h time of the reply at the right, as the prompt band does. A reply that starts with a table or a code block shows no time.
 
 ### Changed
 
+- **TUI:** `/model` does not save the default model when the trusted project settings set another `defaultModel`, or when the user settings file is not safe or has a known key with a bad value. The file keeps its bytes, and the model switch still applies.
+- **Settings:** A `defaultModel` that is not a valid model id is now a settings problem with the path of the file. The session starts as with no default model.
 - **Protocol:** An object with `"role": "custom"` now decodes to `protocol.CustomMessage`, not to `protocol.RawMessage`. Such an object without `customType` is a decode error.
 - **Agent:** Task notices do not count toward `MaxQueuedInputs`. `Abort` keeps background tasks running and moves their queued notices to the context queue. A notice that arrives after `Abort` of an active run waits there until the next human input. `Reset` stops the tasks of the old conversation; `Dispose` stops and waits for every task.
 - **CLI:** `ask -p` no longer stops background jobs after the last reply. It prints that reply, waits for the jobs, prints the reply of each run that a notice starts, and stops the jobs that still run when it exits.

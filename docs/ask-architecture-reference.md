@@ -55,7 +55,7 @@ Runtime core            agent (two-level loop, steer and follow-up queues)
   │
   ▼
 Capabilities            auth, providers, tools, mcp, skills, bootstrap, hooks, sandbox, tracing
-Files under ~/.ask      settings (auth.json, settings.json)
+Files under ~/.ask      settings (auth.json, settings.json, trust.json; project .ask/settings.json after trust)
   │
   ▼
 Storage                 store (models + interfaces)  ◄──  store/gormstore (GORM implementation)
@@ -74,7 +74,7 @@ Go has no classes. A "class" is a struct with methods. The rule is **one package
 |---|---|---|
 | `internal/app` | fx modules and lifecycle | `cmd/gateway*.go` |
 | `internal/config` | viper start-up config, env overlay (a `daemon`/`cloud` mode setting is added when the first feature needs it) | `internal/config` |
-| `internal/settings` | `~/.ask/auth.json` (credentials, mode 0600, file lock) and `settings.json` (user and trusted project) | |
+| `internal/settings` | `~/.ask/auth.json` (credentials, mode 0600, file lock), `settings.json` (user and trusted project), and the bytes of `trust.json` | |
 | `internal/auth` | Native login, refresh, local logout, verified identity, and account access checks; see [package boundaries](../internal/auth/README.md) | |
 | `internal/logs` | zap logger factory, runtime log ring | `cmd/gateway.go:106`, `internal/logs` |
 | `internal/gateway` | HTTP (echo), WS and gRPC servers, method router, rate limit, gRPC service implementations (`grpc_*.go`) | `internal/gateway` |
@@ -98,7 +98,7 @@ Go has no classes. A "class" is a struct with methods. The rule is **one package
 | `internal/permissions` | RBAC for gateway and HTTP callers | `internal/permissions` |
 | `internal/sandbox` | process runner: process group, filtered environment, bounded output, group kill (standard library only) | `internal/sandbox` |
 | `internal/jobs` | per-session job table of the `bash` and `monitor` tools: states, completion notices, monitor events, cleanup; imports `sandbox` and `pkg/protocol` only | |
-| `internal/workspace` | path resolution for tools today; session cwd, project root and project trust store planned | `internal/workspace` |
+| `internal/workspace` | path resolution for tools, the canonical project root, the gated project files and the project trust decision rule; session cwd resolvers planned | `internal/workspace` |
 | `internal/cron` | scheduled agent runs | `internal/cron` |
 | `internal/crypto` | AES-256-GCM helpers, parked for credentials | `internal/crypto` |
 | `internal/channels` | channel manager, `BaseChannel`; one subfolder for each platform, added when needed | `internal/channels` |
