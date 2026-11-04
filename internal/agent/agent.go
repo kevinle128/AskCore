@@ -169,7 +169,7 @@ var errDisposeAbort = errors.New("agent disposed")
 // loopFunc starts runLoop or continueLoop on the prepared context and config.
 type loopFunc func(ctx context.Context, ac pipeline.AgentContext, cfg LoopConfig, d driver, emit Emit) error
 
-// New returns an idle Agent with an empty context.
+// New returns an idle Agent whose context holds only Config.Seed.
 func New(cfg Config) (*Agent, error) {
 	if cfg.Stream == nil && cfg.Registry != nil {
 		cfg.Stream = cfg.Registry.Stream
@@ -187,7 +187,15 @@ func New(cfg Config) (*Agent, error) {
 	if a.clock == nil {
 		a.clock = time.Now
 	}
-	a.source = newTrackedLog(a.newContext())
+	if err := validateSeed(cfg.Seed); err != nil {
+		return nil, err
+	}
+	src, err := a.openSource()
+	if err != nil {
+		_ = src.Close()
+		return nil, err
+	}
+	a.source = src
 	a.pub = published{epoch: newEpoch(), commitIndex: int(a.source.end.Load()), writer: a.source}
 	a.life, a.endLife = context.WithCancelCause(context.Background())
 	a.tasks = a.newRegistry(0)
@@ -226,7 +234,7 @@ func (a *Agent) Continue(ctx context.Context) error {
 	}
 	defer a.end(r)
 	msgs := r.source.Messages()
-	if len(msgs) == 0 {
+	if !hasConversation(msgs) {
 		return ErrContinueEmpty
 	}
 	if msgs[len(msgs)-1].Role() == protocol.RoleAssistant {
@@ -444,8 +452,9 @@ func (a *Agent) SetThinkingLevel(level protocol.ThinkingLevel) error {
 	return nil
 }
 
-// Reset starts a fresh context from Config.NewContext, closes the old log and
-// clears both queues, with one queue_update when something was queued. It
+// Reset starts a fresh context from Config.NewContext, seeds it with
+// Config.Seed, closes the old log and clears both queues, with one
+// queue_update when something was queued. It
 // returns ErrBusy while a run is active or a listener is being called, and
 // ErrDisposed after Dispose. A queue_update that is not published yet is
 // replaced by one with the state after the reset. Reset also stops the running
@@ -483,6 +492,14 @@ func (a *Agent) swapContext() (logErr error, oldTasks *tasks.Registry, err error
 		a.mu.Unlock()
 		return nil, nil, err
 	}
+	fresh, err := a.openSource()
+	if err != nil {
+		a.mu.Unlock()
+		if fresh.Writer != a.source.Writer {
+			_ = fresh.Close()
+		}
+		return nil, nil, err
+	}
 	cleared := a.in.clear()
 	a.wake = false
 	a.interrupted = false
@@ -492,7 +509,7 @@ func (a *Agent) swapContext() (logErr error, oldTasks *tasks.Registry, err error
 	replaced := len(a.posted) > 0
 	a.posted = nil
 	old := a.source
-	a.source = newTrackedLog(a.newContext())
+	a.source = fresh
 	a.resetPublished(a.source)
 	// A new generation turns off the event gate and the notice gate of the old
 	// registry at once. Its tasks still end, but nothing they say reaches the
@@ -505,7 +522,6 @@ func (a *Agent) swapContext() (logErr error, oldTasks *tasks.Registry, err error
 	if cleared || replaced {
 		a.postLocked(a.in.update())
 	}
-	fresh := a.source
 	a.mu.Unlock()
 	if old.Writer != fresh.Writer {
 		logErr = old.Close()

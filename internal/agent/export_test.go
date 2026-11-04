@@ -16,6 +16,25 @@ type LoggedRequest = loggedRequest
 // RebuildRequest is rebuildRequest for tests.
 var RebuildRequest = rebuildRequest
 
+// SectionRow is one row of the section table.
+type SectionRow struct {
+	Name     SectionName
+	Order    int
+	Baseline bool
+}
+
+// SectionTable returns the rows of the section table in table order.
+func SectionTable() []SectionRow {
+	rows := make([]SectionRow, len(sections))
+	for i, s := range sections {
+		rows[i] = SectionRow{s.name, s.order, s.baseline}
+	}
+	return rows
+}
+
+// TextOf is textOf for tests.
+var TextOf = textOf
+
 // Run runs the loop on its own, with a log in memory and no Agent around it.
 // The loop-level tests use it to look at the loop without the run wrapper. The
 // log is opened the way the Agent opens it: through openLog, with the snapshot

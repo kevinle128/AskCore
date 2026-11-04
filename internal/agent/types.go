@@ -57,6 +57,12 @@ type Config struct {
 	// once and Reset again. Nil means an in-memory sessions.MemoryLog. The
 	// Agent driver is the only caller of its Append.
 	NewContext func() sessions.Writer
+	// Seed is committed first in every fresh log, before any input: in New
+	// and in Reset. Each item needs a distinct, non-empty CustomType. An item
+	// whose CustomType the log already holds is skipped, so a prefilled log
+	// is never seeded twice. A log with only seed items counts as empty for
+	// Continue.
+	Seed []protocol.CustomMessage
 	// ListenerError receives the error or the panic of a listener. The failure
 	// is contained: the listener stays subscribed, the later listeners still get
 	// the event, and the run goes on. Nil drops the failure. It runs on the

@@ -20,6 +20,8 @@ Control handlers and observers must not become a second loop or writer.
 | Ordered local listeners and posted events | [emit.go](emit.go) |
 | Consistent follow snapshot, stream baseline, cursor, and epoch | [follow.go](follow.go) |
 | System prompt and tool declaration changes | [systemprompt.go](systemprompt.go), [loop_tool_changes.go](loop_tool_changes.go) |
+| Named system prompt sections and `SystemPrompt(PromptParts)` | [systemprompt_sections.go](systemprompt_sections.go) |
+| `Config.Seed`: tagged items committed first in every fresh log, also after Reset | [seed.go](seed.go) |
 
 ## Lifecycle decisions
 
@@ -34,6 +36,11 @@ The sole-writer and safe request-record constraints are in [sessions](../session
 Failed attempts record safe outcome, failure, usage, and binding facts.
 Their assistant content stays outside model history; visible streamed output remains visible through the Pi retry sequence.
 Retry must preserve the selected credential's method, profile, and billing class.
+
+Seed items are `protocol.CustomMessage` values that the owner supplies (context files, skill list).
+They are committed first in every fresh log, in `New` and in Reset, without an input ID and without events; the first Follow snapshot holds them and the request record rebuilds them like any other message.
+A seed item is skipped when the log already holds its `CustomType`, so a prefilled log is not seeded twice.
+A log that holds only seed items is empty for `Continue`.
 
 Input uses claims rather than delivery modes.
 Steering is claimed at a turn boundary; a cycle claim also takes one follow-up.
