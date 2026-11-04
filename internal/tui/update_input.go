@@ -38,6 +38,10 @@ func (s *sessionView) onKey(k tea.KeyPressMsg) tea.Cmd {
 		s.m.onViewerKey(k)
 		return nil
 	}
+	if s.tbox != nil {
+		// A trust box takes every key, ctrl+d included.
+		return s.onTrustKey(k)
+	}
 	if s.boxOpen() {
 		// A provider box or a login box owns every key. The editor and the
 		// shortcuts, ctrl+d included, see none of them.
@@ -69,7 +73,8 @@ func (s *sessionView) onKey(k tea.KeyPressMsg) tea.Cmd {
 }
 
 func (s *sessionView) onPaste(msg tea.PasteMsg) tea.Cmd {
-	if s.m.viewerOpen() {
+	if s.m.viewerOpen() || s.tbox != nil {
+		// A trust box drops a paste; the draft does not change.
 		return nil
 	}
 	if s.boxOpen() {
@@ -91,6 +96,8 @@ func (s *sessionView) onPaste(msg tea.PasteMsg) tea.Cmd {
 // quits. A press that only clears a draft never counts as the first one.
 func (s *sessionView) onCtrlC() tea.Cmd {
 	switch {
+	case s.tbox != nil:
+		return s.onTrustCtrlC()
 	case s.boxOpen():
 		return s.onBoxCtrlC()
 	case s.sel != nil:
@@ -123,7 +130,8 @@ func (s *sessionView) onEditorResult(res Result) tea.Cmd {
 // The draft stays in the editor until the agent accepts the input.
 func (s *sessionView) submit(sub Submit) tea.Cmd {
 	switch {
-	case s.opening:
+	case s.startPending():
+		// No session exists yet, so nothing can be sent. The draft stays.
 		s.setNotice("Starting, please wait…", false)
 		return nil
 	case s.conn != connUp:
@@ -144,15 +152,16 @@ func (s *sessionView) submit(sub Submit) tea.Cmd {
 	return s.promptCmd(sub)
 }
 
-// promptCmd sends a prompt. After a lost session it first creates a new one;
-// the earlier prompt is never sent again.
+// promptCmd sends a prompt. After a lost session it first creates a new one
+// with the trust override of the last start, and asks no trust question; the
+// earlier prompt is never sent again.
 func (s *sessionView) promptCmd(sub Submit) tea.Cmd {
-	c, cwd, fresh, gen := s.client, s.cwd, s.needNew, s.gen
+	c, cwd, fresh, gen, trust := s.client, s.cwd, s.needNew, s.gen, s.start.override
 	return func() tea.Msg {
 		out := promptCalledMsg{gen: gen, sub: sub}
 		if fresh {
 			ctx, cancel := callContext()
-			info, err := c.NewSession(ctx, cwd)
+			info, err := c.NewSession(ctx, cwd, trust)
 			cancel()
 			if err != nil {
 				out.err = fmt.Errorf("start a new session: %w", err)
@@ -221,6 +230,8 @@ func (s *sessionView) runCommand(name string) tea.Cmd {
 		return s.take()
 	case "/copy":
 		return s.copyReply()
+	case "/trust":
+		return s.openTrust()
 	case "/quit":
 		return s.requestQuit()
 	}
@@ -231,7 +242,7 @@ func (s *sessionView) runCommand(name string) tea.Cmd {
 // the user why not.
 func (s *sessionView) idleFor(busyText string) bool {
 	switch {
-	case s.opening:
+	case s.startPending():
 		s.setNotice("Starting, please wait…", false)
 	case s.conn != connUp:
 		s.reconnect.hintUntil = s.now().Add(noticeFor)
@@ -247,10 +258,14 @@ func (s *sessionView) newSession() tea.Cmd {
 	if !s.idleFor(sessionBusyText) {
 		return nil
 	}
-	return s.newSessionCmd(true)
+	return s.startSessionCmd(true)
 }
 
 func (s *sessionView) listSessions() tea.Cmd {
+	if s.startPending() {
+		s.setNotice("Starting, please wait…", false)
+		return nil
+	}
 	if s.info.Mode == ModeInProcess {
 		s.setNotice(needsLeaderText, false)
 		return nil
@@ -480,11 +495,27 @@ func (s *sessionView) onSetModel(msg setModelMsg) tea.Cmd {
 			pair += " (" + api + ")"
 		}
 		s.setResult("Default model: " + pair)
+	} else if msg.res.DefaultNotSaved != "" {
+		s.setNotice(defaultNotSavedText(msg.res.DefaultNotSaved), true)
 	}
 	if s.sel != nil && s.sel.kind == selectModel {
 		s.closeSelector()
 	}
 	return nil
+}
+
+// defaultNotSavedText words the reason why the leader did not save a model as
+// the default. The model of the session changed all the same.
+func defaultNotSavedText(reason protocol.ACPDefaultNotSaved) string {
+	switch reason {
+	case protocol.ACPDefaultShadowed:
+		return "Not saved as the default: a project setting overrides it."
+	case protocol.ACPDefaultUnsafeFile:
+		return "Not saved as the default: the settings file is not safe."
+	case protocol.ACPDefaultFailed:
+		return "Not saved as the default: the write failed."
+	}
+	return "Not saved as the default."
 }
 
 // modelFailure words a failed model change. The model stays as it was.

@@ -23,6 +23,7 @@ import (
 
 	"AskCore/internal/agent"
 	"AskCore/internal/providers/anthropic"
+	"AskCore/internal/settings"
 	"AskCore/pkg/protocol"
 )
 
@@ -81,6 +82,10 @@ func isolateHome() (restore func(), err error) {
 		return nil, fmt.Errorf("set ASK_HOME: %w", err)
 	}
 	_ = os.Setenv(isolatedHomeMarker, "1")
+	if err := trustModuleRoot(home); err != nil {
+		_ = os.RemoveAll(home)
+		return nil, err
+	}
 	// A helper process inherits the switch and may clear it for a test of the
 	// refresh, so only the first process sets it.
 	prevRefresh, hadRefresh := os.LookupEnv(disableModelRefreshEnv)
@@ -99,6 +104,36 @@ func isolateHome() (restore func(), err error) {
 		}
 		_ = os.RemoveAll(home)
 	}, nil
+}
+
+// trustModuleRoot saves a trusted decision for the module root in the test
+// home. The checkout has a committed .agents/skills folder, so without it every
+// ask -p that a test runs in the checkout would print the untrusted project
+// warning. A test of the trust gate uses a project outside the checkout.
+func trustModuleRoot(home string) error {
+	dir, err := os.Getwd()
+	if err != nil {
+		return err
+	}
+	for {
+		if _, err := os.Stat(filepath.Join(dir, "go.mod")); err == nil {
+			break
+		}
+		parent := filepath.Dir(dir)
+		if parent == dir {
+			return errors.New("trust module root: no go.mod above the working directory")
+		}
+		dir = parent
+	}
+	if resolved, err := filepath.EvalSymlinks(dir); err == nil {
+		dir = resolved
+	}
+	store, err := settings.NewTrustStore(home)
+	if err != nil {
+		return err
+	}
+	trusted := true
+	return store.Update(context.Background(), map[string]*bool{dir: &trusted})
 }
 
 var (

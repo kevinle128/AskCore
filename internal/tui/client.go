@@ -36,6 +36,10 @@ var (
 	ErrPromptPending = errors.New("a prompt is already in flight")
 	// ErrClosed means the client was closed.
 	ErrClosed = errors.New("the client is closed")
+	// ErrTrustNotAvailable means that the agent host does not serve the project
+	// trust methods, for example an older leader. The UI then shows no trust
+	// prompt and no trust note; it is not an error to show.
+	ErrTrustNotAvailable = errors.New("project trust is not available on this host")
 )
 
 // RequestError is an error answer of the agent or of the leader. Kind is the
@@ -95,7 +99,11 @@ type Client interface {
 	// Info describes the current link.
 	Info() ConnInfo
 
-	NewSession(ctx context.Context, cwd string) (SessionInfo, error)
+	// NewSession creates a session in cwd, makes it current and follows it.
+	// trust is the trust override of this session only: empty, or
+	// protocol.ACPTrustApprove or protocol.ACPTrustDeny. The host saves nothing
+	// for it.
+	NewSession(ctx context.Context, cwd string, trust protocol.ACPTrustOverride) (SessionInfo, error)
 	// Attach joins a live session of the leader as an observer and follows it.
 	Attach(ctx context.Context, sessionID string) (SessionInfo, error)
 	// Detach leaves the current session. Its run goes on.
@@ -167,6 +175,16 @@ type Client interface {
 	// has a current session, the result names that session's model if the
 	// removal made it unusable.
 	Logout(ctx context.Context, provider, method string) (protocol.ACPLogoutResult, error)
+
+	// TrustState asks the host for the project trust decision of cwd, as a
+	// session that starts now would get it from a client that can ask the
+	// user. A host without the trust methods gives ErrTrustNotAvailable.
+	TrustState(ctx context.Context, cwd string) (protocol.ACPTrustStateResult, error)
+	// SetTrust saves a trust decision on the host and returns the new state of
+	// the cwd. A trust store that cannot be changed gives a *RequestError of
+	// Kind "invalid_state" whose Message is the warning of the host. A host
+	// without the trust methods gives ErrTrustNotAvailable.
+	SetTrust(ctx context.Context, req protocol.ACPTrustSetRequest) (protocol.ACPTrustStateResult, error)
 
 	// Close leaves the leader without stopping its runs, or stops the in-process
 	// agent and its run. It ends the reconnect loop and closes Events.

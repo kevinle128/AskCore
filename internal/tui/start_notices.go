@@ -183,9 +183,11 @@ func (s *sessionView) settleStartsIfKnown() {
 	}
 }
 
-// settleStarts replaces the placeholders with the fallback notice that the
-// view knows, or with nothing, and marks them stable.
+// settleStarts replaces the placeholders with the trust note, the settings
+// problems and the fallback notice that the view knows, or with nothing, and
+// marks them stable.
 func (s *sessionView) settleStarts() {
+	s.settleTrustSlots()
 	for _, id := range s.starts {
 		s.m.applyBlock(ReplaceBlockMsg{ID: id, Block: s.fallbackBlock()})
 		s.m.applyBlock(FinishBlockMsg{ID: id})

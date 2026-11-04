@@ -1,0 +1,40 @@
+{
+  "home": "/home/.ask",
+  "userFile": "/home/.ask/settings.json",
+  "project": {
+    "root": "/project",
+    "layer": "loaded",
+    "trusted": true,
+    "source": "saved",
+    "entry": "/project",
+    "gated": [
+      ".ask/settings.json"
+    ],
+    "warning": ""
+  },
+  "settings": [
+    {
+      "key": "defaultModel",
+      "value": "openai/gpt-5.5@responses",
+      "source": "project"
+    },
+    {
+      "key": "thinkingFold",
+      "value": "collapsed",
+      "source": "user"
+    },
+    {
+      "key": "defaultProjectTrust",
+      "value": "ask",
+      "source": "default"
+    }
+  ],
+  "diagnostics": [
+    {
+      "layer": "project",
+      "path": "/project/.ask/settings.json",
+      "key": "env",
+      "text": "a project file cannot set this key; it is ignored"
+    }
+  ]
+}

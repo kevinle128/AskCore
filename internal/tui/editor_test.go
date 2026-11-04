@@ -508,7 +508,9 @@ func TestEditorNewlineKeys(t *testing.T) {
 }
 
 func TestCompletionFiltersAndRuns(t *testing.T) {
-	app, h := startEditorApp(t, 80, 16)
+	// 18 rows give the command list room for all eight commands: the list
+	// takes at most half of the screen, less one row for the prompt.
+	app, h := startEditorApp(t, 80, 18)
 	h.send(tea.KeyPressMsg{Code: '/', Text: "/"})
 	h.waitText("/model      Select a model")
 	for _, want := range []string{"/new ", "/sessions   Watch another live session", "/take ", "/quit "} {
@@ -525,7 +527,8 @@ func TestCompletionFiltersAndRuns(t *testing.T) {
 	h.waitFor("closed list", func(h *screenHarness) bool { return h.count("/sessions") == 0 })
 	require.GreaterOrEqual(t, h.count("❯ /s"), 1, "esc keeps the draft")
 
-	app.sendKeys(h, t, "backspace", "down", "down", "down", "enter")
+	// /model, /providers, /trust, /new, then /sessions.
+	app.sendKeys(h, t, "backspace", "down", "down", "down", "down", "enter")
 	h.stop()
 	require.Empty(t, app.ed.Text(), "a command clears the draft")
 	last := app.results[len(app.results)-1]
@@ -621,7 +624,9 @@ func TestEditorHardwareCursorFollowsText(t *testing.T) {
 }
 
 func TestCompletionListGolden(t *testing.T) {
-	_, h := startEditorApp(t, 80, 16)
+	// 18 rows give the command list room for all eight commands: the list
+	// takes at most half of the screen, less one row for the prompt.
+	_, h := startEditorApp(t, 80, 18)
 	h.send(tea.KeyPressMsg{Code: '/', Text: "/"})
 	h.waitText("/quit")
 	h.requireGolden()

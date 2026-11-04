@@ -117,7 +117,7 @@ func newLoginID() string {
 // because it does not change the run.
 func (s *sessionView) openProviders() tea.Cmd {
 	switch {
-	case s.opening:
+	case s.startPending():
 		s.setNotice("Starting, please wait…", false)
 		return nil
 	case s.info.Mode == ModeInProcess:

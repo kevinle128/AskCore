@@ -205,8 +205,14 @@ func (c *sessionClient) Info() tui.ConnInfo {
 	return tui.ConnInfo{Mode: tui.ModeLeader, InstanceID: "inst_0123456789abcdef"}
 }
 func (c *sessionClient) Close() error { return nil }
-func (c *sessionClient) NewSession(_ context.Context, cwd string) (tui.SessionInfo, error) {
+func (c *sessionClient) NewSession(_ context.Context, cwd string, _ protocol.ACPTrustOverride) (tui.SessionInfo, error) {
 	return tui.SessionInfo{ID: c.id, Role: protocol.ACPRoleDriver, Cwd: cwd}, nil
+}
+
+// TrustState answers as an older leader does: the UI then starts the session
+// with no trust prompt.
+func (c *sessionClient) TrustState(context.Context, string) (protocol.ACPTrustStateResult, error) {
+	return protocol.ACPTrustStateResult{}, tui.ErrTrustNotAvailable
 }
 func (c *sessionClient) State(context.Context) (protocol.ACPStateResult, error) {
 	return protocol.ACPStateResult{}, nil

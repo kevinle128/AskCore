@@ -6,6 +6,7 @@ import (
 	"github.com/stretchr/testify/assert"
 
 	"AskCore/internal/providers/anthropic"
+	"AskCore/pkg/protocol"
 )
 
 func TestArgs(t *testing.T) {
@@ -27,7 +28,7 @@ func TestArgs(t *testing.T) {
 		{"-p eats the next token", []string{"-p", "hello"}, base(func(o *options) { o.print = true; o.messages = []string{"hello"} }), nil},
 		{"--print is -p", []string{"--print", "hello"}, base(func(o *options) { o.print = true; o.messages = []string{"hello"} }), nil},
 		{"-p leaves an @file", []string{"-p", "@f.txt"}, base(func(o *options) { o.print = true; o.files = []string{"f.txt"} }), nil},
-		{"-p leaves a flag", []string{"-p", "--model", "m"}, base(func(o *options) { o.print = true; o.model = "m" }), nil},
+		{"-p leaves a flag", []string{"-p", "--model", "m"}, base(func(o *options) { o.print = true; o.model = "m"; o.modelGiven = true }), nil},
 		{"-p takes a --- token", []string{"-p", "---x"}, base(func(o *options) { o.print = true; o.messages = []string{"---x"} }), nil},
 		{"-p at the end", []string{"-p"}, base(func(o *options) { o.print = true }), nil},
 		{"-- ends options", []string{"--", "-a", "@b", "--mode"}, base(func(o *options) {
@@ -44,20 +45,22 @@ func TestArgs(t *testing.T) {
 		{"--mode invalid", []string{"--mode", "x", "-p", "hi"}, base(func(o *options) { o.print = true; o.messages = []string{"hi"} }),
 			[]string{`Error: Invalid mode "x". Valid values: text, json`}},
 		{"--mode rpc is not an Ask mode", []string{"--mode", "rpc"}, base(nil), []string{`Error: Invalid mode "rpc". Valid values: text, json`}},
-		{"--provider", []string{"--provider", "openai"}, base(func(o *options) { o.provider = "openai"; o.model = "gpt-5.5" }), nil},
+		{"--provider", []string{"--provider", "openai"}, base(func(o *options) { o.provider = "openai"; o.model = "gpt-5.5"; o.modelGiven = true }), nil},
 		{"token plan defaults the model", []string{"--provider", anthropic.ProviderID}, base(func(o *options) {
 			o.provider = anthropic.ProviderID
 			o.model = anthropic.ModelID
+			o.modelGiven = true
 		}), nil},
 		{"token plan api key does not need --model", []string{"--provider", anthropic.ProviderID, "--api-key", "k"}, base(func(o *options) {
 			o.provider = anthropic.ProviderID
 			o.model = anthropic.ModelID
+			o.modelGiven = true
 			o.apiKey = "k"
 		}), nil},
 		{"--provider missing", []string{"--provider"}, base(nil), []string{"Error: --provider requires a value"}},
-		{"--model", []string{"--model", "faux-2"}, base(func(o *options) { o.model = "faux-2" }), nil},
+		{"--model", []string{"--model", "faux-2"}, base(func(o *options) { o.model = "faux-2"; o.modelGiven = true }), nil},
 		{"--model missing", []string{"--model"}, base(nil), []string{"Error: --model requires a value"}},
-		{"--api-key with --model", []string{"--api-key", "k", "--model", "faux-1"}, base(func(o *options) { o.apiKey = "k" }), nil},
+		{"--api-key with --model", []string{"--api-key", "k", "--model", "faux-1"}, base(func(o *options) { o.apiKey = "k"; o.modelGiven = true }), nil},
 		{"--api-key missing", []string{"--api-key"}, base(nil), []string{"Error: --api-key requires a value"}},
 		{"--api-key without a model", []string{"--api-key", "k"}, base(func(o *options) { o.apiKey = "k" }),
 			[]string{"Error: --api-key requires a model to be specified via --model"}},
@@ -71,7 +74,7 @@ func TestArgs(t *testing.T) {
 		{"unknown -x", []string{"-x"}, base(nil), []string{"Error: Unknown option: -x"}},
 		{"--help", []string{"--help"}, base(func(o *options) { o.help = true }), nil},
 		{"-h", []string{"-h"}, base(func(o *options) { o.help = true }), nil},
-		{"a value flag takes a dash token, as in Pi", []string{"--model", "--nope"}, base(func(o *options) { o.model = "--nope" }), nil},
+		{"a value flag takes a dash token, as in Pi", []string{"--model", "--nope"}, base(func(o *options) { o.model = "--nope"; o.modelGiven = true }), nil},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
@@ -105,4 +108,32 @@ func TestArgsSelectMode(t *testing.T) {
 			assert.Equal(t, tt.want, selectMode(tt.o, tt.stdinTTY, tt.outTTY))
 		})
 	}
+}
+
+func TestParseApproveFlags(t *testing.T) {
+	for _, tc := range []struct {
+		argv []string
+		want protocol.ACPTrustOverride
+	}{
+		{nil, ""},
+		{[]string{"--approve", "-p", "hi"}, protocol.ACPTrustApprove},
+		{[]string{"-a"}, protocol.ACPTrustApprove},
+		{[]string{"--no-approve"}, protocol.ACPTrustDeny},
+		{[]string{"-p", "hi", "-na"}, protocol.ACPTrustDeny},
+		{[]string{"-a", "--approve"}, protocol.ACPTrustApprove},
+	} {
+		o, diags := parseArgs(tc.argv)
+		assert.Empty(t, diags, "argv %v", tc.argv)
+		assert.Equal(t, tc.want, o.trust, "argv %v", tc.argv)
+	}
+	for _, argv := range [][]string{{"--approve", "--no-approve"}, {"-na", "-a"}, {"-a", "-na", "-p", "x"}} {
+		_, diags := parseArgs(argv)
+		assert.Equal(t, []diagnostic{{err: true, msg: "use only one of --approve and --no-approve"}}, diags, "argv %v", argv)
+	}
+	// -p does not take a flag as its message.
+	o, _ := parseArgs([]string{"-p", "-a"})
+	assert.Empty(t, o.messages)
+	assert.Equal(t, protocol.ACPTrustApprove, o.trust)
+	assert.Contains(t, usage, "--approve, -a")
+	assert.Contains(t, usage, "--no-approve, -na")
 }

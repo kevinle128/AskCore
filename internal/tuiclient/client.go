@@ -444,8 +444,10 @@ func (c *Client) listLive(ctx context.Context, conn *rpc.Conn) ([]protocol.ACPLi
 	return out.Sessions, nil
 }
 
-// NewSession creates a session in cwd, makes it current and follows it.
-func (c *Client) NewSession(ctx context.Context, cwd string) (tui.SessionInfo, error) {
+// NewSession creates a session in cwd, makes it current and follows it. trust
+// is the trust override of this session only; an empty override sends no
+// _meta, and the host then decides with its saved decision.
+func (c *Client) NewSession(ctx context.Context, cwd string, trust protocol.ACPTrustOverride) (tui.SessionInfo, error) {
 	conn, err := c.live()
 	if err != nil {
 		return tui.SessionInfo{}, err
@@ -457,7 +459,11 @@ func (c *Client) NewSession(ctx context.Context, cwd string) (tui.SessionInfo, e
 	var out struct {
 		SessionID string `json:"sessionId"`
 	}
-	if err := c.request(ctx, conn, "session/new", map[string]any{"cwd": abs, "mcpServers": []any{}}, &out); err != nil {
+	params := map[string]any{"cwd": abs, "mcpServers": []any{}}
+	if trust != "" {
+		params["_meta"] = map[string]any{protocol.ACPTrustMetaKey: trust}
+	}
+	if err := c.request(ctx, conn, "session/new", params, &out); err != nil {
 		return tui.SessionInfo{}, err
 	}
 	if out.SessionID == "" {

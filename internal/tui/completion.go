@@ -22,6 +22,7 @@ func DefaultCommands() []CommandSpec {
 	return []CommandSpec{
 		{"/model", "Select a model"},
 		{"/providers", "Add or remove providers"},
+		{"/trust", "Trust or do not trust this folder"},
 		{"/new", "Start a new session in this directory"},
 		{"/sessions", "Watch another live session"},
 		{"/take", "Take control of this session"},

@@ -91,7 +91,7 @@ func (m *Model) viewerBodyAt(y int) (idx int, ok bool) {
 // onMouse routes a mouse message.
 func (s *sessionView) onMouse(msg tea.MouseMsg) tea.Cmd {
 	ms := &s.m.mouse
-	if s.boxOpen() || s.sel != nil {
+	if s.tbox != nil || s.boxOpen() || s.sel != nil {
 		ms.cancel()
 		return nil
 	}

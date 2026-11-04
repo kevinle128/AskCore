@@ -247,11 +247,16 @@ func serveLeader(o leaderOptions, paths leader.Paths, stderr io.Writer, deps run
 		return 1
 	}
 	instance := newInstanceID()
-	acp, err := acpParams(deps)
+	acp, err := acpParams(deps, "")
 	if err != nil {
 		report(stderr, "Error:", err)
 		return 1
 	}
+	// The leader decides the trust of each session and owns trust.json, so
+	// it serves the trust methods. It never takes a trust flag: it is shared.
+	acp.TrustRequests = true
+	// stderr is the leader log here.
+	acp.Warn = func(line string) { report(stderr, line) }
 	level := deps.getenv("LOG_LEVEL")
 	if level == "" {
 		level = "info"

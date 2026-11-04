@@ -92,6 +92,8 @@ func (s *sessionView) statusText(width int) string {
 		return s.noticeRow(noticeView{text: "Copied", ok: true})
 	case s.waitRow() != "":
 		return s.waitRow()
+	case s.trustReading:
+		return s.noticeRow(noticeView{text: "Reading project trust…"})
 	case s.noticeActive():
 		return s.noticeRow(s.notice)
 	case s.run.running && s.run.retry != nil:

@@ -17,6 +17,7 @@ import (
 	"golang.org/x/term"
 
 	"AskCore/internal/tui"
+	"AskCore/pkg/protocol"
 )
 
 const (
@@ -43,13 +44,17 @@ type terminalConfig struct {
 	open    func(ctx context.Context) (tui.Client, error)
 	// thinkingFold is the first session mode of thinking steps that end.
 	thinkingFold tui.ThinkingFold
+	// trust is the project trust override of the command line, or empty.
+	trust protocol.ACPTrustOverride
 }
 
 // runInteractive is the entry for `ask` on a terminal without a prompt. It
 // runs the alternate-screen TUI against the leader of the Ask home, or against
 // an agent in this process when the leader cannot be reached at startup.
-// noLeader skips the leader and always runs the agent in this process.
-func runInteractive(stdin io.Reader, stdout, stderr io.Writer, deps runDependencies, sigs <-chan os.Signal, noLeader bool) int {
+// noLeader skips the leader and always runs the agent in this process. trust
+// is the override of --approve or --no-approve: every session of the program
+// starts with it, and the TUI asks no trust question.
+func runInteractive(stdin io.Reader, stdout, stderr io.Writer, deps runDependencies, sigs <-chan os.Signal, noLeader bool, trust protocol.ACPTrustOverride) int {
 	in, inOK := stdin.(*os.File)
 	out, outOK := stdout.(*os.File)
 	if !inOK || !outOK {
@@ -66,6 +71,7 @@ func runInteractive(stdin io.Reader, stdout, stderr io.Writer, deps runDependenc
 	return runTerminal(terminalConfig{
 		in: in, out: out, stderr: stderr, sigs: sigs, cwd: cwd, home: home, version: buildIdentity(),
 		thinkingFold: thinkingFoldSetting(deps.getenv("ASK_HOME")),
+		trust:        trust,
 		open: func(ctx context.Context) (tui.Client, error) {
 			// No warning callback: a line written to the terminal while the
 			// program draws would break the screen.
@@ -181,6 +187,7 @@ func runTerminal(c terminalConfig) (code int) {
 		// warns about it where a key or a code is typed.
 		TraceFile:    os.Getenv("TEA_TRACE"),
 		ThinkingFold: c.thinkingFold,
+		Trust:        c.trust,
 	})
 	// Bubble Tea would end SIGTERM with exit code 0 and ignores SIGHUP, so ask
 	// handles the signals itself.

@@ -509,7 +509,12 @@ type panicClient struct {
 func (p *panicClient) Events() <-chan tui.Message { return p.events }
 func (p *panicClient) Info() tui.ConnInfo         { return tui.ConnInfo{Mode: tui.ModeInProcess} }
 func (p *panicClient) Close() error               { return nil }
-func (p *panicClient) NewSession(context.Context, string) (tui.SessionInfo, error) {
+func (p *panicClient) NewSession(context.Context, string, protocol.ACPTrustOverride) (tui.SessionInfo, error) {
+	panic("client bug")
+}
+
+// TrustState is the first call of a session start.
+func (p *panicClient) TrustState(context.Context, string) (protocol.ACPTrustStateResult, error) {
 	panic("client bug")
 }
 

@@ -128,7 +128,7 @@ func newSessionOf(t *testing.T, c *tuiclient.Client) tui.SessionInfo {
 	t.Helper()
 	ctx, cancel := context.WithTimeout(context.Background(), clientWait)
 	defer cancel()
-	info, err := c.NewSession(ctx, t.TempDir())
+	info, err := c.NewSession(ctx, t.TempDir(), "")
 	require.NoError(t, err)
 	require.Equal(t, protocol.ACPRoleDriver, info.Role)
 	return info

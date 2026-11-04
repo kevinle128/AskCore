@@ -63,9 +63,24 @@ type fakeClient struct {
 	logout         protocol.ACPLogoutResult
 	logoutErr      error
 	savedDefault   map[string]bool // model id -> saveDefault of the last SetModel
+	// defaultNotSaved is the reason that SetModel gives for a refused default
+	// save. Empty means that a requested save happens.
+	defaultNotSaved protocol.ACPDefaultNotSaved
 	// modelsErrAfter makes every Models call after that many calls fail.
 	modelsErrAfter int
 	modelsCalls    int
+
+	// Project trust. trust is the answer of TrustState; nil answers a folder
+	// with no gated files. trustGate holds the TrustState answer until it
+	// closes. newSessionErrs fail the next NewSession calls in order.
+	trust          *protocol.ACPTrustStateResult
+	trustErr       error
+	trustGate      chan struct{}
+	setTrustErr    error
+	setTrustRes    *protocol.ACPTrustStateResult
+	trustSets      []protocol.ACPTrustSetRequest
+	overrides      []protocol.ACPTrustOverride
+	newSessionErrs []error
 }
 
 const (
@@ -156,9 +171,16 @@ func (f *fakeClient) setInfo(info ConnInfo) {
 	f.mu.Unlock()
 }
 
-func (f *fakeClient) NewSession(_ context.Context, cwd string) (SessionInfo, error) {
+func (f *fakeClient) NewSession(_ context.Context, cwd string, trust protocol.ACPTrustOverride) (SessionInfo, error) {
 	f.record("new_session")
 	f.mu.Lock()
+	f.overrides = append(f.overrides, trust)
+	if len(f.newSessionErrs) > 0 {
+		err := f.newSessionErrs[0]
+		f.newSessionErrs = f.newSessionErrs[1:]
+		f.mu.Unlock()
+		return SessionInfo{}, err
+	}
 	id := f.sessionID
 	f.cwd = cwd
 	f.mu.Unlock()
@@ -281,7 +303,7 @@ func (f *fakeClient) SetModel(_ context.Context, id string, saveDefault bool) (p
 	f.state.ModelID, f.state.ThinkingLevel = id, level
 	f.state.ModelFallback = nil
 	f.models.Current = id
-	sid := f.sessionID
+	sid, notSaved := f.sessionID, f.defaultNotSaved
 	f.mu.Unlock()
 	// The leader applies the change and announces it as an event, as the agent
 	// does. A gate holds only the answer.
@@ -289,7 +311,11 @@ func (f *fakeClient) SetModel(_ context.Context, id string, saveDefault bool) (p
 	if gate != nil {
 		<-gate
 	}
-	return protocol.ACPSetModelResult{ModelID: id, ThinkingLevel: level, DefaultSaved: saveDefault}, nil
+	res := protocol.ACPSetModelResult{ModelID: id, ThinkingLevel: level, DefaultSaved: saveDefault}
+	if saveDefault && notSaved != "" {
+		res.DefaultSaved, res.DefaultNotSaved = false, notSaved
+	}
+	return res, nil
 }
 
 func (f *fakeClient) SetThinking(_ context.Context, level protocol.ThinkingLevel) (protocol.ThinkingLevel, error) {
@@ -413,6 +439,51 @@ func (f *fakeClient) Logout(_ context.Context, provider, method string) (protoco
 	f.mu.Lock()
 	defer f.mu.Unlock()
 	return f.logout, f.logoutErr
+}
+
+func (f *fakeClient) TrustState(_ context.Context, cwd string) (protocol.ACPTrustStateResult, error) {
+	f.record("trust_state")
+	f.mu.Lock()
+	gate, res, err := f.trustGate, f.trust, f.trustErr
+	f.mu.Unlock()
+	if gate != nil {
+		<-gate
+	}
+	if err != nil {
+		return protocol.ACPTrustStateResult{}, err
+	}
+	if res == nil {
+		return protocol.ACPTrustStateResult{Root: cwd, Trusted: true, Source: "no_gated_files"}, nil
+	}
+	return *res, nil
+}
+
+func (f *fakeClient) SetTrust(_ context.Context, req protocol.ACPTrustSetRequest) (protocol.ACPTrustStateResult, error) {
+	f.record("set_trust:" + string(req.Target) + ":" + string(req.Decision))
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	f.trustSets = append(f.trustSets, req)
+	if f.setTrustErr != nil {
+		return protocol.ACPTrustStateResult{}, f.setTrustErr
+	}
+	if f.setTrustRes != nil {
+		return *f.setTrustRes, nil
+	}
+	return protocol.ACPTrustStateResult{Root: req.Cwd, Trusted: req.Decision == protocol.ACPTrustDecisionTrust, Source: "saved"}, nil
+}
+
+// sentOverrides returns the trust override of each NewSession call in order.
+func (f *fakeClient) sentOverrides() []protocol.ACPTrustOverride {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	return append([]protocol.ACPTrustOverride(nil), f.overrides...)
+}
+
+// sentTrust returns the SetTrust requests in order.
+func (f *fakeClient) sentTrust() []protocol.ACPTrustSetRequest {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	return append([]protocol.ACPTrustSetRequest(nil), f.trustSets...)
 }
 
 func (f *fakeClient) Close() error { return nil }

@@ -1800,3 +1800,63 @@ func TestACPE2ERetryUsage(t *testing.T) {
 	// The session takes the next prompt after the failure.
 	require.Nil(t, p.call("session/prompt", e2ePrompt(sid, "again")).Error)
 }
+
+// ask acp decides trust with no UI. --approve trusts every session of the
+// process, and the trust methods are not served on an editor link.
+func TestACPE2EApprove(t *testing.T) {
+	type sessionState struct {
+		Trust *struct {
+			Trusted bool   `json:"trusted"`
+			Source  string `json:"source"`
+		} `json:"trust"`
+		ThinkingFold string `json:"thinkingFold"`
+		Diagnostics  []struct {
+			Layer string `json:"layer"`
+			Key   string `json:"key"`
+		} `json:"diagnostics"`
+	}
+	project := t.TempDir()
+	require.NoError(t, os.Mkdir(filepath.Join(project, ".ask"), 0o755))
+	require.NoError(t, os.WriteFile(filepath.Join(project, ".ask", "settings.json"), []byte(`{"thinkingFold":"collapsed","env":{"A":"b"}}`), 0o644))
+	open := func(p *e2ePeer, meta map[string]any) sessionState {
+		t.Helper()
+		params := map[string]any{"cwd": project, "mcpServers": []any{}}
+		if meta != nil {
+			params["_meta"] = meta
+		}
+		var res struct {
+			SessionID string `json:"sessionId"`
+		}
+		p.ok("session/new", params, &res)
+		var st sessionState
+		p.ok("_ask/session/state", e2eSession(res.SessionID), &st)
+		return st
+	}
+
+	plain := startE2E(t, e2eOptions{})
+	plain.initialize()
+	st := open(plain, nil)
+	require.NotNil(t, st.Trust)
+	require.False(t, st.Trust.Trusted)
+	require.Equal(t, "no_ui", st.Trust.Source)
+	require.Equal(t, "expanded", st.ThinkingFold)
+	require.Empty(t, st.Diagnostics)
+	require.Equal(t, "unsupported", plain.call("_ask/trust/state", map[string]any{"cwd": project}).errKind(t))
+	require.Equal(t, "unsupported", plain.call("_ask/trust/set", map[string]any{"cwd": project, "target": "folder", "decision": "trust"}).errKind(t))
+	plain.waitFor("untrusted warning", func() bool { return strings.Contains(plain.stderr.String(), "is not trusted") })
+
+	approved := startE2E(t, e2eOptions{args: []string{"--approve"}})
+	approved.initialize()
+	st = open(approved, nil)
+	require.True(t, st.Trust.Trusted)
+	require.Equal(t, "flag", st.Trust.Source)
+	require.Equal(t, "collapsed", st.ThinkingFold)
+	require.Len(t, st.Diagnostics, 1)
+	require.Equal(t, "env", st.Diagnostics[0].Key)
+	approved.waitFor("diagnostic on stderr", func() bool { return strings.Contains(approved.stderr.String(), "Warning: settings: ") })
+	// The override of one session wins over the flag.
+	st = open(approved, map[string]any{"ask.dev/trust": "deny"})
+	require.False(t, st.Trust.Trusted)
+	_, err := os.Stat(filepath.Join(approved.home, "trust.json"))
+	require.True(t, os.IsNotExist(err), "a flag saves nothing")
+}

@@ -10,6 +10,7 @@ import (
 
 	"AskCore/internal/app"
 	"AskCore/internal/testsupport"
+	"AskCore/pkg/protocol"
 )
 
 // offlineModelRefresh is the model refresh of a fixture that builds ACPParams
@@ -26,16 +27,16 @@ func TestACPParamsModelRefreshSwitch(t *testing.T) {
 	env := func(vars map[string]string) func(string) string {
 		return func(k string) string { return vars[k] }
 	}
-	p, err := acpParams(runDependencies{getenv: env(nil), modelRefresh: true})
+	p, err := acpParams(runDependencies{getenv: env(nil), modelRefresh: true}, "")
 	require.NoError(t, err)
 	require.True(t, p.ModelRefresh.Enabled)
 	require.NotNil(t, p.ModelRefresh.HTTP)
 
-	p, err = acpParams(runDependencies{getenv: env(map[string]string{disableModelRefreshEnv: "1"}), modelRefresh: true})
+	p, err = acpParams(runDependencies{getenv: env(map[string]string{disableModelRefreshEnv: "1"}), modelRefresh: true}, "")
 	require.NoError(t, err)
 	require.False(t, p.ModelRefresh.Enabled)
 
-	p, err = acpParams(runDependencies{getenv: env(nil)})
+	p, err = acpParams(runDependencies{getenv: env(nil)}, "")
 	require.NoError(t, err)
 	require.False(t, p.ModelRefresh.Enabled, "test dependencies stay offline")
 }
@@ -76,4 +77,40 @@ func TestACPWordStaysPromptElsewhere(t *testing.T) {
 // The usage text of the main command names the new command.
 func TestUsageNamesACP(t *testing.T) {
 	assert.Contains(t, usage, "ask acp")
+}
+
+func TestACPArgsAcceptApprove(t *testing.T) {
+	for _, tc := range []struct {
+		argv []string
+		want protocol.ACPTrustOverride
+	}{
+		{nil, ""},
+		{[]string{"--approve"}, protocol.ACPTrustApprove},
+		{[]string{"-a"}, protocol.ACPTrustApprove},
+		{[]string{"--no-approve"}, protocol.ACPTrustDeny},
+		{[]string{"-na"}, protocol.ACPTrustDeny},
+	} {
+		help, trust, err := parseACPArgs(tc.argv)
+		require.NoError(t, err, "argv %v", tc.argv)
+		assert.False(t, help)
+		assert.Equal(t, tc.want, trust, "argv %v", tc.argv)
+	}
+	help, _, err := parseACPArgs([]string{"--help"})
+	require.NoError(t, err)
+	assert.True(t, help)
+	_, _, err = parseACPArgs([]string{"--approve", "--no-approve"})
+	require.EqualError(t, err, "use only one of --approve and --no-approve")
+	for _, argv := range [][]string{{"foo"}, {"--approve", "foo"}, {"--help", "--approve"}} {
+		_, _, err = parseACPArgs(argv)
+		require.Error(t, err, "argv %v", argv)
+		assert.Contains(t, err.Error(), "acp does not accept", "argv %v", argv)
+	}
+	assert.Contains(t, acpUsage, "--approve")
+
+	// The override is process-wide for ask acp, and only the leader and the
+	// in-process TUI serve the trust methods.
+	p, err := acpParams(runDependencies{getenv: func(string) string { return "" }}, protocol.ACPTrustApprove)
+	require.NoError(t, err)
+	assert.Equal(t, protocol.ACPTrustApprove, p.TrustOverride)
+	assert.False(t, p.TrustRequests)
 }

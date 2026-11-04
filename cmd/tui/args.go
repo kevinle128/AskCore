@@ -2,6 +2,7 @@ package main
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"net/http"
 	"slices"
@@ -58,6 +59,12 @@ type options struct {
 	// to a leader and never starts one, so a debugger on this process sees the
 	// tool calls.
 	noLeader bool
+	// trust is the project trust override of --approve or --no-approve, or
+	// empty.
+	trust protocol.ACPTrustOverride
+	// modelGiven is true when --provider or --model is on the command line.
+	// Then print mode does not use the saved default model.
+	modelGiven bool
 }
 
 // diagnostic is one parse problem. Any error ends the program with exit 1; a
@@ -86,8 +93,8 @@ var thinkingLevels = []protocol.ThinkingLevel{
 
 // valueFlags are the flags that take the next token as their value.
 var valueFlags = map[string]func(o *options, v string) *diagnostic{
-	"--provider": func(o *options, v string) *diagnostic { o.provider = v; return nil },
-	"--model":    func(o *options, v string) *diagnostic { o.model = v; return nil },
+	"--provider": func(o *options, v string) *diagnostic { o.provider, o.modelGiven = v, true; return nil },
+	"--model":    func(o *options, v string) *diagnostic { o.model, o.modelGiven = v, true; return nil },
 	"--api-key":  func(o *options, v string) *diagnostic { o.apiKey = v; return nil },
 	"--thinking": func(o *options, v string) *diagnostic {
 		level := protocol.ThinkingLevel(v)
@@ -116,6 +123,7 @@ var valueFlags = map[string]func(o *options, v string) *diagnostic{
 func parseArgs(argv []string) (options, []diagnostic) {
 	o := options{provider: defaultProvider}
 	var diags []diagnostic
+	var trust []protocol.ACPTrustOverride
 	fail := func(format string, a ...any) {
 		diags = append(diags, diagnostic{err: true, msg: fmt.Sprintf(format, a...)})
 	}
@@ -150,6 +158,8 @@ func parseArgs(argv []string) (options, []diagnostic) {
 			o.help = true
 		case arg == "--no-leader":
 			o.noLeader = true
+		case trustFlags[arg] != "":
+			trust = append(trust, trustFlags[arg])
 		case arg == "--print" || arg == "-p":
 			o.print = true
 			if i+1 < len(argv) {
@@ -181,6 +191,11 @@ func parseArgs(argv []string) (options, []diagnostic) {
 		}
 	}
 
+	if t, err := trustOverride(trust); err != nil {
+		fail("%s", err)
+	} else {
+		o.trust = t
+	}
 	if o.apiKey != "" && o.model == "" && o.provider != anthropic.ProviderID {
 		fail("--api-key requires a model to be specified via --model")
 	}
@@ -201,12 +216,34 @@ func parseArgs(argv []string) (options, []diagnostic) {
 	return o, diags
 }
 
+// trustFlags are the spellings of the project trust flags.
+var trustFlags = map[string]protocol.ACPTrustOverride{
+	"--approve":    protocol.ACPTrustApprove,
+	"-a":           protocol.ACPTrustApprove,
+	"--no-approve": protocol.ACPTrustDeny,
+	"-na":          protocol.ACPTrustDeny,
+}
+
+// trustOverride returns the override that the trust flags give. A flag may
+// repeat; --approve together with --no-approve is an error.
+func trustOverride(flags []protocol.ACPTrustOverride) (protocol.ACPTrustOverride, error) {
+	var out protocol.ACPTrustOverride
+	for _, f := range flags {
+		if out != "" && f != out {
+			return "", errors.New("use only one of --approve and --no-approve")
+		}
+		out = f
+	}
+	return out, nil
+}
+
 const usage = `ask - the Ask agent harness
 
 Usage:
   ask [options] [--] [@files...] [messages...]
   ask auth --help
   ask models --help
+  ask settings --help
   ask acp --help
   ask connect --help
   ask leader --help
@@ -215,12 +252,15 @@ Usage:
 Options:
   --print, -p           Non-interactive mode: run the prompt, print the reply and exit
   --mode <mode>         Output mode: text (default) or json
-  --provider <name>     Provider name: faux (default), alibaba-token-plan, anthropic, openai, xai
+  --provider <name>     Provider name: faux, alibaba-token-plan, anthropic, openai, xai
+                        (default: the saved defaultModel, else faux)
   --model <id>          Model id (default: faux-1, or deepseek-v4.1-flash for alibaba-token-plan)
   --api-key <key>       API key for the provider (requires --model)
   --thinking <level>    Thinking level: off, minimal, low, medium, high, xhigh, max
   --max-turns <n>       Print mode: end the run after n turns, turns of background notices included
   --no-leader           TUI: run the agent in this process; do not connect to or start a leader
+  --approve, -a         Trust the project settings of this folder for this run; saves nothing
+  --no-approve, -na     Do not trust the project settings of this folder for this run
   --                    End option parsing; the rest are messages and @files
   --help, -h            Show this help
 `

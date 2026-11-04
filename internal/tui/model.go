@@ -7,6 +7,8 @@ import (
 
 	tea "charm.land/bubbletea/v2"
 	"github.com/charmbracelet/colorprofile"
+
+	"AskCore/pkg/protocol"
 )
 
 // Root model composition.
@@ -59,6 +61,10 @@ type Options struct {
 	// takes when it ends. The zero value is ThinkingExpanded. The caller reads
 	// it from the settings; the package does not read files.
 	ThinkingFold ThinkingFold
+	// Trust is the project trust override of the command line (--approve or
+	// --no-approve), or empty. It goes with every new session, and the TUI
+	// then does not ask the trust question.
+	Trust protocol.ACPTrustOverride
 }
 
 // Model is the root model of the TUI.
@@ -152,6 +158,12 @@ func (m *Model) toggleAllThinking() bool {
 	}
 	m.pane.SetThinkingFold(m.thinkingFold)
 	return expanded
+}
+
+// setThinkingFold makes a mode the session mode of thinking steps that end.
+func (m *Model) setThinkingFold(f FoldMode) {
+	m.thinkingFold = f
+	m.pane.SetThinkingFold(f)
 }
 
 // Transcript returns the transcript. Change it only from Update.

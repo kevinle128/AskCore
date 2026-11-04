@@ -24,8 +24,10 @@ import (
 	"AskCore/internal/providers"
 	"AskCore/internal/providers/anthropic"
 	"AskCore/internal/sandbox"
+	"AskCore/internal/settings"
 	"AskCore/internal/tasks"
 	"AskCore/internal/tools"
+	"AskCore/internal/workspace"
 	"AskCore/pkg/protocol"
 )
 
@@ -111,6 +113,9 @@ func runWithDependencies(argv []string, stdin io.Reader, stdout, stderr io.Write
 	if len(argv) > 0 && argv[0] == "models" {
 		return runModelsCommand(argv[1:], stdout, stderr, deps, sigs)
 	}
+	if len(argv) > 0 && argv[0] == "settings" {
+		return runSettingsCommand(argv[1:], stdout, stderr, deps, sigs)
+	}
 	if len(argv) > 0 && argv[0] == "acp" {
 		return runACP(argv[1:], stdin, stdout, stderr, deps, sigs)
 	}
@@ -144,7 +149,7 @@ func runWithDependencies(argv []string, stdin io.Reader, stdout, stderr io.Write
 	stdinTTY := isTerminal(stdin)
 	mode := selectMode(o, stdinTTY, isTerminal(stdout))
 	if mode == modeInteractive {
-		return runInteractive(stdin, stdout, stderr, deps, sigs, o.noLeader)
+		return runInteractive(stdin, stdout, stderr, deps, sigs, o.noLeader, o.trust)
 	}
 	defer guardStdout(stderr)()
 
@@ -156,16 +161,37 @@ func runWithDependencies(argv []string, stdin io.Reader, stdout, stderr io.Write
 		report(stderr, "Error:", err)
 		return 1
 	}
+	newAuth := func() (*auth.Service, error) {
+		return app.NewNativeAuth(deps.getenv("ASK_HOME"), env, auth.NativeOptions{HTTPClient: deps.authHTTP, Now: deps.now, Wait: deps.wait})
+	}
 	if o.provider != defaultProvider {
 		var err error
-		service, err = app.NewNativeAuth(deps.getenv("ASK_HOME"), env, auth.NativeOptions{HTTPClient: deps.authHTTP, Now: deps.now, Wait: deps.wait})
-		if err != nil {
+		if service, err = newAuth(); err != nil {
+			report(stderr, "Error:", err)
+			return 1
+		}
+	}
+	eff, err := reportPrintTrust(stderr, deps, o.trust)
+	if err != nil {
+		report(stderr, "Error:", err)
+		return 1
+	}
+	// Without --provider and --model, the saved default model of the
+	// settings selects the model. The project layer counts only when the
+	// project is trusted.
+	var start providers.Model
+	if !o.modelGiven && eff.DefaultModel != "" {
+		if service, err = newAuth(); err != nil {
+			report(stderr, "Error:", err)
+			return 1
+		}
+		if start, err = savedStartModel(&o, deps.getenv, service, eff.DefaultModel, stderr); err != nil {
 			report(stderr, "Error:", err)
 			return 1
 		}
 	}
 	o.bgLimit = printBackgroundLimit(deps.getenv)
-	ag, jt, err := newHeadlessAgentWithAuth(o, deps.getenv, service)
+	ag, jt, err := newPrintAgent(o, deps.getenv, service, start)
 	if err != nil {
 		report(stderr, "Error:", err)
 		return 1
@@ -188,6 +214,67 @@ func runWithDependencies(argv []string, stdin io.Reader, stdout, stderr io.Write
 	// grace of a job, so a job that traps SIGTERM can still live here.
 	jt.KillRemaining()
 	return code
+}
+
+// reportPrintTrust decides the project trust of the cwd with no UI, as print
+// mode has none: the project is untrusted unless --approve, a saved decision
+// or defaultProjectTrust "always" trusts it. It loads the settings layers,
+// writes each warning as one stderr line, in text and in JSON mode, and
+// returns the effective settings.
+func reportPrintTrust(stderr io.Writer, deps runDependencies, trust protocol.ACPTrustOverride) (settings.Effective, error) {
+	cwd, err := os.Getwd()
+	if err != nil {
+		return settings.Effective{}, err
+	}
+	// Without a user home, every .agents/skills folder counts as a project
+	// resource, which fails closed.
+	userHome, _ := os.UserHomeDir()
+	decision, eff, err := app.LoadSessionSettings(context.Background(), deps.getenv("ASK_HOME"), userHome, cwd, workspace.Override(trust))
+	if err != nil {
+		return settings.Effective{}, err
+	}
+	for _, line := range app.SessionWarnings(decision, eff) {
+		report(stderr, line)
+	}
+	return eff, nil
+}
+
+// savedStartModel chooses the model of a print-mode run from the saved
+// default model id saved, with the rules of a new TUI session. The demo model
+// is the fallback, as it is the model of a run with no saved default. When the
+// saved default cannot be used, it writes one warning line to stderr.
+//
+// It returns the zero model when the demo model is chosen, so the run builds
+// its agent as before. Otherwise it sets the provider and the model of o, so
+// the run acts as with --provider and --model.
+func savedStartModel(o *options, getenv func(string) string, service *auth.Service, saved string, stderr io.Writer) (providers.Model, error) {
+	_, demo, err := fauxStream(defaultModel, getenv)
+	if err != nil {
+		return providers.Model{}, err
+	}
+	m, warning := app.ChooseSavedModel(context.Background(), getenv("ASK_HOME"), service, demo, saved)
+	if warning != "" {
+		report(stderr, warning)
+	}
+	if m.Provider == demo.Provider {
+		return providers.Model{}, nil
+	}
+	o.provider, o.model = m.Provider, m.ID
+	return m, nil
+}
+
+// newPrintAgent builds the agent of a print-mode run. A zero start model
+// opens the provider of the command line; another start model is a catalog
+// model, which the native wires serve.
+func newPrintAgent(o options, getenv func(string) string, service *auth.Service, start providers.Model) (*agent.Agent, *jobs.Table, error) {
+	if start.ID == "" {
+		return newHeadlessAgentWithAuth(o, getenv, service)
+	}
+	cwd, err := os.Getwd()
+	if err != nil {
+		return nil, nil, err
+	}
+	return newNativeAgentOn(o, getenv, service, newSessionID(), cwd, nil, start)
 }
 
 // selectMode follows Pi's resolveAppMode. --mode text does not force print

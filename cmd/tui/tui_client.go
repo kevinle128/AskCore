@@ -101,10 +101,13 @@ func openInProcessClient(ctx context.Context, deps runDependencies) (*tuiclient.
 	// The terminal belongs to the full-screen program. A job error has no line
 	// of its own there; the job stays readable with job_list and job_output.
 	deps.onJobError = func(error) {}
-	params, err := acpParams(deps)
+	params, err := acpParams(deps, "")
 	if err != nil {
 		return nil, err
 	}
+	// The in-process TUI can ask the user, so it serves the trust methods. The
+	// terminal belongs to the full-screen program, so Warn stays nil.
+	params.TrustRequests = true
 	var rt *app.ACPRuntime
 	graph := fx.New(app.ACPModule, fx.Supply(params), fx.NopLogger, fx.Populate(&rt))
 	if err := graph.Err(); err != nil {

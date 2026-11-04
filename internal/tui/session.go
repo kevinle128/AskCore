@@ -209,6 +209,34 @@ type sessionView struct {
 	startErr error
 	fatal    error
 
+	// starting is true from the start of a session start until the answer of
+	// its session/new: the trust check and the trust box come before the
+	// session. A prompt is not sent while it is true.
+	starting bool
+	// trustFlag is the trust override of the command line, or empty. It goes
+	// with every session/new, and the trust check is then skipped.
+	trustFlag protocol.ACPTrustOverride
+	// start is the record of the last session start of this client.
+	start trustStart
+	// tbox is the open trust box, or nil.
+	tbox *trustBox
+	// trustReq numbers the trust requests; only the answer to the latest one
+	// applies. trustReading is true while /trust waits for the trust state.
+	trustReq     uint64
+	trustReading bool
+	// preWarn and preExplain are the blocks of the trust warning and of the
+	// explanation of the start that is open. trustSlots are the placeholders
+	// of the trust note and the settings problems that wait for the state.
+	preWarn, preExplain string
+	trustSlots          [][2]string
+	// sessTrust and diagnostics are the trust and the settings problems of the
+	// state of stateSession. foldApplied is the session whose thinkingFold the
+	// view applied.
+	sessTrust    *protocol.ACPSessionTrust
+	diagnostics  []protocol.ACPDiagnostic
+	stateSession string
+	foldApplied  string
+
 	// quitUntil ends the confirmation window of the first ctrl+c. quitNote is
 	// set when the user asked to quit.
 	quitUntil time.Time
@@ -231,6 +259,9 @@ func newSessionView(m *Model, o Options) *sessionView {
 		now:    o.Now,
 		tick:   o.TickInterval,
 		clip:   o.Clipboard.resolved(),
+		// init and onOpened start the first session with startSessionCmd,
+		// which sets starting.
+		trustFlag: o.Trust,
 	}
 	if s.now == nil {
 		s.now = time.Now
@@ -353,6 +384,9 @@ func (s *sessionView) Slots(width int) Slots {
 		Pending: s.pendingRows(width),
 	}
 	switch {
+	case s.tbox != nil:
+		out.Editor = s.tbox.slot(width, s.modalHeight(out.Status), th)
+		return out
 	case s.dlg != nil:
 		out.Editor = s.dlg.slot(s, width, s.modalHeight(out.Status))
 		return out

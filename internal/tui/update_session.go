@@ -139,7 +139,7 @@ func (s *sessionView) init() tea.Cmd {
 			return openedMsg{client: c, err: err}
 		}
 	}
-	return tea.Batch(waitClient(s.events), s.newSessionCmd(false))
+	return tea.Batch(waitClient(s.events), s.startSessionCmd(false))
 }
 
 // update handles one message. It runs after the model's own handling.
@@ -203,6 +203,10 @@ func (s *sessionView) update(msg tea.Msg) tea.Cmd {
 		s.onCancelFailed(msg)
 	case clipboardDoneMsg:
 		cmd = s.onCopied(msg)
+	case trustStateMsg:
+		cmd = s.onTrustState(msg)
+	case trustSetMsg:
+		cmd = s.onTrustSet(msg)
 	case tickMsg:
 		s.onTick()
 	}
@@ -223,13 +227,13 @@ func (s *sessionView) onOpened(msg openedMsg) tea.Cmd {
 	}
 	s.adoptClient(msg.client)
 	s.maybeStartNotices()
-	return tea.Batch(waitClient(s.events), s.newSessionCmd(false))
+	return tea.Batch(waitClient(s.events), s.startSessionCmd(false))
 }
 
-// newSessionCmd creates a session. With detach set it leaves the current one
-// first; the in-process client and a client without a session answer with an
-// error that does not matter here.
-func (s *sessionView) newSessionCmd(detach bool) tea.Cmd {
+// newSessionCmd creates a session with a trust override. With detach set it
+// leaves the current one first; the in-process client and a client without a
+// session answer with an error that does not matter here.
+func (s *sessionView) newSessionCmd(detach bool, trust protocol.ACPTrustOverride) tea.Cmd {
 	c, cwd, gen := s.client, s.cwd, s.gen
 	return func() tea.Msg {
 		ctx, cancel := callContext()
@@ -239,7 +243,7 @@ func (s *sessionView) newSessionCmd(detach bool) tea.Cmd {
 				return newSessionMsg{gen: gen, err: fmt.Errorf("leave the session: %w", err)}
 			}
 		}
-		info, err := c.NewSession(ctx, cwd)
+		info, err := c.NewSession(ctx, cwd, trust)
 		return newSessionMsg{gen: gen, info: info, err: err}
 	}
 }
@@ -249,8 +253,15 @@ func ignorableDetach(err error) bool {
 }
 
 func (s *sessionView) onNewSession(msg newSessionMsg) tea.Cmd {
+	// The start ends with any answer, also one of an older generation, so that
+	// the view never waits for ever.
+	s.starting = false
+	s.endTrustPre()
 	if msg.gen != s.gen {
 		return nil
+	}
+	if msg.err == nil {
+		s.start.session = msg.info.ID
 	}
 	if msg.err != nil {
 		s.needNew = true
@@ -339,6 +350,10 @@ func (s *sessionView) maybeStartNotices() {
 		return
 	}
 	s.startShown = true
+	if s.starting {
+		s.reserveTrustPre()
+	}
+	s.addTrustSlots()
 	s.addFallbackSlot()
 	if s.trace != "" {
 		s.appendBlock(noticeBlock{text: traceWarningText(s.trace), role: RoleWarning})
@@ -363,6 +378,8 @@ func (s *sessionView) replaceTranscript() {
 	s.m.resetTranscript()
 	s.startShown = false
 	s.starts = nil
+	s.trustSlots = nil
+	s.preWarn, s.preExplain = "", ""
 	s.maybeStartNotices()
 }
 
@@ -387,6 +404,7 @@ func (s *sessionView) onSnapshot(v SnapshotMsg) tea.Cmd {
 				s.promptID, s.promptSession = 0, ""
 			}
 			s.appendBlock(NewDividerBlock("session " + ShortID(v.SessionID)))
+			s.addTrustSlots()
 			s.addFallbackSlot()
 		}
 		s.trl.Reset()
@@ -553,6 +571,8 @@ func (s *sessionView) onPromptCalled(msg promptCalledMsg) tea.Cmd {
 	}
 	var cmd tea.Cmd
 	if msg.session != nil && msg.gen == s.gen {
+		// The session came from the trust record of the last start.
+		s.start.session = msg.session.ID
 		s.useSession(*msg.session)
 		cmd = s.refreshCmd(true)
 	}
@@ -800,6 +820,8 @@ func (s *sessionView) onRefresh(msg refreshMsg) {
 		s.thinking = st.ThinkingLevel
 		s.fallback = st.ModelFallback
 		s.haveState, s.stateGen = true, s.gen
+		s.sessTrust, s.diagnostics, s.stateSession = st.Trust, st.Diagnostics, s.sess.ID
+		s.applySessionFold(st.ThinkingFold)
 		if msg.runSeq == s.run.seq && st.Running != s.run.running {
 			s.run.running = st.Running
 			if st.Running {
