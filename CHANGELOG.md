@@ -8,6 +8,15 @@ The format follows [Keep a Changelog 1.1.0](https://keepachangelog.com/en/1.1.0/
 
 ### Added
 
+- **CLI:** `--system-prompt <text|file>` replaces the default system prompt, and `--append-system-prompt <text|file>` adds text after it. A value that names an existing file is read as a file. All prompt text of the flags is at most 256 KiB.
+- **CLI:** `-t` / `--tools <names>` keeps only the named built-in tools, and `-nt` / `--no-tools` keeps none. A name that is not a built-in tool, or `-t` together with `-nt`, exits 1.
+- **CLI:** The TUI and `ask acp` sessions take the same four flags: the TUI sends them to the leader or the in-process agent for each session it opens. `ask acp` has no flags, but a client can send `_meta["ask.dev/session"]` with `session/new`. A leader of an older build ignores the flags, and the TUI then shows a warning.
+- **Prompt:** The system prompt now has named sections in a fixed order, and the working directory and the ISO date come last, so the start of the prompt stays the same between sessions.
+- **Prompt:** `SYSTEM.md` replaces the default prompt, and `APPEND_SYSTEM.md` adds text to it. Ask reads them from `<project>/.ask/` (trusted projects only) and from `<ASK_HOME>`. The project file wins over the user file.
+- **Prompt:** `AGENTS.md` and `CLAUDE.md` of `<ASK_HOME>` and of each folder from the git root to the working directory reach the model as an escaped user-role message, also in a project that is not trusted. A file is at most 1 MiB and all files together at most 64 KiB. A duplicate in one folder is left out.
+- **Skills:** Ask lists the skills of `<ASK_HOME>/skills`, `~/.agents/skills`, and, in a trusted project, `.ask/skills` and `.agents/skills` as one user-role message. The model reads a skill with `read`. The first skill of a name wins.
+- **Settings:** The key `defaultTools` (an array of tool names, or of `+name` and `-name` entries) sets the built-in tools. An unset key keeps all tools, and `[]` keeps none. A project array replaces the user array.
+- **CLI:** `ask -p` writes one `Warning:` line for the context files that Ask left out or cut, and one for the skills that did not load. `ask settings show` lists the context files with their size and skip reason, and the skills that did not load, and its settings rows now include `defaultTools`.
 - **CLI:** `ask -p` uses the saved `defaultModel` when you give no `--provider` and no `--model`. The project value counts only in a trusted project. A default that is not usable gives one stderr warning, and the run uses `faux`.
 - **Settings:** Ask reads the project settings file `<project>/.ask/settings.json` on top of `<ASK_HOME>/settings.json`. The project file overrides the user file: objects merge key by key, and other values replace. A trusted project can set `defaultModel` and `thinkingFold`.
 - **Settings:** A project file cannot set `defaultProjectTrust` or a key of the deny list (`trust`, `httpProxy`, `env`, `shellPath`, `shellCommandPrefix`, `npmCommand`, `providers`, `hooks`, `cacheWarming`, `deviceId`). Ask drops such a key with one diagnostic, and the rest of the file applies.
