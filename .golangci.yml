@@ -218,6 +218,16 @@ linters:
               desc: the ACP adapter wraps the agent; core packages must not import it
             - pkg: AskCore/internal/leader
               desc: the leader routes bytes to the agent; core packages must not import it
+        skills-boundary:
+          list-mode: strict
+          files:
+            - "**/internal/skills/**"
+          allow:
+            - $gostd
+            - AskCore/pkg/protocol
+            - AskCore/internal/skills
+            - gopkg.in/yaml.v3
+            - github.com/stretchr/testify
         leader-router-boundary:
           list-mode: strict
           files:
