@@ -26,7 +26,7 @@ Cleanup verifies saved PID identity before signaling an owned process; a cleanup
 
 ## Cases
 
-All cases start `ask` with no arguments, with the faux provider and a temporary `ASK_HOME`. A reply comes from the faux script: `echo <text>` calls the echo tool with `<text>` and the model then says the text back, `fail <text>` ends in an assistant error, and any other text is said back.
+All cases start `ask` with the faux provider and a temporary `ASK_HOME`, and all cases except `ask-trust-prompt-no-leader` (which adds `--no-leader`) start it with no arguments. The `ask-trust-prompt` and `ask-trust-prompt-no-leader` cases also put a project settings file in the work folder before `ask` starts. A reply comes from the faux script: `echo <text>` calls the echo tool with `<text>` and the model then says the text back, `fail <text>` ends in an assistant error, and any other text is said back.
 
 | Case | Size | What it checks |
 |---|---|---|
@@ -41,6 +41,8 @@ All cases start `ask` with no arguments, with the faux provider and a temporary 
 | `ask-exit-ctrl-c` | 80×24 | `ctrl+c` on an empty prompt asks (`Press ctrl+c again to quit`) and the second one ends the program, with the same exit checks. |
 | `ask-exit-sigterm` | 80×24 | SIGTERM to the one `ask` process of the run while the viewer is open: the same exit checks. |
 | `ask-exit-sighup` | 80×24 | The same with SIGHUP. |
+| `ask-trust-prompt` | 80×24 | The work folder has `.ask/settings.json`, a gated file, and no saved decision. The first screen is the trust prompt (`Trust this project folder?`) in the prompt pane slot, with the explanation that names `.ask/settings.json` and `❯ Not now` highlighted. The leader runs and holds no session yet. `enter` on Not now starts an untrusted session with the note `… are not loaded in this session.` and `trust.json` does not exist. `/new` asks again; `down` and `enter` on `Trust this folder` start a session with the note `✓ Trusted …` and `trust.json` holds the work folder with `true`. `/trust` opens the `Project trust` box with `Saved: trusted`, `This session: trusted` and the `current` tag on Trust this folder. `escape` closes it and `trust.json` does not change. |
+| `ask-trust-prompt-no-leader` | 80×24 | `ask --no-leader` (the in-process TUI) with a real private `ASK_HOME` and the same gated work folder. The same trust prompt shows with `❯ Not now` highlighted, because the in-process link answers the trust requests itself. `down` and `enter` on `Trust this folder` start a session with the note `✓ Trusted …`, and `trust.json` in that `ASK_HOME` holds the work folder with `true`. `/trust` shows `Saved: trusted` and `This session: trusted`. At the prompt, after the choice, after `/trust` and after the program ends: no leader process of the run binary exists, `ask leader status` finds no leader, and `leader.sock`, `leader.lock` and `leader.log` do not exist in `ASK_HOME`. A leader creates the lock and the log when it starts, so their absence proves that no leader started at any point. After the end no process of the run binary remains. |
 | `ask-copy` | 80×24 | `/copy` before any reply shows `Nothing to copy` and writes no OSC 52. After an echo tool turn and a plain reply, `/copy` shows `Sent to the terminal clipboard`. The child has `SSH_TTY` set, so the native command is skipped and the real clipboard is never touched. The output holds exactly one `ESC ]52;c;` sequence, and its base64 payload decodes to the plain reply and nothing of the tool output. |
 
 These checks use structure and the stable texts of the design, not whole-screen goldens: the run shows a temporary directory and the `faux-1` model. The golden tests in `internal/tui` own the exact rows.
@@ -54,7 +56,8 @@ These checks use structure and the stable texts of the design, not whole-screen 
 
 Each case has its own `ASK_HOME` and its own leader, which the TUI starts.
 Every leader case checks, after the program is ready, that `ask leader status` finds a leader that holds a session and that a leader process of the run binary exists, so the fallback cannot pass for a leader test.
-Only the cases in `IN_PROCESS_CASES` in [run.py](run.py) run with the in-process agent; they start no leader, and the runner fails them when a leader of the run binary exists or when `ask leader status` finds one.
+A case in `CASE_PREPARE` in [run.py](run.py) writes files into its work folder before `ask` starts. A case in `CASE_READY` waits for its own first screen in place of the idle prompt, and it checks the leader itself after its first session starts, because no session exists before that.
+Only the cases in `IN_PROCESS_CASES` in [run.py](run.py) run with the in-process agent; they start no leader, and the runner fails them when a leader of the run binary exists or when `ask leader status` finds one. A case in `SYMLINK_HOME_CASES` gets there through the startup fallback (its `ASK_HOME` is a symlink); the other in-process cases pass `--no-leader` through `CASE_ARGS` and keep a real home.
 The cases in `REMOTE_CASES` add `SSH_TTY` to the child environment (the name is recorded in `commands.json`).
 After a case the runner runs `ask leader stop` for that home and checks the process table for leaders of its own binary path.
 A leader of that path that ignores the stop is signaled after its command line is checked again; no other process is touched.

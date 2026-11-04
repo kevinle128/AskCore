@@ -62,7 +62,7 @@ class Session:
     """One owned tui-test session: its CLI calls, process identity and cleanup."""
 
     def __init__(self, cli, name, backend, target, directory, artifacts, *, cols, rows, env=None, env_names=(),
-                 ready, ready_timeout=30):
+                 ready, ready_timeout=30, args=()):
         self.cli, self.name, self.backend = cli, name, backend
         self.artifacts = artifacts
         self.size = (cols, rows)
@@ -78,7 +78,7 @@ class Session:
         try:
             result = self.call('run', '--backend', backend, '--cols', str(cols), '--rows', str(rows),
                                '--config', str(HERE / 'tui-test.toml'), '--cwd', str(directory),
-                               str(target), env=env)
+                               str(target), *args, env=env)
             self.started = True
             self.owner = json.loads(result.stdout)['data']
             self.identities = {pid: self.identity(pid) for pid in (self.owner['pid'], self.owner['shell_pid'])}
@@ -252,10 +252,16 @@ def product_hashes():
 
 ASK_CASES = ['ask-idle', 'ask-turn', 'ask-resize', 'ask-selector', 'ask-providers', 'ask-mouse',
              'ask-exit-quit', 'ask-exit-ctrl-c', 'ask-exit-sigterm', 'ask-exit-sighup',
-             'ask-copy', 'ask-in-process']
-# Cases that run with the in-process agent: ASK_HOME is a symlink, which the leader
-# connect refuses as an unsafe endpoint, so the TUI falls back at startup and starts no leader.
-IN_PROCESS_CASES = {'ask-in-process'}
+             'ask-copy', 'ask-in-process', 'ask-trust-prompt', 'ask-trust-prompt-no-leader']
+# Cases that run with the in-process agent and start no leader.
+IN_PROCESS_CASES = {'ask-in-process', 'ask-trust-prompt-no-leader'}
+# In-process cases whose ASK_HOME is a symlink, which the leader connect refuses as an unsafe
+# endpoint, so the TUI falls back at startup. The other in-process cases use --no-leader.
+SYMLINK_HOME_CASES = {'ask-in-process'}
+# Arguments of `ask` for a case; the other cases start `ask` with no arguments.
+CASE_ARGS = {'ask-trust-prompt-no-leader': ('--no-leader',)}
+# Files in ASK_HOME that a leader creates: its socket, its lock and its log.
+LEADER_FILES = ('leader.sock', 'leader.lock', 'leader.log')
 # Cases that run as if over SSH, so /copy skips the native clipboard command and uses OSC 52.
 REMOTE_CASES = {'ask-copy'}
 REMOTE_ENV = {'SSH_TTY': '/dev/pts/0'}
@@ -1119,6 +1125,139 @@ def ask_copy(session):
     return {'screen': 'copy', 'osc52_sequences': 1, 'payload': 'last reply text only'}
 
 
+TRUST_TITLE = 'Trust this project folder?'
+TRUST_EXPLAIN = 'has project files that Ask has not read or run:'
+NOT_NOW_NOTE = 'are not loaded in this session.'
+TRUSTED_NOTE = '✓ Trusted '
+
+
+def prepare_gated_project(work):
+    """A project settings file is a gated file, so the folder needs a trust decision."""
+    (work / '.ask').mkdir()
+    (work / '.ask' / 'settings.json').write_text('{"thinkingFold": "collapsed"}\n')
+
+
+def trust_prompt_ready(state):
+    """The header row is on row 1 and the trust prompt is in the prompt pane slot."""
+    lines = screen_lines(state)
+    return lines[0].rstrip() == HEADER and any(TRUST_TITLE in line for line in lines)
+
+
+def joined_rows(state):
+    """The screen rows as one text, so that a wrapped sentence still matches."""
+    return ' '.join(line.strip() for line in screen_lines(state))
+
+
+def read_trust_store(home):
+    path = Path(home) / 'trust.json'
+    return json.loads(path.read_text()) if path.exists() else None
+
+
+def wait_trust_prompt(session):
+    state = session.wait(trust_prompt_ready)
+    lines = screen_lines(state)
+    # A long folder path wraps the explanation, so the rows are read as one text.
+    text = joined_rows(state)
+    assert TRUST_EXPLAIN in text, 'the prompt does not list the project files'
+    assert '.ask/settings.json' in text, 'the prompt does not name the gated file'
+    assert any('❯ Not now' in line for line in lines), 'Not now is not the first highlight'
+    assert not any(line.startswith(' ❯ Ask anything') for line in lines), 'the prompt pane shows with the dialog'
+    return state
+
+
+def ask_trust_prompt(session):
+    """The trust prompt of a folder with a gated file, its choices with the real keys, and /trust.
+
+    The leader starts before the first session, because the TUI asks it for the trust state.
+    No session exists while the prompt is open, and only a saved choice writes trust.json.
+    """
+    wait_trust_prompt(session)
+    status = leader_status(session.binary, session.env)
+    assert status is not None and status['sessions'] == 0, f'a session started before the choice: {status}'
+    session.capture('prompt')
+
+    # Not now: the session starts untrusted and nothing is saved.
+    session.key('enter')
+    state = session.wait(lambda s: ask_ready(s) and NOT_NOW_NOTE in joined_rows(s))
+    assert TRUST_TITLE not in state['text']
+    assert_link(session.binary, session.env, False)
+    assert read_trust_store(session.home) is None, 'Not now wrote trust.json'
+    session.capture('not-now')
+
+    # /new asks again, because nothing was saved. Trust this folder saves the choice.
+    session.write('/new')
+    session.key('enter')
+    wait_trust_prompt(session)
+    choose_trust_folder(session)
+    check_trust_command(session)
+    session.quit()
+    return {'screen': 'trust prompt', 'not_now_saved': False, 'trust_saved': str(session.work)}
+
+
+def choose_trust_folder(session):
+    """On the open trust prompt, `down` and `enter` save the choice and start a trusted session."""
+    session.key('down')
+    session.wait(lambda s: any('❯ Trust this folder' in line for line in screen_lines(s)))
+    session.key('enter')
+    # A long folder path wraps the note, so the rows are read as one text.
+    state = session.wait(lambda s: ask_ready(s) and TRUSTED_NOTE in joined_rows(s))
+    assert 'Its project files load in this session.' in joined_rows(state)
+    store = read_trust_store(session.home)
+    assert store == {str(session.work): True}, f'trust.json does not hold the folder: {store}'
+    session.capture('trusted')
+
+
+def check_trust_command(session):
+    """/trust shows the saved choice and the trust of this session; closing it saves nothing."""
+    session.write('/trust')
+    session.key('enter')
+    state = session.wait(lambda s: 'Project trust' in s['text'] and 'Saved: trusted' in s['text'])
+    assert 'This session: trusted' in state['text'], 'the box does not show the session trust'
+    assert any('current' in line and 'Trust this folder' in line for line in screen_lines(state)), \
+        'the saved row is not tagged current'
+    session.capture('trust-command')
+    session.key('escape')
+    session.wait(lambda s: 'Project trust' not in s['text'] and ask_ready(s))
+    assert read_trust_store(session.home) == {str(session.work): True}, 'closing /trust changed trust.json'
+
+
+def binary_processes(binary):
+    """Every process of the run binary: the TUI, a leader or any other subcommand."""
+    return [(pid, command) for pid, command in process_table() if command.startswith(str(binary))]
+
+
+def assert_no_leader(session):
+    """No leader process runs, no leader answers, and no leader file is in ASK_HOME.
+
+    A leader creates its lock and its log when it starts, and they stay after it ends,
+    so their absence proves that no leader started at any point of the case.
+    """
+    assert_link(session.binary, session.env, True)
+    found = [name for name in LEADER_FILES if (Path(session.home) / name).exists()]
+    assert not found, f'leader files in ASK_HOME of a --no-leader case: {found}'
+
+
+def ask_trust_prompt_no_leader(session):
+    """The trust prompt of the in-process TUI (`ask --no-leader`), which never starts a leader.
+
+    The in-process link answers the trust requests itself, so the same prompt shows and a
+    saved choice writes trust.json of the private ASK_HOME.
+    """
+    wait_trust_prompt(session)
+    assert_no_leader(session)
+    session.capture('prompt')
+    choose_trust_folder(session)
+    assert_no_leader(session)
+    check_trust_command(session)
+    assert_no_leader(session)
+    session.quit()
+    assert_no_leader(session)
+    left = binary_processes(session.binary)
+    assert not left, f'processes of the run binary remain after the program ended: {left}'
+    return {'screen': 'trust prompt', 'link': 'in-process (--no-leader)', 'trust_saved': str(session.work),
+            'leader_files': []}
+
+
 def open_viewer(session):
     """A tool turn, then the viewer of the tool block, so that an exit path must leave a full-screen frame."""
     idle_screen(session)
@@ -1185,8 +1324,17 @@ CASES = {
     'ask-exit-sighup': (ask_exit_sighup, ASK_COLUMNS, ASK_ROWS, {}),
     'ask-copy': (ask_copy, ASK_COLUMNS, ASK_ROWS, REMOTE_ENV),
     'ask-in-process': (ask_in_process, ASK_COLUMNS, ASK_ROWS, {}),
+    'ask-trust-prompt': (ask_trust_prompt, ASK_COLUMNS, ASK_ROWS, {}),
+    'ask-trust-prompt-no-leader': (ask_trust_prompt_no_leader, ASK_COLUMNS, ASK_ROWS, {}),
 }
 assert list(CASES) == ASK_CASES
+
+
+# Cases that need files in the work folder before `ask` starts.
+CASE_PREPARE = {'ask-trust-prompt': prepare_gated_project, 'ask-trust-prompt-no-leader': prepare_gated_project}
+# Cases that start on another screen than the idle prompt. No session exists on that
+# screen yet, so the case checks the link itself after the first session starts.
+CASE_READY = {'ask-trust-prompt': trust_prompt_ready, 'ask-trust-prompt-no-leader': trust_prompt_ready}
 
 
 def compile_ask(base, artifacts):
@@ -1218,8 +1366,10 @@ def run_ask(args, cli, run_id, artifacts, results):
                 home = base / f'{backend}-{scenario}'
                 work = base / f'work-{backend}-{scenario}'
                 work.mkdir()
+                if scenario in CASE_PREPARE:
+                    CASE_PREPARE[scenario](work)
                 in_process = scenario in IN_PROCESS_CASES
-                if in_process:
+                if scenario in SYMLINK_HOME_CASES:
                     # The real home is behind a symlink; the leader connect refuses it.
                     real_home = base / f'real-{backend}-{scenario}'
                     real_home.mkdir(mode=0o700)
@@ -1231,8 +1381,11 @@ def run_ask(args, cli, run_id, artifacts, results):
                 try:
                     session = AskSession(cli, name, backend, binary, work, case_dir, cols=cols, rows=rows, env=env,
                                          env_names=env_names,
-                                         ready=ask_ready, ready_timeout=30)
-                    assert_link(binary, env, in_process)
+                                         ready=CASE_READY.get(scenario, ask_ready), ready_timeout=30,
+                                         args=CASE_ARGS.get(scenario, ()))
+                    session.binary, session.env, session.home, session.work = binary, env, home, work
+                    if scenario not in CASE_READY:
+                        assert_link(binary, env, in_process)
                     detail = test(session)
                     record.update(result='pass', detail=detail)
                 except Exception as error:
