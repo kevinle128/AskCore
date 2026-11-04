@@ -25,6 +25,13 @@ func (a *Adapter) HandleExtensionMethod(ctx context.Context, method string, raw 
 		}
 		return res, nil
 	}
+	// The trust table is next: its calls carry no session either.
+	if handled, res, err := a.handleTrustMethod(ctx, method, raw); handled {
+		if err != nil {
+			return nil, err
+		}
+		return res, nil
+	}
 	handler, ok := a.askHandlers()[method]
 	if !ok {
 		switch method {
@@ -132,7 +139,7 @@ func (a *Adapter) state(_ context.Context, raw json.RawMessage) (any, error) {
 	}
 	st := s.Agent().State()
 	steering, followUp := s.Queues()
-	return protocol.ACPStateResult{
+	res := protocol.ACPStateResult{
 		SessionID:     s.ID,
 		Epoch:         s.Epoch(),
 		Running:       st.Status == agent.Running,
@@ -142,7 +149,14 @@ func (a *Adapter) state(_ context.Context, raw json.RawMessage) (any, error) {
 		Steering:      steering,
 		FollowUp:      followUp,
 		ModelFallback: s.fallbackNow(),
-	}, nil
+	}
+	if t := s.trustNow(); t != nil {
+		trust := t.Trust
+		res.Trust = &trust
+		res.Diagnostics = append([]protocol.ACPDiagnostic(nil), t.Diagnostics...)
+		res.ThinkingFold = t.ThinkingFold
+	}
+	return res, nil
 }
 
 func (a *Adapter) models(ctx context.Context, raw json.RawMessage) (any, error) {
@@ -166,7 +180,7 @@ func (a *Adapter) models(ctx context.Context, raw json.RawMessage) (any, error) 
 	out := protocol.ACPModelsResult{Current: modelID(current), Models: make([]protocol.ACPModel, 0, len(rows)+1), UsableOnly: filter}
 	if a.cfg.DefaultModel != nil {
 		// A store that cannot be read means no default; the list still works.
-		if id, err := a.cfg.DefaultModel(ctx); err == nil {
+		if id, err := a.cfg.DefaultModel(ctx, s.settingsScope()); err == nil {
 			out.Default = id
 		}
 	}
@@ -261,8 +275,10 @@ func (a *Adapter) setModel(ctx context.Context, raw json.RawMessage) (any, error
 	st := s.Agent().State()
 	res := protocol.ACPSetModelResult{ModelID: modelID(st.Model), ThinkingLevel: st.ThinkingLevel}
 	if req.SaveDefault && a.cfg.SaveDefault != nil {
-		// A failed save never undoes the switch: the client reads defaultSaved.
-		res.DefaultSaved = a.cfg.SaveDefault(ctx, res.ModelID) == nil
+		// A failed save never undoes the switch: the client reads defaultSaved
+		// and the reason.
+		res.DefaultNotSaved = a.cfg.SaveDefault(ctx, s.settingsScope(), res.ModelID)
+		res.DefaultSaved = res.DefaultNotSaved == ""
 	}
 	return res, nil
 }

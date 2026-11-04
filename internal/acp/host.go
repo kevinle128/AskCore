@@ -37,8 +37,18 @@ var ErrHostClosed = errors.New("acp: host closed")
 // errStaleDriver is returned for a call that names an old driver generation.
 var errStaleDriver = newKindError(protocol.ACPErrNotDriver, "the driver generation is not current")
 
+// SessionRequest holds what the Factory gets for one new session.
+type SessionRequest struct {
+	// ID is the session ID that the host made.
+	ID string
+	// Cwd is the absolute working directory that the client sent.
+	Cwd string
+	// Trust is the trust override of this session, or empty.
+	Trust protocol.ACPTrustOverride
+}
+
 // Factory builds one independent Agent for a new session.
-type Factory func(ctx context.Context, sessionID, cwd string) (*agent.Agent, error)
+type Factory func(ctx context.Context, req SessionRequest) (*agent.Agent, error)
 
 // WriteEvent sends one Agent event to the client. epoch names the conversation
 // epoch that the event belongs to. One session calls it from one goroutine, in
@@ -254,8 +264,14 @@ func (h *Host) Sessions() []*Session {
 	return list
 }
 
-// NewSession builds an Agent and publishes the session only when it is whole.
+// NewSession builds an Agent in cwd with no trust override. See NewSessionWith.
 func (h *Host) NewSession(ctx context.Context, cwd string) (*Session, error) {
+	return h.NewSessionWith(ctx, SessionRequest{Cwd: cwd})
+}
+
+// NewSessionWith builds an Agent and publishes the session only when it is
+// whole. The host makes the session ID; the ID of req is not used.
+func (h *Host) NewSessionWith(ctx context.Context, req SessionRequest) (*Session, error) {
 	if err := h.beginOperation(); err != nil {
 		return nil, err
 	}
@@ -264,10 +280,12 @@ func (h *Host) NewSession(ctx context.Context, cwd string) (*Session, error) {
 	if err != nil {
 		return nil, err
 	}
-	a, err := h.factory(ctx, id, cwd)
+	req.ID = id
+	a, err := h.factory(ctx, req)
 	if err != nil {
 		return nil, err
 	}
+	cwd := req.Cwd
 	s := &Session{ID: id, CWD: cwd, host: h, agent: a, gen: 1}
 	s.cond = sync.NewCond(&s.qmu)
 	// The first Follow starts the replay ring and gives the first epoch. The
@@ -389,6 +407,9 @@ type Session struct {
 	// fallback is the saved default that the session could not start on. It
 	// holds until the model of the session changes.
 	fallback *protocol.ACPModelFallback
+	// trust is the trust decision and the settings view that the session
+	// started with. It does not change.
+	trust *SessionTrust
 
 	// qmu guards the outbound queue. The Agent listener only appends to it.
 	qmu     sync.Mutex
@@ -573,6 +594,32 @@ func (s *Session) setFallback(f *protocol.ACPModelFallback) {
 	s.mu.Lock()
 	s.fallback = &cp
 	s.mu.Unlock()
+}
+
+// setTrust records the trust decision and the settings view of the session start.
+func (s *Session) setTrust(t *SessionTrust) {
+	if t == nil {
+		return
+	}
+	cp := *t
+	cp.Diagnostics = append([]protocol.ACPDiagnostic(nil), t.Diagnostics...)
+	s.mu.Lock()
+	s.trust = &cp
+	s.mu.Unlock()
+}
+
+// trustNow returns the start trust of the session, or nil.
+func (s *Session) trustNow() *SessionTrust {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	return s.trust
+}
+
+// settingsScope returns the settings scope of the session: its cwd and
+// whether its project layer applies.
+func (s *Session) settingsScope() SettingsScope {
+	t := s.trustNow()
+	return SettingsScope{Cwd: s.CWD, Trusted: t != nil && t.Trust.Trusted}
 }
 
 // fallbackNow returns a copy of the start fallback while it still holds.

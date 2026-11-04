@@ -84,11 +84,11 @@ func TestAdapterSessionIsolationAndFailedNew(t *testing.T) {
 	var built atomic.Int32
 	cfg := testConfig(says("one", "two"), nil)
 	inner := cfg.Factory
-	cfg.Factory = func(ctx context.Context, id, cwd string) (*agent.Agent, error) {
+	cfg.Factory = func(ctx context.Context, req SessionRequest) (*agent.Agent, error) {
 		if built.Add(1) == 3 {
 			return nil, errors.New("factory failed with secret-path /home/x")
 		}
-		return inner(ctx, id, cwd)
+		return inner(ctx, req)
 	}
 	p := newAdapterPeer(t, cfg, nil)
 	p.ok("initialize", map[string]any{"protocolVersion": 1}, nil)

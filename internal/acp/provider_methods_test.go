@@ -498,16 +498,16 @@ func TestSetModelSavesDefaultOnlyWhenAsked(t *testing.T) {
 	var mu sync.Mutex
 	failSave := false
 	cfg := testConfig(says("x"), nil)
-	cfg.SaveDefault = func(_ context.Context, id string) error {
+	cfg.SaveDefault = func(_ context.Context, _ SettingsScope, id string) protocol.ACPDefaultNotSaved {
 		mu.Lock()
 		defer mu.Unlock()
 		if failSave {
-			return errors.New("disk full at /secret/path")
+			return protocol.ACPDefaultShadowed
 		}
 		saved = append(saved, id)
-		return nil
+		return ""
 	}
-	cfg.DefaultModel = func(context.Context) (string, error) {
+	cfg.DefaultModel = func(context.Context, SettingsScope) (string, error) {
 		mu.Lock()
 		defer mu.Unlock()
 		if len(saved) == 0 {
@@ -535,6 +535,7 @@ func TestSetModelSavesDefaultOnlyWhenAsked(t *testing.T) {
 
 	p.ok(protocol.ACPSetModel, map[string]any{"sessionId": sid, "modelId": targetID, "saveDefault": true}, &set)
 	require.True(t, set.DefaultSaved)
+	require.Empty(t, set.DefaultNotSaved)
 	require.Equal(t, []string{targetID}, saved)
 	p.ok(protocol.ACPModels, map[string]any{"sessionId": sid}, &models)
 	require.Equal(t, targetID, models.Default)
@@ -549,8 +550,8 @@ func TestSetModelSavesDefaultOnlyWhenAsked(t *testing.T) {
 	set = protocol.ACPSetModelResult{}
 	require.NoError(t, json.Unmarshal(f.Result, &set))
 	require.False(t, set.DefaultSaved)
+	require.Equal(t, protocol.ACPDefaultShadowed, set.DefaultNotSaved, "the reason of a refused save reaches the client")
 	require.Equal(t, otherID, set.ModelID)
-	require.NotContains(t, string(f.Result), "/secret/path")
 }
 
 func TestStateReportsModelFallbackUntilModelChanges(t *testing.T) {
@@ -627,8 +628,8 @@ func TestNewSessionDoesNotKeepProviderRemovedDuringBuild(t *testing.T) {
 		c.Model = providers.OpenAIGPT55()
 	})
 	factory := cfg.Factory
-	cfg.Factory = func(ctx context.Context, id, cwd string) (*agent.Agent, error) {
-		a, err := factory(ctx, id, cwd)
+	cfg.Factory = func(ctx context.Context, req SessionRequest) (*agent.Agent, error) {
+		a, err := factory(ctx, req)
 		close(built)
 		<-release
 		return a, err

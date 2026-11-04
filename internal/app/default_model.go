@@ -3,8 +3,12 @@ package app
 import (
 	"context"
 
+	"go.uber.org/zap"
+
 	"AskCore/internal/acp"
+	"AskCore/internal/auth"
 	"AskCore/internal/providers"
+	"AskCore/internal/settings"
 	"AskCore/pkg/protocol"
 )
 
@@ -23,6 +27,78 @@ type startChoice struct {
 	usable func(ctx context.Context, provider string) bool
 	// saved returns the saved default model id, or "".
 	saved func(ctx context.Context) (string, error)
+}
+
+// newStartChoice builds the start choice over the model list that current
+// returns. initial is the demo model, or zero. The demo provider is always
+// usable; another provider is usable when service has a credential for it.
+func newStartChoice(initial providers.Model, current func() modelSnapshot, service *auth.Service) startChoice {
+	isInitial := func(ref providers.Ref) bool {
+		return initial.ID != "" && ref.Provider == initial.Provider && ref.ID == initial.ID && (ref.API == "" || ref.API == initial.API)
+	}
+	return startChoice{
+		initial: initial,
+		rows: func() []providers.Model {
+			set := current().set.All()
+			if initial.ID == "" {
+				return set
+			}
+			return append([]providers.Model{initial}, set...)
+		},
+		find: func(ref providers.Ref) (providers.Model, error) {
+			if isInitial(ref) {
+				return initial, nil
+			}
+			return current().set.Find(ref)
+		},
+		// inCatalog tells a model that the account list removed from a model
+		// that no source has.
+		inCatalog: func(ref providers.Ref) bool {
+			return isInitial(ref) || current().catalog.Contains(ref)
+		},
+		usable: func(ctx context.Context, provider string) bool {
+			if initial.ID != "" && provider == initial.Provider {
+				return true
+			}
+			return providerUsable(ctx, service, provider)
+		},
+	}
+}
+
+// ChooseSavedModel chooses the start model of a run that has no UI and no
+// model list refresh, such as print mode. It uses the rules of a new session:
+// the saved default when it can be used, else the first usable model in
+// display order. The model list comes from the cache in home and the catalog,
+// with no network call. initial is the demo model; it is first in display
+// order and always usable, so it is the fallback.
+//
+// warning is one line for stderr when the saved default cannot be used, or
+// empty. It names the saved default, the reason and the model that is used. It
+// never holds a credential.
+func ChooseSavedModel(ctx context.Context, home string, service *auth.Service, initial providers.Model, saved string) (m providers.Model, warning string) {
+	cache, _ := settings.NewModelCache(home)
+	snap := buildModelSnapshot(ctx, providers.GeneratedCatalog(), readModelCache(ctx, cache, zap.NewNop()), service, zap.NewNop())
+	c := newStartChoice(initial, func() modelSnapshot { return snap }, service)
+	c.saved = func(context.Context) (string, error) { return saved, nil }
+	m, fb := c.pick(ctx)
+	if fb != nil {
+		warning = "Warning: default model " + fb.SavedDefault + " is not usable (" + fallbackReasonText(fb.Reason) + "); using " + acp.ModelID(m) + "."
+	}
+	return m, warning
+}
+
+// fallbackReasonText words why the saved default was not used. The TUI uses
+// the same words in its start notice.
+func fallbackReasonText(r protocol.ACPFallbackReason) string {
+	switch r {
+	case protocol.ACPFallbackNoCredential:
+		return "no credential"
+	case protocol.ACPFallbackNotInCatalog:
+		return "not in the catalog"
+	case protocol.ACPFallbackNotInAccount:
+		return "not in account list"
+	}
+	return "not available"
 }
 
 // pick chooses the model of a new session, in this order:

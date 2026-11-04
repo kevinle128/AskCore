@@ -19,7 +19,8 @@ import (
 // heldFixture builds a host whose first model call waits for release.
 func heldFixture(t *testing.T, release <-chan struct{}, write WriteEvent, opts ...HostOption) *Host {
 	t.Helper()
-	h := NewHost(context.Background(), func(_ context.Context, id, cwd string) (*agent.Agent, error) {
+	h := NewHost(context.Background(), func(_ context.Context, req SessionRequest) (*agent.Agent, error) {
+		id, cwd := req.ID, req.Cwd
 		p, err := faux.New(faux.WithChunk(1000, 1000))
 		if err != nil {
 			return nil, err

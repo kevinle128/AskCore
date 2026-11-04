@@ -18,6 +18,7 @@ import (
 	"go.uber.org/zap/zapcore"
 	"go.uber.org/zap/zaptest/observer"
 
+	"AskCore/internal/acp"
 	"AskCore/internal/agent"
 	"AskCore/internal/auth"
 	"AskCore/internal/providers"
@@ -417,7 +418,7 @@ func TestStartFallbackNotInAccount(t *testing.T) {
 	}
 	rt, err := NewACPRuntime(p)
 	require.NoError(t, err)
-	_, err = rt.Config.Factory(context.Background(), "s1", t.TempDir())
+	_, err = rt.Config.Factory(context.Background(), acp.SessionRequest{ID: "s1", Cwd: t.TempDir()})
 	require.NoError(t, err)
 	require.Equal(t, "gpt-5.6-sol", start.ID, "the recommended model is not in the list either: the first row of the provider")
 	fb := rt.Config.StartFallback("s1")
@@ -426,7 +427,7 @@ func TestStartFallbackNotInAccount(t *testing.T) {
 
 	// A model that no source has keeps the old reason.
 	require.NoError(t, prefs.SetDefaultModel(context.Background(), "openai/gpt-0-none@openai-responses"))
-	_, err = rt.Config.Factory(context.Background(), "s2", t.TempDir())
+	_, err = rt.Config.Factory(context.Background(), acp.SessionRequest{ID: "s2", Cwd: t.TempDir()})
 	require.NoError(t, err)
 	require.Equal(t, protocol.ACPFallbackNotInCatalog, rt.Config.StartFallback("s2").Reason)
 }

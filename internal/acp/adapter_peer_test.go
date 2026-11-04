@@ -67,7 +67,8 @@ type stepsFor func() []faux.Step
 // testConfig builds an adapter config with a faux model per session.
 func testConfig(steps stepsFor, edit func(*agent.Config), opts ...faux.Option) Config {
 	return Config{
-		Factory: func(_ context.Context, id, cwd string) (*agent.Agent, error) {
+		Factory: func(_ context.Context, req SessionRequest) (*agent.Agent, error) {
+			id, cwd := req.ID, req.Cwd
 			p, err := faux.New(append([]faux.Option{faux.WithChunk(1000, 1000)}, opts...)...)
 			if err != nil {
 				return nil, err

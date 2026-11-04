@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"net/http"
+	"os"
 	"sync"
 	"time"
 
@@ -15,6 +16,7 @@ import (
 	"AskCore/internal/auth"
 	"AskCore/internal/providers"
 	"AskCore/internal/settings"
+	"AskCore/internal/workspace"
 	"AskCore/pkg/protocol"
 
 	sdk "github.com/coder/acp-go-sdk"
@@ -50,6 +52,21 @@ type ACPParams struct {
 	// use NewNativeAgent with the given service, so that sessions share one
 	// credential resolver.
 	NewAgent func(service *auth.Service, sessionID, cwd string, start providers.Model) (*agent.Agent, error)
+	// UserHome is the home folder of the user. Its .agents/skills folder is
+	// not a project resource. Empty uses os.UserHomeDir.
+	UserHome string
+	// TrustOverride trusts ("approve") or does not trust ("deny") the project
+	// of every session of the process. The override of one session wins over
+	// it. Only ask acp sets it, from its command line; the leader is shared and
+	// never takes one. Empty means no override.
+	TrustOverride protocol.ACPTrustOverride
+	// TrustRequests serves _ask/trust/state and _ask/trust/set. The leader and
+	// the in-process TUI set it; an editor link has no prompt and leaves it off.
+	TrustRequests bool
+	// Warn receives the warning lines of each session start once: trust
+	// warnings and settings diagnostics, with paths and fixed texts only. Nil
+	// discards them.
+	Warn func(line string)
 }
 
 // ACPRuntime is the composed editor connection.
@@ -90,72 +107,96 @@ func NewACPRuntime(p ACPParams) (*ACPRuntime, error) {
 	if err != nil {
 		return nil, err
 	}
-	prefs, err := settings.NewSettingsStore(p.Home)
+	home, err := settings.ResolveHome(p.Home)
 	if err != nil {
 		return nil, err
+	}
+	switch p.TrustOverride {
+	case "", protocol.ACPTrustApprove, protocol.ACPTrustDeny:
+	default:
+		return nil, fmt.Errorf("acp runtime: unknown trust override %q", p.TrustOverride)
+	}
+	userHome := p.UserHome
+	if userHome == "" {
+		// Without a user home, every .agents/skills folder counts as a project
+		// resource, which fails closed.
+		userHome, _ = os.UserHomeDir()
+	}
+	warn := p.Warn
+	if warn == nil {
+		warn = func(string) {}
 	}
 	models, err := newModelRefresher(p.Home, service, p.ModelRefresh)
 	if err != nil {
 		return nil, err
 	}
-	rows := func() []providers.Model {
-		set := models.Current().set.All()
-		if p.Initial.ID == "" {
-			return set
-		}
-		return append([]providers.Model{p.Initial}, set...)
-	}
-	isInitial := func(ref providers.Ref) bool {
-		in := p.Initial
-		return in.ID != "" && ref.Provider == in.Provider && ref.ID == in.ID && (ref.API == "" || ref.API == in.API)
-	}
-	find := func(ref providers.Ref) (providers.Model, error) {
-		if isInitial(ref) {
-			return p.Initial, nil
-		}
-		return models.Current().set.Find(ref)
-	}
-	// inCatalog tells a model that the account list removed from a model that
-	// no source has.
-	inCatalog := func(ref providers.Ref) bool {
-		return isInitial(ref) || models.Current().catalog.Contains(ref)
-	}
-	usable := func(ctx context.Context, provider string) bool {
-		if p.Initial.ID != "" && provider == p.Initial.Provider {
-			return true
-		}
-		return providerUsable(ctx, service, provider)
-	}
-	choice := startChoice{initial: p.Initial, rows: rows, find: find, inCatalog: inCatalog, usable: usable, saved: prefs.DefaultModel}
-	// A session that starts on a fallback model hands its note to the adapter
-	// once, when the adapter publishes the session.
-	var fbMu sync.Mutex
+	choice := newStartChoice(p.Initial, models.Current, service)
+	rows, find, usable := choice.rows, choice.find, choice.usable
+	// A session that starts on a fallback model hands its note and its trust
+	// decision to the adapter once, when the adapter publishes the session.
+	var startMu sync.Mutex
 	fallbacks := map[string]*protocol.ACPModelFallback{}
+	trusts := map[string]*acp.SessionTrust{}
 	cfg := acp.Config{
-		Factory: func(ctx context.Context, id, cwd string) (*agent.Agent, error) {
-			start, fb := choice.pick(ctx)
-			a, err := p.NewAgent(service, id, cwd, start)
+		Factory: func(ctx context.Context, req acp.SessionRequest) (*agent.Agent, error) {
+			// The trust decision comes before any read of a project file.
+			override := p.TrustOverride
+			if req.Trust != "" {
+				override = req.Trust
+			}
+			decision, eff, err := LoadSessionSettings(ctx, home, userHome, req.Cwd, workspace.Override(override))
 			if err != nil {
 				return nil, err
 			}
+			c := choice
+			c.saved = func(context.Context) (string, error) { return eff.DefaultModel, nil }
+			start, fb := c.pick(ctx)
+			a, err := p.NewAgent(service, req.ID, req.Cwd, start)
+			if err != nil {
+				return nil, err
+			}
+			startMu.Lock()
 			if fb != nil {
-				fbMu.Lock()
-				fallbacks[id] = fb
-				fbMu.Unlock()
+				fallbacks[req.ID] = fb
+			}
+			trusts[req.ID] = sessionTrust(decision, eff)
+			startMu.Unlock()
+			for _, line := range SessionWarnings(decision, eff) {
+				warn(line)
 			}
 			return a, nil
 		},
 		StartFallback: func(id string) *protocol.ACPModelFallback {
-			fbMu.Lock()
-			defer fbMu.Unlock()
+			startMu.Lock()
+			defer startMu.Unlock()
 			fb := fallbacks[id]
 			delete(fallbacks, id)
 			return fb
 		},
-		DefaultModel: prefs.DefaultModel,
-		SaveDefault:  prefs.SetDefaultModel,
-		Info:         p.Info,
-		AuthMethods:  acpAuthMethods(service),
+		StartTrust: func(id string) *acp.SessionTrust {
+			startMu.Lock()
+			defer startMu.Unlock()
+			t := trusts[id]
+			delete(trusts, id)
+			return t
+		},
+		DefaultModel: func(ctx context.Context, scope acp.SettingsScope) (string, error) {
+			layered, err := scopeSettings(home, scope)
+			if err != nil {
+				return "", err
+			}
+			eff, err := layered.Load(ctx)
+			return eff.DefaultModel, err
+		},
+		SaveDefault: func(ctx context.Context, scope acp.SettingsScope, modelID string) protocol.ACPDefaultNotSaved {
+			layered, err := scopeSettings(home, scope)
+			if err != nil {
+				return protocol.ACPDefaultFailed
+			}
+			return defaultNotSaved(layered.SetDefaultModel(ctx, modelID))
+		},
+		Info:        p.Info,
+		AuthMethods: acpAuthMethods(service),
 		// A method is ready when some row accepts it with the saved or
 		// environment credential. The check never starts a sign-in. Readiness
 		// depends on the provider, the API and the endpoint of a row (they
@@ -182,6 +223,9 @@ func NewACPRuntime(p ACPParams) (*ACPRuntime, error) {
 			return NativeAuthReady(ctx, service, m, "", methodID)
 		},
 	}
+	if p.TrustRequests {
+		cfg.TrustSetup = trustSetup{home: home, userHome: userHome}
+	}
 	// The model refresh stops first: an account list fetch can hold a
 	// credential refresh slot, which the drain waits for.
 	cleanup := func(ctx context.Context) error {
@@ -193,6 +237,33 @@ func NewACPRuntime(p ACPParams) (*ACPRuntime, error) {
 	// in the background.
 	models.RefreshIfStale()
 	return &ACPRuntime{Config: cfg, Cleanup: cleanup, Service: service, Native: native, Usable: usable, Rows: rows, models: models}, nil
+}
+
+// scopeSettings returns the settings layers of a session scope. The project
+// layer applies only when the session is trusted.
+func scopeSettings(home string, scope acp.SettingsScope) (*settings.Layered, error) {
+	root, hasLayer, err := workspace.ProjectRoot(scope.Cwd, home)
+	if err != nil {
+		return nil, err
+	}
+	project := settings.Project{}
+	if hasLayer {
+		project = settings.Project{Root: root, Trusted: scope.Trusted}
+	}
+	return settings.NewLayered(home, project)
+}
+
+// defaultNotSaved maps the error of a default save to its wire reason.
+func defaultNotSaved(err error) protocol.ACPDefaultNotSaved {
+	switch {
+	case err == nil:
+		return ""
+	case errors.Is(err, settings.ErrShadowed):
+		return protocol.ACPDefaultShadowed
+	case errors.Is(err, settings.ErrUnsafeStore):
+		return protocol.ACPDefaultUnsafeFile
+	}
+	return protocol.ACPDefaultFailed
 }
 
 // acpAuthMethods lists each native method once. The description names the host

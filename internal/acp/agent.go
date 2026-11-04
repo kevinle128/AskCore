@@ -58,16 +58,26 @@ type Config struct {
 	// together with RequireRoute: a link without both answers every provider
 	// method with unsupported. It also lets the model list keep usable rows only.
 	ProviderSetup ProviderSetup
-	// DefaultModel reads the saved default model id. It reports "" when none is
-	// saved. Nil means the host has no default store.
-	DefaultModel func(ctx context.Context) (string, error)
-	// SaveDefault stores a model id as the default model for new sessions. Nil
-	// means the host has no default store.
-	SaveDefault func(ctx context.Context, modelID string) error
+	// DefaultModel reads the default model id that applies to a session: the
+	// project setting when the project layer of the session applies, else the
+	// user setting. It reports "" when none is set. Nil means the host has no
+	// default store.
+	DefaultModel func(ctx context.Context, scope SettingsScope) (string, error)
+	// SaveDefault stores a model id as the user default model for new
+	// sessions. It returns "" when the id is saved, else the reason. Nil means
+	// the host has no default store.
+	SaveDefault func(ctx context.Context, scope SettingsScope, modelID string) protocol.ACPDefaultNotSaved
 	// StartFallback returns the fallback of a session that the Factory just
 	// built, once: the saved default that the session could not start on. Nil
 	// means no session has one.
 	StartFallback func(sessionID string) *protocol.ACPModelFallback
+	// StartTrust returns the trust decision and the settings view of a
+	// session that the Factory just built, once. The session keeps them and
+	// _ask/session/state reports them. Nil, or a nil result, means none.
+	StartTrust func(sessionID string) *SessionTrust
+	// TrustSetup serves _ask/trust/state and _ask/trust/set. Nil means both
+	// answer unsupported, as on an editor link.
+	TrustSetup TrustSetup
 	// RequireRoute makes the adapter refuse a call that has no route context.
 	// The leader link sets it. The editor link leaves it off and has no
 	// driver generation to check.
@@ -288,15 +298,22 @@ func (a *Adapter) NewSession(ctx context.Context, req sdk.NewSessionRequest) (sd
 	if err == nil {
 		err = a.needRoute(route)
 	}
+	var trust protocol.ACPTrustOverride
+	if err == nil {
+		trust, err = trustFromMeta(req.Meta)
+	}
 	if err != nil {
 		return sdk.NewSessionResponse{}, requestError(err)
 	}
-	s, err := a.host.NewSession(ctx, req.Cwd)
+	s, err := a.host.NewSessionWith(ctx, SessionRequest{Cwd: req.Cwd, Trust: trust})
 	if err != nil {
 		return sdk.NewSessionResponse{}, requestError(err)
 	}
 	if a.cfg.StartFallback != nil {
 		s.setFallback(a.cfg.StartFallback(s.ID))
+	}
+	if a.cfg.StartTrust != nil {
+		s.setTrust(a.cfg.StartTrust(s.ID))
 	}
 	if a.cfg.ProviderSetup != nil {
 		s.commit.Lock()

@@ -19,7 +19,8 @@ import (
 
 func hostFixture(t *testing.T, edit func(*agent.Config), write WriteEvent) *Host {
 	t.Helper()
-	h := NewHost(context.Background(), func(_ context.Context, id, cwd string) (*agent.Agent, error) {
+	h := NewHost(context.Background(), func(_ context.Context, req SessionRequest) (*agent.Agent, error) {
+		id, cwd := req.ID, req.Cwd
 		p, err := faux.New(faux.WithChunk(1000, 1000))
 		if err != nil {
 			return nil, err
@@ -142,7 +143,8 @@ func TestHostConcurrentSessionsAndOutputFailure(t *testing.T) {
 }
 
 func TestHostCloseClosesSessionsInParallel(t *testing.T) {
-	h := NewHost(context.Background(), func(_ context.Context, id, cwd string) (*agent.Agent, error) {
+	h := NewHost(context.Background(), func(_ context.Context, req SessionRequest) (*agent.Agent, error) {
+		id, cwd := req.ID, req.Cwd
 		p, err := faux.New()
 		if err != nil {
 			return nil, err

@@ -11,6 +11,7 @@ The Agent Client Protocol adapter over the agent's Go API. It is the server side
 - `session/close` disposes one session through `Session.Close`: the run stops, background jobs end and the host forgets the session. `initialize` advertises `sessionCapabilities.close`. A routed close needs the current driver generation (`agent.go`).
 - The `_ask/*` method handlers: state, models, controls, steer and follow-up, usage; compact, fork and tree answer "unsupported" (`ask_methods.go`)
 - The leader-only provider method handlers and the `ProviderSetup` interface (`provider_methods.go`)
+- The project trust method handlers, the `TrustSetup` interface and the per-session trust override (`trust_methods.go`)
 - The one error mapper (`errors.go`)
 - The stdio server for `ask acp` (`stdio.go`)
 - The route context of the shared leader link: parsing, the driver generation guard, `take` and the quiesce check (`route.go`, `host.go`)
@@ -31,7 +32,7 @@ The Agent Client Protocol adapter over the agent's Go API. It is the server side
 
 ## File names
 
-`agent.go`, `host.go`, `updates.go`, `meta.go`, `ask_methods.go`, `provider_methods.go`, `errors.go`, `stdio.go`, `wire.go`, `route.go`
+`agent.go`, `host.go`, `updates.go`, `meta.go`, `ask_methods.go`, `provider_methods.go`, `trust_methods.go`, `errors.go`, `stdio.go`, `wire.go`, `route.go`
 
 ## Imports
 
@@ -82,8 +83,16 @@ The writer waits for each active subscription to write through the same event se
 
 - A session can have no model. `_ask/session/state` has an empty `modelId` and `get_available_models` an empty `current`. A prompt, continue, steer or follow-up answers `no_model` before any run starts.
 - `get_available_models` takes `usableOnly`. A host with provider setup keeps rows of usable providers and echoes the flag; a host without provider setup gives the full list and no echo. It names the saved default in `default`.
-- `set_model` with `saveDefault` stores the choice through `Config.SaveDefault` and answers `defaultSaved`. A failed save never undoes the switch. A call without the flag saves nothing.
+- `set_model` with `saveDefault` stores the choice through `Config.SaveDefault` with the settings scope of the session (its cwd and its trust) and answers `defaultSaved`. A refused save gives the reason in `defaultNotSaved`: `shadowed` (the trusted project settings set another `defaultModel`), `unsafe_file` (the user file is not safe or not valid), or `failed`. A failed save never undoes the switch. A call without the flag saves nothing.
 - `_ask/session/state` carries `modelFallback` while a session still runs on the model that replaced an unusable saved default (`Config.StartFallback`).
+
+## Project trust
+
+- `session/new` takes the override `_meta["ask.dev/trust"]` (`protocol.ACPTrustMetaKey`): `"approve"` or `"deny"` for this session only. Another value answers `invalid_params`. The host saves nothing for it. It passes the override to the `Factory` in `SessionRequest.Trust`. The composition decides the trust of the cwd, loads the settings layers and builds the agent.
+- `Config.StartTrust` gives the trust decision (`trusted`, `source`), the settings diagnostics and the effective `thinkingFold` of a new session once. `_ask/session/state` reports them in the optional fields `trust`, `diagnostics` and `thinkingFold`.
+- `_ask/trust/state` and `_ask/trust/set` name no session. They need `Config.TrustSetup`; without it both answer `unsupported`. The leader and the in-process TUI link set it (`app.ACPParams.TrustRequests`); `ask acp` does not, because an editor link has no trust question. A route is not needed on a link without routes, and the leader link needs one.
+- Both methods need an absolute `cwd`. `_ask/trust/set` takes `target` (`folder` or `parent`) and `decision` (`trust`, `distrust` or `clear`) and returns the new state. A trust store that cannot be changed answers `invalid_state` with the fixed warning text and the path of the store. A change applies to the next session.
+- `ask acp --approve` or `--no-approve` sets a process-wide override (`app.ACPParams.TrustOverride`). The override of one session wins over it.
 
 ## Leader link
 
@@ -103,7 +112,7 @@ The router calls the provider host to release that client's pending sign-ins; se
 
 ## Stdio server
 
-`ServeStdio` ([stdio.go](stdio.go)) serves one connection over a reader and a writer. `cmd/tui/acp.go` registers it as `ask acp`, before prompt and mode parsing, with the composition of `internal/app.ACPModule`. The command takes no other argument. There is no TCP or Unix listener.
+`ServeStdio` ([stdio.go](stdio.go)) serves one connection over a reader and a writer. `cmd/tui/acp.go` registers it as `ask acp`, before prompt and mode parsing, with the composition of `internal/app.ACPModule`. The command takes only `--approve` (`-a`) or `--no-approve` (`-na`); see [Project trust](#project-trust). There is no TCP or Unix listener.
 
 - One framed reader owns stdin and one checked writer owns stdout. Diagnostics go to stderr only, with no raw input and no attribute (`NewQuietLogger`). An inbound frame over 8 MiB ends the connection.
 - Authentication uses the credentials that `ask auth login` saved on the host, or the environment key. `authenticate` and `_ask/session/set_model` with `authMethodId` check readiness and refresh an expired native credential through the normal resolver. They never read stdin, never start a sign-in and never change a credential. A mismatch answers `no_api_key` with the text that names `ask auth`.
