@@ -63,3 +63,22 @@ Pi puts context files (`<project_instructions>`) and the skill list (`<available
 | Size | 1 MiB per file, 64 KiB in total, counted after escaping. The broadest files go first, then the most specific file is cut, and the model sees a notice | A bounded prompt: one bad file cannot fill the context. |
 | Diagnostics | First-wins skill names and skipped files give fixed texts with a path, never file content; one `Warning:` summary line in `ask -p`; detail in `ask settings show` and in the ACP session diagnostics | A diagnostic must not carry text that the model or the terminal could act on. |
 | cwd and date | The last two sections (9000, 9010), ISO date | The prefix stays the same between sessions, so the provider cache holds. |
+
+## Phase 2: skills follow Codex (user, 2026-11-05)
+
+Why: on a real `~/.agents/skills` the TUI listed 36 skills as "Settings problems" (`name: kk:agent-browser`, descriptions over 1024 bytes). The user chose to follow Codex. Analysis and decision matrix: [xia-261105-h6b-skills-codex.md](../reports/xia-261105-h6b-skills-codex.md). This section replaces D-f (first wins plus diagnostic) and the Pi name and description rules.
+
+| Unit | Change | Owner package |
+|---|---|---|
+| S1 loader | name: collapse whitespace, folder-name fallback, at most 64 chars (cut, not reject), no charset rule; description required, no length cap at load; YAML repair (quote scalars that contain `: ` or start with `[ { @` or a backtick, retry once); frontmatter read cap 64 KiB; depth 6, 2,000 dirs and 20,000 entries per root, hidden directories skipped, directory symlinks followed; same name in two roots keeps both (dedupe by canonical path only), order scope (project first), name, path; no `shadowed` diagnostic | `internal/skills` |
+| S2 budget | `Listing(Budget)` with Codex's three steps: full descriptions; else shared description budget round-robin by rune, one at a time; else names only in order and omit the rest; description cap 1,024 chars cut to 1,021 + `...`; omission line `- N additional skill(s) omitted from this bounded skills list.` charged to the budget (pop lines until it fits); a `Report{Total, Included, Omitted, TruncatedDescriptions}`; budget = `skillsMaxContextTokens` setting capped at 10,000, else 2% of the model context window in tokens (`ceil(bytes/4)`), else 8,000 characters; each line costs its text plus a newline | `internal/skills` |
+| S3 wiring | `SessionStart.Render` takes the model context window from `AgentSpec.Start`; one warning when skills are omitted: `Exceeded skills context budget. All skill descriptions were removed and N additional skill(s) was/were not included in the model-visible skills list.`; model-visible listing keeps the path on each line | `internal/app`, `cmd/tui` |
+| S4 setting | `skillsMaxContextTokens` (positive integer, user and project layers), shown in `ask settings show` | `internal/settings`, `cmd/tui` |
+| S5 reporting | Per-skill problems that remain (no frontmatter, unclosed `---`, invalid YAML after repair, missing description, name empty after fallback, unreadable file) stay in `ask settings show`; the TUI diagnostics list and the print-mode summary line show at most 4 skill rows (256 bytes each) plus `N more`; no skill diagnostics from user-scope bundled folders that cannot be fixed by the project | `internal/app`, `cmd/tui` |
+| S6 docs | `docs/cli.md`, READMEs, CHANGELOG, report cross-links | docs |
+
+Kept from Ask: project skill folders and `SYSTEM.md` need trust (Codex loads them untrusted; that is weaker), user-role seed, escaping of every untrusted field through `ReminderText.Quote`.
+
+Skipped: `$name` mentions, `[[skills.config]]`, bundled toggle, plugins, path aliases, delta mode, watcher.
+
+Acceptance: on the verifier's real `~/.agents/skills` the TUI and `ask -p` show no skill problem for the 36 skills; a 300-skill fixture renders within budget with the omission line and one warning; model switch to a 100k window gives a 2,000-token budget; hostile names and descriptions cannot close the frame.
