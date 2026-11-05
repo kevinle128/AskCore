@@ -3,6 +3,8 @@ package tui
 import (
 	"fmt"
 	"strings"
+	"unicode"
+	"unicode/utf8"
 
 	"AskCore/pkg/protocol"
 )
@@ -15,7 +17,8 @@ import (
 // from Editor.SetSkills, so the matches come from the draft at once and no
 // stale result can arrive. A skill row is "/skill:<name>": it comes after the
 // commands, and choosing it puts the name and a space in the draft instead of
-// running anything, so the user can add arguments.
+// running anything, so the user can add arguments. Tab completes the draft in
+// two steps: the common prefix of the rows, then the selected row.
 
 // maxMenuRows is the most rows that the list shows at once: the rows that the
 // layout gives to the menu. A longer list scrolls with the selection and ends
@@ -120,6 +123,11 @@ func (e *Editor) handleCompletionKey(key string) (Result, bool) {
 		e.selectCompletion((sel + 1) % len(list))
 	case "esc":
 		e.comp.closed, e.comp.closedRev = true, e.revision
+	case "tab":
+		if next := e.tabCompletion(list, sel); next != e.text {
+			e.edit(opOther, next, len(next))
+		}
+		e.selectCompletion(0)
 	case "enter", "alt+enter":
 		name := list[sel].Name
 		if isSkillRow(name) {
@@ -132,6 +140,47 @@ func (e *Editor) handleCompletionKey(key string) (Result, bool) {
 		return Result{}, false
 	}
 	return Result{Handled: true}, true
+}
+
+// tabCompletion returns the draft that Tab makes. With several rows that share
+// a prefix longer than the draft it is that prefix, so the list stays open.
+// Otherwise it is the selected row; a skill row gets a space for arguments.
+func (e *Editor) tabCompletion(list []CommandSpec, sel int) string {
+	if len(list) > 1 {
+		names := make([]string, len(list))
+		for i, row := range list {
+			names[i] = row.Name
+		}
+		if p := commonPrefix(names); utf8.RuneCountInString(p) > utf8.RuneCountInString(e.text) {
+			return p
+		}
+	}
+	name := list[sel].Name
+	if isSkillRow(name) {
+		return name + " "
+	}
+	return name
+}
+
+// commonPrefix returns the longest prefix, in runes, that all names share
+// without regard to case. The result has the spelling of the first name.
+func commonPrefix(names []string) string {
+	if len(names) == 0 {
+		return ""
+	}
+	first := []rune(names[0])
+	n := len(first)
+	for _, name := range names[1:] {
+		rs := []rune(name)
+		n = min(n, len(rs))
+		for i := range n {
+			if unicode.ToLower(rs[i]) != unicode.ToLower(first[i]) {
+				n = i
+				break
+			}
+		}
+	}
+	return string(first[:n])
 }
 
 func (e *Editor) selectCompletion(i int) {
