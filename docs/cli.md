@@ -118,15 +118,41 @@ When Ask cuts a file, the message ends with `Notice: <path> was cut short: the c
 
 ### Skills
 
-A skill is a folder with a `SKILL.md` file. Ask reads the name and the description from the frontmatter. It sends only a list of names, descriptions, and paths, as one user-role message of the custom type `skill-list` (at most 16 KiB). The model reads a skill with the `read` tool, so the list is sent only when the session keeps `read` or `bash`. A skill with `disable-model-invocation: true` is not in the list.
+A skill is a folder with a `SKILL.md` file. Ask reads the name and the description from the frontmatter. It sends only a list of names, descriptions, and paths, as one user-role message of the custom type `skill-list`. The model reads a skill with the `read` tool, so the list is sent only when the session keeps `read` or `bash`. A skill with `disable-model-invocation: true` is not in the list. Ask follows the rules of Codex here, so a skill folder that works there loads in Ask.
 
-Ask looks in these folders, in this order, to a depth of 5:
+Ask looks in these folders, in this order, to a depth of 6, in at most 2000 folders and 20000 entries for each folder of this list (a walk that reaches a limit stops without an error). It skips hidden folders below a root and follows symbolic links to folders:
 
 1. `<ASK_HOME>/skills`.
 2. `~/.agents/skills`.
 3. In a trusted project: `<project>/.ask/skills` and `<project>/.agents/skills`, then the `.agents/skills` of each parent folder, nearest first.
 
-The first skill of a name wins. A later skill of the same name is not loaded, and Ask reports it as a problem. A project skill folder is a gated entry, so an untrusted project never gives skills.
+A project skill folder is a gated entry, so an untrusted project never gives skills.
+
+**Name.** The `name` is the frontmatter value with every run of white space turned into one space. A missing or empty name falls back to the folder name (`skill` if that is empty too). A name over 64 characters is cut to 64 characters. There is no rule on the characters, so `name: kk:agent-browser` loads.
+
+**Description.** The `description` is required: a missing or blank one is the problem `missing description`. White space is collapsed to one line. The loader has no length cap. The list cuts a description over 1024 characters to its first 1021 characters and `...`.
+
+**Broken YAML.** When the frontmatter is not valid YAML, Ask double-quotes each top-level value that holds `: ` or starts with `[`, `{`, `@`, or a backtick, and reads it once more. So `description: Build for AWS: ECS` loads. The problem `bad frontmatter` is left only when the second read fails too. `disable-model-invocation` stays strict: it must be the YAML boolean `true` or `false`, so `yes` and `"true"` are the problem `bad boolean disable-model-invocation`. Ask reads at most 64 KiB of frontmatter (`frontmatter over 65536 bytes`).
+
+**Same name.** Skills of the same name are all kept, and the list shows the path of each. The order is the scope (project before user), the name, and the path. A `SKILL.md` that two folders reach is listed once. Nothing is reported for a name that appears twice.
+
+**Problems.** The reasons that remain are `no frontmatter`, `bad frontmatter`, `missing description`, `bad boolean disable-model-invocation`, `frontmatter over 65536 bytes`, and `unreadable`. A skill with a problem is not loaded, and the other skills are.
+
+**Budget.** The list takes a part of the context window of the session model. A line is one skill entry; it costs its text and a line break. In tokens, a line costs `ceil(bytes / 4)` plus one. The header and the footer are free. The budget is:
+
+| Condition | Budget |
+|---|---|
+| `skillsMaxContextTokens` is set | That many tokens, at most 10000 |
+| The model window is known | 2% of the window in tokens (100000 gives 2000, 400000 gives 8000) |
+| The window is not known | 8000 characters (runes, not bytes) |
+
+Ask fits the skills in three steps:
+
+1. Every description (cut to 1024 characters) fits: the list has them all.
+2. Otherwise, if every skill fits with an empty description, the room that is left goes to the descriptions one character at a time, round-robin, so one skill cannot take it all. No description gets longer than its own text.
+3. Otherwise, the skills keep their order with no description until the budget ends, and the rest are left out.
+
+When skills are left out, the list ends with `- <n> additional skill(s) omitted from this bounded skills list.`, and that line is charged to the budget: Ask drops entries from the end until it fits. It also writes one warning, `Exceeded skills context budget. All skill descriptions were removed and <n> additional skill(s) was/were not included in the model-visible skills list.` Shortened descriptions alone give no warning. The list is made once at the session start, so a later `/model` does not change it.
 
 ### Tools
 
@@ -156,9 +182,10 @@ These errors write one line to stderr and exit with code 1 before any session st
 `ask -p` writes these lines to stderr after the trust and settings lines, and before the run. The leader and `ask acp` send the same problems to the client as session diagnostics.
 
 - `Warning: <n> context file(s) was/were skipped; run ask settings show for details`. It counts the files that Ask left out or cut (too large, not readable, or over the 64 KiB limit). A duplicate is not counted.
-- `Warning: <n> skill(s) was/were not loaded; run ask settings show for details`. It counts the skills that did not load, a skill that lost to an earlier name included.
+- `Warning: skills: <path>: <reason>`. One line for each skill that did not load, at most 4 lines of at most 256 bytes each. When more skills have a problem, `Warning: skills: <n> more skill problem(s); run ask settings show for details` follows. The leader and `ask acp` send the same rows, with the same cap, as session diagnostics.
+- `Warning: Exceeded skills context budget. ...`. The skill list left skills out (see [Skills](#skills)). It comes when the agent is built, after the lines above.
 
-Each line is a summary. The path and the reason of each problem are in `ask settings show`. A line never contains file content.
+The context file line is a summary, and its detail is in `ask settings show`. `ask settings show` also keeps the full list of skill problems. A line never contains file content.
 
 ### Flags in the TUI and with a leader
 
@@ -249,7 +276,7 @@ The text form shows, in this order:
 3. A `Warning:` line for a trust store that cannot be read.
 4. `Problems:` one row for each settings diagnostic: the layer, the path, the key, and a fixed text.
 5. `Context files:` one row for each `AGENTS.md` or `CLAUDE.md` that the session reads, with its path and size in bytes, then the files that Ask left out. A row has the word `too_large`, `unreadable`, `duplicate`, `budget`, or `truncated` when Ask did not deliver the file whole. `(none)` means that no context file exists.
-6. `Skill problems:` one row for each skill that did not load: the layer, the path, and a fixed text. The block is absent when every skill loaded.
+6. `Skill problems:` one row for each skill that did not load: the layer, the path, and a fixed text. The list is complete: the 4-row cap of `ask -p` and the TUI does not apply here. The block is absent when every skill loaded.
 
 `--json` prints one JSON object with this shape. Arrays are always present, also when they are empty.
 
@@ -270,7 +297,8 @@ The text form shows, in this order:
     {"key": "defaultModel", "value": "openai/gpt-5.5@responses", "source": "project"},
     {"key": "thinkingFold", "value": "collapsed", "source": "user"},
     {"key": "defaultProjectTrust", "value": "ask", "source": "default"},
-    {"key": "defaultTools", "value": "read,grep", "source": "user"}
+    {"key": "defaultTools", "value": "read,grep", "source": "user"},
+    {"key": "skillsMaxContextTokens", "value": "", "source": "default"}
   ],
   "diagnostics": [
     {"layer": "project", "path": "/work/repo/.ask/settings.json", "key": "env", "text": "a project file cannot set this key; it is ignored"}
@@ -291,12 +319,12 @@ The text form shows, in this order:
 | `project.entry` | The folder of the saved trust entry that applies, or empty. |
 | `project.gated` | The gated entries that exist: relative to the root in the root, absolute in a parent folder. |
 | `project.warning` | A fixed text with the path of a trust store that cannot be read, or empty. |
-| `settings[].value` | The effective value. An empty `defaultModel` means that no default model is set. `defaultTools` is the array joined with commas; an empty value is shown for an unset key and for an empty array, so read `source` to tell them apart (`default` means unset). |
+| `settings[].value` | The effective value. An empty `defaultModel` means that no default model is set. `defaultTools` is the array joined with commas; an empty value is shown for an unset key and for an empty array, so read `source` to tell them apart (`default` means unset). `skillsMaxContextTokens` is the number, or empty when unset. |
 | `settings[].source` | `default`, `user`, or `project`. |
 | `diagnostics[].key` | The key, or empty for a problem with the whole file. |
 | `context[].bytes` | The size of the file in bytes. `0` when Ask cannot read it. |
 | `context[].skipped` | Empty for a file that the session gets whole, else `too_large`, `unreadable`, `duplicate`, `budget`, or `truncated`. |
-| `skillDiagnostics[]` | The skills that did not load. `key` is `skills`. |
+| `skillDiagnostics[]` | Every skill that did not load. `key` is `skills`. |
 
 A bad value of a known key gives the default and a diagnostic. A corrupt user file or trust store is reported and keeps its bytes.
 
@@ -396,6 +424,7 @@ The project file overrides the user file. JSON objects merge key by key. A proje
 | `thinkingFold` | `"expanded"` (default), `"truncated"`, `"collapsed"` | user, project |
 | `defaultProjectTrust` | `"ask"` (default), `"always"`, `"never"`: the trust of a project with gated files and no saved decision | user only |
 | `defaultTools` | An array of built-in tool names, for example `["read", "grep"]`, or an array of `"+name"` and `"-name"` entries, for example `["-bash"]`. Plain names and `+`/`-` entries in one array are a bad value. Default: unset, which keeps every built-in tool. | user, project |
+| `skillsMaxContextTokens` | A positive integer: the token budget of the skill list, at most 10000 (a larger value counts as 10000). Default: unset, which uses 2% of the model window. A zero, a negative number, or a value that is not an integer is ignored with a diagnostic. See [Skills](#skills). | user, project |
 
 Rules of `defaultTools`:
 
