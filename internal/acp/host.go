@@ -412,6 +412,8 @@ type Session struct {
 	// trust is the trust decision and the settings view that the session
 	// started with. It does not change.
 	trust *SessionTrust
+	// skills are the skills that the session started with. They do not change.
+	skills []protocol.ACPSkill
 
 	// qmu guards the outbound queue. The Agent listener only appends to it.
 	qmu     sync.Mutex
@@ -608,6 +610,20 @@ func (s *Session) setTrust(t *SessionTrust) {
 	s.mu.Lock()
 	s.trust = &cp
 	s.mu.Unlock()
+}
+
+// setSkills records the skills of the session start.
+func (s *Session) setSkills(rows []protocol.ACPSkill) {
+	s.mu.Lock()
+	s.skills = slices.Clone(rows)
+	s.mu.Unlock()
+}
+
+// skillsNow returns a copy of the skills of the session. It is never nil.
+func (s *Session) skillsNow() []protocol.ACPSkill {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	return append([]protocol.ACPSkill{}, s.skills...)
 }
 
 // trustNow returns the start trust of the session, or nil.

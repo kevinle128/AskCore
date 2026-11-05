@@ -22,6 +22,7 @@ Control handlers and observers must not become a second loop or writer.
 | System prompt and tool declaration changes | [systemprompt.go](systemprompt.go), [loop_tool_changes.go](loop_tool_changes.go) |
 | Named system prompt sections and `SystemPrompt(PromptParts)` | [systemprompt_sections.go](systemprompt_sections.go) |
 | `Config.Seed`: tagged items committed first in every fresh log, also after Reset | [seed.go](seed.go) |
+| `Config.RewriteInput`: replaces the text of the first block of a human prompt, steer or follow-up before it is queued or run, for example to expand a command. The agent does not know what the rewrite means | [input_rewrite.go](input_rewrite.go) |
 
 ## Lifecycle decisions
 

@@ -146,6 +146,21 @@ func TestRouterObserverMutationRejected(t *testing.T) {
 	require.Len(t, h.agent.requests(protocol.ACPState), 1, "an observer may read")
 }
 
+func TestRouterForwardsSkillsAsASessionRead(t *testing.T) {
+	h := startHarness(t)
+	a, b := h.ready(nil), h.ready(nil)
+	sid := a.newSession("/w")
+
+	b.mustCall(protocol.ACPSkills, map[string]any{"sessionId": sid})
+	require.Len(t, h.agent.requests(protocol.ACPSkills), 1, "a client that is not in the session may read it")
+	require.Equal(t, protocol.ACPRoleObserver, b.attach(sid).Role, "the read made the client an observer")
+
+	_, e := b.call(protocol.ACPSkills, map[string]any{"sessionId": "no-such-session"})
+	require.NotNil(t, e)
+	require.Equal(t, protocol.ACPErrorCode(protocol.ACPErrUnknownSession), e.Code)
+	require.Len(t, h.agent.requests(protocol.ACPSkills), 1, "an unknown session is refused before the host")
+}
+
 func TestRouterObserverCancelNotificationDropped(t *testing.T) {
 	h := startHarness(t)
 	a, b := h.ready(nil), h.ready(nil)

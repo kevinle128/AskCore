@@ -140,6 +140,7 @@ func NewACPRuntime(p ACPParams) (*ACPRuntime, error) {
 	var startMu sync.Mutex
 	fallbacks := map[string]*protocol.ACPModelFallback{}
 	trusts := map[string]*acp.SessionTrust{}
+	skillRows := map[string][]protocol.ACPSkill{}
 	cfg := acp.Config{
 		Factory: func(ctx context.Context, req acp.SessionRequest) (*agent.Agent, error) {
 			// The trust decision comes before any read of a project file. The
@@ -167,6 +168,7 @@ func NewACPRuntime(p ACPParams) (*ACPRuntime, error) {
 				fallbacks[req.ID] = fb
 			}
 			trusts[req.ID] = sessionTrust(session)
+			skillRows[req.ID] = session.SkillRows()
 			startMu.Unlock()
 			for _, line := range session.Warnings() {
 				warn(line)
@@ -186,6 +188,13 @@ func NewACPRuntime(p ACPParams) (*ACPRuntime, error) {
 			t := trusts[id]
 			delete(trusts, id)
 			return t
+		},
+		StartSkills: func(id string) []protocol.ACPSkill {
+			startMu.Lock()
+			defer startMu.Unlock()
+			rows := skillRows[id]
+			delete(skillRows, id)
+			return rows
 		},
 		DefaultModel: func(ctx context.Context, scope acp.SettingsScope) (string, error) {
 			layered, err := scopeSettings(home, scope)

@@ -464,6 +464,7 @@ func newNativeAgentOn(o options, getenv func(string) string, service *auth.Servi
 		SystemPrompt: rendered.SystemPrompt,
 		Seed:         rendered.Seed,
 		SessionID:    sessionID,
+		RewriteInput: spec.Session.ExpandInput,
 		Release:      jt.Close,
 		Background:   jt,
 	}

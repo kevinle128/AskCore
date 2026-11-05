@@ -108,6 +108,34 @@ func TestPrepareSessionGatesProjectFilesOnTrustButNotContextFiles(t *testing.T) 
 	assert.Equal(t, []string{"dotagents", "proj", "home"}, names)
 }
 
+func TestSessionSkillsFollowTheTrustDecisionForRowsAndExpansion(t *testing.T) {
+	tree := newSessionTree(t, map[string]string{
+		".ask/skills/proj/SKILL.md": "---\ndescription: project skill\n---\nPROJECT BODY\n",
+	}, map[string]string{"skills/home/SKILL.md": "---\ndescription: home skill\ndisable-model-invocation: true\n---\nHOME BODY\n"})
+
+	untrusted := tree.prepare(t, workspace.OverrideDeny, protocol.ACPSessionOptions{})
+	assert.Equal(t, []protocol.ACPSkill{
+		{Name: "home", Description: "home skill", Path: filepath.Join(tree.home, "skills", "home", "SKILL.md"), Scope: protocol.ACPSkillUser},
+	}, untrusted.SkillRows())
+	_, ok := untrusted.ExpandInput("/skill:proj go")
+	assert.False(t, ok, "an untrusted project loads no skill, so its name is plain text")
+	got, ok := untrusted.ExpandInput("/skill:home go")
+	require.True(t, ok)
+	assert.Contains(t, got, "HOME BODY", "a skill that the model cannot invoke expands")
+
+	trusted := tree.prepare(t, workspace.OverrideApprove, protocol.ACPSessionOptions{})
+	rows := trusted.SkillRows()
+	require.Len(t, rows, 2)
+	assert.Equal(t, protocol.ACPSkillProject, rows[0].Scope)
+	assert.Equal(t, "proj", rows[0].Name)
+	assert.True(t, rows[0].ModelInvocable)
+	got, ok = trusted.ExpandInput("/skill:proj go")
+	require.True(t, ok)
+	assert.Contains(t, got, "PROJECT BODY")
+
+	assert.Empty(t, SessionStart{}.SkillRows())
+}
+
 func TestPrepareSessionFlagsBeatDefaultToolsAndReplacePromptFiles(t *testing.T) {
 	tree := newSessionTree(t, nil, map[string]string{
 		"settings.json":    `{"defaultTools":["read","ls"]}`,

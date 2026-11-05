@@ -216,6 +216,41 @@ func TestStateReportsSessionTrust(t *testing.T) {
 	require.Empty(t, none.ThinkingFold)
 }
 
+func TestSkillsReportsTheSkillsOfTheSessionStart(t *testing.T) {
+	var mu sync.Mutex
+	calls := map[string]int{}
+	cfg := testConfig(says("x"), nil)
+	cfg.StartSkills = func(id string) []protocol.ACPSkill {
+		mu.Lock()
+		calls[id]++
+		mu.Unlock()
+		return []protocol.ACPSkill{
+			{Name: "demo", Description: "A demo", Path: "/p/.ask/skills/demo/SKILL.md", Scope: protocol.ACPSkillProject, ModelInvocable: true},
+			{Name: "quiet", Description: "Manual", Path: "/h/skills/quiet/SKILL.md", Scope: protocol.ACPSkillUser},
+		}
+	}
+	p := newAdapterPeer(t, cfg, nil)
+	sid := p.start()
+	var res protocol.ACPSkillsResult
+	p.ok(protocol.ACPSkills, map[string]any{"sessionId": sid}, &res)
+	require.Equal(t, []protocol.ACPSkill{
+		{Name: "demo", Description: "A demo", Path: "/p/.ask/skills/demo/SKILL.md", Scope: protocol.ACPSkillProject, ModelInvocable: true},
+		{Name: "quiet", Description: "Manual", Path: "/h/skills/quiet/SKILL.md", Scope: protocol.ACPSkillUser},
+	}, res.Skills)
+	p.ok(protocol.ACPSkills, map[string]any{"sessionId": sid}, &res)
+	require.Len(t, res.Skills, 2)
+	mu.Lock()
+	require.Equal(t, 1, calls[sid], "the start list is read once")
+	mu.Unlock()
+
+	f := p.call(protocol.ACPSkills, map[string]any{"sessionId": "none"})
+	require.Equal(t, protocol.ACPErrUnknownSession, f.errKind(t))
+
+	plain := newAdapterPeer(t, testConfig(says("x"), nil), nil)
+	raw := plain.call(protocol.ACPSkills, map[string]any{"sessionId": plain.start()})
+	require.JSONEq(t, `{"skills":[]}`, string(raw.Result), "a host without skills answers an empty list, not null")
+}
+
 func TestModelsDefaultUsesSessionCwd(t *testing.T) {
 	cfg := testConfig(says("x"), nil)
 	cfg.StartTrust = func(string) *SessionTrust {

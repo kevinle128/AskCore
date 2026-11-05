@@ -320,6 +320,7 @@ func (a *Agent) Steer(msg protocol.Message) (string, error) { return a.enqueue(m
 func (a *Agent) FollowUp(msg protocol.Message) (string, error) { return a.enqueue(msg, true) }
 
 func (a *Agent) enqueue(msg protocol.Message, followUp bool) (string, error) {
+	msg = a.rewriteInput(msg)
 	if msg == nil {
 		return "", ErrNoInput
 	}

@@ -165,6 +165,28 @@ func skillRoots(t TrustOutcome, askHome, userHome string) []skills.Root {
 	return roots
 }
 
+// ExpandInput is the RewriteInput of the agent of this session: it loads the
+// skill that a prompt names with "/skill:<name>". A skill that the model cannot
+// invoke loads too. The project skills are in the list only for a trusted
+// project.
+func (s SessionStart) ExpandInput(text string) (string, bool) {
+	return skills.Expand(text, s.Skills)
+}
+
+// SkillRows lists the skills of the session for _ask/session/skills, in the
+// order of the skill list.
+func (s SessionStart) SkillRows() []protocol.ACPSkill {
+	rows := make([]protocol.ACPSkill, len(s.Skills.Skills))
+	for i, k := range s.Skills.Skills {
+		scope := protocol.ACPSkillUser
+		if k.Scope == skills.ScopeProject {
+			scope = protocol.ACPSkillProject
+		}
+		rows[i] = protocol.ACPSkill{Name: k.Name, Description: k.Description, Path: k.File, Scope: scope, ModelInvocable: k.ModelInvocable}
+	}
+	return rows
+}
+
 // RenderResult is what Render builds for one session.
 type RenderResult struct {
 	SystemPrompt string

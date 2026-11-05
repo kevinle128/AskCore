@@ -212,6 +212,7 @@ func New(cfg Config) (*Agent, error) {
 // for. When the loop fails, the run still ends with an error assistant message,
 // agent_end and agent_settled, and Prompt returns the failure.
 func (a *Agent) Prompt(ctx context.Context, msgs ...protocol.Message) error {
+	msgs = a.rewriteInputs(msgs)
 	r, err := a.begin(ctx)
 	if err != nil {
 		return err
