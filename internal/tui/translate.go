@@ -285,12 +285,21 @@ func userText(m protocol.UserMessage) string {
 	for _, blk := range m.Content {
 		switch b := blk.(type) {
 		case protocol.Text:
-			parts = append(parts, b.Text)
+			parts = append(parts, typedText(b.Text))
 		case protocol.Image:
 			parts = append(parts, "[image]")
 		}
 	}
 	return strings.Join(parts, "\n")
+}
+
+// typedText shows a prompt that the agent expanded from "/skill:<name> args"
+// as the user typed it, not as the whole skill body. Any other text stays.
+func typedText(text string) string {
+	if cmd, ok := protocol.SkillInputCommand(text); ok {
+		return cmd
+	}
+	return text
 }
 
 // --- assistant message ---

@@ -625,5 +625,5 @@ func (s *sessionView) onAttach(msg attachMsg) tea.Cmd {
 		return nil
 	}
 	s.useSession(msg.info)
-	return s.refreshCmd(false)
+	return tea.Batch(s.refreshCmd(false), s.skillsCmd())
 }
