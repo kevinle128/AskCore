@@ -154,6 +154,22 @@ Ask fits the skills in three steps:
 
 When skills are left out, the list ends with `- <n> additional skill(s) omitted from this bounded skills list.`, and that line is charged to the budget: Ask drops entries from the end until it fits. It also writes one warning, `Exceeded skills context budget. All skill descriptions were removed and <n> additional skill(s) was/were not included in the model-visible skills list.` Shortened descriptions alone give no warning. The list is made once at the session start, so a later `/model` does not change it.
 
+**Load a skill by name.** A prompt that starts with `/skill:<name>` loads that skill. The name ends at the first white space. The rest of the text, without the white space around it, is the arguments. The text that goes to the model is:
+
+```
+<skill name="<name>" location="<path of SKILL.md>">
+References are relative to <folder of SKILL.md>.
+
+<the text of SKILL.md after its frontmatter>
+</skill>
+
+<the arguments>
+```
+
+The empty line and the arguments are absent when there are no arguments. The skill text is at most 100 KB. When it is longer, Ask cuts it on a character boundary and adds the note `[The skill text is cut here at 100 KB. Read the SKILL.md file at the location above for the rest.]`. A skill with `disable-model-invocation: true` loads too: loading it by name is its purpose. The first skill of that name in the order above wins. A name that no skill has leaves the text as you typed it. A project skill is available only in a trusted project.
+
+The agent of the session does this, so it works the same in `ask -p '/skill:<name> text'`, in the TUI with a leader or an in-process agent, and over `ask acp`. Only the first block of a prompt, a steer, or a follow-up is checked. The log of the session keeps the text after the change. The TUI shows what you typed (`/skill:<name> text`) in the transcript and in the queue rows, not the skill text.
+
 ### Tools
 
 Ask keeps all built-in tools unless you select. Select with these, from the strongest to the weakest:
@@ -396,6 +412,7 @@ Exit codes: 0 left, 1 error or lost leader, 130, 143, 129.
 | `/take` | Take control of this session. |
 | `/copy` | Copy the last reply. It uses a native command first, then OSC 52 up to 75 KiB. |
 | `/quit` | Detach and quit. |
+| `/skill:<name>` | Load a skill of this session (see [Skills](#skills)). One row for each skill, after the commands above, with its description. Enter puts `/skill:<name> ` in the editor and sends nothing, so you can add arguments and send. Typing `/sk` or `/skill:kk` shows only the rows that match. The rows come from the session and change with a new session. A leader that is older than this build gives no skill rows and no error. |
 
 With no usable provider the session has no model. The footer row shows `no model`, and a prompt is refused and stays in the editor. `/providers` opens the sign-in box. The leader checks an API key before it saves it (mode 0600 `auth.json`); it cannot check the Alibaba Token Plan key, so it saves that key as it is. The key is pasted into a masked input.
 
