@@ -8,6 +8,7 @@ Skill discovery. The loader finds skill folders with a `SKILL.md` file and retur
 - `Diagnostic`: one fixed-text reason per skill that did not load
 - `Budget`, `BudgetFor`: the token or character room of the catalog (the `skillsMaxContextTokens` setting capped at 10000 tokens, else 2% of the model window, else 8000 characters)
 - `Result.Listing`: the skill catalog as one system reminder within a `Budget`, with a `Report` (`Total`, `Included`, `Omitted`, `TruncatedDescriptions`) and `Report.Warning`
+- `Expand`: turns a prompt that starts with `/skill:<name>` into the skill block (see `protocol.SkillInput`) followed by the arguments. A skill with `disable-model-invocation` expands too. The body is the text after the frontmatter, cut at 100 KB on a rune boundary with a visible note. An unknown name, or a file that cannot be read, leaves the text unchanged
 
 ## What does not belong here
 
@@ -15,7 +16,7 @@ Skill discovery. The loader finds skill folders with a `SKILL.md` file and retur
 |---|---|
 | Which folders are roots, and the project trust gate | `internal/app`, from the `workspace` trust decision |
 | File watcher, `/reload` | Not built |
-| Skill body cap, `.gitignore` handling | Not built |
+| `.gitignore` handling | Not built |
 | BM25 and embedding search | Parked |
 | The tools that read a skill | `internal/tools` (the model uses `read`) |
 
@@ -24,6 +25,7 @@ Skill discovery. The loader finds skill folders with a `SKILL.md` file and retur
 - `Load(roots []Root) Result`
 - `BudgetFor(contextWindow, maxContextTokens int) Budget`
 - `Result.Listing(b Budget) (string, Report)`
+- `Expand(text string, r Result) (string, bool)`
 - `Report.Warning() string`
 
 ## File names

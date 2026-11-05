@@ -98,12 +98,19 @@ func readFrontmatter(file string) ([]byte, string) {
 	if err != nil {
 		return nil, "unreadable"
 	}
-	full := len(buf) == maxFrontmatterBytes
+	block, _, reason := cutFrontmatter(buf, len(buf) == maxFrontmatterBytes)
+	return block, reason
+}
+
+// cutFrontmatter splits the text of a SKILL.md into the frontmatter block and
+// the body after the closing line. full tells that buf is only the first part
+// of the file, so a missing closing line may be a frontmatter that is too long.
+func cutFrontmatter(buf []byte, full bool) (block, body []byte, reason string) {
 	buf = bytes.ReplaceAll(bytes.TrimPrefix(buf, []byte("\xef\xbb\xbf")), []byte("\r\n"), []byte("\n"))
 
 	rest, ok := bytes.CutPrefix(buf, []byte("---\n"))
 	if !ok {
-		return nil, "no frontmatter"
+		return nil, nil, "no frontmatter"
 	}
 	for off := 0; off <= len(rest); {
 		end := bytes.IndexByte(rest[off:], '\n')
@@ -112,7 +119,10 @@ func readFrontmatter(file string) ([]byte, string) {
 			line = rest[off : off+end]
 		}
 		if string(line) == "---" {
-			return rest[:off], ""
+			if end < 0 {
+				return rest[:off], nil, ""
+			}
+			return rest[:off], rest[off+end+1:], ""
 		}
 		if end < 0 {
 			break
@@ -120,7 +130,7 @@ func readFrontmatter(file string) ([]byte, string) {
 		off += end + 1
 	}
 	if full {
-		return nil, frontmatterOverText
+		return nil, nil, frontmatterOverText
 	}
-	return nil, "no frontmatter"
+	return nil, nil, "no frontmatter"
 }
