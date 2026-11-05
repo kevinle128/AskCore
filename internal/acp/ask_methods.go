@@ -84,6 +84,7 @@ func (a *Adapter) askHandlers() map[string]askHandler {
 		protocol.ACPFollow:      a.follow,
 		protocol.ACPUnfollow:    a.unfollow,
 		protocol.ACPUsage:       a.usage,
+		protocol.ACPSkills:      a.skills,
 		protocol.ACPTake:        a.take,
 	}
 }
@@ -431,6 +432,15 @@ func (a *Adapter) usage(_ context.Context, raw json.RawMessage) (any, error) {
 	f := s.Agent().Follow(agent.Cursor{})
 	f.Events.Close()
 	return usageResult(f.Entries), nil
+}
+
+// skills lists the skills that the session can load with "/skill:<name>".
+func (a *Adapter) skills(_ context.Context, raw json.RawMessage) (any, error) {
+	s, err := a.sessionOf(raw)
+	if err != nil {
+		return nil, err
+	}
+	return protocol.ACPSkillsResult{Skills: s.skillsNow()}, nil
 }
 
 // usageResult projects the attempt rows of a session log. A row holds the

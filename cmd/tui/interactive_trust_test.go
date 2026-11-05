@@ -33,9 +33,9 @@ func (c *trustClient) Info() tui.ConnInfo {
 	return tui.ConnInfo{Mode: tui.ModeLeader, InstanceID: "inst_0123456789abcdef"}
 }
 func (c *trustClient) Close() error { return nil }
-func (c *trustClient) NewSession(_ context.Context, cwd string, trust protocol.ACPTrustOverride) (tui.SessionInfo, error) {
+func (c *trustClient) NewSession(_ context.Context, cwd string, opts tui.NewSessionOptions) (tui.SessionInfo, error) {
 	c.mu.Lock()
-	c.overrides = append(c.overrides, trust)
+	c.overrides = append(c.overrides, opts.Trust)
 	c.mu.Unlock()
 	return tui.SessionInfo{ID: "sess_5e1f0c2a9b7d4468", Role: protocol.ACPRoleDriver, Cwd: cwd}, nil
 }
@@ -50,6 +50,9 @@ func (c *trustClient) State(context.Context) (protocol.ACPStateResult, error) {
 }
 func (c *trustClient) Models(context.Context) (protocol.ACPModelsResult, error) {
 	return protocol.ACPModelsResult{}, nil
+}
+func (c *trustClient) Skills(context.Context) (protocol.ACPSkillsResult, error) {
+	return protocol.ACPSkillsResult{}, nil
 }
 
 func (c *trustClient) sent() ([]protocol.ACPTrustOverride, int) {

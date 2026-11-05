@@ -54,3 +54,25 @@ func TestLeaderKeepsTrustMetaOfNewSession(t *testing.T) {
 	require.JSONEq(t, `"approve"`, string(meta[protocol.ACPTrustMetaKey]))
 	require.Equal(t, "c1", got[0].Route.ClientID)
 }
+
+// The session flags reach the host, and the host's ack comes back to the client
+// next to nothing else: the router removes only its own route key.
+func TestLeaderKeepsSessionMetaBothWays(t *testing.T) {
+	h := startHarness(t)
+	a := h.ready(nil)
+	res := a.mustCall("session/new", map[string]any{"cwd": "/w", "mcpServers": []any{}, "_meta": map[string]any{protocol.ACPSessionOptionsMetaKey: map[string]any{"noTools": true}}})
+	got := h.agent.requests("session/new")
+	require.Len(t, got, 1)
+	var meta map[string]json.RawMessage
+	require.NoError(t, json.Unmarshal(got[0].Params["_meta"], &meta))
+	require.JSONEq(t, `{"noTools":true}`, string(meta[protocol.ACPSessionOptionsMetaKey]))
+	var out struct {
+		Meta map[string]json.RawMessage `json:"_meta"`
+	}
+	require.NoError(t, json.Unmarshal(res, &out))
+	require.Len(t, out.Meta, 1)
+	require.JSONEq(t, `true`, string(out.Meta[protocol.ACPSessionOptionsMetaKey]))
+
+	plain := a.mustCall("session/new", map[string]any{"cwd": "/w", "mcpServers": []any{}})
+	require.NotContains(t, string(plain), "_meta")
+}

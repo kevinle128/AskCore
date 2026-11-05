@@ -1,11 +1,12 @@
 # `internal/bootstrap`
 
-Prompt context files. The loader finds `AGENTS.md` in the session cwd and in each ancestor folder, and returns the files in a fixed order. Seeding of files for a new agent or user is parked.
+Prompt context. The loader reads `AGENTS.md` and `CLAUDE.md` from the Ask home and from each folder between the git root and the session cwd, and returns one framed, escaped, size-capped reminder text. It also reads `SYSTEM.md` and `APPEND_SYSTEM.md`. Seeding of files for a new agent or user is parked.
 
 ## What belongs here
 
-- `AGENTS.md` discovery from the cwd up to the project root and the user folder (`discover*.go`)
-- Loading and truncation of long context files (`load*.go`, `truncate.go`)
+- Git root discovery and the folder walk (`discover.go`)
+- Context file loading, dedup, the size caps and the reminder text (`load.go`, `read.go`, `truncate.go`)
+- `SYSTEM.md` and `APPEND_SYSTEM.md` precedence (`load_system.go`)
 - Embedded templates in `templates/`
 
 ## What does not belong here
@@ -14,19 +15,19 @@ Prompt context files. The loader finds `AGENTS.md` in the session cwd and in eac
 |---|---|
 | Final prompt assembly | `internal/agent` (`systemprompt*.go`) |
 | Seeding for a new agent or user | Parked |
-| Project trust check | `internal/workspace` |
+| Project trust check | `internal/workspace`. `LoadContext` takes no trust input. For `LoadPromptFiles` the caller passes `ProjectDir` as `""` when the project is not trusted |
 
 ## Main interfaces
 
-- None required
+- `LoadContext`, `LoadPromptFiles`
 
 ## File names
 
-`discover*.go`, `load*.go`, `truncate.go`; templates in `templates/<NAME>.md`
+`discover.go`, `load*.go`, `read.go`, `truncate.go`; templates in `templates/<NAME>.md`
 
 ## Imports
 
-- Allowed: `workspace`, `store`
+- Allowed: `workspace`, `store`, `pkg/protocol` (the `ReminderText` frame and escape). Enforced by the `bootstrap-boundary` depguard rule
 - Denied: `internal/agent`; `internal/gateway`, `internal/http`, `internal/channels/<vendor>` (core packages do not import transport); `internal/acp`, `internal/leader` (adapters wrap the core, never the reverse); `internal/config`
 
 ## Rules

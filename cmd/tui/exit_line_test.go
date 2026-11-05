@@ -205,7 +205,7 @@ func (c *sessionClient) Info() tui.ConnInfo {
 	return tui.ConnInfo{Mode: tui.ModeLeader, InstanceID: "inst_0123456789abcdef"}
 }
 func (c *sessionClient) Close() error { return nil }
-func (c *sessionClient) NewSession(_ context.Context, cwd string, _ protocol.ACPTrustOverride) (tui.SessionInfo, error) {
+func (c *sessionClient) NewSession(_ context.Context, cwd string, _ tui.NewSessionOptions) (tui.SessionInfo, error) {
 	return tui.SessionInfo{ID: c.id, Role: protocol.ACPRoleDriver, Cwd: cwd}, nil
 }
 
@@ -219,6 +219,9 @@ func (c *sessionClient) State(context.Context) (protocol.ACPStateResult, error) 
 }
 func (c *sessionClient) Usage(context.Context) (protocol.ACPUsageResult, error) {
 	return protocol.ACPUsageResult{}, nil
+}
+func (c *sessionClient) Skills(context.Context) (protocol.ACPSkillsResult, error) {
+	return protocol.ACPSkillsResult{}, nil
 }
 func (c *sessionClient) Models(context.Context) (protocol.ACPModelsResult, error) {
 	return protocol.ACPModelsResult{}, nil

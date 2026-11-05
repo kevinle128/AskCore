@@ -49,10 +49,10 @@ func TestFileToolsDeclareConcurrencyAndPromptText(t *testing.T) {
 	}
 }
 
-func TestFileToolsPromptSectionListsAllFour(t *testing.T) {
+func TestFileToolsPromptListsAllFour(t *testing.T) {
 	h := newFileHarness(t, nil)
 
-	section := tools.PromptSection(h.reg.Snapshot())
+	section := tools.PromptList(h.reg.Snapshot()) + "\n" + tools.PromptGuidelines(h.reg.Snapshot())
 
 	for _, want := range []string{"- read: Read file contents", "- write: Create or overwrite files", "- ls: List directory contents", "- edit: "} {
 		assert.Contains(t, section, want)

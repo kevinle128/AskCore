@@ -412,8 +412,8 @@ func TestStartFallbackNotInAccount(t *testing.T) {
 	p.Initial = providers.Model{}
 	p.Env = func(k string) (string, bool) { return "sk-a", k == "OPENAI_API_KEY" }
 	var start providers.Model
-	p.NewAgent = func(_ *auth.Service, _, _ string, m providers.Model) (*agent.Agent, error) {
-		start = m
+	p.NewAgent = func(_ *auth.Service, spec AgentSpec) (*agent.Agent, error) {
+		start = spec.Start
 		return nil, nil
 	}
 	rt, err := NewACPRuntime(p)

@@ -83,6 +83,19 @@ type SessionInfo struct {
 	// Role is protocol.ACPRoleDriver or protocol.ACPRoleObserver.
 	Role string
 	Cwd  string
+	// FlagsIgnored is true when NewSession sent flags and the host did not
+	// acknowledge them: an older leader drops what it does not know.
+	FlagsIgnored bool
+}
+
+// NewSessionOptions are the per-session options that NewSession sends.
+type NewSessionOptions struct {
+	// Trust is the trust override: empty, or protocol.ACPTrustApprove or
+	// protocol.ACPTrustDeny.
+	Trust protocol.ACPTrustOverride
+	// Flags are the prompt and tool flags of the command line. The zero value
+	// sends none.
+	Flags protocol.ACPSessionOptions
 }
 
 // Client is what the UI needs from an agent. Calls block until they are
@@ -100,10 +113,8 @@ type Client interface {
 	Info() ConnInfo
 
 	// NewSession creates a session in cwd, makes it current and follows it.
-	// trust is the trust override of this session only: empty, or
-	// protocol.ACPTrustApprove or protocol.ACPTrustDeny. The host saves nothing
-	// for it.
-	NewSession(ctx context.Context, cwd string, trust protocol.ACPTrustOverride) (SessionInfo, error)
+	// opts apply to this session only. The host saves nothing for them.
+	NewSession(ctx context.Context, cwd string, opts NewSessionOptions) (SessionInfo, error)
 	// Attach joins a live session of the leader as an observer and follows it.
 	Attach(ctx context.Context, sessionID string) (SessionInfo, error)
 	// Detach leaves the current session. Its run goes on.
@@ -137,6 +148,10 @@ type Client interface {
 	SetModel(ctx context.Context, modelID string, saveDefault bool) (protocol.ACPSetModelResult, error)
 	SetThinking(ctx context.Context, level protocol.ThinkingLevel) (protocol.ThinkingLevel, error)
 	Usage(ctx context.Context) (protocol.ACPUsageResult, error)
+	// Skills lists the skills of the current session, which the command list
+	// offers as "/skill:<name>". A leader that predates the call answers with a
+	// *RequestError.
+	Skills(ctx context.Context) (protocol.ACPSkillsResult, error)
 
 	// The provider calls need the shared leader. In process each of them returns
 	// ErrNeedsLeader and sends nothing. A secret (key, code or address) goes out

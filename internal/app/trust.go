@@ -132,37 +132,18 @@ func trustStoreWarning(askHome string) string {
 	return "trust store " + filepath.Join(askHome, trustFileName) + " is corrupt or unsafe; no project is trusted until you fix or remove it"
 }
 
-// SessionWarnings returns the warning lines of a session start, each with the
-// "Warning: " prefix: the trust warning, a line for a gated project that is
-// not trusted (unless the trust store caused it, which the trust warning
-// names), and one line for each settings diagnostic.
-func SessionWarnings(o TrustOutcome, eff settings.Effective) []string {
-	var lines []string
-	if o.Warning != "" {
-		lines = append(lines, "Warning: "+o.Warning)
-	}
-	if len(o.Gated) > 0 && !o.Decision.Trusted && o.Decision.Source != workspace.SourceStoreError {
-		lines = append(lines, "Warning: project settings ignored: "+o.Root+" is not trusted. Use --approve, or save a decision in the TUI with /trust.")
-	}
-	for _, d := range eff.Diagnostics {
-		line := "Warning: settings: " + d.Path
-		if d.Key != "" {
-			line += ": " + d.Key
-		}
-		lines = append(lines, line+": "+d.Text)
-	}
-	return lines
-}
-
-// sessionTrust converts the start facts of a session to the adapter value.
-func sessionTrust(o TrustOutcome, eff settings.Effective) *acp.SessionTrust {
+// sessionTrust converts the start facts of a session to the adapter value. The
+// context and skill diagnostics ride in the same list as the settings ones.
+func sessionTrust(s SessionStart) *acp.SessionTrust {
 	t := &acp.SessionTrust{
-		Trust:        protocol.ACPSessionTrust{Trusted: o.Decision.Trusted, Source: string(o.Decision.Source)},
-		ThinkingFold: string(eff.ThinkingFold),
+		Trust:        protocol.ACPSessionTrust{Trusted: s.Trust.Decision.Trusted, Source: string(s.Trust.Decision.Source)},
+		ThinkingFold: string(s.Settings.ThinkingFold),
 	}
-	for _, d := range eff.Diagnostics {
+	for _, d := range s.Settings.Diagnostics {
 		t.Diagnostics = append(t.Diagnostics, protocol.ACPDiagnostic{Layer: string(d.Layer), Path: d.Path, Key: d.Key, Text: d.Text})
 	}
+	t.Diagnostics = append(t.Diagnostics, s.contextDiagnostics()...)
+	t.Diagnostics = append(t.Diagnostics, s.cappedSkillDiagnostics()...)
 	return t
 }
 

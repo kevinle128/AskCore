@@ -12,6 +12,7 @@ import (
 	"github.com/stretchr/testify/require"
 
 	"AskCore/internal/agent"
+	"AskCore/internal/app"
 	"AskCore/internal/providers"
 	"AskCore/internal/tools"
 	"AskCore/pkg/protocol"
@@ -35,7 +36,7 @@ func newCassetteAgent(t *testing.T, o options, getenv func(string) string, extra
 	t.Helper()
 	cwd, err := os.Getwd()
 	require.NoError(t, err)
-	ag, _, err := newNativeAgent(o, getenv, nil, cassetteSessionID, cwd, extra...)
+	ag, _, err := newNativeAgent(o, getenv, nil, app.AgentSpec{SessionID: cassetteSessionID, Cwd: cwd}, extra...)
 	require.NoError(t, err)
 	return ag
 }

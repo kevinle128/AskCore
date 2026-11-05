@@ -7,8 +7,6 @@ import (
 
 	tea "charm.land/bubbletea/v2"
 	"github.com/charmbracelet/colorprofile"
-
-	"AskCore/pkg/protocol"
 )
 
 // Root model composition.
@@ -61,10 +59,11 @@ type Options struct {
 	// takes when it ends. The zero value is ThinkingExpanded. The caller reads
 	// it from the settings; the package does not read files.
 	ThinkingFold ThinkingFold
-	// Trust is the project trust override of the command line (--approve or
-	// --no-approve), or empty. It goes with every new session, and the TUI
-	// then does not ask the trust question.
-	Trust protocol.ACPTrustOverride
+	// Session holds the per-session options of the command line: the project
+	// trust override (--approve or --no-approve), and the prompt and tool flags.
+	// They go with every new session. A trust override makes the TUI skip the
+	// trust question.
+	Session NewSessionOptions
 }
 
 // Model is the root model of the TUI.

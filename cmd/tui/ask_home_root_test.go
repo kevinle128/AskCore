@@ -24,12 +24,13 @@ var askDirOwners = map[string]string{
 	"internal/leader/paths.go":      "the leader may not import internal/settings, so it keeps its own copy of the home rule",
 	"internal/settings/project.go":  "the name of the project settings folder <root>/.ask",
 	"internal/workspace/project.go": "the name of the project folder for the trust check and the gated files",
+	"internal/app/session_start.go": "the project prompt folder and the gated skills entry of a trusted project, matched against the workspace gated list",
 }
 
 // TestAskHomeHasOneRootFunction scans the non-test Go sources of the module
 // for the string literal ".ask" and allows only the listed owners.
 func TestAskHomeHasOneRootFunction(t *testing.T) {
-	moduleRoot, err := filepath.Abs(filepath.Join("..", ".."))
+	moduleRoot, err := filepath.Abs(filepath.Join(packageDir, "..", ".."))
 	require.NoError(t, err)
 	_, err = os.Stat(filepath.Join(moduleRoot, "go.mod"))
 	require.NoError(t, err, "the module root must hold go.mod")

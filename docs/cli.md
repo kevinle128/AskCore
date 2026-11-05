@@ -39,6 +39,10 @@ The mode is chosen in this order:
 | `--api-key <key>` | Key for this run. It needs `--model`, except for `alibaba-token-plan`. A key in the arguments is visible to other processes. Prefer the environment or `ask auth login`. |
 | `--thinking <level>` | `off`, `minimal`, `low`, `medium`, `high`, `xhigh`, or `max`. `alibaba-token-plan` defaults to `medium`. |
 | `--max-turns <n>` | Print and JSON mode. End the run after `n` turns. `n` is a whole number above 0, or the command exits 1. See [Background work in print mode](#background-work-in-print-mode). |
+| `--system-prompt <text\|file>` | Replace the default system prompt for this run. See [Prompt, context files, skills, and tools](#prompt-context-files-skills-and-tools). |
+| `--append-system-prompt <text\|file>` | Add text at the end of the system prompt. Repeat the flag to add more. |
+| `-t`, `--tools <names>` | Keep only these built-in tools. Give a comma list, for example `read,grep`. Repeat the flag to add more names. |
+| `-nt`, `--no-tools` | Keep no built-in tool. Use it alone: with `-t` it is an error. |
 | `--no-leader` | TUI only. Run the agent in this process. Do not connect to a leader and do not start one. Use it to debug the agent, because the tools then run in this process. Print mode already runs in process and ignores the flag. |
 | `-a`, `--approve` | Trust the project of the current folder for this run. The TUI then shows no trust question. Nothing is saved. See [Project trust](#project-trust). |
 | `-na`, `--no-approve` | Do not trust the project of the current folder for this run. Nothing is saved. The two flags together are an error (exit 1). |
@@ -70,6 +74,142 @@ A `bash` job or a `monitor` can still run when the last prompt ends. `ask -p` an
 - `--max-turns <n>` counts every turn of the run, also the turns that a notice starts. A turn that the agent retries does not count. When the limit is reached, the run stops before turn `n+1` and exits with code 1. The line `Error: Reached max turns (n)` goes to stdout, or to stderr with `--mode json`, so the JSON event stream stays valid. The interactive TUI ignores the flag.
 
 The TUI, the leader, and `ask acp` set no time limit on background jobs. The variables `ASK_PRINT_BG_LIMIT_MS`, `ASK_PRINT_BG_WAIT_CEILING_MS`, and `ASK_DISABLE_BACKGROUND_TASKS` are in [Environment variables](#environment-variables). The owner of the rules is [internal/jobs/README.md](../internal/jobs/README.md#background-limit-and-quiescence). The tool texts are in [reference/tools.md](reference/tools.md).
+
+## Prompt, context files, skills, and tools
+
+Each session gets its system prompt, its context files, its skill list, and its tools from the files below and from the flags above. `ask -p`, the TUI, and `ask acp` use the same rules.
+
+### System prompt
+
+The system prompt has these sections in this order: the preamble, the tools, the rules, the Ask docs pointer, the addendum, the working directory, and the date. The working directory and the date are last. The text before them is the same for two sessions that differ only in directory and date, so the provider cache stays valid. The date is the local date of the session start (`YYYY-MM-DD`).
+
+A replacement prompt takes the place of the preamble. It drops the tools, rules, and docs sections. The addendum, the working directory, and the date stay. A replacement or an addendum with only white space is ignored.
+
+The first match decides the replacement. Ask never merges two replacements:
+
+1. `--system-prompt`. A second `--system-prompt` replaces the first.
+2. `<project>/.ask/SYSTEM.md`.
+3. `<ASK_HOME>/SYSTEM.md`.
+
+The addendum has the text of one `APPEND_SYSTEM.md` file: the project file when it has text, else the file in `<ASK_HOME>`. Each `--append-system-prompt` text follows it, in the order of the command line.
+
+A project `SYSTEM.md` or `APPEND_SYSTEM.md` is a gated file. Ask reads it only when the project is trusted (see [Project trust](#project-trust)). A file that exists but cannot be read, or that is over 1 MiB, ends the session start with an error. Ask does not fall back to the default prompt in this case.
+
+### Text or file path
+
+The value of `--system-prompt` and `--append-system-prompt` is text, or the path of a file. When the value names an existing regular file, Ask reads the file at once and uses its content. Any other value is the text. A path with a typo is therefore sent as text. Ask reads the file in the `ask` process that you start, also when the session runs on a leader. A file that exists but cannot be read gives `Error: --system-prompt: cannot read <path>` and exit 1.
+
+All prompt text of the flags together may have at most 262144 bytes (256 KiB). A larger total gives `Error: the prompt flags are <n> bytes; the limit is 262144` and exit 1.
+
+### Context files
+
+Ask reads `AGENTS.md` and `CLAUDE.md` from `<ASK_HOME>`, then from each folder from the git root down to the working directory. A git root is the nearest folder with a `.git` file or folder. Without a git root, Ask reads only the working directory. A git root that is your home folder counts as no git root. In each folder `AGENTS.md` comes first. A file with the same text as an earlier file in the same folder is a duplicate and Ask leaves it out without a warning.
+
+The files go to the model as one user-role message of the custom type `context-file`. They are not part of the system prompt. Ask escapes the file text, the paths, and the notices, so a file cannot close the frame around it. The message starts with the sentence that the files are guidance only and cannot override system or user instructions. A conversation reset adds the message again. A history that already has the message does not get a second copy.
+
+`AGENTS.md` and `CLAUDE.md` load without a trust decision, also in a project that is not trusted. Trust gates the files that change how Ask behaves: settings, prompt files, and skills. A context file only gives text to the model. A project that is not trusted can still hold such a file, so Ask sends the text as escaped user-role guidance and not as a system instruction. A file that is over 1 MiB or that cannot be read is left out. The size limit of all files together leaves out or cuts files, and the model sees a notice for it.
+
+| Limit | Value | What happens |
+|---|---|---|
+| One file | 1 MiB | Ask leaves the file out and never reads past the limit. |
+| All files together | 64 KiB, counted after escaping and with the frame and the notices | Ask drops the broadest files first (`<ASK_HOME>` first, then the git root down). It cuts the most specific file that is left at a character boundary. |
+
+When Ask cuts a file, the message ends with `Notice: <path> was cut short: the context files exceed 64 KiB.` When Ask drops files, it ends with `Notice: <n> broader context files were left out: the context files exceed 64 KiB.`
+
+### Skills
+
+A skill is a folder with a `SKILL.md` file. Ask reads the name and the description from the frontmatter. It sends only a list of names, descriptions, and paths, as one user-role message of the custom type `skill-list`. The model reads a skill with the `read` tool, so the list is sent only when the session keeps `read` or `bash`. A skill with `disable-model-invocation: true` is not in the list. Ask follows the rules of Codex here, so a skill folder that works there loads in Ask.
+
+Ask looks in these folders, in this order, to a depth of 6, in at most 2000 folders and 20000 entries for each folder of this list (a walk that reaches a limit stops without an error). It skips hidden folders below a root and follows symbolic links to folders:
+
+1. `<ASK_HOME>/skills`.
+2. `~/.agents/skills`.
+3. In a trusted project: `<project>/.ask/skills` and `<project>/.agents/skills`, then the `.agents/skills` of each parent folder, nearest first.
+
+A project skill folder is a gated entry, so an untrusted project never gives skills.
+
+**Name.** The `name` is the frontmatter value with every run of white space turned into one space. A missing or empty name falls back to the folder name (`skill` if that is empty too). A name over 64 characters is cut to 64 characters. There is no rule on the characters, so `name: kk:agent-browser` loads.
+
+**Description.** The `description` is required: a missing or blank one is the problem `missing description`. White space is collapsed to one line. The loader has no length cap. The list cuts a description over 1024 characters to its first 1021 characters and `...`.
+
+**Broken YAML.** When the frontmatter is not valid YAML, Ask double-quotes each top-level value that holds `: ` or starts with `[`, `{`, `@`, or a backtick, and reads it once more. So `description: Build for AWS: ECS` loads. The problem `bad frontmatter` is left only when the second read fails too. `disable-model-invocation` stays strict: it must be the YAML boolean `true` or `false`, so `yes` and `"true"` are the problem `bad boolean disable-model-invocation`. Ask reads at most 64 KiB of frontmatter (`frontmatter over 65536 bytes`).
+
+**Same name.** Skills of the same name are all kept, and the list shows the path of each. The order is the scope (project before user), the name, and the path. A `SKILL.md` that two folders reach is listed once. Nothing is reported for a name that appears twice.
+
+**Problems.** The reasons that remain are `no frontmatter`, `bad frontmatter`, `missing description`, `bad boolean disable-model-invocation`, `frontmatter over 65536 bytes`, and `unreadable`. A skill with a problem is not loaded, and the other skills are.
+
+**Budget.** The list takes a part of the context window of the session model. A line is one skill entry; it costs its text and a line break. In tokens, a line costs `ceil(bytes / 4)` plus one. The header and the footer are free. The budget is:
+
+| Condition | Budget |
+|---|---|
+| `skillsMaxContextTokens` is set | That many tokens, at most 10000 |
+| The model window is known | 2% of the window in tokens (100000 gives 2000, 400000 gives 8000) |
+| The window is not known | 8000 characters (runes, not bytes) |
+
+Ask fits the skills in three steps:
+
+1. Every description (cut to 1024 characters) fits: the list has them all.
+2. Otherwise, if every skill fits with an empty description, the room that is left goes to the descriptions one character at a time, round-robin, so one skill cannot take it all. No description gets longer than its own text.
+3. Otherwise, the skills keep their order with no description until the budget ends, and the rest are left out.
+
+When skills are left out, the list ends with `- <n> additional skill(s) omitted from this bounded skills list.`, and that line is charged to the budget: Ask drops entries from the end until it fits. It also writes one warning, `Exceeded skills context budget. All skill descriptions were removed and <n> additional skill(s) was/were not included in the model-visible skills list.` Shortened descriptions alone give no warning. The list is made once at the session start, so a later `/model` does not change it.
+
+**Load a skill by name.** A prompt that starts with `/skill:<name>` loads that skill. The name ends at the first white space. The rest of the text, without the white space around it, is the arguments. The text that goes to the model is:
+
+```
+<skill name="<name>" location="<path of SKILL.md>">
+References are relative to <folder of SKILL.md>.
+
+<the text of SKILL.md after its frontmatter>
+</skill>
+
+<the arguments>
+```
+
+The empty line and the arguments are absent when there are no arguments. The skill text is at most 100 KB. When it is longer, Ask cuts it on a character boundary and adds the note `[The skill text is cut here at 100 KB. Read the SKILL.md file at the location above for the rest.]`. A skill with `disable-model-invocation: true` loads too: loading it by name is its purpose. The first skill of that name in the order above wins. A name that no skill has leaves the text as you typed it. A project skill is available only in a trusted project.
+
+The agent of the session does this, so it works the same in `ask -p '/skill:<name> text'`, in the TUI with a leader or an in-process agent, and over `ask acp`. Only the first block of a prompt, a steer, or a follow-up is checked. The log of the session keeps the text after the change. The TUI shows what you typed (`/skill:<name> text`) in the transcript and in the queue rows, not the skill text.
+
+### Tools
+
+Ask keeps all built-in tools unless you select. Select with these, from the strongest to the weakest:
+
+1. `-nt` or `--no-tools` keeps no built-in tool.
+2. `-t` or `--tools <names>` keeps only the named tools. The names are lower-case letters, digits, and `_`.
+3. The `defaultTools` setting (see [Settings files](#settings-files)).
+
+A flag replaces the setting. A `-name` entry of the `defaultTools` setting still removes its tool when you use `-t`. The prompt tool list and the rules follow the kept tools, and Ask does not register the tools that it does not keep. A name that is not a built-in tool ends the session start with `--tools: unknown tool "<name>"; known tools: <list>` (a bad `defaultTools` entry names `defaultTools` in place of `--tools`). Over ACP the same text answers `invalid_params`. The tool list of this build is in [reference/tools.md](reference/tools.md).
+
+### Usage errors
+
+These errors write one line to stderr and exit with code 1 before any session starts:
+
+| Cause | Line |
+|---|---|
+| A flag with no value | `Error: --system-prompt requires a value` (also for `--append-system-prompt`, `-t`, `--tools`) |
+| `-t` or `--tools` together with `-nt` or `--no-tools` | `Error: --tools and --no-tools cannot be used together` |
+| A tool name that is not valid | `Error: --tools: invalid tool name "<name>"` |
+| A prompt file that cannot be read | `Error: --system-prompt: cannot read <path>` |
+| Prompt text over 256 KiB | `Error: the prompt flags are <n> bytes; the limit is 262144` |
+| A tool name that is not a built-in tool, an unreadable `SYSTEM.md`, or an unreadable `APPEND_SYSTEM.md` | `Error: ...` (at the session start) |
+
+### Warnings
+
+`ask -p` writes these lines to stderr after the trust and settings lines, and before the run. The leader and `ask acp` send the same problems to the client as session diagnostics.
+
+- `Warning: <n> context file(s) was/were skipped; run ask settings show for details`. It counts the files that Ask left out or cut (too large, not readable, or over the 64 KiB limit). A duplicate is not counted.
+- `Warning: skills: <path>: <reason>`. One line for each skill that did not load, at most 4 lines of at most 256 bytes each. When more skills have a problem, `Warning: skills: <n> more skill problem(s); run ask settings show for details` follows. The leader and `ask acp` send the same rows, with the same cap, as session diagnostics.
+- `Warning: Exceeded skills context budget. ...`. The skill list left skills out (see [Skills](#skills)). It comes when the agent is built, after the lines above.
+
+The context file line is a summary, and its detail is in `ask settings show`. `ask settings show` also keeps the full list of skill problems. A line never contains file content.
+
+### Flags in the TUI and with a leader
+
+The TUI sends the four flags to its host with `session/new`, in `_meta["ask.dev/session"]` (`systemPrompt`, `appendSystemPrompt`, `tools`, `noTools`). The prompt flags hold text, not paths. The flags apply to every session that this TUI process opens, also after `/new`. They are not saved.
+
+A leader that is older than this build ignores the key without an error. The TUI then shows `Warning: the leader ignored the prompt and tool flags of this command line (it is older than this build). They are not applied in this session.` The session runs with more tools and with the default prompt. Stop the old leader with `ask leader stop`, or use `--no-leader`.
+
+`ask acp` does not take these flags. An ACP client that starts a session can send `_meta["ask.dev/session"]` with the object `{"systemPrompt": "...", "appendSystemPrompt": ["..."], "tools": ["read"], "noTools": false}`. The host applies it to that session only. A value that is not an object, a field of the wrong type, prompt text over 256 KiB in total, a tool name that is not valid, or both `tools` and `noTools` answers `invalid_params`. When the host applied non-empty flags, the result `_meta` has `ask.dev/session: true`.
 
 ## `ask auth`
 
@@ -132,7 +272,7 @@ ask acp --help
 
 The command serves ACP v1 as JSON-RPC lines on stdin and stdout. Diagnostics go to stderr. It opens no listener and no database. Each session has its own agent. No credentials pass over the connection: sign in first with `ask auth login`.
 
-`--approve` (`-a`) trusts the project of every session of this process, and `--no-approve` (`-na`) trusts none. Without a flag, each session decides with no UI (see [Project trust](#project-trust)). The two flags together, or any other argument, are an error. The command answers `unsupported` for `_ask/trust/state` and `_ask/trust/set`, because an editor link has no trust question.
+`--approve` (`-a`) trusts the project of every session of this process, and `--no-approve` (`-na`) trusts none. Without a flag, each session decides with no UI (see [Project trust](#project-trust)). The two flags together, or any other argument, are an error. The command takes none of the prompt and tool flags (`--system-prompt`, `--append-system-prompt`, `-t`, `-nt`). A client sends them for one session in `_meta["ask.dev/session"]` (see [Flags in the TUI and with a leader](#flags-in-the-tui-and-with-a-leader)). The command answers `unsupported` for `_ask/trust/state` and `_ask/trust/set`, because an editor link has no trust question.
 
 Exit codes: 0 input ended, 1 error or lost output, 130, 143, 129. The owner is [internal/acp/README.md](../internal/acp/README.md).
 
@@ -151,6 +291,8 @@ The text form shows, in this order:
 2. `Settings:` one row for each key, with the value and the layer that sets it (`default`, `user`, or `project`). `(none)` means that no `defaultModel` is set.
 3. A `Warning:` line for a trust store that cannot be read.
 4. `Problems:` one row for each settings diagnostic: the layer, the path, the key, and a fixed text.
+5. `Context files:` one row for each `AGENTS.md` or `CLAUDE.md` that the session reads, with its path and size in bytes, then the files that Ask left out. A row has the word `too_large`, `unreadable`, `duplicate`, `budget`, or `truncated` when Ask did not deliver the file whole. `(none)` means that no context file exists.
+6. `Skill problems:` one row for each skill that did not load: the layer, the path, and a fixed text. The list is complete: the 4-row cap of `ask -p` and the TUI does not apply here. The block is absent when every skill loaded.
 
 `--json` prints one JSON object with this shape. Arrays are always present, also when they are empty.
 
@@ -170,10 +312,18 @@ The text form shows, in this order:
   "settings": [
     {"key": "defaultModel", "value": "openai/gpt-5.5@responses", "source": "project"},
     {"key": "thinkingFold", "value": "collapsed", "source": "user"},
-    {"key": "defaultProjectTrust", "value": "ask", "source": "default"}
+    {"key": "defaultProjectTrust", "value": "ask", "source": "default"},
+    {"key": "defaultTools", "value": "read,grep", "source": "user"},
+    {"key": "skillsMaxContextTokens", "value": "", "source": "default"}
   ],
   "diagnostics": [
     {"layer": "project", "path": "/work/repo/.ask/settings.json", "key": "env", "text": "a project file cannot set this key; it is ignored"}
+  ],
+  "context": [
+    {"path": "/work/repo/AGENTS.md", "bytes": 1204, "skipped": ""}
+  ],
+  "skillDiagnostics": [
+    {"layer": "project", "path": "/work/repo/.agents/skills/old/SKILL.md", "key": "skills", "text": "a fixed reason"}
   ]
 }
 ```
@@ -185,9 +335,12 @@ The text form shows, in this order:
 | `project.entry` | The folder of the saved trust entry that applies, or empty. |
 | `project.gated` | The gated entries that exist: relative to the root in the root, absolute in a parent folder. |
 | `project.warning` | A fixed text with the path of a trust store that cannot be read, or empty. |
-| `settings[].value` | The effective value. An empty `defaultModel` means that no default model is set. |
+| `settings[].value` | The effective value. An empty `defaultModel` means that no default model is set. `defaultTools` is the array joined with commas; an empty value is shown for an unset key and for an empty array, so read `source` to tell them apart (`default` means unset). `skillsMaxContextTokens` is the number, or empty when unset. |
 | `settings[].source` | `default`, `user`, or `project`. |
 | `diagnostics[].key` | The key, or empty for a problem with the whole file. |
+| `context[].bytes` | The size of the file in bytes. `0` when Ask cannot read it. |
+| `context[].skipped` | Empty for a file that the session gets whole, else `too_large`, `unreadable`, `duplicate`, `budget`, or `truncated`. |
+| `skillDiagnostics[]` | Every skill that did not load. `key` is `skills`. |
 
 A bad value of a known key gives the default and a diagnostic. A corrupt user file or trust store is reported and keeps its bytes.
 
@@ -259,6 +412,9 @@ Exit codes: 0 left, 1 error or lost leader, 130, 143, 129.
 | `/take` | Take control of this session. |
 | `/copy` | Copy the last reply. It uses a native command first, then OSC 52 up to 75 KiB. |
 | `/quit` | Detach and quit. |
+| `/skill:<name>` | Load a skill of this session (see [Skills](#skills)). One row for each skill, after the commands above, with its description. Enter puts `/skill:<name> ` in the editor and sends nothing, so you can add arguments and send. Typing `/sk` or `/skill:kk` shows only the rows that match. The rows come from the session and change with a new session. A leader that is older than this build gives no skill rows and no error. |
+
+While the command list is open, `Tab` completes the draft like a shell. When the rows share a longer prefix than the draft, `Tab` extends the draft to that prefix, and the list stays open on the rows that are left. Otherwise `Tab` fills the draft with the selected row: a `/skill:<name>` row gets a trailing space for arguments, and a built-in command gets none, so `Enter` then runs it. `↑` and `↓` move the selection, and the selection goes back to the first row after each completion. After `Esc` the list stays closed until the next edit, and `Tab` with the list closed moves focus to the block list. `Shift+Tab` still cycles the thinking level.
 
 With no usable provider the session has no model. The footer row shows `no model`, and a prompt is refused and stays in the editor. `/providers` opens the sign-in box. The leader checks an API key before it saves it (mode 0600 `auth.json`); it cannot check the Alibaba Token Plan key, so it saves that key as it is. The key is pasted into a masked input.
 
@@ -286,6 +442,17 @@ The project file overrides the user file. JSON objects merge key by key. A proje
 | `defaultModel` | A model id `provider/id@api`. `/model` saves it. | user, project |
 | `thinkingFold` | `"expanded"` (default), `"truncated"`, `"collapsed"` | user, project |
 | `defaultProjectTrust` | `"ask"` (default), `"always"`, `"never"`: the trust of a project with gated files and no saved decision | user only |
+| `defaultTools` | An array of built-in tool names, for example `["read", "grep"]`, or an array of `"+name"` and `"-name"` entries, for example `["-bash"]`. Plain names and `+`/`-` entries in one array are a bad value. Default: unset, which keeps every built-in tool. | user, project |
+| `skillsMaxContextTokens` | A positive integer: the token budget of the skill list, at most 10000 (a larger value counts as 10000). Default: unset, which uses 2% of the model window. A zero, a negative number, or a value that is not an integer is ignored with a diagnostic. See [Skills](#skills). | user, project |
+
+Rules of `defaultTools`:
+
+- Plain names are the allowed set. `+name` and `-name` change the full set: `-bash` keeps every tool except `bash`. A `-name` always wins.
+- An unset key keeps every tool. An empty array `[]` keeps no built-in tool. A `null` is the same as an unset key.
+- Arrays replace across layers. They never merge. A trusted project array replaces the user array, and an empty project array replaces a user array with names. A project `null` keeps the user value.
+- A project array can keep more tools than the user array, because it replaces the user array. A project that is not trusted gives no value.
+- A value with a bad shape (not an array of strings, a bad entry, or plain names mixed with `+`/`-` entries) is ignored and gives a diagnostic. The key then counts as unset, also when the other layer has a valid value. A name that is well-formed but is not a built-in tool is not a bad shape: it ends the session start with `defaultTools: unknown tool "<name>"; known tools: <list>`.
+- `-t` and `-nt` replace the setting for one run (see [Tools](#tools)).
 
 Ask keeps unknown keys when it writes a file. A write reads the file again under a lock, changes only its own key, and replaces the file atomically. Ask never overwrites a corrupt file: it refuses the write and names the path. A file that cannot be read, or a bad value of a known key, gives the default and a diagnostic. `ask -p` writes each diagnostic as one `Warning: settings:` line to stderr; `ask settings show` lists them. A diagnostic never contains file content.
 
@@ -296,7 +463,7 @@ A project needs a trust decision when one of these entries exists (Ask uses `Lst
 - In `<project>/.ask/`: `settings.json`, `SYSTEM.md`, `APPEND_SYSTEM.md`, `mcp.json`, `models.json`, `skills`, `prompts`, `extensions`.
 - `.agents/skills` in the project folder and in each parent folder, except `~/.agents/skills`.
 
-Context files such as `AGENTS.md` and `CLAUDE.md` are not gated. They always load, also in a project that is not trusted. Ask reads no gated file of a project before the decision.
+Context files such as `AGENTS.md` and `CLAUDE.md` are not gated. They always load, also in a project that is not trusted (see [Context files](#context-files)). Ask reads no gated file of a project before the decision. These need trust: the project `.ask/settings.json`, the project `.ask/SYSTEM.md` and `.ask/APPEND_SYSTEM.md`, and the project skill folders. The user files in `<ASK_HOME>` and `~/.agents/skills` need no trust.
 
 The first rule that matches decides:
 

@@ -66,9 +66,9 @@ func TestTUIClientTrustCalls(t *testing.T) {
 	require.False(t, errors.Is(err, ErrTrustNotAvailable))
 
 	// An empty override sends no _meta; another override goes into _meta.
-	_, err = c.NewSession(ctx, "/w", "")
+	_, err = c.NewSession(ctx, "/w", tui.NewSessionOptions{})
 	require.NoError(t, err)
-	_, err = c.NewSession(ctx, "/w", protocol.ACPTrustDeny)
+	_, err = c.NewSession(ctx, "/w", tui.NewSessionOptions{Trust: protocol.ACPTrustDeny})
 	require.NoError(t, err)
 	news := sc.byMethod("session/new")
 	require.Len(t, news, 2)
@@ -87,4 +87,42 @@ func (sc *script) byMethod(method string) []sent {
 		}
 	}
 	return out
+}
+
+func TestTUIClientSessionFlags(t *testing.T) {
+	sc := newScript(map[string]func(sent) (any, string, bool){
+		"session/new":      fixed(map[string]any{"sessionId": "s1"}),
+		protocol.ACPFollow: fixed(protocol.ACPFollowResult{SubscriptionID: "sub", Cursor: protocol.ACPCursor{Epoch: "e", Seq: 1}}),
+	})
+	c := openScripted(t, sc, tui.ModeInProcess, "")
+	defer func() { require.NoError(t, c.Close()) }()
+	ctx := context.Background()
+	flags := protocol.ACPSessionOptions{AppendSystemPrompt: []string{"be terse"}, Tools: []string{"read"}}
+
+	info, err := c.NewSession(ctx, "/w", tui.NewSessionOptions{})
+	require.NoError(t, err)
+	require.False(t, info.FlagsIgnored, "no flags, nothing to acknowledge")
+	info, err = c.NewSession(ctx, "/w", tui.NewSessionOptions{Flags: flags})
+	require.NoError(t, err)
+	require.True(t, info.FlagsIgnored, "flags without an ack mean an older host")
+	_, err = c.NewSession(ctx, "/w", tui.NewSessionOptions{Trust: protocol.ACPTrustApprove, Flags: protocol.ACPSessionOptions{NoTools: true}})
+	require.NoError(t, err)
+
+	news := sc.byMethod("session/new")
+	require.Len(t, news, 3)
+	require.NotContains(t, string(news[0].Params), "_meta")
+	require.JSONEq(t, `{"cwd":"/w","mcpServers":[],"_meta":{"ask.dev/session":{"appendSystemPrompt":["be terse"],"tools":["read"]}}}`, string(news[1].Params))
+	require.JSONEq(t, `{"cwd":"/w","mcpServers":[],"_meta":{"ask.dev/trust":"approve","ask.dev/session":{"noTools":true}}}`, string(news[2].Params))
+}
+
+func TestTUIClientSessionFlagsAcknowledged(t *testing.T) {
+	sc := newScript(map[string]func(sent) (any, string, bool){
+		"session/new":      fixed(map[string]any{"sessionId": "s1", "_meta": map[string]any{protocol.ACPSessionOptionsMetaKey: true}}),
+		protocol.ACPFollow: fixed(protocol.ACPFollowResult{SubscriptionID: "sub", Cursor: protocol.ACPCursor{Epoch: "e", Seq: 1}}),
+	})
+	c := openScripted(t, sc, tui.ModeInProcess, "")
+	defer func() { require.NoError(t, c.Close()) }()
+	info, err := c.NewSession(context.Background(), "/w", tui.NewSessionOptions{Flags: protocol.ACPSessionOptions{NoTools: true}})
+	require.NoError(t, err)
+	require.False(t, info.FlagsIgnored)
 }

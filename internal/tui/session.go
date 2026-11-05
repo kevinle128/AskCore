@@ -213,9 +213,9 @@ type sessionView struct {
 	// its session/new: the trust check and the trust box come before the
 	// session. A prompt is not sent while it is true.
 	starting bool
-	// trustFlag is the trust override of the command line, or empty. It goes
-	// with every session/new, and the trust check is then skipped.
-	trustFlag protocol.ACPTrustOverride
+	// session holds the options of the command line. They go with every
+	// session/new. A trust override skips the trust check.
+	session NewSessionOptions
 	// start is the record of the last session start of this client.
 	start trustStart
 	// tbox is the open trust box, or nil.
@@ -261,7 +261,7 @@ func newSessionView(m *Model, o Options) *sessionView {
 		clip:   o.Clipboard.resolved(),
 		// init and onOpened start the first session with startSessionCmd,
 		// which sets starting.
-		trustFlag: o.Trust,
+		session: o.Session,
 	}
 	if s.now == nil {
 		s.now = time.Now

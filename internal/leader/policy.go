@@ -58,6 +58,7 @@ var policies = map[string]policy{
 	protocol.ACPState:       {kind: callSession, subscribe: true},
 	protocol.ACPModels:      {kind: callSession, subscribe: true},
 	protocol.ACPUsage:       {kind: callSession, subscribe: true},
+	protocol.ACPSkills:      {kind: callSession, subscribe: true},
 	protocol.ACPSetModel:    {kind: callSession, driverOnly: true},
 	protocol.ACPSetThinking: {kind: callSession, driverOnly: true},
 	protocol.ACPContinue:    {kind: callSession, driverOnly: true},

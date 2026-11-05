@@ -9,9 +9,9 @@ The Agent Client Protocol adapter over the agent's Go API. It is the server side
 - The mapping from internal events to `session/update` notifications and the follow subscriptions (`updates.go`)
 - `_meta` fields for Ask-only data such as `seq`, `epoch` and `runId` (`meta.go`)
 - `session/close` disposes one session through `Session.Close`: the run stops, background jobs end and the host forgets the session. `initialize` advertises `sessionCapabilities.close`. A routed close needs the current driver generation (`agent.go`).
-- The `_ask/*` method handlers: state, models, controls, steer and follow-up, usage; compact, fork and tree answer "unsupported" (`ask_methods.go`)
+- The `_ask/*` method handlers: state, models, controls, steer and follow-up, usage, skills; compact, fork and tree answer "unsupported" (`ask_methods.go`)
 - The leader-only provider method handlers and the `ProviderSetup` interface (`provider_methods.go`)
-- The project trust method handlers, the `TrustSetup` interface and the per-session trust override (`trust_methods.go`)
+- The project trust method handlers, the `TrustSetup` interface and the per-session trust override (`trust_methods.go`) and the per-session flags of `session/new` (`session_options.go`)
 - The one error mapper (`errors.go`)
 - The stdio server for `ask acp` (`stdio.go`)
 - The route context of the shared leader link: parsing, the driver generation guard, `take` and the quiesce check (`route.go`, `host.go`)
@@ -32,7 +32,7 @@ The Agent Client Protocol adapter over the agent's Go API. It is the server side
 
 ## File names
 
-`agent.go`, `host.go`, `updates.go`, `meta.go`, `ask_methods.go`, `provider_methods.go`, `trust_methods.go`, `errors.go`, `stdio.go`, `wire.go`, `route.go`
+`agent.go`, `host.go`, `updates.go`, `meta.go`, `ask_methods.go`, `provider_methods.go`, `trust_methods.go`, `session_options.go`, `errors.go`, `stdio.go`, `wire.go`, `route.go`
 
 ## Imports
 
@@ -89,7 +89,9 @@ The writer waits for each active subscription to write through the same event se
 ## Project trust
 
 - `session/new` takes the override `_meta["ask.dev/trust"]` (`protocol.ACPTrustMetaKey`): `"approve"` or `"deny"` for this session only. Another value answers `invalid_params`. The host saves nothing for it. It passes the override to the `Factory` in `SessionRequest.Trust`. The composition decides the trust of the cwd, loads the settings layers and builds the agent.
+- `session/new` also takes `_meta["ask.dev/session"]` (`protocol.ACPSessionOptionsMetaKey`), one object of per-session flags (`protocol.ACPSessionOptions`: `systemPrompt`, `appendSystemPrompt`, `tools`, `noTools`). Unknown fields are ignored. A value that is not an object, a field of the wrong type, prompt text over `protocol.ACPSessionPromptMaxBytes` in total, or a tool name outside `^[a-z][a-z0-9_]*$` answers `invalid_params` with a fixed text. The adapter passes the value to the `Factory` in `SessionRequest.Flags`. When the flags are not the zero value and the `Factory` succeeded, the result `_meta` carries `ask.dev/session: true`; an older host sends no ack. A `Factory` rejects a failure that the client caused (for example an unknown tool name) with `acp.InvalidParams(detail)`; any other error text is never sent.
 - `Config.StartTrust` gives the trust decision (`trusted`, `source`), the settings diagnostics and the effective `thinkingFold` of a new session once. `_ask/session/state` reports them in the optional fields `trust`, `diagnostics` and `thinkingFold`.
+- `Config.StartSkills` gives the skills of a new session once (name, description, path, scope, whether the model can invoke it). `_ask/session/skills` reports them, so a client can offer `/skill:<name>`. The skills are fixed at the start of the session; a host without `StartSkills` answers an empty list. The adapter never reads a skill file and never expands `/skill:<name>`: the Agent does that through `Config.RewriteInput` (see `internal/app`), so the prompt, steer and follow-up calls carry the text as the user typed it.
 - `_ask/trust/state` and `_ask/trust/set` name no session. They need `Config.TrustSetup`; without it both answer `unsupported`. The leader and the in-process TUI link set it (`app.ACPParams.TrustRequests`); `ask acp` does not, because an editor link has no trust question. A route is not needed on a link without routes, and the leader link needs one.
 - Both methods need an absolute `cwd`. `_ask/trust/set` takes `target` (`folder` or `parent`) and `decision` (`trust`, `distrust` or `clear`) and returns the new state. A trust store that cannot be changed answers `invalid_state` with the fixed warning text and the path of the store. A change applies to the next session.
 - `ask acp --approve` or `--no-approve` sets a process-wide override (`app.ACPParams.TrustOverride`). The override of one session wins over it.

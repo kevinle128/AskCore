@@ -57,6 +57,12 @@ type Config struct {
 	// once and Reset again. Nil means an in-memory sessions.MemoryLog. The
 	// Agent driver is the only caller of its Append.
 	NewContext func() sessions.Writer
+	// Seed is committed first in every fresh log, before any input: in New
+	// and in Reset. Each item needs a distinct, non-empty CustomType. An item
+	// whose CustomType the log already holds is skipped, so a prefilled log
+	// is never seeded twice. A log with only seed items counts as empty for
+	// Continue.
+	Seed []protocol.CustomMessage
 	// ListenerError receives the error or the panic of a listener. The failure
 	// is contained: the listener stays subscribed, the later listeners still get
 	// the event, and the run goes on. Nil drops the failure. It runs on the
@@ -89,6 +95,12 @@ type Config struct {
 	// at the first output of any task, so a session without output leaves no
 	// directory. Nil means that TaskDir already exists.
 	PrepareTaskDir func(dir string) error
+	// RewriteInput, when set, may replace the text that starts a human prompt,
+	// steer or follow-up before it is queued or run. It gets the text of the
+	// first block of a user message and reports the new text, or false to keep
+	// the message. It is called without a lock and must not block for long.
+	// Notices and other inputs of the harness never pass through it.
+	RewriteInput func(text string) (string, bool)
 }
 
 // State is a snapshot of an Agent.

@@ -12,6 +12,7 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
+	"AskCore/internal/bootstrap"
 	"AskCore/internal/settings"
 )
 
@@ -46,10 +47,10 @@ func settingSource(d settingsDump, key string) (string, string) {
 }
 
 func TestSettingsShowNamesSourceLayer(t *testing.T) {
+	// The skills of the user home of the developer must not reach the golden file.
+	t.Setenv("HOME", t.TempDir())
 	// The golden file is relative to the package folder, and the runs change
 	// the working directory to the project.
-	pkgDir, err := os.Getwd()
-	require.NoError(t, err)
 	project, root := settingsProjectDir(t, `{"defaultModel":"openai/gpt-5.5@responses","env":{"SECRET_VALUE":"x"}}`, 0o644)
 	home := privateHome(t)
 	require.NoError(t, os.WriteFile(filepath.Join(home, "settings.json"), []byte(`{"defaultModel":"anthropic/claude-sonnet-4-6@messages","thinkingFold":"collapsed"}`), 0o600))
@@ -76,7 +77,7 @@ func TestSettingsShowNamesSourceLayer(t *testing.T) {
 	// temporary paths are replaced with fixed names.
 	normalized := strings.ReplaceAll(got.stdout, root, "/project")
 	normalized = strings.ReplaceAll(normalized, home, "/home/.ask")
-	t.Chdir(pkgDir)
+	t.Chdir(packageDir)
 	golden.RequireEqual(t, normalized)
 
 	text := printInProject(t, project, home, "settings", "show")
@@ -230,4 +231,59 @@ func TestSettingsUsage(t *testing.T) {
 		got := printInProject(t, project, home, tc.argv...)
 		assert.Equal(t, result{"", tc.stderr, 1}, got, tc.argv)
 	}
+}
+
+func TestSettingsShowListsContextFilesAndSkillProblems(t *testing.T) {
+	project, root := settingsProjectDir(t, `{}`, 0o644)
+	require.NoError(t, os.WriteFile(filepath.Join(project, "AGENTS.md"), []byte("agents rules"), 0o644))
+	require.NoError(t, os.WriteFile(filepath.Join(project, "CLAUDE.md"), []byte(strings.Repeat("x", bootstrap.MaxFileBytes+1)), 0o644))
+	userHome := t.TempDir()
+	t.Setenv("HOME", userHome)
+	broken := filepath.Join(userHome, ".agents", "skills", "broken", "SKILL.md")
+	require.NoError(t, os.MkdirAll(filepath.Dir(broken), 0o755))
+	require.NoError(t, os.WriteFile(broken, []byte("no frontmatter"), 0o644))
+	home := privateHome(t)
+
+	got := printInProject(t, project, home, "settings", "show", "--json")
+
+	require.Equal(t, 0, got.code, got.stderr)
+	d := decodeSettingsDump(t, got.stdout)
+	assert.Equal(t, []settingsContextFile{
+		{Path: filepath.Join(root, "AGENTS.md"), Bytes: len("agents rules")},
+		{Path: filepath.Join(root, "CLAUDE.md"), Bytes: bootstrap.MaxFileBytes + 1, Skipped: "too_large"},
+	}, d.Context)
+	assert.Equal(t, []settingsDiagnostic{{Layer: "user", Path: broken, Key: "skills", Text: "no frontmatter"}}, d.SkillDiagnostics)
+	assert.Empty(t, d.Diagnostics)
+
+	text := printInProject(t, project, home, "settings", "show")
+
+	require.Equal(t, 0, text.code, text.stderr)
+	assert.Contains(t, text.stdout, "\nContext files:\n  "+filepath.Join(root, "AGENTS.md")+"  12 bytes\n")
+	assert.Contains(t, text.stdout, "  "+filepath.Join(root, "CLAUDE.md")+"  1048577 bytes  too_large\n")
+	assert.Contains(t, text.stdout, "\nSkill problems:\n  user "+broken+": no frontmatter\n")
+}
+
+func TestSettingsShowKeepsEverySkillProblemAndShowsTheSkillsBudget(t *testing.T) {
+	project, _ := settingsProjectDir(t, `{}`, 0o644)
+	userHome := t.TempDir()
+	t.Setenv("HOME", userHome)
+	for _, n := range []string{"a", "b", "c", "d", "e", "f"} {
+		path := filepath.Join(userHome, ".agents", "skills", n, "SKILL.md")
+		require.NoError(t, os.MkdirAll(filepath.Dir(path), 0o755))
+		require.NoError(t, os.WriteFile(path, []byte("no frontmatter"), 0o644))
+	}
+	home := privateHome(t)
+	require.NoError(t, os.WriteFile(filepath.Join(home, "settings.json"), []byte(`{"skillsMaxContextTokens":1234}`), 0o600))
+
+	got := printInProject(t, project, home, "settings", "show", "--json")
+
+	require.Equal(t, 0, got.code, got.stderr)
+	d := decodeSettingsDump(t, got.stdout)
+	assert.Len(t, d.SkillDiagnostics, 6)
+	value, source := settingSource(d, "skillsMaxContextTokens")
+	assert.Equal(t, "1234", value)
+	assert.Equal(t, "user", source)
+	text := printInProject(t, project, home, "settings", "show")
+	assert.Contains(t, text.stdout, "skillsMaxContextTokens")
+	assert.NotContains(t, text.stdout, "more skill problems")
 }

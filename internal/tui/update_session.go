@@ -116,6 +116,13 @@ type refreshMsg struct {
 	models      *protocol.ACPModelsResult
 }
 
+// skillsMsg is the result of the skills call for the session of generation
+// gen. A failed call carries no rows.
+type skillsMsg struct {
+	gen  uint64
+	rows []protocol.ACPSkill
+}
+
 // tickMsg is the animation clock.
 type tickMsg struct{}
 
@@ -183,6 +190,8 @@ func (s *sessionView) update(msg tea.Msg) tea.Cmd {
 		cmd = s.onTake(msg)
 	case refreshMsg:
 		s.onRefresh(msg)
+	case skillsMsg:
+		s.onSkills(msg)
 	case provListedMsg:
 		s.onProvListed(msg)
 	case loginStartedMsg:
@@ -230,11 +239,13 @@ func (s *sessionView) onOpened(msg openedMsg) tea.Cmd {
 	return tea.Batch(waitClient(s.events), s.startSessionCmd(false))
 }
 
-// newSessionCmd creates a session with a trust override. With detach set it
-// leaves the current one first; the in-process client and a client without a
-// session answer with an error that does not matter here.
+// newSessionCmd creates a session with a trust override and the flags of the
+// command line. With detach set it leaves the current one first; the
+// in-process client and a client without a session answer with an error that
+// does not matter here.
 func (s *sessionView) newSessionCmd(detach bool, trust protocol.ACPTrustOverride) tea.Cmd {
 	c, cwd, gen := s.client, s.cwd, s.gen
+	opts := NewSessionOptions{Trust: trust, Flags: s.session.Flags}
 	return func() tea.Msg {
 		ctx, cancel := callContext()
 		defer cancel()
@@ -243,7 +254,7 @@ func (s *sessionView) newSessionCmd(detach bool, trust protocol.ACPTrustOverride
 				return newSessionMsg{gen: gen, err: fmt.Errorf("leave the session: %w", err)}
 			}
 		}
-		info, err := c.NewSession(ctx, cwd, trust)
+		info, err := c.NewSession(ctx, cwd, opts)
 		return newSessionMsg{gen: gen, info: info, err: err}
 	}
 }
@@ -271,7 +282,18 @@ func (s *sessionView) onNewSession(msg newSessionMsg) tea.Cmd {
 		return nil
 	}
 	s.useSession(msg.info)
-	return s.refreshCmd(true)
+	s.warnFlagsIgnored(msg.info)
+	return tea.Batch(s.refreshCmd(true), s.skillsCmd())
+}
+
+const flagsIgnoredText = "Warning: the leader ignored the prompt and tool flags of this command line (it is older than this build). They are not applied in this session."
+
+// warnFlagsIgnored tells that the host did not apply the flags of the command
+// line: an older leader drops them without an error.
+func (s *sessionView) warnFlagsIgnored(info SessionInfo) {
+	if info.FlagsIgnored {
+		s.appendBlock(noticeBlock{text: flagsIgnoredText, role: RoleWarning})
+	}
 }
 
 // useSession makes a session the current one.
@@ -574,7 +596,8 @@ func (s *sessionView) onPromptCalled(msg promptCalledMsg) tea.Cmd {
 		// The session came from the trust record of the last start.
 		s.start.session = msg.session.ID
 		s.useSession(*msg.session)
-		cmd = s.refreshCmd(true)
+		s.warnFlagsIgnored(*msg.session)
+		cmd = tea.Batch(s.refreshCmd(true), s.skillsCmd())
 	}
 	s.send.calling = false
 	if msg.err != nil {
@@ -648,13 +671,15 @@ func errText(err error) string {
 
 // visibleQueue returns the queue texts that the user can see. A system
 // reminder is for the model only: it has no queue row, and alt+up never puts
-// it into the draft.
+// it into the draft. A skill command that the agent expanded shows as the user
+// typed it.
 func visibleQueue(texts []string) []string {
 	out := make([]string, 0, len(texts))
 	for _, t := range texts {
-		if !protocol.IsSystemReminderText(t) {
-			out = append(out, t)
+		if protocol.IsSystemReminderText(t) {
+			continue
 		}
+		out = append(out, typedText(t))
 	}
 	return out
 }
@@ -841,6 +866,46 @@ func (s *sessionView) onRefresh(msg refreshMsg) {
 	// The state of the session is known now, or the read failed; a fallback
 	// notice must not wait for ever.
 	s.settleStarts()
+}
+
+// skillsCmd reads the skills of the current session for the command list. A
+// leader that predates the call, or a read that fails, gives no rows and no
+// notice: the list is a help for typing, and the built-in commands stay.
+func (s *sessionView) skillsCmd() tea.Cmd {
+	c, gen := s.client, s.gen
+	return func() tea.Msg {
+		ctx, cancel := callContext()
+		defer cancel()
+		res, err := c.Skills(ctx)
+		if err != nil {
+			res = protocol.ACPSkillsResult{}
+		}
+		return skillsMsg{gen: gen, rows: res.Skills}
+	}
+}
+
+func (s *sessionView) onSkills(msg skillsMsg) {
+	if msg.gen != s.gen {
+		return
+	}
+	s.editor.SetSkills(skillCommands(msg.rows))
+}
+
+// skillCommands makes the list rows of the skills. The first skill of a name
+// is the one that "/skill:<name>" loads, so a later one of the same name is
+// left out. Names and descriptions come from files, so control characters are
+// made safe.
+func skillCommands(skills []protocol.ACPSkill) []CommandSpec {
+	var out []CommandSpec
+	seen := map[string]bool{}
+	for _, k := range skills {
+		if k.Name == "" || seen[k.Name] {
+			continue
+		}
+		seen[k.Name] = true
+		out = append(out, CommandSpec{Name: protocol.SkillCommandPrefix + safeText(k.Name), Description: safeText(k.Description)})
+	}
+	return out
 }
 
 // ---- notices and the animation clock ----

@@ -79,6 +79,6 @@ An entry that `Lstat` cannot check counts as gated. `AGENTS.md`, `CLAUDE.md` and
 - Receive dependencies and typed config through constructors. `internal/app` wires them with fx.
 - Create an interface only when there is a second implementation or a test seam.
 - The gated project files (`.ask/settings.json`, project skills, `SYSTEM.md`, extensions) load only after the project is trusted.
-- Project `AGENTS.md` and `CLAUDE.md` are not gated: they load also in a project that is not trusted. A cloned repository can put instructions there that steer the model. The prompt assembly must handle that surface; see the [hand-off note](../../plans/261103-2158-h6a-settings-trust/plan.md#hand-off-note-for-h6b-ungated-context-files).
+- Project `AGENTS.md` and `CLAUDE.md` are not gated: they load also in a project that is not trusted. A cloned repository can put instructions there that steer the model, so `internal/bootstrap` delivers them as an escaped, size-capped (1 MiB for a file, 64 KiB in total) user-role seed message and not as part of the system prompt. `workspace` only states that they are not gated. See [Context files](../../docs/cli.md#context-files).
 
 Design reference: [docs/ask-architecture-reference.md](../../docs/ask-architecture-reference.md)

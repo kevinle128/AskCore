@@ -120,6 +120,17 @@ linters:
             - AskCore/pkg/protocol
             - github.com/stretchr/testify
             - go.uber.org/goleak
+        bootstrap-boundary:
+          list-mode: strict
+          files:
+            - "**/internal/bootstrap/**"
+          allow:
+            - $gostd
+            - AskCore/pkg/protocol
+            - AskCore/internal/workspace
+            - AskCore/internal/store
+            # Test helpers only.
+            - github.com/stretchr/testify
         tasks-minimal-imports:
           list-mode: strict
           files:
@@ -207,6 +218,16 @@ linters:
               desc: the ACP adapter wraps the agent; core packages must not import it
             - pkg: AskCore/internal/leader
               desc: the leader routes bytes to the agent; core packages must not import it
+        skills-boundary:
+          list-mode: strict
+          files:
+            - "**/internal/skills/**"
+          allow:
+            - $gostd
+            - AskCore/pkg/protocol
+            - AskCore/internal/skills
+            - gopkg.in/yaml.v3
+            - github.com/stretchr/testify
         leader-router-boundary:
           list-mode: strict
           files:

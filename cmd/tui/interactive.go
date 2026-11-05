@@ -46,6 +46,9 @@ type terminalConfig struct {
 	thinkingFold tui.ThinkingFold
 	// trust is the project trust override of the command line, or empty.
 	trust protocol.ACPTrustOverride
+	// flags are the per-session flags of the command line. Every session that
+	// the TUI opens sends them to its host.
+	flags protocol.ACPSessionOptions
 }
 
 // runInteractive is the entry for `ask` on a terminal without a prompt. It
@@ -53,8 +56,9 @@ type terminalConfig struct {
 // an agent in this process when the leader cannot be reached at startup.
 // noLeader skips the leader and always runs the agent in this process. trust
 // is the override of --approve or --no-approve: every session of the program
-// starts with it, and the TUI asks no trust question.
-func runInteractive(stdin io.Reader, stdout, stderr io.Writer, deps runDependencies, sigs <-chan os.Signal, noLeader bool, trust protocol.ACPTrustOverride) int {
+// starts with it, and the TUI asks no trust question. flags are the prompt and
+// tool flags of the command line.
+func runInteractive(stdin io.Reader, stdout, stderr io.Writer, deps runDependencies, sigs <-chan os.Signal, noLeader bool, trust protocol.ACPTrustOverride, flags protocol.ACPSessionOptions) int {
 	in, inOK := stdin.(*os.File)
 	out, outOK := stdout.(*os.File)
 	if !inOK || !outOK {
@@ -72,6 +76,7 @@ func runInteractive(stdin io.Reader, stdout, stderr io.Writer, deps runDependenc
 		in: in, out: out, stderr: stderr, sigs: sigs, cwd: cwd, home: home, version: buildIdentity(),
 		thinkingFold: thinkingFoldSetting(deps.getenv("ASK_HOME")),
 		trust:        trust,
+		flags:        flags,
 		open: func(ctx context.Context) (tui.Client, error) {
 			// No warning callback: a line written to the terminal while the
 			// program draws would break the screen.
@@ -187,7 +192,7 @@ func runTerminal(c terminalConfig) (code int) {
 		// warns about it where a key or a code is typed.
 		TraceFile:    os.Getenv("TEA_TRACE"),
 		ThinkingFold: c.thinkingFold,
-		Trust:        c.trust,
+		Session:      tui.NewSessionOptions{Trust: c.trust, Flags: c.flags},
 	})
 	// Bubble Tea would end SIGTERM with exit code 0 and ignores SIGHUP, so ask
 	// handles the signals itself.

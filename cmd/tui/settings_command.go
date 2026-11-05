@@ -8,10 +8,12 @@ import (
 	"io"
 	"os"
 	"path/filepath"
+	"strconv"
 	"strings"
 	"time"
 
 	"AskCore/internal/app"
+	"AskCore/internal/bootstrap"
 	"AskCore/internal/settings"
 	"AskCore/internal/workspace"
 	"AskCore/pkg/protocol"
@@ -123,6 +125,20 @@ type settingsDump struct {
 	Project     settingsProject      `json:"project"`
 	Settings    []settingsValue      `json:"settings"`
 	Diagnostics []settingsDiagnostic `json:"diagnostics"`
+	// Context lists the AGENTS.md and CLAUDE.md files that a session of this
+	// folder reads, and the ones it leaves out.
+	Context []settingsContextFile `json:"context"`
+	// SkillDiagnostics lists the skills that do not load.
+	SkillDiagnostics []settingsDiagnostic `json:"skillDiagnostics"`
+}
+
+type settingsContextFile struct {
+	Path string `json:"path"`
+	// Bytes is the size of the file; 0 when it cannot be read.
+	Bytes int `json:"bytes"`
+	// Skipped is empty for a file that a session gets whole, else one of
+	// too_large, unreadable, duplicate, budget and truncated.
+	Skipped string `json:"skipped"`
 }
 
 type settingsProject struct {
@@ -193,10 +209,11 @@ func loadSettingsDump(ctx context.Context, askHome string, trust protocol.ACPTru
 	// Without a user home, every .agents/skills folder counts as a project
 	// resource, which fails closed.
 	userHome, _ := os.UserHomeDir()
-	outcome, eff, err := app.LoadSessionSettings(ctx, home, userHome, cwd, workspace.Override(trust))
+	session, err := app.PrepareSession(ctx, app.SessionInput{Home: home, UserHome: userHome, Cwd: cwd, Trust: workspace.Override(trust)})
 	if err != nil {
 		return settingsDump{}, err
 	}
+	outcome, eff := session.Trust, session.Settings
 	d := settingsDump{
 		Home:     home,
 		UserFile: filepath.Join(home, "settings.json"),
@@ -207,8 +224,10 @@ func loadSettingsDump(ctx context.Context, askHome string, trust protocol.ACPTru
 			Gated:   append([]string{}, outcome.Gated...),
 			Warning: outcome.Warning,
 		},
-		Settings:    make([]settingsValue, 0, 3),
-		Diagnostics: make([]settingsDiagnostic, 0, len(eff.Diagnostics)),
+		Settings:         make([]settingsValue, 0, 5),
+		Diagnostics:      make([]settingsDiagnostic, 0, len(eff.Diagnostics)),
+		Context:          contextRows(session.Context),
+		SkillDiagnostics: make([]settingsDiagnostic, 0, len(session.Skills.Diagnostics)),
 	}
 	switch {
 	case !outcome.HasLayer:
@@ -227,6 +246,8 @@ func loadSettingsDump(ctx context.Context, askHome string, trust protocol.ACPTru
 		{"defaultModel", eff.DefaultModel},
 		{"thinkingFold", string(eff.ThinkingFold)},
 		{"defaultProjectTrust", string(eff.DefaultProjectTrust)},
+		{"defaultTools", joinDefaultTools(eff.DefaultTools)},
+		{"skillsMaxContextTokens", skillsTokensValue(eff.SkillsMaxContextTokens)},
 	} {
 		source := eff.Sources[v.key]
 		if source == "" {
@@ -237,7 +258,66 @@ func loadSettingsDump(ctx context.Context, askHome string, trust protocol.ACPTru
 	for _, diag := range eff.Diagnostics {
 		d.Diagnostics = append(d.Diagnostics, settingsDiagnostic{Layer: string(diag.Layer), Path: diag.Path, Key: diag.Key, Text: diag.Text})
 	}
+	for _, diag := range session.SkillDiagnostics() {
+		d.SkillDiagnostics = append(d.SkillDiagnostics, settingsDiagnostic{Layer: diag.Layer, Path: diag.Path, Key: diag.Key, Text: diag.Text})
+	}
 	return d, nil
+}
+
+// contextRows lists the files of the context in load order, then the files
+// that were left out. A file that was cut is listed once, with its reason.
+func contextRows(c bootstrap.Context) []settingsContextFile {
+	cut := map[string]bool{}
+	for _, k := range c.Skipped {
+		if k.Reason == bootstrap.SkipTruncated {
+			cut[k.Path] = true
+		}
+	}
+	rows := make([]settingsContextFile, 0, len(c.Files)+len(c.Skipped))
+	for _, f := range c.Files {
+		row := settingsContextFile{Path: f.Path, Bytes: f.Bytes}
+		if cut[f.Path] {
+			row.Skipped = contextSkipWord(bootstrap.SkipTruncated)
+		}
+		rows = append(rows, row)
+	}
+	for _, k := range c.Skipped {
+		if k.Reason != bootstrap.SkipTruncated {
+			rows = append(rows, settingsContextFile{Path: k.Path, Bytes: k.Bytes, Skipped: contextSkipWord(k.Reason)})
+		}
+	}
+	return rows
+}
+
+func contextSkipWord(r bootstrap.SkipReason) string {
+	switch r {
+	case bootstrap.SkipTooLarge:
+		return "too_large"
+	case bootstrap.SkipUnreadable:
+		return "unreadable"
+	case bootstrap.SkipDuplicate:
+		return "duplicate"
+	case bootstrap.SkipBudget:
+		return "budget"
+	case bootstrap.SkipTruncated:
+		return "truncated"
+	default:
+		return "unknown"
+	}
+}
+
+func skillsTokensValue(n int) string {
+	if n == 0 {
+		return ""
+	}
+	return strconv.Itoa(n)
+}
+
+func joinDefaultTools(entries *[]string) string {
+	if entries == nil {
+		return ""
+	}
+	return strings.Join(*entries, ",")
 }
 
 // text returns the plain text form of the dump.
@@ -280,7 +360,7 @@ func (d settingsDump) text() string {
 		if value == "" {
 			value = "(none)"
 		}
-		fmt.Fprintf(&b, "  %-20s %-32s %s\n", v.Key, value, v.Source)
+		fmt.Fprintf(&b, "  %-22s %-32s %s\n", v.Key, value, v.Source)
 	}
 	if d.Project.Warning != "" {
 		b.WriteString("\nWarning: " + d.Project.Warning + "\n")
@@ -293,6 +373,23 @@ func (d settingsDump) text() string {
 				line += ": " + diag.Key
 			}
 			b.WriteString(line + ": " + diag.Text + "\n")
+		}
+	}
+	b.WriteString("\nContext files:\n")
+	if len(d.Context) == 0 {
+		b.WriteString("  (none)\n")
+	}
+	for _, f := range d.Context {
+		line := fmt.Sprintf("  %s  %d bytes", f.Path, f.Bytes)
+		if f.Skipped != "" {
+			line += "  " + f.Skipped
+		}
+		b.WriteString(line + "\n")
+	}
+	if len(d.SkillDiagnostics) > 0 {
+		b.WriteString("\nSkill problems:\n")
+		for _, diag := range d.SkillDiagnostics {
+			b.WriteString("  " + diag.Layer + " " + diag.Path + ": " + diag.Text + "\n")
 		}
 	}
 	return b.String()

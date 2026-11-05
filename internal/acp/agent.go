@@ -75,6 +75,10 @@ type Config struct {
 	// session that the Factory just built, once. The session keeps them and
 	// _ask/session/state reports them. Nil, or a nil result, means none.
 	StartTrust func(sessionID string) *SessionTrust
+	// StartSkills returns the skills of a session that the Factory just built,
+	// once. The session keeps them and _ask/session/skills reports them. Nil,
+	// or a nil result, means none.
+	StartSkills func(sessionID string) []protocol.ACPSkill
 	// TrustSetup serves _ask/trust/state and _ask/trust/set. Nil means both
 	// answer unsupported, as on an editor link.
 	TrustSetup TrustSetup
@@ -302,10 +306,14 @@ func (a *Adapter) NewSession(ctx context.Context, req sdk.NewSessionRequest) (sd
 	if err == nil {
 		trust, err = trustFromMeta(req.Meta)
 	}
+	var flags protocol.ACPSessionOptions
+	if err == nil {
+		flags, err = flagsFromMeta(req.Meta)
+	}
 	if err != nil {
 		return sdk.NewSessionResponse{}, requestError(err)
 	}
-	s, err := a.host.NewSessionWith(ctx, SessionRequest{Cwd: req.Cwd, Trust: trust})
+	s, err := a.host.NewSessionWith(ctx, SessionRequest{Cwd: req.Cwd, Trust: trust, Flags: flags})
 	if err != nil {
 		return sdk.NewSessionResponse{}, requestError(err)
 	}
@@ -314,6 +322,9 @@ func (a *Adapter) NewSession(ctx context.Context, req sdk.NewSessionRequest) (sd
 	}
 	if a.cfg.StartTrust != nil {
 		s.setTrust(a.cfg.StartTrust(s.ID))
+	}
+	if a.cfg.StartSkills != nil {
+		s.setSkills(a.cfg.StartSkills(s.ID))
 	}
 	if a.cfg.ProviderSetup != nil {
 		s.commit.Lock()
@@ -328,6 +339,12 @@ func (a *Adapter) NewSession(ctx context.Context, req sdk.NewSessionRequest) (sd
 		// The router needs the generation that the host committed. The editor link has no router.
 		s.setDriver(route)
 		res.Meta = map[string]any{protocol.ACPRouteMetaKey: protocol.ACPRouteMeta{DriverGen: s.Gen()}}
+	}
+	if !flags.IsZero() {
+		if res.Meta == nil {
+			res.Meta = map[string]any{}
+		}
+		res.Meta[protocol.ACPSessionOptionsMetaKey] = true
 	}
 	return res, nil
 }

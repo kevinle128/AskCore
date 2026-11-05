@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"net/http"
 	"os"
+	"strings"
 	"sync"
 	"time"
 
@@ -16,6 +17,7 @@ import (
 	"AskCore/internal/auth"
 	"AskCore/internal/providers"
 	"AskCore/internal/settings"
+	"AskCore/internal/tools"
 	"AskCore/internal/workspace"
 	"AskCore/pkg/protocol"
 
@@ -35,8 +37,9 @@ type ACPParams struct {
 	// AuthHTTP carries the token exchange of the sign-in methods. It is separate
 	// from the HTTP of the model request.
 	AuthHTTP *http.Client
-	// Now and Wait are the clocks of the credential refresh. Nil uses the
-	// production ones.
+	// Now is the clock of the credential refresh and of the session date. Nil
+	// uses time.Now. Wait is the wait of the credential refresh; nil uses the
+	// production one.
 	Now  func() time.Time
 	Wait func(context.Context, time.Duration) error
 	// Initial is the demo model. It is listed first in the catalog and is always
@@ -51,7 +54,7 @@ type ACPParams struct {
 	// runtime chose, which is the zero model when no provider is usable. It must
 	// use NewNativeAgent with the given service, so that sessions share one
 	// credential resolver.
-	NewAgent func(service *auth.Service, sessionID, cwd string, start providers.Model) (*agent.Agent, error)
+	NewAgent func(service *auth.Service, spec AgentSpec) (*agent.Agent, error)
 	// UserHome is the home folder of the user. Its .agents/skills folder is
 	// not a project resource. Empty uses os.UserHomeDir.
 	UserHome string
@@ -137,31 +140,37 @@ func NewACPRuntime(p ACPParams) (*ACPRuntime, error) {
 	var startMu sync.Mutex
 	fallbacks := map[string]*protocol.ACPModelFallback{}
 	trusts := map[string]*acp.SessionTrust{}
+	skillRows := map[string][]protocol.ACPSkill{}
 	cfg := acp.Config{
 		Factory: func(ctx context.Context, req acp.SessionRequest) (*agent.Agent, error) {
-			// The trust decision comes before any read of a project file.
+			// The trust decision comes before any read of a project file. The
+			// flags and the trust override come from this request only.
 			override := p.TrustOverride
 			if req.Trust != "" {
 				override = req.Trust
 			}
-			decision, eff, err := LoadSessionSettings(ctx, home, userHome, req.Cwd, workspace.Override(override))
+			session, err := PrepareSession(ctx, SessionInput{
+				Home: home, UserHome: userHome, Cwd: req.Cwd,
+				Trust: workspace.Override(override), Flags: req.Flags, Now: p.Now,
+			})
 			if err != nil {
-				return nil, err
+				return nil, startError(err)
 			}
 			c := choice
-			c.saved = func(context.Context) (string, error) { return eff.DefaultModel, nil }
+			c.saved = func(context.Context) (string, error) { return session.Settings.DefaultModel, nil }
 			start, fb := c.pick(ctx)
-			a, err := p.NewAgent(service, req.ID, req.Cwd, start)
+			a, err := p.NewAgent(service, AgentSpec{SessionID: req.ID, Cwd: req.Cwd, Start: start, Session: session, Warn: warn})
 			if err != nil {
-				return nil, err
+				return nil, startError(err)
 			}
 			startMu.Lock()
 			if fb != nil {
 				fallbacks[req.ID] = fb
 			}
-			trusts[req.ID] = sessionTrust(decision, eff)
+			trusts[req.ID] = sessionTrust(session)
+			skillRows[req.ID] = session.SkillRows()
 			startMu.Unlock()
-			for _, line := range SessionWarnings(decision, eff) {
+			for _, line := range session.Warnings() {
 				warn(line)
 			}
 			return a, nil
@@ -179,6 +188,13 @@ func NewACPRuntime(p ACPParams) (*ACPRuntime, error) {
 			t := trusts[id]
 			delete(trusts, id)
 			return t
+		},
+		StartSkills: func(id string) []protocol.ACPSkill {
+			startMu.Lock()
+			defer startMu.Unlock()
+			rows := skillRows[id]
+			delete(skillRows, id)
+			return rows
 		},
 		DefaultModel: func(ctx context.Context, scope acp.SettingsScope) (string, error) {
 			layered, err := scopeSettings(home, scope)
@@ -295,4 +311,20 @@ func providerUsable(ctx context.Context, service *auth.Service, provider string)
 		}
 	}
 	return false
+}
+
+// startError maps a session start failure that the client or its settings
+// caused to invalid_params. The adapter never sends the text of another error.
+// The detail holds fixed text, the origin constants, and tool names that the
+// flag and settings parsers checked.
+func startError(err error) error {
+	var sel *tools.SelectionError
+	switch {
+	case errors.As(err, &sel):
+		return acp.InvalidParams(fmt.Sprintf("%s: unknown tool %s; known tools: %s", sel.Origin, sel.Name, strings.Join(sel.Known, ", ")))
+	case errors.Is(err, ErrSessionFlags):
+		return acp.InvalidParams("the tool flags are not valid: use --tools or --no-tools, not both")
+	default:
+		return err
+	}
 }

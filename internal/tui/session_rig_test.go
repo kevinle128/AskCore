@@ -31,6 +31,10 @@ type fakeClient struct {
 	models    protocol.ACPModelsResult
 	state     protocol.ACPStateResult
 	usage     protocol.ACPUsageResult
+	// skills is the answer of Skills. skillsErr fails it, as a leader that
+	// predates the call does.
+	skills    protocol.ACPSkillsResult
+	skillsErr error
 	live      []protocol.ACPLiveSession
 	listErr   error
 
@@ -79,7 +83,8 @@ type fakeClient struct {
 	setTrustErr    error
 	setTrustRes    *protocol.ACPTrustStateResult
 	trustSets      []protocol.ACPTrustSetRequest
-	overrides      []protocol.ACPTrustOverride
+	newOptions     []NewSessionOptions
+	dropFlags      bool
 	newSessionErrs []error
 }
 
@@ -171,10 +176,10 @@ func (f *fakeClient) setInfo(info ConnInfo) {
 	f.mu.Unlock()
 }
 
-func (f *fakeClient) NewSession(_ context.Context, cwd string, trust protocol.ACPTrustOverride) (SessionInfo, error) {
+func (f *fakeClient) NewSession(_ context.Context, cwd string, opts NewSessionOptions) (SessionInfo, error) {
 	f.record("new_session")
 	f.mu.Lock()
-	f.overrides = append(f.overrides, trust)
+	f.newOptions = append(f.newOptions, opts)
 	if len(f.newSessionErrs) > 0 {
 		err := f.newSessionErrs[0]
 		f.newSessionErrs = f.newSessionErrs[1:]
@@ -183,9 +188,10 @@ func (f *fakeClient) NewSession(_ context.Context, cwd string, trust protocol.AC
 	}
 	id := f.sessionID
 	f.cwd = cwd
+	ignored := f.dropFlags && !opts.Flags.IsZero()
 	f.mu.Unlock()
 	f.push(SnapshotMsg{SessionID: id})
-	return SessionInfo{ID: id, Role: protocol.ACPRoleDriver, Cwd: cwd}, nil
+	return SessionInfo{ID: id, Role: protocol.ACPRoleDriver, Cwd: cwd, FlagsIgnored: ignored}, nil
 }
 
 func (f *fakeClient) Attach(_ context.Context, id string) (SessionInfo, error) {
@@ -345,6 +351,13 @@ func (f *fakeClient) Usage(context.Context) (protocol.ACPUsageResult, error) {
 	return f.usage, nil
 }
 
+func (f *fakeClient) Skills(context.Context) (protocol.ACPSkillsResult, error) {
+	f.record("skills")
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	return f.skills, f.skillsErr
+}
+
 // leaderCall records a provider call. It returns ErrNeedsLeader without a
 // record when the fake runs in process. The record names no key or code.
 func (f *fakeClient) leaderCall(what string) error {
@@ -476,7 +489,18 @@ func (f *fakeClient) SetTrust(_ context.Context, req protocol.ACPTrustSetRequest
 func (f *fakeClient) sentOverrides() []protocol.ACPTrustOverride {
 	f.mu.Lock()
 	defer f.mu.Unlock()
-	return append([]protocol.ACPTrustOverride(nil), f.overrides...)
+	out := make([]protocol.ACPTrustOverride, len(f.newOptions))
+	for i, o := range f.newOptions {
+		out[i] = o.Trust
+	}
+	return out
+}
+
+// sentOptions returns the options of each NewSession call in order.
+func (f *fakeClient) sentOptions() []NewSessionOptions {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	return append([]NewSessionOptions(nil), f.newOptions...)
 }
 
 // sentTrust returns the SetTrust requests in order.

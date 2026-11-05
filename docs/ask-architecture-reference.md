@@ -87,8 +87,8 @@ Go has no classes. A "class" is a struct with methods. The rule is **one package
 | `internal/providers` | Api, Provider and Model types, compat record, LLM vendors, registry; `acp/` for subprocess agents | `internal/providers` |
 | `internal/tools` | tool registry, every builtin tool (`file_*`, `search_*`, `shell_*`; no built-in approval policy) | `internal/tools` |
 | `internal/mcp` | MCP client bridge | `internal/mcp` |
-| `internal/skills` | SKILL.md metadata discovery, explicit reload | `internal/skills` |
-| `internal/bootstrap` | `AGENTS.md` discovery and loading; `templates/` is a data folder for embedded `.md` templates (not a Go package) | `internal/bootstrap` |
+| `internal/skills` | SKILL.md metadata discovery; the skill list is sent as a user-role seed message | `internal/skills` |
+| `internal/bootstrap` | `AGENTS.md`/`CLAUDE.md` discovery, loading, escaping and size caps; `SYSTEM.md` and `APPEND_SYSTEM.md` precedence; `templates/` is a data folder for embedded `.md` templates (not a Go package) | `internal/bootstrap` |
 | `internal/memory` | parked | `internal/memory` |
 | `internal/sessions` | typed in-memory log; persistent tree and branch projection remain planned | `internal/sessions` |
 | `internal/scheduler` | lanes and concurrency limits | `internal/scheduler` |

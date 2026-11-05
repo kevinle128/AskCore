@@ -444,10 +444,12 @@ func (c *Client) listLive(ctx context.Context, conn *rpc.Conn) ([]protocol.ACPLi
 	return out.Sessions, nil
 }
 
-// NewSession creates a session in cwd, makes it current and follows it. trust
-// is the trust override of this session only; an empty override sends no
-// _meta, and the host then decides with its saved decision.
-func (c *Client) NewSession(ctx context.Context, cwd string, trust protocol.ACPTrustOverride) (tui.SessionInfo, error) {
+// NewSession creates a session in cwd, makes it current and follows it. opts
+// apply to this session only. Empty options send no _meta, and the host then
+// decides with its saved decision and its settings. When opts hold flags and
+// the host does not acknowledge them, the info says so: an older host drops the
+// key without an error.
+func (c *Client) NewSession(ctx context.Context, cwd string, opts tui.NewSessionOptions) (tui.SessionInfo, error) {
 	conn, err := c.live()
 	if err != nil {
 		return tui.SessionInfo{}, err
@@ -457,11 +459,19 @@ func (c *Client) NewSession(ctx context.Context, cwd string, trust protocol.ACPT
 		return tui.SessionInfo{}, fmt.Errorf("tuiclient: working directory: %w", err)
 	}
 	var out struct {
-		SessionID string `json:"sessionId"`
+		SessionID string         `json:"sessionId"`
+		Meta      map[string]any `json:"_meta"`
 	}
 	params := map[string]any{"cwd": abs, "mcpServers": []any{}}
-	if trust != "" {
-		params["_meta"] = map[string]any{protocol.ACPTrustMetaKey: trust}
+	meta := map[string]any{}
+	if opts.Trust != "" {
+		meta[protocol.ACPTrustMetaKey] = opts.Trust
+	}
+	if !opts.Flags.IsZero() {
+		meta[protocol.ACPSessionOptionsMetaKey] = opts.Flags
+	}
+	if len(meta) > 0 {
+		params["_meta"] = meta
 	}
 	if err := c.request(ctx, conn, "session/new", params, &out); err != nil {
 		return tui.SessionInfo{}, err
@@ -469,7 +479,8 @@ func (c *Client) NewSession(ctx context.Context, cwd string, trust protocol.ACPT
 	if out.SessionID == "" {
 		return tui.SessionInfo{}, errors.New("tuiclient: session/new gave no session id")
 	}
-	info := tui.SessionInfo{ID: out.SessionID, Role: protocol.ACPRoleDriver, Cwd: abs}
+	acked, _ := out.Meta[protocol.ACPSessionOptionsMetaKey].(bool)
+	info := tui.SessionInfo{ID: out.SessionID, Role: protocol.ACPRoleDriver, Cwd: abs, FlagsIgnored: !opts.Flags.IsZero() && !acked}
 	c.setSession(info)
 	if err := c.follow(ctx, conn, info.ID, nil, followFresh); err != nil {
 		return info, err
@@ -663,6 +674,18 @@ func (c *Client) Usage(ctx context.Context) (protocol.ACPUsageResult, error) {
 		return out, err
 	}
 	err = c.request(ctx, conn, protocol.ACPUsage, protocol.ACPSessionRequest{SessionID: sid}, &out)
+	return out, err
+}
+
+// Skills lists the skills that the current session can load with
+// "/skill:<name>". A host that predates the method answers with a *tui.RequestError.
+func (c *Client) Skills(ctx context.Context) (protocol.ACPSkillsResult, error) {
+	var out protocol.ACPSkillsResult
+	conn, sid, err := c.withSession()
+	if err != nil {
+		return out, err
+	}
+	err = c.request(ctx, conn, protocol.ACPSkills, protocol.ACPSessionRequest{SessionID: sid}, &out)
 	return out, err
 }
 

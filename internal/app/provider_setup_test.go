@@ -25,7 +25,7 @@ func providerSetupFixture(t *testing.T, env map[string]string, rt http.RoundTrip
 	t.Helper()
 	p := testACPParams(t)
 	p.Initial = providers.Model{}
-	p.NewAgent = func(*auth.Service, string, string, providers.Model) (*agent.Agent, error) {
+	p.NewAgent = func(*auth.Service, AgentSpec) (*agent.Agent, error) {
 		return nil, errors.New("not used")
 	}
 	p.Env = func(k string) (string, bool) { v, ok := env[k]; return v, ok }

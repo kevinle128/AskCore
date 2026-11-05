@@ -42,7 +42,7 @@ func TestReferenceDocs(t *testing.T) {
 
 	update := os.Getenv(updateDocsEnv) == "1"
 	for _, name := range names {
-		path := filepath.Join("..", "..", "docs", "reference", name)
+		path := filepath.Join(packageDir, "..", "..", "docs", "reference", name)
 		want := docs[name]
 		if update {
 			require.NoError(t, os.MkdirAll(filepath.Dir(path), 0o755))

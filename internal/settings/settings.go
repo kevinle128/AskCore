@@ -11,6 +11,7 @@ import (
 	"io"
 	"os"
 	"path/filepath"
+	"regexp"
 	"sort"
 	"strings"
 	"unicode"
@@ -26,6 +27,12 @@ const (
 
 // defaultProjectTrustKey is a user-only key: a project file cannot set it.
 const defaultProjectTrustKey = "defaultProjectTrust"
+
+const defaultToolsKey = "defaultTools"
+
+const skillsMaxContextTokensKey = "skillsMaxContextTokens"
+
+var toolEntry = regexp.MustCompile(`^[+-]?[a-z][a-z0-9_]*$`)
 
 // SettingsStore reads and writes the user settings file in one owner-only home.
 // It is the settings of a session with no project layer. It follows the same
@@ -202,7 +209,7 @@ const (
 )
 
 // shippedKeys are the keys that Effective decodes, in a fixed order.
-var shippedKeys = []string{defaultModelKey, thinkingFoldKey, defaultProjectTrustKey}
+var shippedKeys = []string{defaultModelKey, thinkingFoldKey, defaultProjectTrustKey, defaultToolsKey, skillsMaxContextTokensKey}
 
 // Diagnostic is one problem that a load found. It never contains file
 // content: only the layer, the path, the key and a fixed text.
@@ -224,6 +231,12 @@ type Effective struct {
 	ThinkingFold ThinkingFold
 	// DefaultProjectTrust always comes from the user layer or the default.
 	DefaultProjectTrust ProjectTrustDefault
+	// DefaultTools is the defaultTools array: nil when unset, and a non-nil
+	// empty slice when the file sets an empty array (no built-in tools).
+	DefaultTools *[]string
+	// SkillsMaxContextTokens is the skillsMaxContextTokens value: 0 when
+	// unset, else a positive count of tokens for the skill list.
+	SkillsMaxContextTokens int
 	// Sources maps each shipped key to the layer of its value.
 	Sources     map[string]Layer
 	Diagnostics []Diagnostic
@@ -448,7 +461,44 @@ func (eff *Effective) set(key string, raw json.RawMessage) string {
 		default:
 			return `must be "ask", "always" or "never"; the default is used`
 		}
+	case defaultToolsKey:
+		return eff.setDefaultTools(raw)
+	case skillsMaxContextTokensKey:
+		var n int
+		if json.Unmarshal(raw, &n) != nil || n < 1 {
+			return "must be a positive integer; it is ignored"
+		}
+		eff.SkillsMaxContextTokens = n
 	}
+	return ""
+}
+
+// setDefaultTools reads the defaultTools array: plain names, or +name and
+// -name entries, never both. A bad value leaves the key unset.
+func (eff *Effective) setDefaultTools(raw json.RawMessage) string {
+	const problem = `must be an array of tool names, or of +name and -name entries but not both; it is ignored`
+	var entries []string
+	if json.Unmarshal(raw, &entries) != nil {
+		return problem
+	}
+	var plain, delta bool
+	for _, e := range entries {
+		if !toolEntry.MatchString(e) {
+			return problem
+		}
+		if e[0] == '+' || e[0] == '-' {
+			delta = true
+		} else {
+			plain = true
+		}
+	}
+	if plain && delta {
+		return problem
+	}
+	if entries == nil {
+		entries = []string{}
+	}
+	eff.DefaultTools = &entries
 	return ""
 }
 
