@@ -51,6 +51,9 @@ func (c *trustClient) State(context.Context) (protocol.ACPStateResult, error) {
 func (c *trustClient) Models(context.Context) (protocol.ACPModelsResult, error) {
 	return protocol.ACPModelsResult{}, nil
 }
+func (c *trustClient) Skills(context.Context) (protocol.ACPSkillsResult, error) {
+	return protocol.ACPSkillsResult{}, nil
+}
 
 func (c *trustClient) sent() ([]protocol.ACPTrustOverride, int) {
 	c.mu.Lock()
