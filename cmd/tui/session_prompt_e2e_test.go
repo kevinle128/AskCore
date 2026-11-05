@@ -3,6 +3,7 @@ package main
 import (
 	"context"
 	"encoding/json"
+	"fmt"
 	"net/http"
 	"os"
 	"path/filepath"
@@ -405,4 +406,79 @@ func TestSessionInvalidFlagsMetaIsInvalidParamsOverACP(t *testing.T) {
 
 	f = open(map[string]any{"tools": []any{"read"}, "systemPrompt": "custom"})
 	assert.Nil(t, f.Error, "valid flags open a session")
+}
+
+func writeRawSkill(t *testing.T, dir, folder, content string) string {
+	t.Helper()
+	path := filepath.Join(dir, folder, "SKILL.md")
+	require.NoError(t, os.MkdirAll(filepath.Dir(path), 0o755))
+	require.NoError(t, os.WriteFile(path, []byte(content), 0o644))
+	return path
+}
+
+func TestSessionLoadsRealWorldSkillShapesWithoutAWarning(t *testing.T) {
+	root := trustProject(t, nil)
+	userHome := canonicalDir(t, t.TempDir())
+	skills := filepath.Join(userHome, ".agents", "skills")
+	long := strings.Repeat("é", 3000)
+	writeRawSkill(t, skills, "kk-x", "---\nname: kk:x\ndescription: "+long+"\n---\nbody\n")
+	writeRawSkill(t, skills, "aws", "---\nname: aws\ndescription: Build for AWS: ECS\n---\n")
+	writeRawSkill(t, skills, "no-name", "---\ndescription: from the folder\n---\n")
+
+	m, got := sessionRun{cwd: root, userHome: userHome}.run(t)
+
+	require.Equal(t, 0, got.code, got.stderr)
+	assert.Empty(t, got.stderr)
+	user := userBlocks(t, m)
+	require.Len(t, user, 2, "the skill list and the prompt")
+	assert.Contains(t, user[0], "<name>kk:x</name>")
+	assert.Contains(t, user[0], "<description>"+strings.Repeat("é", 1021)+"...</description>")
+	assert.NotContains(t, user[0], strings.Repeat("é", 1022))
+	assert.Contains(t, user[0], "<description>Build for AWS: ECS</description>")
+	assert.Contains(t, user[0], "<name>no-name</name>")
+}
+
+func TestSessionSkillBudgetSettingOmitsSkillsWithOneWarning(t *testing.T) {
+	root := trustProject(t, nil)
+	userHome := canonicalDir(t, t.TempDir())
+	for i := range 30 {
+		writeSkill(t, filepath.Join(userHome, ".agents", "skills"), fmt.Sprintf("skill-%02d", i), "use it when needed")
+	}
+	home := privateHome(t)
+	require.NoError(t, os.WriteFile(filepath.Join(home, "settings.json"), []byte(`{"skillsMaxContextTokens":150}`), 0o600))
+
+	m, got := sessionRun{cwd: root, userHome: userHome, home: home}.run(t)
+
+	require.Equal(t, 0, got.code, got.stderr)
+	require.Regexp(t, `^Warning: Exceeded skills context budget\. All skill descriptions were removed and \d+ additional skills were not included in the model-visible skills list\.\n$`, got.stderr)
+	user := userBlocks(t, m)
+	assert.Contains(t, user[0], "<name>skill-00</name>")
+	assert.NotContains(t, user[0], "<name>skill-29</name>")
+	assert.Contains(t, user[0], "additional skills omitted from this bounded skills list.")
+
+	require.NoError(t, os.WriteFile(filepath.Join(home, "settings.json"), []byte(`{"skillsMaxContextTokens":10000}`), 0o600))
+	m, got = sessionRun{cwd: root, userHome: userHome, home: home}.run(t)
+
+	require.Equal(t, 0, got.code, got.stderr)
+	assert.Empty(t, got.stderr)
+	assert.Contains(t, userBlocks(t, m)[0], "<name>skill-29</name>")
+}
+
+func TestSessionPrintCapsSkillProblemWarningsAtFour(t *testing.T) {
+	root := trustProject(t, nil)
+	userHome := canonicalDir(t, t.TempDir())
+	skills := filepath.Join(userHome, ".agents", "skills")
+	for _, n := range []string{"a", "b", "c", "d", "e", "f"} {
+		writeRawSkill(t, skills, n, "no frontmatter")
+	}
+
+	_, got := sessionRun{cwd: root, userHome: userHome}.run(t)
+
+	require.Equal(t, 0, got.code, got.stderr)
+	lines := strings.Split(strings.TrimSuffix(got.stderr, "\n"), "\n")
+	require.Len(t, lines, 5)
+	for i, n := range []string{"a", "b", "c", "d"} {
+		assert.Equal(t, "Warning: skills: "+filepath.Join(skills, n, "SKILL.md")+": no frontmatter", lines[i])
+	}
+	assert.Equal(t, "Warning: skills: 2 more skill problems; run ask settings show for details", lines[4])
 }

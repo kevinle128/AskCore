@@ -4,9 +4,10 @@ Skill discovery. The loader finds skill folders with a `SKILL.md` file and retur
 
 ## What belongs here
 
-- `Load`: walks the skill roots it is given (precedence order, depth 5, symbolic links followed, loops broken), reads the frontmatter of each `SKILL.md`, and keeps the first skill of each name
-- `Diagnostic`: one fixed-text reason per skill that did not load or lost to an earlier name
-- `Result.Listing`: the skill catalog as one system reminder, capped at 16 KiB
+- `Load`: walks the skill roots it is given (depth 6, at most 2000 folders and 20000 entries per root, hidden folders skipped, symbolic links followed, loops broken), reads the frontmatter of each `SKILL.md`, and keeps every skill. Same-name skills are all kept; the order is scope (project first), name, path
+- `Diagnostic`: one fixed-text reason per skill that did not load
+- `Budget`, `BudgetFor`: the token or character room of the catalog (the `skillsMaxContextTokens` setting capped at 10000 tokens, else 2% of the model window, else 8000 characters)
+- `Result.Listing`: the skill catalog as one system reminder within a `Budget`, with a `Report` (`Total`, `Included`, `Omitted`, `TruncatedDescriptions`) and `Report.Warning`
 
 ## What does not belong here
 
@@ -21,7 +22,9 @@ Skill discovery. The loader finds skill folders with a `SKILL.md` file and retur
 ## Main interfaces
 
 - `Load(roots []Root) Result`
-- `Result.Listing() string`
+- `BudgetFor(contextWindow, maxContextTokens int) Budget`
+- `Result.Listing(b Budget) (string, Report)`
+- `Report.Warning() string`
 
 ## File names
 
@@ -34,7 +37,9 @@ Skill discovery. The loader finds skill folders with a `SKILL.md` file and retur
 
 ## Rules
 
-- Frontmatter is read from the first 4096 bytes. `disable-model-invocation` must be the YAML boolean `true` or `false`; `yes` is an error.
+- The name is the frontmatter name with white space collapsed, else the folder name, cut to 64 runes, with no charset rule. The description is required and has no length cap at load; `Listing` cuts it to 1021 runes and `...` above 1024.
+- Frontmatter is read from the first 64 KiB. When strict YAML fails, top-level plain values that hold `: ` or start with `[`, `{`, `@` or a backtick are double-quoted and read once more. `disable-model-invocation` must be the YAML boolean `true` or `false`; `yes` is an error.
+- `Listing` fits the catalog in three steps (full descriptions, shared descriptions round-robin by rune, names only with the rest left out). The omission line is charged to the budget.
 - Every untrusted string in the listing goes through `protocol.ReminderText.Quote`.
 - A diagnostic holds a path and a fixed text, never file content.
 - One model is shared everywhere. Add a DTO or a separate type with a mapper only when the data is really different (design section 6).

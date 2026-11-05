@@ -2,11 +2,13 @@ package app
 
 import (
 	"context"
+	"fmt"
 	"os"
 	"path/filepath"
 	"strings"
 	"testing"
 	"time"
+	"unicode/utf8"
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -103,7 +105,7 @@ func TestPrepareSessionGatesProjectFilesOnTrustButNotContextFiles(t *testing.T) 
 	for _, s := range trusted.Skills.Skills {
 		names = append(names, s.Name)
 	}
-	assert.Equal(t, []string{"dotagents", "home", "proj"}, names)
+	assert.Equal(t, []string{"dotagents", "proj", "home"}, names)
 }
 
 func TestPrepareSessionFlagsBeatDefaultToolsAndReplacePromptFiles(t *testing.T) {
@@ -137,7 +139,8 @@ func TestSessionRenderSeedsContextAndSkillsOnlyWhenTheyCanBeUsed(t *testing.T) {
 	start := tree.prepare(t, workspace.OverrideDeny, protocol.ACPSessionOptions{AppendSystemPrompt: []string{"extra"}})
 	fileTools := tools.NewFileTools(tools.NewFileState(), nil)
 
-	prompt, seed := start.Render(registryOf(t, fileTools...))
+	res := start.Render(registryOf(t, fileTools...), 0)
+	prompt, seed := res.SystemPrompt, res.Seed
 
 	require.Len(t, seed, 2)
 	assert.Equal(t, protocol.CustomContextFiles, seed[0].CustomType)
@@ -151,30 +154,77 @@ func TestSessionRenderSeedsContextAndSkillsOnlyWhenTheyCanBeUsed(t *testing.T) {
 	assert.Contains(t, prompt, "extra")
 	assert.True(t, strings.HasSuffix(prompt, "Current working directory: "+tree.root+"\n\nCurrent date: 2026-11-04"), prompt)
 
-	prompt, seed = start.Render(registryOf(t, tools.Echo{}))
+	res = start.Render(registryOf(t, tools.Echo{}), 0)
 
-	require.Len(t, seed, 1, "no read or bash tool, so no skill list")
-	assert.Equal(t, protocol.CustomContextFiles, seed[0].CustomType)
-	again, againSeed := start.Render(registryOf(t, tools.Echo{}))
-	assert.Equal(t, prompt, again, "Render is pure")
-	assert.Equal(t, seed, againSeed)
+	require.Len(t, res.Seed, 1, "no read or bash tool, so no skill list")
+	assert.Equal(t, protocol.CustomContextFiles, res.Seed[0].CustomType)
+	again := start.Render(registryOf(t, tools.Echo{}), 0)
+	assert.Equal(t, res, again, "Render is pure")
 }
 
-func TestSessionWarningsSummarizeSkippedContextFilesAndBadSkills(t *testing.T) {
-	tree := newSessionTree(t, map[string]string{"AGENTS.md": strings.Repeat("x", bootstrap.MaxFileBytes+1)},
-		map[string]string{"skills/broken/SKILL.md": "no frontmatter", "skills/worse/SKILL.md": "no frontmatter"})
+func TestSessionWarningsSummarizeSkippedContextFilesAndCapSkillProblems(t *testing.T) {
+	user := map[string]string{}
+	for _, n := range []string{"a", "b", "c", "d", "e", "f"} {
+		user["skills/"+n+"/SKILL.md"] = "no frontmatter"
+	}
+	tree := newSessionTree(t, map[string]string{"AGENTS.md": strings.Repeat("x", bootstrap.MaxFileBytes+1)}, user)
 	start := tree.prepare(t, workspace.OverrideDeny, protocol.ACPSessionOptions{})
 
 	lines := start.Warnings()
 
-	assert.Equal(t, []string{
-		"Warning: 1 context file was skipped; run ask settings show for details",
-		"Warning: 2 skills were not loaded; run ask settings show for details",
-	}, lines)
+	require.Len(t, lines, 6)
+	assert.Equal(t, "Warning: 1 context file was skipped; run ask settings show for details", lines[0])
+	for i, n := range []string{"a", "b", "c", "d"} {
+		assert.Equal(t, "Warning: skills: "+filepath.Join(tree.home, "skills", n, "SKILL.md")+": no frontmatter", lines[1+i])
+	}
+	assert.Equal(t, "Warning: skills: 2 more skill problems; run ask settings show for details", lines[5])
+	assert.Len(t, start.SkillDiagnostics(), 6, "the full list stays available")
+
 	diags := sessionTrust(start).Diagnostics
-	require.Len(t, diags, 3)
+	require.Len(t, diags, 6, "one context row, four skill rows, one more row")
 	assert.Equal(t, protocol.ACPDiagnostic{Layer: "project", Path: filepath.Join(tree.root, "AGENTS.md"), Key: "context", Text: "left out: the file is over 1 MiB"}, diags[0])
-	assert.Contains(t, diags, protocol.ACPDiagnostic{Layer: "user", Path: filepath.Join(tree.home, "skills", "broken", "SKILL.md"), Key: "skills", Text: "no frontmatter"})
+	assert.Contains(t, diags, protocol.ACPDiagnostic{Layer: "user", Path: filepath.Join(tree.home, "skills", "a", "SKILL.md"), Key: "skills", Text: "no frontmatter"})
+	assert.Equal(t, protocol.ACPDiagnostic{Layer: "user", Key: "skills", Text: "2 more skill problems; run ask settings show for details"}, diags[5])
+}
+
+func TestSessionWarningsCutALongSkillPathAndCountOneMore(t *testing.T) {
+	user := map[string]string{}
+	for _, n := range []string{strings.Repeat("é", 200), "b", "c", "d", "e"} {
+		user["skills/"+n+"/SKILL.md"] = "no frontmatter"
+	}
+	tree := newSessionTree(t, nil, user)
+	start := tree.prepare(t, workspace.OverrideDeny, protocol.ACPSessionOptions{})
+
+	lines := start.Warnings()
+
+	require.Len(t, lines, 5)
+	for _, line := range lines[:4] {
+		assert.LessOrEqual(t, len(strings.TrimPrefix(line, "Warning: skills: ")), 256)
+		assert.True(t, utf8.ValidString(line))
+	}
+	assert.Equal(t, "Warning: skills: 1 more skill problem; run ask settings show for details", lines[4])
+}
+
+func TestSessionRenderBudgetsTheSkillListByTheModelWindow(t *testing.T) {
+	user := map[string]string{}
+	for i := range 100 {
+		user[fmt.Sprintf("skills/skill-%03d/SKILL.md", i)] = "---\ndescription: " + strings.Repeat("use it when needed ", 20) + "\n---\n"
+	}
+	tree := newSessionTree(t, nil, user)
+	start := tree.prepare(t, workspace.OverrideDeny, protocol.ACPSessionOptions{})
+	reg := registryOf(t, tools.NewFileTools(tools.NewFileState(), nil)...)
+
+	roomy := start.Render(reg, 4_000_000)
+	assert.Empty(t, roomy.Warnings)
+	assert.NotContains(t, roomy.Seed[0].Content[0].(protocol.Text).Text, "omitted from this bounded skills list")
+
+	tiny := start.Render(reg, 10_000)
+	require.Len(t, tiny.Warnings, 1)
+	assert.Regexp(t, `^Warning: Exceeded skills context budget\. All skill descriptions were removed and \d+ additional skills were not included in the model-visible skills list\.$`, tiny.Warnings[0])
+	assert.Contains(t, tiny.Seed[0].Content[0].(protocol.Text).Text, "omitted from this bounded skills list.")
+
+	start.Settings.SkillsMaxContextTokens = 100_000
+	assert.Empty(t, start.Render(reg, 10_000).Warnings, "the setting replaces the window percentage, capped at 10000 tokens")
 }
 
 func TestStartErrorMapsClientCausedFailuresToInvalidParams(t *testing.T) {

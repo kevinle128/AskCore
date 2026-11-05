@@ -8,6 +8,7 @@ import (
 	"slices"
 	"strings"
 	"time"
+	"unicode/utf8"
 
 	"AskCore/internal/agent"
 	"AskCore/internal/bootstrap"
@@ -64,6 +65,9 @@ type AgentSpec struct {
 	// provider is usable.
 	Start   providers.Model
 	Session SessionStart
+	// Warn receives the warning lines that Render returns, each with the
+	// "Warning: " prefix. Nil drops them.
+	Warn func(line string)
 }
 
 // PrepareSession does all the file reads of a session start. The trust
@@ -161,27 +165,41 @@ func skillRoots(t TrustOutcome, askHome, userHome string) []skills.Root {
 	return roots
 }
 
+// RenderResult is what Render builds for one session.
+type RenderResult struct {
+	SystemPrompt string
+	Seed         []protocol.CustomMessage
+	// Warnings are the lines for the user, each with the "Warning: " prefix.
+	// A skill list that left skills out gives one.
+	Warnings []string
+}
+
 // Render builds the system prompt and the seed items of the session over the
-// tools that it registered. It is pure.
-func (s SessionStart) Render(snap *tools.Snapshot) (string, []protocol.CustomMessage) {
-	prompt := agent.SystemPrompt(agent.PromptParts{
+// tools that it registered and the context window of the start model (0 when
+// unknown). The skill list gets the budget of the skillsMaxContextTokens
+// setting, else 2% of the window. It is pure.
+func (s SessionStart) Render(snap *tools.Snapshot, contextWindow int) RenderResult {
+	res := RenderResult{SystemPrompt: agent.SystemPrompt(agent.PromptParts{
 		Custom:   s.Prompt.Custom,
 		Tools:    tools.PromptList(snap),
 		Rules:    tools.PromptGuidelines(snap),
 		Addendum: s.Prompt.Append,
 		Cwd:      s.Cwd,
 		Date:     s.Date,
-	})
-	var seed []protocol.CustomMessage
+	})}
 	if s.Context.Text != "" {
-		seed = append(seed, seedItem(protocol.CustomContextFiles, s.Context.Text))
+		res.Seed = append(res.Seed, seedItem(protocol.CustomContextFiles, s.Context.Text))
 	}
 	if has(snap, "read") || has(snap, "bash") {
-		if listing := s.Skills.Listing(); listing != "" {
-			seed = append(seed, seedItem(protocol.CustomSkillList, listing))
+		listing, report := s.Skills.Listing(skills.BudgetFor(contextWindow, s.Settings.SkillsMaxContextTokens))
+		if listing != "" {
+			res.Seed = append(res.Seed, seedItem(protocol.CustomSkillList, listing))
+		}
+		if w := report.Warning(); w != "" {
+			res.Warnings = append(res.Warnings, "Warning: "+w)
 		}
 	}
-	return prompt, seed
+	return res
 }
 
 func has(snap *tools.Snapshot, name string) bool {
@@ -196,11 +214,11 @@ func seedItem(customType, text string) protocol.CustomMessage {
 // Warnings returns the warning lines of a session start, each with the
 // "Warning: " prefix: the trust warning, a line for a gated project that is
 // not trusted (unless the trust store caused it, which the trust warning
-// names), one line for each settings diagnostic, and at most one summary line
-// each for the context files that were not delivered whole and for the skills
-// that did not load. The per-file detail is in SkillDiagnostics, the ACP
-// diagnostics and `ask settings show`. A line holds paths and fixed texts
-// only.
+// names), one line for each settings diagnostic, one summary line for the
+// context files that were not delivered whole, and the skill problems: at most
+// four lines of at most 256 bytes and then a line that counts the rest. The
+// full list is in SkillDiagnostics and `ask settings show`. A line holds paths
+// and fixed texts only.
 func (s SessionStart) Warnings() []string {
 	var lines []string
 	if s.Trust.Warning != "" {
@@ -219,8 +237,12 @@ func (s SessionStart) Warnings() []string {
 	if n := len(s.contextDiagnostics()); n > 0 {
 		lines = append(lines, fmt.Sprintf("Warning: %s; run ask settings show for details", plural(n, "context file was skipped", "context files were skipped")))
 	}
-	if n := len(s.Skills.Diagnostics); n > 0 {
-		lines = append(lines, fmt.Sprintf("Warning: %s; run ask settings show for details", plural(n, "skill was not loaded", "skills were not loaded")))
+	for _, d := range s.cappedSkillDiagnostics() {
+		line := "Warning: skills: " + d.Path
+		if d.Path != "" {
+			line += ": "
+		}
+		lines = append(lines, line+d.Text)
 	}
 	return lines
 }
@@ -258,6 +280,48 @@ func (s SessionStart) SkillDiagnostics() []protocol.ACPDiagnostic {
 		out = append(out, protocol.ACPDiagnostic{Layer: layer, Path: d.Path, Key: "skills", Text: d.Reason})
 	}
 	return out
+}
+
+const (
+	maxSkillRows     = 4
+	maxSkillRowBytes = 256
+)
+
+// cappedSkillDiagnostics is SkillDiagnostics cut to four rows. The path of a
+// row is cut so that the row holds at most 256 bytes. A last row without a
+// path counts the rest.
+func (s SessionStart) cappedSkillDiagnostics() []protocol.ACPDiagnostic {
+	all := s.SkillDiagnostics()
+	if len(all) <= maxSkillRows {
+		return capRows(all)
+	}
+	rest := all[maxSkillRows:]
+	out := capRows(all[:maxSkillRows])
+	return append(out, protocol.ACPDiagnostic{
+		Layer: rest[0].Layer,
+		Key:   "skills",
+		Text:  plural(len(rest), "more skill problem", "more skill problems") + "; run ask settings show for details",
+	})
+}
+
+func capRows(rows []protocol.ACPDiagnostic) []protocol.ACPDiagnostic {
+	out := slices.Clone(rows)
+	for i, d := range out {
+		room := max(maxSkillRowBytes-len(d.Text)-len(": "), 0)
+		out[i].Path = cutBytes(d.Path, room)
+	}
+	return out
+}
+
+// cutBytes cuts s to at most n bytes on a rune boundary.
+func cutBytes(s string, n int) string {
+	if len(s) <= n {
+		return s
+	}
+	for n > 0 && !utf8.RuneStart(s[n]) {
+		n--
+	}
+	return s[:n]
 }
 
 // contextLayer is "user" for a file in the Ask home and "project" for the

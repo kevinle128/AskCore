@@ -204,7 +204,10 @@ func runWithDependencies(argv []string, stdin io.Reader, stdout, stderr io.Write
 		}
 	}
 	o.bgLimit = printBackgroundLimit(deps.getenv)
-	ag, jt, err := newPrintAgent(o, deps.getenv, service, app.AgentSpec{SessionID: newSessionID(), Cwd: cwd, Start: start, Session: session})
+	ag, jt, err := newPrintAgent(o, deps.getenv, service, app.AgentSpec{
+		SessionID: newSessionID(), Cwd: cwd, Start: start, Session: session,
+		Warn: func(line string) { report(stderr, line) },
+	})
 	if err != nil {
 		report(stderr, "Error:", err)
 		return 1
@@ -438,7 +441,12 @@ func newNativeAgentOn(o options, getenv func(string) string, service *auth.Servi
 			return fail(err)
 		}
 	}
-	systemPrompt, seed := spec.Session.Render(reg.Snapshot())
+	rendered := spec.Session.Render(reg.Snapshot(), model.ContextWindow)
+	if spec.Warn != nil {
+		for _, line := range rendered.Warnings {
+			spec.Warn(line)
+		}
+	}
 	bound := providers.BoundKey{}
 	if o.apiKey != "" {
 		bound = providers.BoundKey{Provider: o.provider, Secret: o.apiKey}
@@ -453,8 +461,8 @@ func newNativeAgentOn(o options, getenv func(string) string, service *auth.Servi
 			Wait:     o.wait,
 		},
 		Tools:        reg,
-		SystemPrompt: systemPrompt,
-		Seed:         seed,
+		SystemPrompt: rendered.SystemPrompt,
+		Seed:         rendered.Seed,
 		SessionID:    sessionID,
 		Release:      jt.Close,
 		Background:   jt,

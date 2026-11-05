@@ -4,12 +4,19 @@ import (
 	"bytes"
 	"io"
 	"os"
+	"regexp"
+	"strconv"
 	"strings"
 
 	"gopkg.in/yaml.v3"
 )
 
-const maxFrontmatterBytes = 4096
+const maxFrontmatterBytes = 64 << 10
+
+var frontmatterOverText = "frontmatter over " + strconv.Itoa(maxFrontmatterBytes) + " bytes"
+
+// scalarLine matches a top-level key with a plain scalar value.
+var scalarLine = regexp.MustCompile(`^([A-Za-z0-9_-]+):[ \t]+(.*\S)[ \t]*$`)
 
 type frontmatter struct {
 	Name                   string    `yaml:"name"`
@@ -26,7 +33,10 @@ func parse(file, folder string) (Skill, string) {
 	}
 	var fm frontmatter
 	if err := yaml.Unmarshal(block, &fm); err != nil {
-		return Skill{}, "bad frontmatter"
+		fm = frontmatter{}
+		if err := yaml.Unmarshal(repairYAML(block), &fm); err != nil {
+			return Skill{}, "bad frontmatter"
+		}
 	}
 	invocable := true
 	if n := fm.DisableModelInvocation; n.Kind != 0 {
@@ -36,21 +46,46 @@ func parse(file, folder string) (Skill, string) {
 		}
 		invocable = !disabled
 	}
-	name := fm.Name
-	if name == "" {
-		name = folder
-	}
-	if len(name) > maxNameBytes || !namePattern.MatchString(name) {
-		return Skill{}, "bad name"
-	}
-	desc := strings.TrimSpace(fm.Description)
+	desc := oneLine(fm.Description)
 	if desc == "" {
 		return Skill{}, "missing description"
 	}
-	if len(desc) > maxDescription {
-		return Skill{}, "description over 1024 bytes"
+	return Skill{Name: skillName(fm.Name, folder), Description: desc, File: file, ModelInvocable: invocable}, ""
+}
+
+func oneLine(s string) string { return strings.Join(strings.Fields(s), " ") }
+
+func skillName(name, folder string) string {
+	n := oneLine(name)
+	if n == "" {
+		n = oneLine(folder)
 	}
-	return Skill{Name: name, Description: desc, File: file, ModelInvocable: invocable}, ""
+	if n == "" {
+		n = "skill"
+	}
+	if r := []rune(n); len(r) > maxNameRunes {
+		n = string(r[:maxNameRunes])
+	}
+	return n
+}
+
+// repairYAML double-quotes each top-level plain scalar that strict YAML reads
+// as something else: one that holds ": " or starts with "[", "{", "@" or a
+// backtick.
+func repairYAML(block []byte) []byte {
+	lines := strings.Split(string(block), "\n")
+	for i, line := range lines {
+		m := scalarLine.FindStringSubmatch(line)
+		if m == nil {
+			continue
+		}
+		v := m[2]
+		if !strings.Contains(v, ": ") && !strings.ContainsRune("[{@`", rune(v[0])) {
+			continue
+		}
+		lines[i] = m[1] + ": " + strconv.Quote(v)
+	}
+	return []byte(strings.Join(lines, "\n"))
 }
 
 func readFrontmatter(file string) ([]byte, string) {
@@ -85,7 +120,7 @@ func readFrontmatter(file string) ([]byte, string) {
 		off += end + 1
 	}
 	if full {
-		return nil, "frontmatter over 4096 bytes"
+		return nil, frontmatterOverText
 	}
 	return nil, "no frontmatter"
 }

@@ -158,7 +158,7 @@ func NewACPRuntime(p ACPParams) (*ACPRuntime, error) {
 			c := choice
 			c.saved = func(context.Context) (string, error) { return session.Settings.DefaultModel, nil }
 			start, fb := c.pick(ctx)
-			a, err := p.NewAgent(service, AgentSpec{SessionID: req.ID, Cwd: req.Cwd, Start: start, Session: session})
+			a, err := p.NewAgent(service, AgentSpec{SessionID: req.ID, Cwd: req.Cwd, Start: start, Session: session, Warn: warn})
 			if err != nil {
 				return nil, startError(err)
 			}

@@ -143,7 +143,7 @@ func sessionTrust(s SessionStart) *acp.SessionTrust {
 		t.Diagnostics = append(t.Diagnostics, protocol.ACPDiagnostic{Layer: string(d.Layer), Path: d.Path, Key: d.Key, Text: d.Text})
 	}
 	t.Diagnostics = append(t.Diagnostics, s.contextDiagnostics()...)
-	t.Diagnostics = append(t.Diagnostics, s.SkillDiagnostics()...)
+	t.Diagnostics = append(t.Diagnostics, s.cappedSkillDiagnostics()...)
 	return t
 }
 

@@ -262,3 +262,28 @@ func TestSettingsShowListsContextFilesAndSkillProblems(t *testing.T) {
 	assert.Contains(t, text.stdout, "  "+filepath.Join(root, "CLAUDE.md")+"  1048577 bytes  too_large\n")
 	assert.Contains(t, text.stdout, "\nSkill problems:\n  user "+broken+": no frontmatter\n")
 }
+
+func TestSettingsShowKeepsEverySkillProblemAndShowsTheSkillsBudget(t *testing.T) {
+	project, _ := settingsProjectDir(t, `{}`, 0o644)
+	userHome := t.TempDir()
+	t.Setenv("HOME", userHome)
+	for _, n := range []string{"a", "b", "c", "d", "e", "f"} {
+		path := filepath.Join(userHome, ".agents", "skills", n, "SKILL.md")
+		require.NoError(t, os.MkdirAll(filepath.Dir(path), 0o755))
+		require.NoError(t, os.WriteFile(path, []byte("no frontmatter"), 0o644))
+	}
+	home := privateHome(t)
+	require.NoError(t, os.WriteFile(filepath.Join(home, "settings.json"), []byte(`{"skillsMaxContextTokens":1234}`), 0o600))
+
+	got := printInProject(t, project, home, "settings", "show", "--json")
+
+	require.Equal(t, 0, got.code, got.stderr)
+	d := decodeSettingsDump(t, got.stdout)
+	assert.Len(t, d.SkillDiagnostics, 6)
+	value, source := settingSource(d, "skillsMaxContextTokens")
+	assert.Equal(t, "1234", value)
+	assert.Equal(t, "user", source)
+	text := printInProject(t, project, home, "settings", "show")
+	assert.Contains(t, text.stdout, "skillsMaxContextTokens")
+	assert.NotContains(t, text.stdout, "more skill problems")
+}
