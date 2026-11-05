@@ -220,6 +220,9 @@ func (c *sessionClient) State(context.Context) (protocol.ACPStateResult, error) 
 func (c *sessionClient) Usage(context.Context) (protocol.ACPUsageResult, error) {
 	return protocol.ACPUsageResult{}, nil
 }
+func (c *sessionClient) Skills(context.Context) (protocol.ACPSkillsResult, error) {
+	return protocol.ACPSkillsResult{}, nil
+}
 func (c *sessionClient) Models(context.Context) (protocol.ACPModelsResult, error) {
 	return protocol.ACPModelsResult{}, nil
 }

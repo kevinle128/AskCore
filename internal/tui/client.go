@@ -148,6 +148,10 @@ type Client interface {
 	SetModel(ctx context.Context, modelID string, saveDefault bool) (protocol.ACPSetModelResult, error)
 	SetThinking(ctx context.Context, level protocol.ThinkingLevel) (protocol.ThinkingLevel, error)
 	Usage(ctx context.Context) (protocol.ACPUsageResult, error)
+	// Skills lists the skills of the current session, which the command list
+	// offers as "/skill:<name>". A leader that predates the call answers with a
+	// *RequestError.
+	Skills(ctx context.Context) (protocol.ACPSkillsResult, error)
 
 	// The provider calls need the shared leader. In process each of them returns
 	// ErrNeedsLeader and sends nothing. A secret (key, code or address) goes out

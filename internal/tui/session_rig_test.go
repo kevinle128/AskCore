@@ -31,6 +31,10 @@ type fakeClient struct {
 	models    protocol.ACPModelsResult
 	state     protocol.ACPStateResult
 	usage     protocol.ACPUsageResult
+	// skills is the answer of Skills. skillsErr fails it, as a leader that
+	// predates the call does.
+	skills    protocol.ACPSkillsResult
+	skillsErr error
 	live      []protocol.ACPLiveSession
 	listErr   error
 
@@ -345,6 +349,13 @@ func (f *fakeClient) Usage(context.Context) (protocol.ACPUsageResult, error) {
 	f.mu.Lock()
 	defer f.mu.Unlock()
 	return f.usage, nil
+}
+
+func (f *fakeClient) Skills(context.Context) (protocol.ACPSkillsResult, error) {
+	f.record("skills")
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	return f.skills, f.skillsErr
 }
 
 // leaderCall records a provider call. It returns ErrNeedsLeader without a

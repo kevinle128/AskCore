@@ -677,6 +677,18 @@ func (c *Client) Usage(ctx context.Context) (protocol.ACPUsageResult, error) {
 	return out, err
 }
 
+// Skills lists the skills that the current session can load with
+// "/skill:<name>". A host that predates the method answers with a *tui.RequestError.
+func (c *Client) Skills(ctx context.Context) (protocol.ACPSkillsResult, error) {
+	var out protocol.ACPSkillsResult
+	conn, sid, err := c.withSession()
+	if err != nil {
+		return out, err
+	}
+	err = c.request(ctx, conn, protocol.ACPSkills, protocol.ACPSessionRequest{SessionID: sid}, &out)
+	return out, err
+}
+
 // Close leaves the agent and ends the client. A leader and its runs go on. An
 // in-process agent stops through OnClose.
 func (c *Client) Close() error {

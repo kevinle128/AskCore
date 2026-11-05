@@ -1,6 +1,7 @@
 package main
 
 import (
+	"cmp"
 	"context"
 	"encoding/json"
 	"fmt"
@@ -36,6 +37,8 @@ type sessionRun struct {
 	userHome string
 	now      time.Time
 	args     []string
+	// prompt is the text of the run. Empty means "go".
+	prompt string
 }
 
 func canonicalDir(t *testing.T, dir string) string {
@@ -70,7 +73,7 @@ func (r sessionRun) run(t *testing.T) (*scriptedAnthropic, printResult) {
 		deps.now = func() time.Time { return r.now }
 	}
 	argv := append([]string{"-p", "--provider", anthropic.ProviderID}, r.args...)
-	argv = append(argv, "go")
+	argv = append(argv, cmp.Or(r.prompt, "go"))
 	var stdout, stderr strings.Builder
 	code := runWithDependencies(argv, strings.NewReader(""), &stdout, &stderr, deps)
 	return m, printResult{code: code, stdout: stdout.String(), stderr: stderr.String()}
