@@ -32,6 +32,11 @@
       "key": "defaultTools",
       "value": "",
       "source": "default"
+    },
+    {
+      "key": "skillsMaxContextTokens",
+      "value": "",
+      "source": "default"
     }
   ],
   "diagnostics": [

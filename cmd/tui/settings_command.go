@@ -8,6 +8,7 @@ import (
 	"io"
 	"os"
 	"path/filepath"
+	"strconv"
 	"strings"
 	"time"
 
@@ -223,7 +224,7 @@ func loadSettingsDump(ctx context.Context, askHome string, trust protocol.ACPTru
 			Gated:   append([]string{}, outcome.Gated...),
 			Warning: outcome.Warning,
 		},
-		Settings:         make([]settingsValue, 0, 4),
+		Settings:         make([]settingsValue, 0, 5),
 		Diagnostics:      make([]settingsDiagnostic, 0, len(eff.Diagnostics)),
 		Context:          contextRows(session.Context),
 		SkillDiagnostics: make([]settingsDiagnostic, 0, len(session.Skills.Diagnostics)),
@@ -246,6 +247,7 @@ func loadSettingsDump(ctx context.Context, askHome string, trust protocol.ACPTru
 		{"thinkingFold", string(eff.ThinkingFold)},
 		{"defaultProjectTrust", string(eff.DefaultProjectTrust)},
 		{"defaultTools", joinDefaultTools(eff.DefaultTools)},
+		{"skillsMaxContextTokens", skillsTokensValue(eff.SkillsMaxContextTokens)},
 	} {
 		source := eff.Sources[v.key]
 		if source == "" {
@@ -304,6 +306,13 @@ func contextSkipWord(r bootstrap.SkipReason) string {
 	}
 }
 
+func skillsTokensValue(n int) string {
+	if n == 0 {
+		return ""
+	}
+	return strconv.Itoa(n)
+}
+
 func joinDefaultTools(entries *[]string) string {
 	if entries == nil {
 		return ""
@@ -351,7 +360,7 @@ func (d settingsDump) text() string {
 		if value == "" {
 			value = "(none)"
 		}
-		fmt.Fprintf(&b, "  %-20s %-32s %s\n", v.Key, value, v.Source)
+		fmt.Fprintf(&b, "  %-22s %-32s %s\n", v.Key, value, v.Source)
 	}
 	if d.Project.Warning != "" {
 		b.WriteString("\nWarning: " + d.Project.Warning + "\n")

@@ -30,6 +30,8 @@ const defaultProjectTrustKey = "defaultProjectTrust"
 
 const defaultToolsKey = "defaultTools"
 
+const skillsMaxContextTokensKey = "skillsMaxContextTokens"
+
 var toolEntry = regexp.MustCompile(`^[+-]?[a-z][a-z0-9_]*$`)
 
 // SettingsStore reads and writes the user settings file in one owner-only home.
@@ -207,7 +209,7 @@ const (
 )
 
 // shippedKeys are the keys that Effective decodes, in a fixed order.
-var shippedKeys = []string{defaultModelKey, thinkingFoldKey, defaultProjectTrustKey, defaultToolsKey}
+var shippedKeys = []string{defaultModelKey, thinkingFoldKey, defaultProjectTrustKey, defaultToolsKey, skillsMaxContextTokensKey}
 
 // Diagnostic is one problem that a load found. It never contains file
 // content: only the layer, the path, the key and a fixed text.
@@ -232,6 +234,9 @@ type Effective struct {
 	// DefaultTools is the defaultTools array: nil when unset, and a non-nil
 	// empty slice when the file sets an empty array (no built-in tools).
 	DefaultTools *[]string
+	// SkillsMaxContextTokens is the skillsMaxContextTokens value: 0 when
+	// unset, else a positive count of tokens for the skill list.
+	SkillsMaxContextTokens int
 	// Sources maps each shipped key to the layer of its value.
 	Sources     map[string]Layer
 	Diagnostics []Diagnostic
@@ -458,6 +463,12 @@ func (eff *Effective) set(key string, raw json.RawMessage) string {
 		}
 	case defaultToolsKey:
 		return eff.setDefaultTools(raw)
+	case skillsMaxContextTokensKey:
+		var n int
+		if json.Unmarshal(raw, &n) != nil || n < 1 {
+			return "must be a positive integer; it is ignored"
+		}
+		eff.SkillsMaxContextTokens = n
 	}
 	return ""
 }
