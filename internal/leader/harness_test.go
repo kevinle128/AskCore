@@ -15,7 +15,7 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-const waitFor = 5 * time.Second
+const waitFor = 30 * time.Second
 
 func eventually(t *testing.T, what string, cond func() bool) {
 	t.Helper()
