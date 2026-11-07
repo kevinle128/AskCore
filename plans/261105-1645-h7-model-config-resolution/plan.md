@@ -1,7 +1,7 @@
 ---
 title: "H7 model configuration and resolution"
 description: "Add the user models.json, Pi value templates with a command cache, the models.json key as the third credential source, the Pi model-id grammar with the omp colon rule, --models, enabledModels, --offline and a TUI model-cycling key."
-status: in-progress
+status: completed
 priority: P1
 effort: 13.5d
 branch: develop
