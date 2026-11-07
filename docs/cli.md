@@ -34,10 +34,12 @@ The mode is chosen in this order:
 |---|---|
 | `-p`, `--print` | Run the prompt, print the reply, and exit. A token right after `-p` that does not start with `-` and is not an `@file` is the first message. |
 | `--mode text\|json` | Output format. `json` writes one JSON line for each agent event. Another value is an error. |
-| `--provider <name>` | `faux` (default), `alibaba-token-plan`, `anthropic`, `openai`, or `xai`. Without `--provider` and `--model`, print mode uses the saved `defaultModel`; see below. |
-| `--model <id>` | Model id. Defaults: `faux-1` (faux), `deepseek-v4.1-flash` (alibaba-token-plan), `claude-sonnet-4-6` (anthropic), `gpt-5.5` (openai), `grok-4.7` (xai). The model list is in [reference/providers.md](reference/providers.md). |
-| `--api-key <key>` | Key for this run. It needs `--model`, except for `alibaba-token-plan`. A key in the arguments is visible to other processes. Prefer the environment or `ask auth login`. |
-| `--thinking <level>` | `off`, `minimal`, `low`, `medium`, `high`, `xhigh`, or `max`. `alibaba-token-plan` defaults to `medium`. |
+| `--provider <name>` | `faux`, `alibaba-token-plan`, `anthropic`, `openai`, `xai`, or a provider of the user `models.json`. Without `--provider` and `--model`, the start model comes from the scope or the saved `defaultModel`; see [Start model](#start-model). |
+| `--model <pattern>` | Model pattern `[provider/]id[@api][:level]`, for example `anthropic/claude-sonnet-4-6:high`. See [Model patterns](#model-patterns). With `--provider P`, the pattern is `P/<pattern>`. `--provider` alone uses the default model of the provider: `faux-1` (faux), `deepseek-v4.1-flash` (alibaba-token-plan), `claude-sonnet-4-6` (anthropic), `gpt-5.5` (openai), `grok-4.7` (xai). The model list is in [reference/providers.md](reference/providers.md). |
+| `--models <patterns>` | The scope: the models to start on and to cycle through with `ctrl+p` in the TUI. Give a comma list; repeat the flag to add more. Each entry is a pattern or a glob. It replaces the `enabledModels` setting. See [Model scope](#model-scope). |
+| `--api-key <key>` | Key for this run. It needs a model (`--model`, with or without a provider in the pattern), except for `alibaba-token-plan`. A key in the arguments is visible to other processes. Prefer the environment or `ask auth login`. |
+| `--thinking <level>` | `off`, `minimal`, `low`, `medium`, `high`, `xhigh`, or `max`. It wins over a `:level` of the pattern. `alibaba-token-plan` defaults to `medium`. |
+| `--offline` | Do not refresh the model list from the network. It is the same as `ASK_DISABLE_MODEL_REFRESH=1` for this process and for a leader that this command starts. A leader that already runs keeps its own setting; stop it with `ask leader stop` first. Print mode makes no refresh request, so the flag changes nothing there. |
 | `--max-turns <n>` | Print and JSON mode. End the run after `n` turns. `n` is a whole number above 0, or the command exits 1. See [Background work in print mode](#background-work-in-print-mode). |
 | `--system-prompt <text\|file>` | Replace the default system prompt for this run. See [Prompt, context files, skills, and tools](#prompt-context-files-skills-and-tools). |
 | `--append-system-prompt <text\|file>` | Add text at the end of the system prompt. Repeat the flag to add more. |
@@ -60,7 +62,39 @@ Exit codes: 0 done; 1 for an argument or setup error, and in print mode for an a
 
 The demo provider `faux` is the default of `ask -p`. It runs a script: `echo <text>` calls the echo tool, `fail <text>` ends in an assistant error, and any other text is said back.
 
-When you give no `--provider` and no `--model`, `ask -p` uses the `defaultModel` of the settings (the value that `/model` saves). The project layer counts only when the project is trusted. The rules are the same as for a new TUI session. When the model is not in the model list, or its provider has no credential, `ask -p` writes one line to stderr, for example `Warning: default model <id> is not usable (no credential); using faux/faux-1@faux.`, and runs on `faux`. When no `defaultModel` is set, `ask -p` runs on `faux`. `--provider` or `--model` always wins.
+### Start model
+
+`ask -p`, the TUI, the leader, and `ask acp` choose the start model of a session in this order:
+
+1. `--provider` and `--model`. A pattern that does not resolve ends the run with exit 1 (in the TUI the session start fails with the same text).
+2. The scope: `--models`, else the `enabledModels` setting. When the saved `defaultModel` is in the scope and its provider is usable, it is the start model. Else the first scope entry of a usable provider is the start model.
+3. The saved `defaultModel` (the value that `/model` saves). The project layer counts only when the project is trusted.
+4. `ask -p` runs on `faux`. The TUI, the leader, and `ask acp` take the first model of a usable provider.
+
+When the saved default is not in the model list, or its provider has no credential, `ask -p` writes one line to stderr, for example `Warning: default model <id> is not usable (no credential); using faux/faux-1@faux.`, and runs on `faux`.
+
+The level is `--thinking`, else the `:level` of the pattern or of the scope entry. When the start model has no thinking, a requested level is dropped. `ask -p` then writes `Warning: <provider>/<id> has no thinking; level <level> is not used.`, and the TUI shows the same text as a session notice. The run continues with thinking off.
+
+### Model patterns
+
+`--model`, `--models`, `enabledModels`, and the session options of a client take a model pattern: `[provider/]id[@api][:level]`.
+
+- `provider/id` selects one model. `@api` selects the wire when a provider has the model on two APIs (for example `alibaba-token-plan/deepseek-v4.1-flash@openai-completions`).
+- An id without a provider resolves across all providers. An exact id, an alias, a dated id, and then a part of an id match. When two providers have a match, the pattern is ambiguous: the error lists the choices, and you add the provider.
+- `:level` sets the thinking level. The level words are `off`, `minimal`, `low`, `medium`, `high`, `xhigh`, and `max`.
+- Ask first tries the whole pattern as a model id. Only when no model has that id does Ask read the text after the last colon as a level. Thus `local/qwen3-coder:30b` is the model `qwen3-coder:30b`, and a model with the id `x:max` is that model, not `x` with level `max`. `kimi:high` is the model `kimi` with level `high`, not the model `kimi-highspeed`.
+- A word after the colon that is not a level word makes the pattern an unknown model: `Error: unknown model "openai/gpt-5.5:hgih"`. When the text before the colon is a model, the error lists the level words.
+
+The saved `defaultModel` and the model id of `_ask/session/set_model` are always the exact name `provider/id@api`. They do not take a pattern.
+
+### Model scope
+
+`--models` and the `enabledModels` setting give the scope. The scope chooses the start model and the cycle list of `ctrl+p` in the TUI. `/model` still lists every model.
+
+- Each entry is a pattern, or a glob with `*`, `?`, or `[...]`. A glob matches `provider/id` or `id` in lower case, and it can have a `:level` suffix.
+- A glob `*` does not match `/`. So `openai/*` matches `openai/gpt-5.5`, but not `openrouter/qwen/qwen3`. Use `openrouter/*/*` for that.
+- The scope keeps the order of the entries, and each model is in it once.
+- An entry that matches nothing gives one warning, for example `Warning: --models: unknown model "<pattern>"`. For a settings entry the warning names the position (`enabledModels[0]`), not the text. The other entries still apply.
 
 ### Background work in print mode
 
@@ -205,11 +239,15 @@ The context file line is a summary, and its detail is in `ask settings show`. `a
 
 ### Flags in the TUI and with a leader
 
-The TUI sends the four flags to its host with `session/new`, in `_meta["ask.dev/session"]` (`systemPrompt`, `appendSystemPrompt`, `tools`, `noTools`). The prompt flags hold text, not paths. The flags apply to every session that this TUI process opens, also after `/new`. They are not saved.
+The TUI sends the prompt and tool flags to its host with `session/new`, in `_meta["ask.dev/session"]` (`systemPrompt`, `appendSystemPrompt`, `tools`, `noTools`). The prompt flags hold text, not paths. The flags apply to every session that this TUI process opens, also after `/new`. They are not saved.
+
+The TUI sends `--model`, `--thinking`, and `--models` for its first session in the same object (`model`, `thinking`, `models`). The host resolves them against its own model list and echoes the options that it applied in the result `_meta["ask.dev/appliedOptions"]`. When the TUI sent one of these fields and the echo does not have it, the session start fails with `the leader did not apply --model; restart it with this build` (or `--thinking`, `--models`). Thus a leader that is older than this build never drops `--model` without a message. Stop it with `ask leader stop`, or use `--no-leader`.
 
 A leader that is older than this build ignores the key without an error. The TUI then shows `Warning: the leader ignored the prompt and tool flags of this command line (it is older than this build). They are not applied in this session.` The session runs with more tools and with the default prompt. Stop the old leader with `ask leader stop`, or use `--no-leader`.
 
-`ask acp` does not take these flags. An ACP client that starts a session can send `_meta["ask.dev/session"]` with the object `{"systemPrompt": "...", "appendSystemPrompt": ["..."], "tools": ["read"], "noTools": false}`. The host applies it to that session only. A value that is not an object, a field of the wrong type, prompt text over 256 KiB in total, a tool name that is not valid, or both `tools` and `noTools` answers `invalid_params`. When the host applied non-empty flags, the result `_meta` has `ask.dev/session: true`.
+`ask acp` does not take these flags. An ACP client that starts a session can send `_meta["ask.dev/session"]` with the object `{"systemPrompt": "...", "appendSystemPrompt": ["..."], "tools": ["read"], "noTools": false, "model": "anthropic/claude-sonnet-4-6:high", "thinking": "low", "models": ["anthropic/*"]}`. The host applies it to that session only. A value that is not an object, a field of the wrong type, prompt text over 256 KiB in total, a tool name that is not valid, both `tools` and `noTools`, a `model` or a `models` entry over 256 bytes, more than 64 `models` entries, or a `thinking` that is not a level word answers `invalid_params`. When the host applied non-empty flags, the result `_meta` has `ask.dev/session: true`, and `ask.dev/appliedOptions` echoes the model options that it applied.
+
+`_ask/session/get_available_models` returns `scope` (the cycle list in order: the exact model id and the level of each entry) and `diagnostics` (the problems of the user `models.json` that the list read). `_ask/session/set_model` takes an optional `thinkingLevel` and sets the model and the level in one call.
 
 ## `ask auth`
 
@@ -266,13 +304,13 @@ Exit codes: 0 done, also when a provider is `unknown` or the metadata `failed`; 
 ## `ask acp`
 
 ```
-ask acp [--approve | --no-approve]
+ask acp [--approve | --no-approve] [--offline]
 ask acp --help
 ```
 
 The command serves ACP v1 as JSON-RPC lines on stdin and stdout. Diagnostics go to stderr. It opens no listener and no database. Each session has its own agent. No credentials pass over the connection: sign in first with `ask auth login`.
 
-`--approve` (`-a`) trusts the project of every session of this process, and `--no-approve` (`-na`) trusts none. Without a flag, each session decides with no UI (see [Project trust](#project-trust)). The two flags together, or any other argument, are an error. The command takes none of the prompt and tool flags (`--system-prompt`, `--append-system-prompt`, `-t`, `-nt`). A client sends them for one session in `_meta["ask.dev/session"]` (see [Flags in the TUI and with a leader](#flags-in-the-tui-and-with-a-leader)). The command answers `unsupported` for `_ask/trust/state` and `_ask/trust/set`, because an editor link has no trust question.
+`--approve` (`-a`) trusts the project of every session of this process, and `--no-approve` (`-na`) trusts none. Without a flag, each session decides with no UI (see [Project trust](#project-trust)). `--offline` turns the model refresh off, as `ASK_DISABLE_MODEL_REFRESH=1`. The two trust flags together, or any other argument, are an error. The command takes none of the prompt, tool, and model flags (`--system-prompt`, `--append-system-prompt`, `-t`, `-nt`, `--model`, `--models`, `--thinking`). A client sends them for one session in `_meta["ask.dev/session"]` (see [Flags in the TUI and with a leader](#flags-in-the-tui-and-with-a-leader)). The command answers `unsupported` for `_ask/trust/state` and `_ask/trust/set`, because an editor link has no trust question.
 
 Exit codes: 0 input ended, 1 error or lost output, 130, 143, 129. The owner is [internal/acp/README.md](../internal/acp/README.md).
 
@@ -287,12 +325,13 @@ The command prints the settings of the current folder. It reads files only. It w
 
 The text form shows, in this order:
 
-1. The Ask home, the user settings file, the project root, the trust decision with its source (and the saved entry that applies), the gated files, and the state of the project settings: `loaded`, `not read (untrusted)`, or `none` (the `.ask` folder of the cwd is the Ask home).
+1. The Ask home, the user settings file, the project root, the trust decision with its source (and the saved entry that applies), the gated files, the state of the project settings: `loaded`, `not read (untrusted)`, or `none` (the `.ask` folder of the cwd is the Ask home), and the row `User models:` with the path of the user `models.json` and its state (`loaded`, `problem`, or `missing`).
 2. `Settings:` one row for each key, with the value and the layer that sets it (`default`, `user`, or `project`). `(none)` means that no `defaultModel` is set.
-3. A `Warning:` line for a trust store that cannot be read.
-4. `Problems:` one row for each settings diagnostic: the layer, the path, the key, and a fixed text.
-5. `Context files:` one row for each `AGENTS.md` or `CLAUDE.md` that the session reads, with its path and size in bytes, then the files that Ask left out. A row has the word `too_large`, `unreadable`, `duplicate`, `budget`, or `truncated` when Ask did not deliver the file whole. `(none)` means that no context file exists.
-6. `Skill problems:` one row for each skill that did not load: the layer, the path, and a fixed text. The list is complete: the 4-row cap of `ask -p` and the TUI does not apply here. The block is absent when every skill loaded.
+3. `Key sources:` one row for each provider with the source of the key that a request would use (see [Key order](#key-order)). The row names the source, never the key. A `problem` row adds the problem text, which names a variable or a label, never a value.
+4. A `Warning:` line for a trust store that cannot be read.
+5. `Problems:` one row for each settings diagnostic: the layer, the path, the key, and a fixed text.
+6. `Context files:` one row for each `AGENTS.md` or `CLAUDE.md` that the session reads, with its path and size in bytes, then the files that Ask left out. A row has the word `too_large`, `unreadable`, `duplicate`, `budget`, or `truncated` when Ask did not deliver the file whole. `(none)` means that no context file exists.
+7. `Skill problems:` one row for each skill that did not load: the layer, the path, and a fixed text. The list is complete: the 4-row cap of `ask -p` and the TUI does not apply here. The block is absent when every skill loaded.
 
 `--json` prints one JSON object with this shape. Arrays are always present, also when they are empty.
 
@@ -314,7 +353,8 @@ The text form shows, in this order:
     {"key": "thinkingFold", "value": "collapsed", "source": "user"},
     {"key": "defaultProjectTrust", "value": "ask", "source": "default"},
     {"key": "defaultTools", "value": "read,grep", "source": "user"},
-    {"key": "skillsMaxContextTokens", "value": "", "source": "default"}
+    {"key": "skillsMaxContextTokens", "value": "", "source": "default"},
+    {"key": "enabledModels", "value": "anthropic/*,gpt-5.5:low", "source": "user"}
   ],
   "diagnostics": [
     {"layer": "project", "path": "/work/repo/.ask/settings.json", "key": "env", "text": "a project file cannot set this key; it is ignored"}
@@ -324,6 +364,12 @@ The text form shows, in this order:
   ],
   "skillDiagnostics": [
     {"layer": "project", "path": "/work/repo/.agents/skills/old/SKILL.md", "key": "skills", "text": "a fixed reason"}
+  ],
+  "modelsFile": {"path": "/home/u/.ask/models.json", "state": "loaded"},
+  "keySources": [
+    {"provider": "anthropic", "source": "saved:api-key"},
+    {"provider": "local", "source": "config:$LOCAL_KEY"},
+    {"provider": "other", "source": "problem", "problem": "other apiKey: variable LOCAL_UNSET_KEY is not set"}
   ]
 }
 ```
@@ -341,6 +387,10 @@ The text form shows, in this order:
 | `context[].bytes` | The size of the file in bytes. `0` when Ask cannot read it. |
 | `context[].skipped` | Empty for a file that the session gets whole, else `too_large`, `unreadable`, `duplicate`, `budget`, or `truncated`. |
 | `skillDiagnostics[]` | Every skill that did not load. `key` is `skills`. |
+| `settings[].value` of `enabledModels` | The array joined with commas, or empty when unset. |
+| `modelsFile.state` | `loaded`, `problem` (the file has a problem; see `diagnostics`), or `missing`. |
+| `keySources[].source` | `override`, `saved:<method>`, `config:$NAME` (a template with more variables names all of them, for example `config:$A,$B`), `config:command`, `config:literal`, `env:<NAME>`, `none`, or `problem` (a `models.json` value cannot give a key). The command never runs a `!command` to find it, and never refreshes a token. |
+| `keySources[].problem` | The problem text of a `problem` row, else absent. |
 
 A bad value of a known key gives the default and a diagnostic. A corrupt user file or trust store is reported and keeps its bytes.
 
@@ -349,13 +399,14 @@ Exit codes: 0 done, also with diagnostics or a trust store warning; 1 for a usag
 ## `ask leader`
 
 ```
-ask leader                      run the leader in the foreground
+ask leader [--offline]          run the leader in the foreground
 ask leader status [--json]      show the identity and counts of the running leader
 ask leader list [--json]        list the leaders of this home (one)
 ask leader stop                 stop the running leader
 ask leader --help
 ```
 
+- `--offline` turns the model refresh of the leader off, as `ASK_DISABLE_MODEL_REFRESH=1`. A TUI started with `--offline` passes the variable to a leader that it starts.
 - The leader listens on `<ASK_HOME>/leader.sock`. The socket has mode 0600 in a directory of mode 0700. Only the owner can connect.
 - `status`, `list`, and `stop` never start a leader. `--json` works only with `status` and `list`.
 - `stop` waits up to 15 s for each step. On Linux it falls back to SIGTERM through a verified process handle.
@@ -422,6 +473,10 @@ The key `thinkingFold` in the settings sets the fold mode that a thinking step t
 
 `ctrl+t` opens or folds all thinking steps and also sets the mode for the thinking steps that end later in the same TUI process. It does not change `settings.json`.
 
+`ctrl+p` changes the session model to the next model of the cycle list, and `ctrl+shift+p` changes it to the previous one. The keys work in the prompt pane, in the block list, and with the command list open. In `/model` and in the provider box, `ctrl+p` moves the list selection up. The cycle list is the scope (`--models` or `enabledModels`); with no scope it is every model that `/model` shows. The list wraps at each end. The footer row names the new model, and the status row shows `✓ Model: <provider>/<model> · <level> · <n> of <total>`. The key does not save the default. While a run works, the key gives `Model can change when the run ends.`; with one model in the list, it gives `No other model to cycle to.`. `ctrl+shift+p` needs a terminal with the kitty keyboard protocol or `modifyOtherKeys`, for example Ghostty, Alacritty, kitty, WezTerm, or xterm. Terminal.app sends `ctrl+shift+p` as `ctrl+p`, so there the key cycles forward and no key cycles back. The shortcut bar does not show these keys.
+
+When `/model` opens, the leader (or the in-process agent) reads the user `models.json` again. When the file has problems, `/model` shows one summary row (`models.json has <n> problems; the list is in the transcript.`) and the transcript gets the block `Problems in models.json, read again when /model opened`. When an edit of the file removed or changed the row of the session model, its row shows ` · not in models.json` or the tag `changed`. Choose that row again to use the new row. Until then a prompt fails with `Error (config): model configuration changed; choose the model again.` and sends nothing.
+
 At the start of a session (also after `/new`), a folder that needs a trust decision opens the box `Trust this project folder?` in the prompt pane slot. The options are **Not now** (the first and highlighted option: this session is untrusted and nothing is saved), **Trust this folder**, **Trust parent folder**, and **Do not trust**. Esc and ctrl+c act as Not now. `--approve` or `--no-approve` skips the question. The leader saves the choice in `trust.json`.
 
 The key bindings, block folding, the viewer, and the mouse rules are in [internal/tui/README.md](../internal/tui/README.md). Terminal.app, iTerm2, and kitty were not checked by hand.
@@ -444,6 +499,7 @@ The project file overrides the user file. JSON objects merge key by key. A proje
 | `defaultProjectTrust` | `"ask"` (default), `"always"`, `"never"`: the trust of a project with gated files and no saved decision | user only |
 | `defaultTools` | An array of built-in tool names, for example `["read", "grep"]`, or an array of `"+name"` and `"-name"` entries, for example `["-bash"]`. Plain names and `+`/`-` entries in one array are a bad value. Default: unset, which keeps every built-in tool. | user, project |
 | `skillsMaxContextTokens` | A positive integer: the token budget of the skill list, at most 10000 (a larger value counts as 10000). Default: unset, which uses 2% of the model window. A zero, a negative number, or a value that is not an integer is ignored with a diagnostic. See [Skills](#skills). | user, project |
+| `enabledModels` | An array of at most 64 model patterns or globs of 1 to 256 bytes each, for example `["anthropic/*", "gpt-5.5:low"]`: the scope of a session when `--models` is not given. See [Model scope](#model-scope). A value with a bad shape is ignored with a diagnostic. | user, project |
 
 Rules of `defaultTools`:
 
@@ -456,11 +512,96 @@ Rules of `defaultTools`:
 
 Ask keeps unknown keys when it writes a file. A write reads the file again under a lock, changes only its own key, and replaces the file atomically. Ask never overwrites a corrupt file: it refuses the write and names the path. A file that cannot be read, or a bad value of a known key, gives the default and a diagnostic. `ask -p` writes each diagnostic as one `Warning: settings:` line to stderr; `ask settings show` lists them. A diagnostic never contains file content.
 
+## models.json
+
+`<ASK_HOME>/models.json` adds providers and models, and changes the fields of built-in models. You need no rebuild. Ask never writes this file.
+
+Ask reads only the user file. It does not read `<project>/.ask/models.json`, also in a trusted project. That name is still a gated entry (see [Project trust](#project-trust)), so a project with the file needs a trust decision, but the file has no effect.
+
+### File rules
+
+- The file has mode 0600 in a home of mode 0700, as `settings.json`. A file with another mode, a link, a FIFO, or a file over 1 MiB is a file problem.
+- The file is JSONC: `//` and `/* */` comments and trailing commas are allowed.
+- A provider id has lower-case letters, digits, and `-`.
+
+```jsonc
+{
+  "providers": {
+    "local": {
+      "baseUrl": "http://127.0.0.1:11434/v1",
+      "api": "openai-completions",
+      "apiKey": "ollama",                       // a literal; "$OLLAMA_KEY" reads the environment
+      "models": [{ "id": "qwen3-coder:30b" }]   // the defaults fill the other fields
+    },
+    "openai": {
+      "modelOverrides": { "gpt-5.5": { "name": "Five", "maxTokens": 32000 } }
+    }
+  }
+}
+```
+
+### Fields
+
+| Field | Meaning |
+|---|---|
+| `providers.<id>.baseUrl` | The URL of the API. It must be an `http` or `https` URL with a host and no user name or password; another value is a problem and drops the provider. On a built-in provider it moves every model of the provider to this URL. |
+| `providers.<id>.api` | The wire: `anthropic-messages`, `openai-completions`, or `openai-responses`. A model can set its own `api`. |
+| `providers.<id>.apiKey` | The key of the provider, as a value (see [Values](#values)). |
+| `providers.<id>.headers` | Extra request headers, as an object of values. A model can set its own `headers`. |
+| `providers.<id>.compat` | Compatibility switches of the wire, for every model of the provider. An unknown key for the API gives a problem and is ignored. |
+| `providers.<id>.models[]` | New models. `id` is required. The other fields are `name`, `api`, `reasoning`, `thinkingLevelMap`, `input` (`text`, `image`), `cost` (`input`, `output`, `cacheRead`, `cacheWrite`, in USD for each million tokens), `contextWindow`, `maxTokens`, `headers`, and `compat`. |
+| `providers.<id>.modelOverrides.<model id>` | Changes of one existing model, with the same fields as a model. |
+
+A provider with models that is not built in needs `baseUrl` and `apiKey`. A new model takes the URL of its provider. A new model without these fields gets the defaults of Pi: a context window of 128000, an output limit of 16384, text input, no thinking, and a price of 0. A new model replaces a built-in model with the same provider, id, and API.
+
+An override on a built-in model can set the name, the limits, the price, and the input types, and it can turn thinking levels off. An override cannot change the `api` of a model, and on a built-in model it cannot change the compat either. On a new model of the file, an override can change the compat and add thinking levels. An override price sets only the fields that it names; the other prices stay. An override that names no model of a provider that the file defines is a problem. For a built-in provider it is not a problem, because an account list can hide the model until the next refresh.
+
+When the file changes the `baseUrl` of a built-in provider, Ask shows every model of that provider, because the account list tells the access at the default host only.
+
+### Values
+
+`apiKey` and each header value is a value:
+
+| Value | Result |
+|---|---|
+| `text` | The literal text. |
+| `$NAME` or `${NAME}` | The environment variable `NAME`, also inside other text. An unset or blank variable is an error that names the variable, never a value. |
+| `!command` | The whole value is a shell command. Ask uses its trimmed stdout. The command runs in your home folder with the whole environment of the process, for at most 10 s. Stdout larger than 64 KiB stops the command, and the value fails. Ask keeps the output for the life of the process and runs the command again after a 401 answer or an edit of the file. After a failure it waits 30 s before the next run. Ask never logs the output. |
+| `$$` | A literal `$`. |
+| `$!` at the start | A literal `!`. |
+
+Another `$` form is an error.
+
+### Key order
+
+A request takes the key from the first source that applies:
+
+1. `--api-key` of this run.
+2. The saved credential of `ask auth login` or `/providers` in `auth.json`, when it is for the same provider, API, and URL as the model. Ask never sends a saved key to a URL that the file changed.
+3. The `apiKey` of the provider in `models.json`. It applies to every model of that provider, also to a built-in provider whose URL the file does not change (as in Pi).
+4. The environment variable of the provider, when no credential is saved.
+
+For a provider whose `baseUrl` the file changes, Ask uses `--api-key` only when the file entry of that provider also sets `apiKey`. Otherwise the request fails with `auth: unsupported credential method: <provider>/api-key`.
+
+A provider with only a `models.json` key is usable: it can be the start model, the saved default, and a `/model` choice. `ask settings show` names the source that wins for each provider; it uses the same function as a request.
+
+### When Ask reads the file
+
+The leader, `ask acp`, and the in-process TUI read the file again at three points: at a session start, when `/model` opens (the model list), and when a session changes its model. Ask does not watch the file, and a request never reads it. `ask -p` and `ask settings show` read the file once.
+
+A process that loaded a valid file keeps that copy when an edit breaks the file. The model list and the session start then show the problem and `the last valid copy is used`. A process that never loaded a valid copy (for example `ask -p`, `ask settings show`, or a new leader that replaced an older one) shows the problem and no models of the file. A saved default on such a model then falls back with the reason `not in the catalog`. `ask -p` writes each problem as one `Warning: settings: <path>: ...` line.
+
+A bad model or override drops only that entry, and a bad provider drops only that provider. An unknown key loads and gives one problem. A problem names the file position (for example `providers[2].models[0].contextWindow`), never a provider id, a model id, or a value.
+
+### Remove a custom default
+
+A saved `defaultModel` can point at a model of `models.json`, for example `local/qwen3-coder:30b@openai-completions`. When the model is gone (an edit of the file, or a build that does not read `models.json`), a new session falls back with the note `not in the catalog`. To fix it, choose a model with `/model` and save it as the default, or remove the `defaultModel` key from `<ASK_HOME>/settings.json`.
+
 ## Project trust
 
 A project needs a trust decision when one of these entries exists (Ask uses `Lstat` and opens no file):
 
-- In `<project>/.ask/`: `settings.json`, `SYSTEM.md`, `APPEND_SYSTEM.md`, `mcp.json`, `models.json`, `skills`, `prompts`, `extensions`.
+- In `<project>/.ask/`: `settings.json`, `SYSTEM.md`, `APPEND_SYSTEM.md`, `mcp.json`, `models.json`, `skills`, `prompts`, `extensions`. Ask does not read the project `models.json` (see [models.json](#modelsjson)).
 - `.agents/skills` in the project folder and in each parent folder, except `~/.agents/skills`.
 
 Context files such as `AGENTS.md` and `CLAUDE.md` are not gated. They always load, also in a project that is not trusted (see [Context files](#context-files)). Ask reads no gated file of a project before the decision. These need trust: the project `.ask/settings.json`, the project `.ask/SYSTEM.md` and `.ask/APPEND_SYSTEM.md`, and the project skill folders. The user files in `<ASK_HOME>` and `~/.agents/skills` need no trust.
@@ -482,12 +623,12 @@ Trust is not a security boundary against the tools of the agent. A `bash` comman
 
 | Variable | Used by | Effect |
 |---|---|---|
-| `ASK_HOME` | all `ask` commands | Home directory (default `~/.ask`). It holds `auth.json`, `settings.json`, `trust.json`, `model-cache.json`, `leader.sock`, and `leader.log`. It must be an absolute path. For the leader it must be short enough for a Unix socket path. |
+| `ASK_HOME` | all `ask` commands | Home directory (default `~/.ask`). It holds `auth.json`, `settings.json`, `models.json`, `trust.json`, `model-cache.json`, `leader.sock`, and `leader.log`. It must be an absolute path. For the leader it must be short enough for a Unix socket path. |
 | `ASK_FAUX` | leader, `ask acp`, in-process TUI | `1` lists the demo provider `faux`. `ask -p` has it by default and ignores the variable. |
 | `ASK_FAUX_TPS` | `faux` provider | Pace in tokens per second. A negative value or a non-number is an error. |
 | `ASK_COMMAND_GUARD` | `ask -p`, leader, `ask acp` | `1` blocks a short list of destructive commands. It is off by default and is not a security boundary. |
 | `ASK_DISABLE_BACKGROUND_TASKS` | `ask -p`, leader, `ask acp`, in-process TUI | `1` turns background jobs off. A foreground `bash` command stops at its wait budget. A background start and `monitor` are refused. |
-| `ASK_DISABLE_MODEL_REFRESH` | leader, `ask acp`, in-process TUI, `ask auth login` | `1` turns the automatic network refresh of the model list off: no models.dev request and no account model list request. The list then comes from `<ASK_HOME>/model-cache.json` and the built-in catalog. `ask models refresh` still refreshes the list. |
+| `ASK_DISABLE_MODEL_REFRESH` | leader, `ask acp`, in-process TUI, `ask auth login` | `1` turns the automatic network refresh of the model list off: no models.dev request and no account model list request. The list then comes from `<ASK_HOME>/model-cache.json` and the built-in catalog. `ask models refresh` still refreshes the list. `--offline` on `ask`, `ask acp`, and `ask leader` has the same effect. `ask auth login` has no `--offline` flag; use the variable. |
 | `ASK_PRINT_BG_LIMIT_MS` | `ask -p` | The default background time limit, in milliseconds (default 600000). A value that is not a whole number above 0 is ignored. A larger value also raises the 2 hour maximum. |
 | `ASK_PRINT_BG_WAIT_CEILING_MS` | `ask -p` | The idle cap of the background wait, in milliseconds (default 600000). `0` means no cap. An empty, negative, or invalid value gives the default. |
 | `ASK_CAPTURE` | `ask -p` | A directory. The run records the provider HTTP traffic to a new cassette. Ignored for `faux`. |
