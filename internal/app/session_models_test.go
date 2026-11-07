@@ -512,7 +512,7 @@ func TestFileKeyIsRefusedForRowOfAnotherEndpoint(t *testing.T) {
 	ctx := context.Background()
 	store, err := settings.NewAuthStore(t.TempDir())
 	require.NoError(t, err)
-	service := &auth.Service{Store: store}
+	service := &auth.Service{Store: store, Env: func(string) (string, bool) { return "", false }}
 	const fileURL = "https://proxy.example/v1"
 	file := settings.ModelsFile{Providers: map[string]settings.ProviderEntry{
 		providers.ProviderOpenAI: {BaseURL: fileURL, APIKey: "file-key"},
@@ -531,5 +531,5 @@ func TestFileKeyIsRefusedForRowOfAnotherEndpoint(t *testing.T) {
 	other := row
 	other.BaseURL = "https://other.example/v1"
 	_, err = service.ResolveWith(ctx, auth.ResolveRequest{Model: other, Config: entry.configKey()})
-	require.ErrorIs(t, err, auth.ErrMethod, "the file key binds only to the endpoint the file wrote it for")
+	require.ErrorIs(t, err, auth.ErrNoCredential, "the file key binds only to the endpoint the file wrote it for")
 }

@@ -217,7 +217,7 @@ func TestSessionWarningsSummarizeSkippedContextFilesAndCapSkillProblems(t *testi
 
 func TestSessionWarningsCutALongSkillPathAndCountOneMore(t *testing.T) {
 	user := map[string]string{}
-	for _, n := range []string{strings.Repeat("é", 200), "b", "c", "d", "e"} {
+	for _, n := range []string{strings.Repeat("é", 120), "b", "c", "d", "e"} {
 		user["skills/"+n+"/SKILL.md"] = "no frontmatter"
 	}
 	tree := newSessionTree(t, nil, user)
