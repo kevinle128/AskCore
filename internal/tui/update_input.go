@@ -367,6 +367,7 @@ func (s *sessionView) onModels(msg modelsMsg) {
 	if !s.applyModelList(msg.token, msg.res) {
 		msg.res = s.modelList
 	}
+	s.noteModelProblems(msg.res.Diagnostics)
 	if s.modelID == "" {
 		s.modelID = msg.res.Current
 	}
@@ -430,7 +431,9 @@ func (s *sessionView) choose() tea.Cmd {
 	}
 	switch s.sel.kind {
 	case selectModel:
-		if it.id == s.modelID {
+		// A row whose endpoint left the user model file takes its new endpoint
+		// only through a model change, also to the same id.
+		if row, _ := s.modelRow(it.id); it.id == s.modelID && !row.NotInConfig {
 			s.closeSelector()
 			return nil
 		}
@@ -452,7 +455,7 @@ func (s *sessionView) setModelCmd(id string) tea.Cmd {
 	return func() tea.Msg {
 		ctx, cancel := callContext()
 		defer cancel()
-		res, err := c.SetModel(ctx, id, true)
+		res, err := c.SetModel(ctx, id, "", true)
 		return setModelMsg{gen: gen, req: req, id: id, res: res, err: err}
 	}
 }
@@ -483,13 +486,7 @@ func (s *sessionView) onSetModel(msg setModelMsg) tea.Cmd {
 		}
 		return nil
 	}
-	s.modelID, s.thinking, s.thinkTry = msg.res.ModelID, msg.res.ThinkingLevel, ""
-	s.modelSeq++
-	if s.modelID == "" {
-		s.modelID = msg.id
-	}
-	s.hadModel = s.modelID != "" || s.hadModel
-	s.haveState = true
+	s.applyModelResult(msg.id, msg.res)
 	if msg.res.DefaultSaved {
 		pair, api := s.pairText(s.currentRef())
 		if api != "" {
@@ -503,6 +500,16 @@ func (s *sessionView) onSetModel(msg setModelMsg) tea.Cmd {
 		s.closeSelector()
 	}
 	return nil
+}
+
+func (s *sessionView) applyModelResult(id string, res protocol.ACPSetModelResult) {
+	s.modelID, s.thinking, s.thinkTry = res.ModelID, res.ThinkingLevel, ""
+	s.modelSeq++
+	if s.modelID == "" {
+		s.modelID = id
+	}
+	s.hadModel = s.modelID != "" || s.hadModel
+	s.haveState = true
 }
 
 // defaultNotSavedText words the reason why the leader did not save a model as
@@ -523,6 +530,10 @@ func defaultNotSavedText(reason protocol.ACPDefaultNotSaved) string {
 func (s *sessionView) modelFailure(id string, err error) (text, next string) {
 	row, _ := s.modelRow(id)
 	provider := row.Provider
+	if provider == "" {
+		// A scope entry of a provider with no credential has no row in the list.
+		provider = parseModelID(id).provider
+	}
 	var re *RequestError
 	if errors.As(err, &re) && re.Kind == string(protocol.ACPErrNoAPIKey) && provider != "" {
 		return provider + " is not ready: no credential. Model not changed.", "Run in a shell: " + loginCommand(provider)

@@ -861,7 +861,7 @@ func (s *sessionView) applyModelList(token uint64, res protocol.ACPModelsResult)
 	if token < s.fetchSeq || token < s.appliedFetch {
 		return false
 	}
-	s.appliedFetch, s.modelList, s.models = token, res, res.Models
+	s.appliedFetch, s.modelList, s.models, s.modelListGen = token, res, res.Models, s.gen
 	return true
 }
 

@@ -522,6 +522,28 @@ func TestSettingsDiagnosticsNotice(t *testing.T) {
 			"        is ignored",
 		})
 	})
+	t.Run("models.json", func(t *testing.T) {
+		fc := newFakeClient()
+		fc.state.Diagnostics = reloadProblems()[:1]
+		r := startView(t, 80, 24, withFake(fc))
+		r.h.waitText("Settings problems")
+		requireRows(t, r.h.settle(), []string{
+			"  Settings problems",
+			"    ~/.ask/models.json",
+			"      providers.local.models[2].contextWindow: must be a number; the model is",
+			"        skipped",
+		})
+	})
+	t.Run("a flag problem has no path row", func(t *testing.T) {
+		fc := newFakeClient()
+		fc.state.Diagnostics = []protocol.ACPDiagnostic{{Layer: "user", Key: "--models", Text: "nope/* matches no model"}}
+		r := startView(t, 80, 24, withFake(fc))
+		r.h.waitText("Settings problems")
+		requireRows(t, r.h.settle(), []string{
+			"  Settings problems",
+			"      --models: nope/* matches no model",
+		})
+	})
 	t.Run("cap", func(t *testing.T) {
 		fc := newFakeClient()
 		for i := range 9 {

@@ -46,6 +46,10 @@ type Config struct {
 	RefreshModels func()
 	// FindModel resolves one row of Models.
 	FindModel func(ref providers.Ref) (providers.Model, error)
+	// NotInConfig reports whether m is a row that the user model file made
+	// and that the current file no longer has, so a request on it fails until
+	// the user chooses the model again. Nil means no user file.
+	NotInConfig func(m providers.Model) bool
 	// ModelAuth checks that m is ready under the sign-in method that the
 	// client named. Nil means the client cannot name a method.
 	ModelAuth func(ctx context.Context, m providers.Model, methodID string) error
@@ -79,6 +83,14 @@ type Config struct {
 	// once. The session keeps them and _ask/session/skills reports them. Nil,
 	// or a nil result, means none.
 	StartSkills func(sessionID string) []protocol.ACPSkill
+	// StartModel returns how the Factory applied the model options of a
+	// session that it just built, once. The session keeps the scope entries
+	// for the model list, and _ask/session/state reports the dropped level.
+	// Nil, or a nil result, means no scope and no dropped level.
+	StartModel func(sessionID string) *ModelStart
+	// ModelProblems returns the problems of the user model file in the model
+	// list that the last Models call read. Nil means no user file.
+	ModelProblems func() []protocol.ACPDiagnostic
 	// TrustSetup serves _ask/trust/state and _ask/trust/set. Nil means both
 	// answer unsupported, as on an editor link.
 	TrustSetup TrustSetup
@@ -326,6 +338,9 @@ func (a *Adapter) NewSession(ctx context.Context, req sdk.NewSessionRequest) (sd
 	if a.cfg.StartSkills != nil {
 		s.setSkills(a.cfg.StartSkills(s.ID))
 	}
+	if a.cfg.StartModel != nil {
+		s.setModelStart(a.cfg.StartModel(s.ID))
+	}
 	if a.cfg.ProviderSetup != nil {
 		s.commit.Lock()
 		provider := s.Agent().State().Model.Provider
@@ -345,6 +360,12 @@ func (a *Adapter) NewSession(ctx context.Context, req sdk.NewSessionRequest) (sd
 			res.Meta = map[string]any{}
 		}
 		res.Meta[protocol.ACPSessionOptionsMetaKey] = true
+		// The Factory applied the model options or failed the start, so the
+		// echo is the request. An older host sends no echo, which tells a
+		// client that it dropped them.
+		if applied := flags.ModelOptions(); !applied.IsZero() {
+			res.Meta[protocol.ACPAppliedOptionsMetaKey] = applied
+		}
 	}
 	return res, nil
 }

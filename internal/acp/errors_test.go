@@ -59,3 +59,16 @@ func TestAdapterErrorMapperDetailAndPassthrough(t *testing.T) {
 	require.Same(t, nf, requestError(nf))
 	require.Nil(t, requestError(nil))
 }
+
+// A run that the changed model configuration stopped ends with its own kind
+// and the fixed text, so a client can ask the user to choose the model again.
+func TestRunErrorModelConfigChangedHasConfigKind(t *testing.T) {
+	err := runError(Result{Reason: "error", Code: "MODEL_CONFIG"})
+	require.Equal(t, protocol.ACPErrConfig, classify(err))
+	var re *sdk.RequestError
+	require.ErrorAs(t, requestError(err), &re)
+	require.Equal(t, protocol.ACPCodeConfig, re.Code)
+	require.Equal(t, protocol.ModelConfigChanged, re.Message)
+	require.Equal(t, protocol.ACPErrorData{Kind: protocol.ACPErrConfig}, re.Data)
+	require.Equal(t, protocol.ACPErrInternal, classify(runError(Result{Reason: "error", Code: "SERVER"})))
+}

@@ -414,6 +414,12 @@ type Session struct {
 	trust *SessionTrust
 	// skills are the skills that the session started with. They do not change.
 	skills []protocol.ACPSkill
+	// scope are the raw scope entries of the session. They do not change; the
+	// model list expands them against its own rows.
+	scope []string
+	// dropped is the thinking level that the start model did not use. It holds
+	// until the model of the session changes.
+	dropped *protocol.ACPLevelDropped
 
 	// qmu guards the outbound queue. The Agent listener only appends to it.
 	qmu     sync.Mutex
@@ -582,10 +588,12 @@ func (s *Session) observe(ev protocol.Event) error {
 	return nil
 }
 
-// noteModelLocked drops the start fallback when the model changes. mu must be held.
+// noteModelLocked drops the start fallback and the dropped level when the
+// model changes. mu must be held.
 func (s *Session) noteModelLocked(ev protocol.Event) {
 	if _, ok := ev.(*protocol.ModelUpdate); ok {
 		s.fallback = nil
+		s.dropped = nil
 	}
 }
 
@@ -610,6 +618,35 @@ func (s *Session) setTrust(t *SessionTrust) {
 	s.mu.Lock()
 	s.trust = &cp
 	s.mu.Unlock()
+}
+
+func (s *Session) setModelStart(m *ModelStart) {
+	if m == nil {
+		return
+	}
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.scope = slices.Clone(m.Scope)
+	if m.LevelDropped != nil {
+		cp := *m.LevelDropped
+		s.dropped = &cp
+	}
+}
+
+func (s *Session) scopeNow() []string {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	return slices.Clone(s.scope)
+}
+
+func (s *Session) droppedNow() *protocol.ACPLevelDropped {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if s.dropped == nil {
+		return nil
+	}
+	cp := *s.dropped
+	return &cp
 }
 
 // setSkills records the skills of the session start.

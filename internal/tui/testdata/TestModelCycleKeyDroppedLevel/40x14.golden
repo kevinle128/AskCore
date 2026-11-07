@@ -1,0 +1,14 @@
+ ◢◤ ask
+────────────────────────────────────────
+  and the probe can take 1.2 s.
+
+  claude-sonnet-4-6 · 4.2s · ↑12.4k ↓…
+
+┊ ✓ local/llama4-scout
+┊ local/llama4-scout has no thinking;
+┊ level high is not used.
+────────────────────────────────────────
+ ❯ Ask anything
+────────────────────────────────────────
+                 local/llama4-scout 13%
+ Tab blocks · / commands

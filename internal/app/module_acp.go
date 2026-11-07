@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"net/http"
 	"os"
+	"slices"
 	"strings"
 	"sync"
 	"time"
@@ -133,14 +134,19 @@ func NewACPRuntime(p ACPParams) (*ACPRuntime, error) {
 	if err != nil {
 		return nil, err
 	}
-	choice := newStartChoice(p.Initial, models.Current, service)
-	rows, find, usable := choice.rows, choice.find, choice.usable
+	// The model list and the model switch rebuild the snapshot when an input
+	// changed; every usable check and every request reads the stored one.
+	usable := usableRule(p.Initial, service, models.Snapshot)
+	choice := newStartChoice(p.Initial, models.Current, usable)
+	rows, find := choice.rows, choice.find
+	view := models.view()
 	// A session that starts on a fallback model hands its note and its trust
 	// decision to the adapter once, when the adapter publishes the session.
 	var startMu sync.Mutex
 	fallbacks := map[string]*protocol.ACPModelFallback{}
 	trusts := map[string]*acp.SessionTrust{}
 	skillRows := map[string][]protocol.ACPSkill{}
+	modelStarts := map[string]*acp.ModelStart{}
 	cfg := acp.Config{
 		Factory: func(ctx context.Context, req acp.SessionRequest) (*agent.Agent, error) {
 			// The trust decision comes before any read of a project file. The
@@ -156,19 +162,34 @@ func NewACPRuntime(p ACPParams) (*ACPRuntime, error) {
 			if err != nil {
 				return nil, startError(err)
 			}
-			c := choice
+			// One snapshot serves the whole start choice, so the start reads
+			// the user models.json once.
+			snap := models.Current()
+			stored := func() *modelSnapshot { return &snap }
+			c := newStartChoice(p.Initial, func() modelSnapshot { return snap }, usableRule(p.Initial, service, stored))
 			c.saved = func(context.Context) (string, error) { return session.Settings.DefaultModel, nil }
-			start, fb := c.pick(ctx)
-			a, err := p.NewAgent(service, AgentSpec{SessionID: req.ID, Cwd: req.Cwd, Start: start, Session: session, Warn: warn})
+			picked, err := c.choose(ctx, ModelOptions{Pattern: req.Flags.Model, Thinking: req.Flags.Thinking, Scope: req.Flags.Models}, session.Settings)
+			if err != nil {
+				// The text quotes the pattern of the client, which the
+				// adapter bounded to 256 bytes, and names catalog rows and
+				// level words only.
+				return nil, acp.InvalidParams(err.Error())
+			}
+			// The problems of the user models.json and of the scope join the
+			// settings diagnostics, so the start notice and the warnings show
+			// them.
+			session.Settings.Diagnostics = slices.Concat(session.Settings.Diagnostics, snap.user.problems, picked.Diagnostics)
+			a, err := p.NewAgent(service, AgentSpec{SessionID: req.ID, Cwd: req.Cwd, Start: picked.Model, Session: session, Warn: warn, Models: view, Thinking: picked.Level})
 			if err != nil {
 				return nil, startError(err)
 			}
 			startMu.Lock()
-			if fb != nil {
-				fallbacks[req.ID] = fb
+			if picked.Fallback != nil {
+				fallbacks[req.ID] = picked.Fallback
 			}
 			trusts[req.ID] = sessionTrust(session)
 			skillRows[req.ID] = session.SkillRows()
+			modelStarts[req.ID] = &acp.ModelStart{Scope: picked.Scope, LevelDropped: picked.Dropped}
 			startMu.Unlock()
 			for _, line := range session.Warnings() {
 				warn(line)
@@ -196,6 +217,15 @@ func NewACPRuntime(p ACPParams) (*ACPRuntime, error) {
 			delete(skillRows, id)
 			return rows
 		},
+		StartModel: func(id string) *acp.ModelStart {
+			startMu.Lock()
+			defer startMu.Unlock()
+			m := modelStarts[id]
+			delete(modelStarts, id)
+			return m
+		},
+		// The model list reads the snapshot that its Models call built.
+		ModelProblems: func() []protocol.ACPDiagnostic { return acpDiagnostics(models.Snapshot().user.problems) },
 		DefaultModel: func(ctx context.Context, scope acp.SettingsScope) (string, error) {
 			layered, err := scopeSettings(home, scope)
 			if err != nil {
@@ -220,13 +250,14 @@ func NewACPRuntime(p ACPParams) (*ACPRuntime, error) {
 		// can have many rows of one provider.
 		Authenticate: func(ctx context.Context, methodID string) error {
 			seen := map[[3]string]bool{}
-			for _, m := range models.Current().set.All() {
+			snap := models.Snapshot()
+			for _, m := range snap.set.All() {
 				k := [3]string{m.Provider, string(m.API), m.BaseURL}
 				if seen[k] {
 					continue
 				}
 				seen[k] = true
-				if NativeAuthReady(ctx, service, m, "", methodID) == nil {
+				if nativeAuthReady(ctx, service, snap, m, "", methodID) == nil {
 					return nil
 				}
 			}
@@ -236,8 +267,9 @@ func NewACPRuntime(p ACPParams) (*ACPRuntime, error) {
 		RefreshModels: models.RefreshIfStale,
 		FindModel:     find,
 		ModelAuth: func(ctx context.Context, m providers.Model, methodID string) error {
-			return NativeAuthReady(ctx, service, m, "", methodID)
+			return nativeAuthReady(ctx, service, models.Snapshot(), m, "", methodID)
 		},
+		NotInConfig: func(m providers.Model) bool { return models.Snapshot().notInConfig(m) },
 	}
 	if p.TrustRequests {
 		cfg.TrustSetup = trustSetup{home: home, userHome: userHome}
@@ -300,6 +332,7 @@ func acpAuthMethods(service *auth.Service) []sdk.AuthMethod {
 
 // providerUsable tells whether a provider has a saved credential or an
 // environment key. It reads the local store only and never refreshes a token.
+// It is the store part of usableRule; a usable check calls usableRule.
 func providerUsable(ctx context.Context, service *auth.Service, provider string) bool {
 	rows, err := service.Status(ctx)
 	if err != nil {

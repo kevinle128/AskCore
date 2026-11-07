@@ -180,6 +180,10 @@ func (s *sessionView) update(msg tea.Msg) tea.Cmd {
 		s.onModels(msg)
 	case setModelMsg:
 		cmd = s.onSetModel(msg)
+	case cycleModelsMsg:
+		cmd = s.onCycleModels(msg)
+	case cycleSetMsg:
+		s.onCycleSet(msg)
 	case thinkingMsg:
 		s.onThinking(msg)
 	case sessionsMsg:
@@ -843,7 +847,7 @@ func (s *sessionView) onRefresh(msg refreshMsg) {
 			s.modelID = st.ModelID
 		}
 		s.thinking = st.ThinkingLevel
-		s.fallback = st.ModelFallback
+		s.fallback, s.levelDropped = st.ModelFallback, st.LevelDropped
 		s.haveState, s.stateGen = true, s.gen
 		s.sessTrust, s.diagnostics, s.stateSession = st.Trust, st.Diagnostics, s.sess.ID
 		s.applySessionFold(st.ThinkingFold)
@@ -923,7 +927,7 @@ func (s *sessionView) setNoticeFor(text string, d time.Duration, isErr bool) {
 }
 
 func (s *sessionView) noticeActive() bool {
-	return s.notice.text != "" && s.now().Before(s.notice.until)
+	return s.notice.shown() && s.now().Before(s.notice.until)
 }
 
 // needsTick tells whether something on screen changes with time.
@@ -945,7 +949,7 @@ func (s *sessionView) onTick() {
 	s.tickPending = false
 	s.trl.View().SetSpinnerFrame(int(s.now().UnixMilli() / int64(defaultTick/time.Millisecond)))
 	s.trl.View().SetClock(s.now().UnixMilli())
-	if s.notice.text != "" && !s.now().Before(s.notice.until) {
+	if s.notice.shown() && !s.now().Before(s.notice.until) {
 		s.notice = noticeView{}
 	}
 }

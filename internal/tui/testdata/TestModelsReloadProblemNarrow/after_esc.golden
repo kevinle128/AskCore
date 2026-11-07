@@ -1,0 +1,14 @@
+ ◢◤ ask
+────────────────────────────────────────
+  when /model opened
+    ~/.ask/models.json
+      providers.local.models[2].contex
+        tWindow: must be a number; the
+        model is skipped
+      providers.gateway: unknown key
+
+────────────────────────────────────────
+ ❯ Ask anything
+────────────────────────────────────────
+               local/qwen3-coder:30b 6%
+ Tab blocks · / commands

@@ -514,7 +514,7 @@ func TestTrustE2ECorruptSettingsNeverOverwritten(t *testing.T) {
 	assert.Equal(t, &protocol.ACPSessionTrust{Trusted: true, Source: "saved"}, state.Trust)
 	require.Len(t, state.Diagnostics, 1)
 	assert.Equal(t, projectFile, state.Diagnostics[0].Path)
-	res, err := c.SetModel(ctx, fauxModelID(t), true)
+	res, err := c.SetModel(ctx, fauxModelID(t), "", true)
 	require.NoError(t, err)
 	assert.True(t, res.DefaultSaved, "a corrupt project file sets no default, so the user save happens: %+v", res)
 	assert.Equal(t, before, treeHash(t, root), "the corrupt project file keeps its bytes")
@@ -522,7 +522,7 @@ func TestTrustE2ECorruptSettingsNeverOverwritten(t *testing.T) {
 	// A corrupt user file refuses the save and keeps its bytes.
 	const badUser = `{"defaultModel":`
 	r.writeUser(badUser)
-	res, err = c.SetModel(ctx, fauxModelID(t), true)
+	res, err = c.SetModel(ctx, fauxModelID(t), "", true)
 	require.NoError(t, err)
 	assert.Equal(t, protocol.ACPDefaultUnsafeFile, res.DefaultNotSaved)
 	assert.False(t, res.DefaultSaved)
@@ -598,7 +598,7 @@ func TestTrustE2ELeaderOwnsDecision(t *testing.T) {
 	assert.Equal(t, anthropicDefault(), state.ModelFallback.SavedDefault)
 
 	// A user default save that the trusted project shadows is refused.
-	res, err := b.SetModel(ctx, fauxModelID(t), true)
+	res, err := b.SetModel(ctx, fauxModelID(t), "", true)
 	require.NoError(t, err)
 	assert.Equal(t, protocol.ACPDefaultShadowed, res.DefaultNotSaved, "%+v", res)
 	assert.Equal(t, userSettings, fileBytes(t, filepath.Join(r.home, "settings.json")))

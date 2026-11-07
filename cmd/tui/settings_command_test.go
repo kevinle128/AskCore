@@ -13,6 +13,7 @@ import (
 	"github.com/stretchr/testify/require"
 
 	"AskCore/internal/bootstrap"
+	"AskCore/internal/providers"
 	"AskCore/internal/settings"
 )
 
@@ -46,9 +47,21 @@ func settingSource(d settingsDump, key string) (string, string) {
 	return "", ""
 }
 
+// clearKeyEnv hides the provider key variables of the developer, so the key
+// sources of the output do not depend on them.
+func clearKeyEnv(t *testing.T) {
+	t.Helper()
+	for _, m := range providers.GeneratedCatalog() {
+		for _, name := range providers.KeyEnvNames(m.Provider) {
+			t.Setenv(name, "")
+		}
+	}
+}
+
 func TestSettingsShowNamesSourceLayer(t *testing.T) {
 	// The skills of the user home of the developer must not reach the golden file.
 	t.Setenv("HOME", t.TempDir())
+	clearKeyEnv(t)
 	// The golden file is relative to the package folder, and the runs change
 	// the working directory to the project.
 	project, root := settingsProjectDir(t, `{"defaultModel":"openai/gpt-5.5@responses","env":{"SECRET_VALUE":"x"}}`, 0o644)
@@ -286,4 +299,74 @@ func TestSettingsShowKeepsEverySkillProblemAndShowsTheSkillsBudget(t *testing.T)
 	text := printInProject(t, project, home, "settings", "show")
 	assert.Contains(t, text.stdout, "skillsMaxContextTokens")
 	assert.NotContains(t, text.stdout, "more skill problems")
+}
+
+func TestSettingsShowNamesKeySourceNotValue(t *testing.T) {
+	t.Setenv("HOME", t.TempDir())
+	clearKeyEnv(t)
+	t.Setenv("LOCAL_SHOW_KEY", "env-secret-value")
+	project, _ := settingsProjectDir(t, `{}`, 0o644)
+	home := privateHome(t)
+	runs := filepath.Join(t.TempDir(), "runs")
+	models := `{"providers": {
+  "local": {"baseUrl": "http://127.0.0.1:9/v1", "api": "openai-completions", "apiKey": "$LOCAL_SHOW_KEY", "models": [{"id": "m1"}]},
+  "cmdp": {"baseUrl": "http://127.0.0.1:9/v2", "api": "openai-completions", "apiKey": "!printf x >> ` + runs + `; printf cmd-secret-value", "models": [{"id": "m1"}]},
+  "lit": {"baseUrl": "http://127.0.0.1:9/v3", "api": "openai-completions", "apiKey": "literal-secret-value", "models": [{"id": "m1"}]},
+  "unset": {"baseUrl": "http://127.0.0.1:9/v4", "api": "openai-completions", "apiKey": "$LOCAL_UNSET_KEY", "models": [{"id": "m1"}]},
+}}`
+	require.NoError(t, os.WriteFile(filepath.Join(home, "models.json"), []byte(models), 0o600))
+	store, err := settings.NewAuthStore(home)
+	require.NoError(t, err)
+	_, err = store.Replace(context.Background(), "openai", 0, settings.Credential{Method: "api-key", APIKey: "saved-secret-value"})
+	require.NoError(t, err)
+	before, err := os.ReadDir(home)
+	require.NoError(t, err)
+
+	got := printInProject(t, project, home, "settings", "show", "--json")
+	require.Equal(t, 0, got.code, got.stderr)
+	d := decodeSettingsDump(t, got.stdout)
+	assert.Equal(t, settingsModelsFile{Path: filepath.Join(home, "models.json"), State: "loaded"}, d.ModelsFile)
+	sources := map[string]settingsKeySource{}
+	for _, k := range d.KeySources {
+		sources[k.Provider] = k
+	}
+	assert.Equal(t, "config:$LOCAL_SHOW_KEY", sources["local"].Source)
+	assert.Equal(t, "config:command", sources["cmdp"].Source)
+	assert.Equal(t, "config:literal", sources["lit"].Source)
+	assert.Equal(t, "problem", sources["unset"].Source)
+	assert.Contains(t, sources["unset"].Problem, "LOCAL_UNSET_KEY")
+	assert.Equal(t, "saved:api-key", sources["openai"].Source)
+	assert.Equal(t, "none", sources["anthropic"].Source)
+
+	text := printInProject(t, project, home, "settings", "show")
+	require.Equal(t, 0, text.code, text.stderr)
+	assert.Regexp(t, `\n  local +config:\$LOCAL_SHOW_KEY\n`, text.stdout)
+	assert.Contains(t, text.stdout, "User models:      "+filepath.Join(home, "models.json")+" (loaded)\n")
+	for _, out := range []string{got.stdout, text.stdout, got.stderr, text.stderr} {
+		for _, secret := range []string{"env-secret-value", "cmd-secret-value", "literal-secret-value", "saved-secret-value"} {
+			assert.NotContains(t, out, secret)
+		}
+	}
+	_, err = os.Stat(runs)
+	assert.True(t, os.IsNotExist(err), "the key source is a dry run: no command runs")
+	after, err := os.ReadDir(home)
+	require.NoError(t, err)
+	assert.Equal(t, len(before), len(after), "the command writes nothing in the Ask home")
+}
+
+func TestSettingsShowListsModelsFileProblems(t *testing.T) {
+	t.Setenv("HOME", t.TempDir())
+	project, _ := settingsProjectDir(t, `{}`, 0o644)
+	home := privateHome(t)
+	path := filepath.Join(home, "models.json")
+	require.NoError(t, os.WriteFile(path, []byte(`{"providers": {`), 0o600))
+	got := printInProject(t, project, home, "settings", "show", "--json")
+	require.Equal(t, 0, got.code, got.stderr)
+	d := decodeSettingsDump(t, got.stdout)
+	assert.Equal(t, "problem", d.ModelsFile.State)
+	found := false
+	for _, diag := range d.Diagnostics {
+		found = found || diag.Path == path
+	}
+	assert.True(t, found, "the problem of the user models.json is listed")
 }

@@ -49,16 +49,18 @@ func TestArgs(t *testing.T) {
 		{"--mode invalid", []string{"--mode", "x", "-p", "hi"}, base(func(o *options) { o.print = true; o.messages = []string{"hi"} }),
 			[]string{`Error: Invalid mode "x". Valid values: text, json`}},
 		{"--mode rpc is not an Ask mode", []string{"--mode", "rpc"}, base(nil), []string{`Error: Invalid mode "rpc". Valid values: text, json`}},
-		{"--provider", []string{"--provider", "openai"}, base(func(o *options) { o.provider = "openai"; o.model = "gpt-5.5"; o.modelGiven = true }), nil},
+		{"--provider", []string{"--provider", "openai"}, base(func(o *options) {
+			o.provider, o.model, o.modelGiven, o.providerGiven = "openai", "gpt-5.5", true, true
+		}), nil},
 		{"token plan defaults the model", []string{"--provider", anthropic.ProviderID}, base(func(o *options) {
 			o.provider = anthropic.ProviderID
 			o.model = anthropic.ModelID
-			o.modelGiven = true
+			o.modelGiven, o.providerGiven = true, true
 		}), nil},
 		{"token plan api key does not need --model", []string{"--provider", anthropic.ProviderID, "--api-key", "k"}, base(func(o *options) {
 			o.provider = anthropic.ProviderID
 			o.model = anthropic.ModelID
-			o.modelGiven = true
+			o.modelGiven, o.providerGiven = true, true
 			o.apiKey = "k"
 		}), nil},
 		{"--provider missing", []string{"--provider"}, base(nil), []string{"Error: --provider requires a value"}},
@@ -79,6 +81,31 @@ func TestArgs(t *testing.T) {
 		{"--help", []string{"--help"}, base(func(o *options) { o.help = true }), nil},
 		{"-h", []string{"-h"}, base(func(o *options) { o.help = true }), nil},
 		{"a value flag takes a dash token, as in Pi", []string{"--model", "--nope"}, base(func(o *options) { o.model = "--nope"; o.modelGiven = true }), nil},
+		// A model pattern is kept as the raw string: parseArgs has no model
+		// list, so neither the provider part nor the level is checked here.
+		{"--model pattern with a level", []string{"--model", "anthropic/claude-x:high"}, base(func(o *options) {
+			o.model, o.modelGiven = "anthropic/claude-x:high", true
+		}), nil},
+		{"--model with an unknown level is not checked yet", []string{"--model", "openai/gpt-5.5:hgih"}, base(func(o *options) {
+			o.model, o.modelGiven = "openai/gpt-5.5:hgih", true
+		}), nil},
+		{"--provider with --model", []string{"--provider", "openai", "--model", "gpt-5.5"}, base(func(o *options) {
+			o.provider, o.model, o.modelGiven, o.providerGiven = "openai", "gpt-5.5", true, true
+		}), nil},
+		{"--thinking with a pattern level", []string{"--thinking", "low", "--model", "a/b:high"}, base(func(o *options) {
+			o.thinking, o.model, o.modelGiven = "low", "a/b:high", true
+		}), nil},
+		{"--models comma list", []string{"--models", "anthropic/*, gpt-5.5:low"}, base(func(o *options) {
+			o.models = []string{"anthropic/*", "gpt-5.5:low"}
+		}), nil},
+		{"--models repeats and drops empty entries", []string{"--models", "a,,b", "--models", "c"}, base(func(o *options) {
+			o.models = []string{"a", "b", "c"}
+		}), nil},
+		{"--models missing", []string{"--models"}, base(nil), []string{"Error: --models requires a value"}},
+		{"--offline", []string{"--offline"}, base(func(o *options) { o.offline = true }), nil},
+		{"--api-key with a provider in the pattern", []string{"--api-key", "k", "--model", "anthropic/x"}, base(func(o *options) {
+			o.apiKey, o.model, o.modelGiven = "k", "anthropic/x", true
+		}), nil},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
@@ -90,6 +117,28 @@ func TestArgs(t *testing.T) {
 			}
 			assert.Equal(t, tt.diags, texts)
 		})
+	}
+}
+
+func TestModelPattern(t *testing.T) {
+	for _, tc := range []struct {
+		argv []string
+		want string
+	}{
+		{nil, ""},
+		{[]string{"--model", "gpt-5.5:low"}, "gpt-5.5:low"},
+		{[]string{"--model", "openai/gpt-5.5"}, "openai/gpt-5.5"},
+		{[]string{"--provider", "openai", "--model", "gpt-5.5"}, "openai/gpt-5.5"},
+		{[]string{"--provider", "openai", "--model", "openai/gpt-5.5:high"}, "openai/gpt-5.5:high"},
+		{[]string{"--provider", "openai"}, "openai/gpt-5.5"},
+		{[]string{"--provider", "local", "--model", "qwen3-coder:30b"}, "local/qwen3-coder:30b"},
+	} {
+		o, diags := parseArgs(tc.argv)
+		require.Empty(t, diags, "argv %v", tc.argv)
+		assert.Equal(t, tc.want, o.modelPattern(), "argv %v", tc.argv)
+	}
+	for _, flag := range []string{"--model <pattern>", "--models <patterns>", "--offline", "* does not match /"} {
+		assert.Contains(t, usage, flag)
 	}
 }
 
@@ -195,7 +244,7 @@ func TestParseSessionFlags(t *testing.T) {
 
 func TestACPCommandStillRejectsSessionFlags(t *testing.T) {
 	for _, flag := range []string{"--system-prompt", "--append-system-prompt", "--tools", "-t", "-nt", "--no-tools"} {
-		_, _, err := parseACPArgs([]string{flag})
+		_, err := parseACPArgs([]string{flag})
 		assert.Error(t, err, flag)
 	}
 }

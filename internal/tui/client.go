@@ -142,10 +142,12 @@ type Client interface {
 	// the flag sends every row and leaves it false. Default is the saved default.
 	Models(ctx context.Context) (protocol.ACPModelsResult, error)
 	// SetModel changes the model of an idle session. A readiness failure comes
-	// back as a *RequestError and the model stays as it was. With saveDefault the
-	// leader also keeps the choice as the default of new sessions; the result's
-	// DefaultSaved tells whether it did.
-	SetModel(ctx context.Context, modelID string, saveDefault bool) (protocol.ACPSetModelResult, error)
+	// back as a *RequestError and the model stays as it was. A level that is not
+	// empty changes the thinking level in the same call; the result echoes the
+	// level that the model allows. With saveDefault the leader also keeps the
+	// choice as the default of new sessions; the result's DefaultSaved tells
+	// whether it did.
+	SetModel(ctx context.Context, modelID string, level protocol.ThinkingLevel, saveDefault bool) (protocol.ACPSetModelResult, error)
 	SetThinking(ctx context.Context, level protocol.ThinkingLevel) (protocol.ThinkingLevel, error)
 	Usage(ctx context.Context) (protocol.ACPUsageResult, error)
 	// Skills lists the skills of the current session, which the command list

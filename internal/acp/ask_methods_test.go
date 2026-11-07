@@ -468,3 +468,27 @@ func TestAdapterUsageProjectionSumsKnownValuesOnly(t *testing.T) {
 	require.NoError(t, err)
 	require.NotContains(t, string(b), "private text")
 }
+
+func TestParseModelIDReadsProviderIDAndAPI(t *testing.T) {
+	t.Parallel()
+	for _, tc := range []struct {
+		in   string
+		want providers.Ref
+	}{
+		{"anthropic/claude-opus-4-5", providers.Ref{Provider: "anthropic", ID: "claude-opus-4-5"}},
+		{"openai/gpt-5.5@openai-responses", providers.Ref{Provider: "openai", ID: "gpt-5.5", API: providers.APIOpenAIResponses}},
+		{"a/b@x", providers.Ref{Provider: "a", ID: "b", API: "x"}},
+		{"openrouter/qwen/qwen3:free", providers.Ref{Provider: "openrouter", ID: "qwen/qwen3:free"}},
+		{"a/b@c@d", providers.Ref{Provider: "a", ID: "b@c", API: "d"}},
+	} {
+		got, err := parseModelID(tc.in)
+		require.NoError(t, err, tc.in)
+		require.Equal(t, tc.want, got, tc.in)
+	}
+	for _, in := range []string{"", "x", "/x", "x/", "a/@api", "a/b@", "@api"} {
+		_, err := parseModelID(in)
+		require.Error(t, err, in)
+		require.Equal(t, protocol.ACPErrInvalidModel, classify(err), in)
+		require.Equal(t, string(protocol.ACPErrInvalidModel)+": model id is not provider/id@api", err.Error(), in)
+	}
+}

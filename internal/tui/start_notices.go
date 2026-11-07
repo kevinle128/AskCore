@@ -167,12 +167,14 @@ func (s *sessionView) fallbackBlock() Block {
 // currentRef is the reference of the model of the session.
 func (s *sessionView) currentRef() modelRef { return s.refOf(s.modelID) }
 
-// addFallbackSlot puts the placeholder of a fallback notice at the end of the
-// transcript.
+// addFallbackSlot puts the placeholders of the fallback notice and of the
+// dropped-level notice at the end of the transcript.
 func (s *sessionView) addFallbackSlot() {
-	id := s.nextBlockID()
-	s.m.applyBlock(AppendBlockMsg{ID: id, Block: noRows{}, Stable: false})
-	s.starts = append(s.starts, id)
+	ids := [2]string{s.nextBlockID(), s.nextBlockID()}
+	for _, id := range ids {
+		s.m.applyBlock(AppendBlockMsg{ID: id, Block: noRows{}, Stable: false})
+	}
+	s.starts = append(s.starts, ids)
 }
 
 // settleStartsIfKnown fills the placeholders when the state of the current
@@ -184,13 +186,15 @@ func (s *sessionView) settleStartsIfKnown() {
 }
 
 // settleStarts replaces the placeholders with the trust note, the settings
-// problems and the fallback notice that the view knows, or with nothing, and
-// marks them stable.
+// problems, the fallback notice and the dropped-level notice that the view
+// knows, or with nothing, and marks them stable.
 func (s *sessionView) settleStarts() {
 	s.settleTrustSlots()
-	for _, id := range s.starts {
-		s.m.applyBlock(ReplaceBlockMsg{ID: id, Block: s.fallbackBlock()})
-		s.m.applyBlock(FinishBlockMsg{ID: id})
+	for _, ids := range s.starts {
+		s.m.applyBlock(ReplaceBlockMsg{ID: ids[0], Block: s.fallbackBlock()})
+		s.m.applyBlock(ReplaceBlockMsg{ID: ids[1], Block: s.levelDroppedBlock()})
+		s.m.applyBlock(FinishBlockMsg{ID: ids[0]})
+		s.m.applyBlock(FinishBlockMsg{ID: ids[1]})
 	}
 	s.starts = nil
 }

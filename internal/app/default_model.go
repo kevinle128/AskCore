@@ -2,8 +2,10 @@ package app
 
 import (
 	"context"
-
-	"go.uber.org/zap"
+	"errors"
+	"fmt"
+	"slices"
+	"strings"
 
 	"AskCore/internal/acp"
 	"AskCore/internal/auth"
@@ -30,9 +32,9 @@ type startChoice struct {
 }
 
 // newStartChoice builds the start choice over the model list that current
-// returns. initial is the demo model, or zero. The demo provider is always
-// usable; another provider is usable when service has a credential for it.
-func newStartChoice(initial providers.Model, current func() modelSnapshot, service *auth.Service) startChoice {
+// returns. initial is the demo model, or zero. usable is the usable rule (see
+// usableRule).
+func newStartChoice(initial providers.Model, current func() modelSnapshot, usable func(ctx context.Context, provider string) bool) startChoice {
 	isInitial := func(ref providers.Ref) bool {
 		return initial.ID != "" && ref.Provider == initial.Provider && ref.ID == initial.ID && (ref.API == "" || ref.API == initial.API)
 	}
@@ -56,35 +58,72 @@ func newStartChoice(initial providers.Model, current func() modelSnapshot, servi
 		inCatalog: func(ref providers.Ref) bool {
 			return isInitial(ref) || current().catalog.Contains(ref)
 		},
-		usable: func(ctx context.Context, provider string) bool {
-			if initial.ID != "" && provider == initial.Provider {
-				return true
-			}
-			return providerUsable(ctx, service, provider)
-		},
+		usable: usable,
 	}
 }
 
-// ChooseSavedModel chooses the start model of a run that has no UI and no
-// model list refresh, such as print mode. It uses the rules of a new session:
-// the saved default when it can be used, else the first usable model in
-// display order. The model list comes from the cache in home and the catalog,
-// with no network call. initial is the demo model; it is first in display
-// order and always usable, so it is the fallback.
-//
-// warning is one line for stderr when the saved default cannot be used, or
-// empty. It names the saved default, the reason and the model that is used. It
-// never holds a credential.
-func ChooseSavedModel(ctx context.Context, home string, service *auth.Service, initial providers.Model, saved string) (m providers.Model, warning string) {
-	cache, _ := settings.NewModelCache(home)
-	snap := buildModelSnapshot(ctx, providers.GeneratedCatalog(), readModelCache(ctx, cache, zap.NewNop()), service, zap.NewNop())
-	c := newStartChoice(initial, func() modelSnapshot { return snap }, service)
-	c.saved = func(context.Context) (string, error) { return saved, nil }
-	m, fb := c.pick(ctx)
-	if fb != nil {
-		warning = "Warning: default model " + fb.SavedDefault + " is not usable (" + fallbackReasonText(fb.Reason) + "); using " + acp.ModelID(m) + "."
+// ModelOptions are the model options of a session start: the command line
+// flags of print mode, or the session options of a client.
+type ModelOptions struct {
+	// Pattern is the start model pattern, [provider/]id[@api][:level], or
+	// empty. It wins over the scope and the saved default.
+	Pattern string
+	// Thinking is the explicit start thinking level, or empty. It wins over
+	// the level of Pattern and of a scope entry.
+	Thinking protocol.ThinkingLevel
+	// Scope are the scope entries of --models. Empty uses the enabledModels
+	// setting.
+	Scope []string
+	// PreferAPI picks the row of this API when Pattern has no "@api" and
+	// names one id on more than one API. Empty keeps such a pattern
+	// ambiguous.
+	PreferAPI providers.API
+}
+
+// ModelChoice is the start model of a session and what the choice found.
+type ModelChoice struct {
+	// Model is the start model; the zero model means no provider is usable.
+	Model providers.Model
+	// Level is the start thinking level, or empty to keep the default of the
+	// session. A level that the model drops is already off here.
+	Level protocol.ThinkingLevel
+	// Fallback names the saved default that could not be used, or nil.
+	Fallback *protocol.ACPModelFallback
+	// Dropped is the requested level that the model did not use because it
+	// has no thinking, or nil.
+	Dropped *protocol.ACPLevelDropped
+	// Scope are the scope entries of the session: --models, else
+	// enabledModels.
+	Scope []string
+	// Diagnostics are the problems of the scope entries.
+	Diagnostics []settings.Diagnostic
+}
+
+// FallbackWarning is one line for stderr when the saved default could not be
+// used, or "". It names the saved default, the reason and the model that is
+// used. It never holds a credential.
+func (c ModelChoice) FallbackWarning() string {
+	if c.Fallback == nil {
+		return ""
 	}
-	return m, warning
+	return "Warning: default model " + c.Fallback.SavedDefault + " is not usable (" + fallbackReasonText(c.Fallback.Reason) + "); using " + acp.ModelID(c.Model) + "."
+}
+
+// ChooseStartModel chooses the start model of a run that has no UI and no
+// model list refresh, such as print mode, with the rules of a new session
+// (see startChoice.choose). The model list comes from view, which
+// LoadModelView built with no network call; a nil view has the demo model
+// only. initial is the demo model; it is first in display order and always
+// usable, so it is the last fallback. eff gives the saved default and the
+// enabledModels setting.
+func ChooseStartModel(ctx context.Context, view *ModelView, service *auth.Service, initial providers.Model, eff settings.Effective, opts ModelOptions) (ModelChoice, error) {
+	snap := view.snapshot()
+	if snap == nil {
+		snap = &modelSnapshot{}
+	}
+	c := newStartChoice(initial, func() modelSnapshot { return *snap }, usableRule(initial, service, func() *modelSnapshot { return snap }))
+	c.saved = func(context.Context) (string, error) { return eff.DefaultModel, nil }
+	return c.choose(ctx, opts, eff)
 }
 
 // fallbackReasonText words why the saved default was not used. The TUI uses
@@ -99,6 +138,160 @@ func fallbackReasonText(r protocol.ACPFallbackReason) string {
 		return "not in account list"
 	}
 	return "not available"
+}
+
+// choose chooses the start model of a new session, in this order:
+//
+//  1. the model of opts.Pattern; a pattern that does not resolve is an error.
+//     A thinking level suffix that is not a level is an unknown model here;
+//  2. the scope (opts.Scope, else the enabledModels setting): the saved
+//     default when it is in the scope and usable, else the first scope row
+//     of a usable provider;
+//  3. the saved default, then the first usable model (see pick).
+//
+// The level is opts.Thinking, else the level of the pattern or of the scope
+// entry. When the chosen model has no thinking, a requested level other than
+// off is dropped: Level is off and Dropped names it.
+func (c startChoice) choose(ctx context.Context, opts ModelOptions, eff settings.Effective) (ModelChoice, error) {
+	rows := c.rows()
+	out := ModelChoice{Scope: slices.Clone(opts.Scope)}
+	fromFlag := len(opts.Scope) > 0
+	if !fromFlag {
+		out.Scope = slices.Clone(eff.EnabledModels)
+	}
+	var scoped []providers.ScopedModel
+	if len(out.Scope) > 0 {
+		var problems []providers.ScopeProblem
+		scoped, problems = providers.ExpandScope(rows, out.Scope)
+		out.Diagnostics = scopeDiagnostics(rows, out.Scope, problems, fromFlag, eff)
+	}
+	var level protocol.ThinkingLevel
+	switch {
+	case opts.Pattern != "":
+		r, err := resolveStartPattern(rows, opts.Pattern, opts.PreferAPI)
+		if err != nil {
+			return ModelChoice{}, err
+		}
+		out.Model, level = r.Model, r.Level
+	default:
+		if sm, ok := c.pickScoped(ctx, scoped); ok {
+			out.Model, level = sm.Model, sm.Level
+			break
+		}
+		out.Model, out.Fallback = c.pick(ctx)
+	}
+	if opts.Thinking != "" {
+		level = opts.Thinking
+	}
+	if out.Model.ID != "" && level != "" && level != protocol.ThinkingOff && !out.Model.Reasoning {
+		out.Dropped = &protocol.ACPLevelDropped{ModelID: acp.ModelID(out.Model), Level: level}
+		level = protocol.ThinkingOff
+	}
+	out.Level = level
+	return out, nil
+}
+
+// pickScoped returns the saved default when it is in the scope and can be
+// used, else the first scope row of a usable provider.
+func (c startChoice) pickScoped(ctx context.Context, scoped []providers.ScopedModel) (providers.ScopedModel, bool) {
+	if len(scoped) == 0 {
+		return providers.ScopedModel{}, false
+	}
+	if c.saved != nil {
+		if id, err := c.saved(ctx); err == nil && id != "" {
+			if saved, reason := c.savedModel(ctx, id); reason == "" {
+				for _, sm := range scoped {
+					if acp.ModelID(sm.Model) == acp.ModelID(saved) {
+						return sm, true
+					}
+				}
+			}
+		}
+	}
+	for _, sm := range scoped {
+		if c.usable(ctx, sm.Model.Provider) {
+			return sm, true
+		}
+	}
+	return providers.ScopedModel{}, false
+}
+
+// resolveStartPattern resolves the start pattern with no invalid-level
+// fallback, so a typo in the level never starts a session with another level.
+// When the pattern names one id on two APIs and prefer is set, the row of
+// prefer wins.
+func resolveStartPattern(rows []providers.Model, pattern string, prefer providers.API) (providers.Resolved, error) {
+	r, err := providers.ResolvePattern(rows, pattern, providers.PatternOptions{})
+	var me *providers.ModelError
+	if prefer == "" || !errors.As(err, &me) || !errors.Is(err, providers.ErrAmbiguousModel) || strings.Contains(pattern, "@") {
+		return r, err
+	}
+	// The choices are "provider/id@api" names; one id on two APIs is the only
+	// ambiguity that prefer settles.
+	base := ""
+	for _, choice := range me.Choices {
+		name, _, _ := strings.Cut(choice, "@")
+		if base != "" && name != base {
+			return r, err
+		}
+		base = name
+	}
+	retry := pattern + "@" + string(prefer)
+	if i := strings.LastIndex(pattern, ":"); i >= 0 && validLevel(protocol.ThinkingLevel(pattern[i+1:])) {
+		retry = pattern[:i] + "@" + string(prefer) + pattern[i:]
+	}
+	if again, rerr := providers.ResolvePattern(rows, retry, providers.PatternOptions{}); rerr == nil {
+		return again, nil
+	}
+	return r, err
+}
+
+func validLevel(l protocol.ThinkingLevel) bool {
+	switch l {
+	case protocol.ThinkingOff, protocol.ThinkingMinimal, protocol.ThinkingLow, protocol.ThinkingMedium,
+		protocol.ThinkingHigh, protocol.ThinkingXHigh, protocol.ThinkingMax:
+		return true
+	}
+	return false
+}
+
+// scopeDiagnostics turns the problems of the scope entries into settings
+// diagnostics. An entry of --models is the text of the user, so its own text
+// is shown under the key "--models". An entry of the enabledModels setting is
+// file content, so the diagnostic names its position and a fixed text only.
+func scopeDiagnostics(rows []providers.Model, entries []string, problems []providers.ScopeProblem, fromFlag bool, eff settings.Effective) []settings.Diagnostic {
+	var out []settings.Diagnostic
+	for _, p := range problems {
+		if fromFlag {
+			out = append(out, settings.Diagnostic{Key: "--models", Text: p.Text})
+			continue
+		}
+		out = append(out, settings.Diagnostic{
+			Layer: eff.Sources[settings.EnabledModelsKey],
+			Path:  eff.KeyPath(settings.EnabledModelsKey),
+			Key:   fmt.Sprintf("%s[%d]", settings.EnabledModelsKey, slices.Index(entries, p.Entry)),
+			Text:  scopeProblemText(rows, p),
+		})
+	}
+	return out
+}
+
+// scopeProblemText is the fixed text of one scope problem. A glob problem has
+// a fixed text already; a pattern problem is read again to learn its class.
+func scopeProblemText(rows []providers.Model, p providers.ScopeProblem) string {
+	if strings.ContainsAny(p.Entry, "*?[") {
+		return p.Text
+	}
+	r, err := providers.ResolvePattern(rows, p.Entry, providers.PatternOptions{AllowInvalidLevel: true})
+	switch {
+	case errors.Is(err, providers.ErrAmbiguousModel):
+		return "names more than one model; it is ignored"
+	case err != nil:
+		return "matches no model; it is ignored"
+	case r.Warning != "":
+		return "the thinking level is not valid; the default level is used"
+	}
+	return "is not valid; it is ignored"
 }
 
 // pick chooses the model of a new session, in this order:

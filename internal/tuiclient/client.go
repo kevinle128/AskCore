@@ -479,6 +479,13 @@ func (c *Client) NewSession(ctx context.Context, cwd string, opts tui.NewSession
 	if out.SessionID == "" {
 		return tui.SessionInfo{}, errors.New("tuiclient: session/new gave no session id")
 	}
+	if missing := unappliedModelOption(opts.Flags, out.Meta[protocol.ACPAppliedOptionsMetaKey]); missing != "" {
+		// An older leader started the session on another model. The session
+		// is closed, so it does not stay on the leader, and the start fails:
+		// a silent start on the default model would hide the flag.
+		_ = c.request(ctx, conn, "session/close", map[string]any{"sessionId": out.SessionID}, nil)
+		return tui.SessionInfo{}, fmt.Errorf("the leader did not apply %s; restart it with this build", missing)
+	}
 	acked, _ := out.Meta[protocol.ACPSessionOptionsMetaKey].(bool)
 	info := tui.SessionInfo{ID: out.SessionID, Role: protocol.ACPRoleDriver, Cwd: abs, FlagsIgnored: !opts.Flags.IsZero() && !acked}
 	c.setSession(info)
@@ -486,6 +493,27 @@ func (c *Client) NewSession(ctx context.Context, cwd string, opts tui.NewSession
 		return info, err
 	}
 	return info, nil
+}
+
+// unappliedModelOption names the first model flag that flags hold and that
+// the echo of the host does not, or "". A host that does not know the model
+// options sends no echo.
+func unappliedModelOption(flags protocol.ACPSessionOptions, echo any) string {
+	var applied protocol.ACPAppliedOptions
+	if echo != nil {
+		if data, err := json.Marshal(echo); err == nil {
+			_ = json.Unmarshal(data, &applied)
+		}
+	}
+	switch {
+	case flags.Model != "" && applied.Model == "":
+		return "--model"
+	case flags.Thinking != "" && applied.Thinking == "":
+		return "--thinking"
+	case len(flags.Models) > 0 && len(applied.Models) == 0:
+		return "--models"
+	}
+	return ""
 }
 
 // Attach joins a live session as an observer and follows it. When the call
@@ -643,15 +671,16 @@ func (c *Client) Models(ctx context.Context) (protocol.ACPModelsResult, error) {
 	return out, err
 }
 
-// SetModel changes the model of an idle session. With saveDefault the leader
-// also keeps the choice as the default of new sessions.
-func (c *Client) SetModel(ctx context.Context, modelID string, saveDefault bool) (protocol.ACPSetModelResult, error) {
+// SetModel changes the model of an idle session, and the thinking level when
+// level is not empty. With saveDefault the leader also keeps the choice as the
+// default of new sessions.
+func (c *Client) SetModel(ctx context.Context, modelID string, level protocol.ThinkingLevel, saveDefault bool) (protocol.ACPSetModelResult, error) {
 	var out protocol.ACPSetModelResult
 	conn, sid, err := c.withSession()
 	if err != nil {
 		return out, err
 	}
-	err = c.request(ctx, conn, protocol.ACPSetModel, protocol.ACPModelRequest{SessionID: sid, ModelID: modelID, SaveDefault: saveDefault}, &out)
+	err = c.request(ctx, conn, protocol.ACPSetModel, protocol.ACPModelRequest{SessionID: sid, ModelID: modelID, SaveDefault: saveDefault, ThinkingLevel: level}, &out)
 	return out, err
 }
 

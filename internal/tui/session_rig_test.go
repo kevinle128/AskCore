@@ -67,11 +67,15 @@ type fakeClient struct {
 	logout         protocol.ACPLogoutResult
 	logoutErr      error
 	savedDefault   map[string]bool // model id -> saveDefault of the last SetModel
+	// askedLevels are the thinking levels of the SetModel calls in order.
+	askedLevels []protocol.ThinkingLevel
 	// defaultNotSaved is the reason that SetModel gives for a refused default
 	// save. Empty means that a requested save happens.
 	defaultNotSaved protocol.ACPDefaultNotSaved
-	// modelsErrAfter makes every Models call after that many calls fail.
+	// modelsErrAfter makes every Models call after that many calls fail, and
+	// modelsErrUntil makes the first calls up to that count fail.
 	modelsErrAfter int
+	modelsErrUntil int
 	modelsCalls    int
 
 	// Project trust. trust is the answer of TrustState; nil answers a folder
@@ -274,19 +278,20 @@ func (f *fakeClient) Models(context.Context) (protocol.ACPModelsResult, error) {
 	f.mu.Lock()
 	defer f.mu.Unlock()
 	f.modelsCalls++
-	if f.modelsErrAfter > 0 && f.modelsCalls > f.modelsErrAfter {
+	if (f.modelsErrAfter > 0 && f.modelsCalls > f.modelsErrAfter) || f.modelsCalls <= f.modelsErrUntil {
 		return protocol.ACPModelsResult{}, errors.New("models are not available")
 	}
 	return f.models, nil
 }
 
-func (f *fakeClient) SetModel(_ context.Context, id string, saveDefault bool) (protocol.ACPSetModelResult, error) {
+func (f *fakeClient) SetModel(_ context.Context, id string, asked protocol.ThinkingLevel, saveDefault bool) (protocol.ACPSetModelResult, error) {
 	f.record("set_model:" + id)
 	f.mu.Lock()
 	if f.savedDefault == nil {
 		f.savedDefault = map[string]bool{}
 	}
 	f.savedDefault[id] = saveDefault
+	f.askedLevels = append(f.askedLevels, asked)
 	gate, err := f.setModelGate[id], f.setModelErr[id]
 	f.mu.Unlock()
 	if err != nil {
@@ -301,7 +306,12 @@ func (f *fakeClient) SetModel(_ context.Context, id string, saveDefault bool) (p
 	for _, m := range f.models.Models {
 		if m.ModelID == id {
 			row = m
-			if m.Reasoning {
+			// The host keeps an asked level on a reasoning model and drops it to
+			// off on a model without thinking.
+			switch {
+			case m.Reasoning && asked != "":
+				level = asked
+			case m.Reasoning:
 				level = protocol.ThinkingMedium
 			}
 		}

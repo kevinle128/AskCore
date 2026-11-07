@@ -35,6 +35,10 @@ type NativeAgentConfig struct {
 	// Home is the Ask home directory, which holds the task output of the
 	// session. Empty selects ASK_HOME (through Env when it is set) or ~/.ask.
 	Home string
+	// Models is the model view of the process (AgentSpec.Models). The requests
+	// read the key and the headers of the user models.json from it. Nil reads
+	// no user file.
+	Models *ModelView
 }
 
 // NewNativeAgent creates one independent Agent with all supported native wires.
@@ -81,7 +85,7 @@ func NewNativeAgent(in NativeAgentConfig) (*agent.Agent, error) {
 	cfg.Registry = wires
 	cfg.Stream = wires.Stream
 	if in.Auth != nil {
-		cfg = BindAuth(cfg, in.Auth, wires)
+		cfg = BindModelAuth(cfg, in.Auth, wires, in.Models)
 		stream, ready := cfg.Stream, cfg.Ready
 		cfg.Stream = func(ctx context.Context, m providers.Model, r providers.TranscriptRequest, o providers.StreamOptions) *providers.Stream {
 			if m.Provider == "faux" {
@@ -173,7 +177,15 @@ func plainName(name string) bool {
 
 // NativeAuthReady checks the effective method without changing the selected credential.
 // Matching saved OAuth credentials can refresh through the normal auth resolver.
+// It reads no user models.json.
 func NativeAuthReady(ctx context.Context, s *auth.Service, m providers.Model, key, requestedMethod string) error {
+	return nativeAuthReady(ctx, s, nil, m, key, requestedMethod)
+}
+
+// nativeAuthReady is NativeAuthReady over the stored snapshot snap, so a key of
+// the user models.json for the endpoint of m counts. A row that the file made
+// and no longer has is not ready.
+func nativeAuthReady(ctx context.Context, s *auth.Service, snap *modelSnapshot, m providers.Model, key, requestedMethod string) error {
 	if m.Provider == "faux" {
 		if requestedMethod != "" {
 			return auth.ErrMethod
@@ -198,7 +210,11 @@ func NativeAuthReady(ctx context.Context, s *auth.Service, m providers.Model, ke
 			return fmt.Errorf("%w: requested method is not the configured method", auth.ErrMethod)
 		}
 	}
-	binding, err := s.Resolve(ctx, m, key)
+	entry, state := snap.lookup(m)
+	if state == lookupChanged {
+		return errModelConfigChanged
+	}
+	binding, err := s.ResolveWith(ctx, auth.ResolveRequest{Model: m, Override: key, Config: entry.configKey()})
 	if err != nil {
 		return markModelAccess(err)
 	}

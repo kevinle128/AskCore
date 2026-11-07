@@ -101,7 +101,11 @@ type noticeView struct {
 	err   bool
 	// ok puts the success glyph before the text: a result line.
 	ok bool
+	// cycle is the result of a model cycle press; it replaces text.
+	cycle *cycleNotice
 }
+
+func (n noticeView) shown() bool { return n.text != "" || n.cycle != nil }
 
 type reconnectView struct {
 	attempt int
@@ -164,11 +168,14 @@ type sessionView struct {
 	modelSeq uint64
 	// fallback is the saved default that the session did not start on.
 	fallback *protocol.ACPModelFallback
+	// levelDropped is the thinking level that the start model did not use.
+	levelDropped *protocol.ACPLevelDropped
 	// baseline is the cursor of the last follow cut. A model event at or below
 	// it is already part of the state.
 	baseline protocol.ACPCursor
-	// starts are the block ids of fallback notices that wait for the state.
-	starts    []string
+	// starts are the block ids of the fallback and dropped-level notices that
+	// wait for the state.
+	starts    [][2]string
 	trace     string
 	thinking  protocol.ThinkingLevel
 	thinkTry  protocol.ThinkingLevel
@@ -179,6 +186,13 @@ type sessionView struct {
 
 	sel          *selector
 	openingModel bool
+	// cycling is true while the list read or the model change of a cycle press
+	// waits. cycleFetch and cycleReq are the token and the request of that press.
+	cycling    bool
+	cycleFetch uint64
+	cycleReq   uint64
+	// shownProblems is the last set of settings problems that the pane showed.
+	shownProblems []protocol.ACPDiagnostic
 
 	// pbox is the provider box and dlg the login or removal box. At most one of
 	// them is open; a flow replaces the provider box with its own box.
@@ -194,6 +208,7 @@ type sessionView struct {
 	fetchSeq     uint64
 	appliedFetch uint64
 	modelList    protocol.ACPModelsResult
+	modelListGen uint64
 	// ownGen is the latest providers generation that this client caused. A
 	// change notice at or below it is not shown. deferred holds notices that
 	// arrived while a change of this client was still open.

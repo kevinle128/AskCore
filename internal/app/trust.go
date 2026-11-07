@@ -139,12 +139,18 @@ func sessionTrust(s SessionStart) *acp.SessionTrust {
 		Trust:        protocol.ACPSessionTrust{Trusted: s.Trust.Decision.Trusted, Source: string(s.Trust.Decision.Source)},
 		ThinkingFold: string(s.Settings.ThinkingFold),
 	}
-	for _, d := range s.Settings.Diagnostics {
-		t.Diagnostics = append(t.Diagnostics, protocol.ACPDiagnostic{Layer: string(d.Layer), Path: d.Path, Key: d.Key, Text: d.Text})
-	}
+	t.Diagnostics = acpDiagnostics(s.Settings.Diagnostics)
 	t.Diagnostics = append(t.Diagnostics, s.contextDiagnostics()...)
 	t.Diagnostics = append(t.Diagnostics, s.cappedSkillDiagnostics()...)
 	return t
+}
+
+func acpDiagnostics(in []settings.Diagnostic) []protocol.ACPDiagnostic {
+	var out []protocol.ACPDiagnostic
+	for _, d := range in {
+		out = append(out, protocol.ACPDiagnostic{Layer: string(d.Layer), Path: d.Path, Key: d.Key, Text: d.Text})
+	}
+	return out
 }
 
 // stateResult is the wire form of an outcome.

@@ -68,6 +68,14 @@ type options struct {
 	// modelGiven is true when --provider or --model is on the command line.
 	// Then print mode does not use the saved default model.
 	modelGiven bool
+	// providerGiven is true when --provider is on the command line.
+	providerGiven bool
+	// models are the scope entries of --models: patterns and globs.
+	models []string
+	// offline turns off the network refresh of the model list, as
+	// ASK_DISABLE_MODEL_REFRESH=1 does, for this process and a leader that it
+	// starts.
+	offline bool
 	// session holds the flags of one session: the prompt text (a file given on
 	// the command line is already read) and the tool selection. The TUI sends
 	// them to the host in session/new _meta, and print mode applies them
@@ -101,9 +109,12 @@ var thinkingLevels = []protocol.ThinkingLevel{
 
 // valueFlags are the flags that take the next token as their value.
 var valueFlags = map[string]func(o *options, v string) *diagnostic{
-	"--provider": func(o *options, v string) *diagnostic { o.provider, o.modelGiven = v, true; return nil },
-	"--model":    func(o *options, v string) *diagnostic { o.model, o.modelGiven = v, true; return nil },
-	"--api-key":  func(o *options, v string) *diagnostic { o.apiKey = v; return nil },
+	"--provider": func(o *options, v string) *diagnostic {
+		o.provider, o.modelGiven, o.providerGiven = v, true, true
+		return nil
+	},
+	"--model":   func(o *options, v string) *diagnostic { o.model, o.modelGiven = v, true; return nil },
+	"--api-key": func(o *options, v string) *diagnostic { o.apiKey = v; return nil },
 	"--thinking": func(o *options, v string) *diagnostic {
 		level := protocol.ThinkingLevel(v)
 		if !slices.Contains(thinkingLevels, level) {
@@ -134,8 +145,36 @@ var valueFlags = map[string]func(o *options, v string) *diagnostic{
 		o.session.AppendSystemPrompt = append(o.session.AppendSystemPrompt, text)
 		return d
 	},
-	"--tools": addToolNames,
-	"-t":      addToolNames,
+	"--tools":  addToolNames,
+	"-t":       addToolNames,
+	"--models": addModelPatterns,
+}
+
+// addModelPatterns adds the entries of a comma list to the scope. Empty
+// entries are dropped. The entries are resolved later, against the model list.
+func addModelPatterns(o *options, v string) *diagnostic {
+	for entry := range strings.SplitSeq(v, ",") {
+		if entry = strings.TrimSpace(entry); entry != "" {
+			o.models = append(o.models, entry)
+		}
+	}
+	return nil
+}
+
+// modelPattern returns the model pattern of the command line: "P/M" for
+// --provider P with --model M or with the default model of P, the --model
+// value alone without --provider, and "" when neither flag is given. A model
+// that already starts with "P/" is not prefixed again.
+func (o options) modelPattern() string {
+	switch {
+	case o.providerGiven && strings.HasPrefix(o.model, o.provider+"/"):
+		return o.model
+	case o.providerGiven:
+		return o.provider + "/" + o.model
+	case o.modelGiven:
+		return o.model
+	}
+	return ""
 }
 
 // addToolNames adds the names of a comma list to the tool selection. A name
@@ -208,6 +247,8 @@ func parseArgs(argv []string) (options, []diagnostic) {
 			o.help = true
 		case arg == "--no-leader":
 			o.noLeader = true
+		case arg == "--offline":
+			o.offline = true
 		case arg == "--no-tools" || arg == "-nt":
 			o.session.NoTools = true
 		case trustFlags[arg] != "":
@@ -310,11 +351,19 @@ Usage:
 Options:
   --print, -p           Non-interactive mode: run the prompt, print the reply and exit
   --mode <mode>         Output mode: text (default) or json
-  --provider <name>     Provider name: faux, alibaba-token-plan, anthropic, openai, xai
-                        (default: the saved defaultModel, else faux)
-  --model <id>          Model id (default: faux-1, or deepseek-v4.1-flash for alibaba-token-plan)
+  --provider <name>     Provider name: faux, alibaba-token-plan, anthropic, openai, xai,
+                        or a provider of models.json (default: the scope or the saved defaultModel, else faux)
+  --model <pattern>     Model: [provider/]id[@api][:level], for example anthropic/claude-sonnet-4-6:high.
+                        An id, an alias or a part of an id; an id on two providers is ambiguous.
+                        With --provider P the pattern is P/<pattern> (default model of P when absent)
+  --models <patterns>   Models to start on and to cycle through, comma separated; repeat it to add more.
+                        A pattern or a glob with *, ? or [...], with an optional :level.
+                        * does not match /, so openai/* matches openai/gpt-5.5 but not
+                        openrouter/qwen/qwen3; use openrouter/*/* for that. Replaces enabledModels
   --api-key <key>       API key for the provider (requires --model)
-  --thinking <level>    Thinking level: off, minimal, low, medium, high, xhigh, max
+  --thinking <level>    Thinking level: off, minimal, low, medium, high, xhigh, max; wins over :level
+  --offline             Do not refresh the model list from the network (as ASK_DISABLE_MODEL_REFRESH=1);
+                        a leader that this command starts gets it too, a running leader keeps its setting
   --max-turns <n>       Print mode: end the run after n turns, turns of background notices included
   --system-prompt <text|file>
                         Replace the default system prompt (a file path is read now)

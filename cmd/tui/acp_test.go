@@ -90,18 +90,18 @@ func TestACPArgsAcceptApprove(t *testing.T) {
 		{[]string{"--no-approve"}, protocol.ACPTrustDeny},
 		{[]string{"-na"}, protocol.ACPTrustDeny},
 	} {
-		help, trust, err := parseACPArgs(tc.argv)
+		args, err := parseACPArgs(tc.argv)
 		require.NoError(t, err, "argv %v", tc.argv)
-		assert.False(t, help)
-		assert.Equal(t, tc.want, trust, "argv %v", tc.argv)
+		assert.False(t, args.help)
+		assert.Equal(t, tc.want, args.trust, "argv %v", tc.argv)
 	}
-	help, _, err := parseACPArgs([]string{"--help"})
+	args, err := parseACPArgs([]string{"--help"})
 	require.NoError(t, err)
-	assert.True(t, help)
-	_, _, err = parseACPArgs([]string{"--approve", "--no-approve"})
+	assert.True(t, args.help)
+	_, err = parseACPArgs([]string{"--approve", "--no-approve"})
 	require.EqualError(t, err, "use only one of --approve and --no-approve")
 	for _, argv := range [][]string{{"foo"}, {"--approve", "foo"}, {"--help", "--approve"}} {
-		_, _, err = parseACPArgs(argv)
+		_, err = parseACPArgs(argv)
 		require.Error(t, err, "argv %v", argv)
 		assert.Contains(t, err.Error(), "acp does not accept", "argv %v", argv)
 	}

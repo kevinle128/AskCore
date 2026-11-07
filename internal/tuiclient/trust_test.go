@@ -126,3 +126,58 @@ func TestTUIClientSessionFlagsAcknowledged(t *testing.T) {
 	require.NoError(t, err)
 	require.False(t, info.FlagsIgnored)
 }
+
+// A host that does not echo the model options is older than this client and
+// dropped them. The start fails with a clear message, and the session that the
+// host made is closed.
+func TestSessionStartFailsWhenHostDoesNotEchoModel(t *testing.T) {
+	for _, tc := range []struct {
+		name  string
+		flags protocol.ACPSessionOptions
+		echo  any
+		want  string
+	}{
+		{"model", protocol.ACPSessionOptions{Model: "openai/gpt-5.5:high"}, nil, "the leader did not apply --model; restart it with this build"},
+		{"thinking", protocol.ACPSessionOptions{Thinking: protocol.ThinkingLow}, nil, "the leader did not apply --thinking; restart it with this build"},
+		{"models", protocol.ACPSessionOptions{Models: []string{"openai/*"}}, nil, "the leader did not apply --models; restart it with this build"},
+		{"part of the echo", protocol.ACPSessionOptions{Model: "m", Models: []string{"openai/*"}}, protocol.ACPAppliedOptions{Model: "m"}, "the leader did not apply --models; restart it with this build"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			meta := map[string]any{protocol.ACPSessionOptionsMetaKey: true}
+			if tc.echo != nil {
+				meta[protocol.ACPAppliedOptionsMetaKey] = tc.echo
+			}
+			sc := newScript(map[string]func(sent) (any, string, bool){
+				"session/new":      fixed(map[string]any{"sessionId": "s1", "_meta": meta}),
+				"session/close":    fixed(map[string]any{}),
+				protocol.ACPFollow: fixed(protocol.ACPFollowResult{SubscriptionID: "sub", Cursor: protocol.ACPCursor{Epoch: "e", Seq: 1}}),
+			})
+			c := openScripted(t, sc, tui.ModeInProcess, "")
+			defer func() { require.NoError(t, c.Close()) }()
+
+			_, err := c.NewSession(context.Background(), "/w", tui.NewSessionOptions{Flags: tc.flags})
+			require.EqualError(t, err, tc.want)
+			closes := sc.byMethod("session/close")
+			require.Len(t, closes, 1)
+			require.JSONEq(t, `{"sessionId":"s1"}`, string(closes[0].Params))
+			require.Empty(t, sc.byMethod(protocol.ACPFollow), "the client does not follow the dropped session")
+		})
+	}
+}
+
+func TestSessionStartAcceptsEchoedModelOptions(t *testing.T) {
+	flags := protocol.ACPSessionOptions{Model: "openai/gpt-5.5:high", Thinking: protocol.ThinkingLow, Models: []string{"openai/*"}}
+	sc := newScript(map[string]func(sent) (any, string, bool){
+		"session/new": fixed(map[string]any{"sessionId": "s1", "_meta": map[string]any{
+			protocol.ACPSessionOptionsMetaKey: true, protocol.ACPAppliedOptionsMetaKey: flags.ModelOptions(),
+		}}),
+		protocol.ACPFollow: fixed(protocol.ACPFollowResult{SubscriptionID: "sub", Cursor: protocol.ACPCursor{Epoch: "e", Seq: 1}}),
+	})
+	c := openScripted(t, sc, tui.ModeInProcess, "")
+	defer func() { require.NoError(t, c.Close()) }()
+	info, err := c.NewSession(context.Background(), "/w", tui.NewSessionOptions{Flags: flags})
+	require.NoError(t, err)
+	require.False(t, info.FlagsIgnored)
+	require.JSONEq(t, `{"cwd":"/w","mcpServers":[],"_meta":{"ask.dev/session":{"model":"openai/gpt-5.5:high","thinking":"low","models":["openai/*"]}}}`,
+		string(sc.byMethod("session/new")[0].Params))
+}

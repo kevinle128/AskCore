@@ -508,6 +508,12 @@ func (s *sessionView) addTrustSlots() {
 // this client started shows them.
 func (s *sessionView) settleTrustSlots() {
 	own := s.start.session != "" && s.stateSession == s.start.session
+	if len(s.trustSlots) > 0 {
+		s.shownProblems = nil
+		if own {
+			s.shownProblems = append([]protocol.ACPDiagnostic(nil), s.diagnostics...)
+		}
+	}
 	for _, ids := range s.trustSlots {
 		var note, diag Block = noRows{}, noRows{}
 		if own {

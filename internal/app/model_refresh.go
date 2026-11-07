@@ -74,12 +74,15 @@ type ModelRefresh struct {
 
 // modelSnapshot is one immutable view of the model list.
 type modelSnapshot struct {
-	// set is the list that a session can select: the catalog, the overlay and
-	// the account lists.
+	// set is the list that a session can select: the catalog, the overlay,
+	// the account lists and the user models.json.
 	set *providers.ModelSet
 	// catalog is the same list without the account lists. A model in catalog
 	// and not in set is a model that the account list does not have.
 	catalog *providers.ModelSet
+	// user holds the key and header tables of the user models.json and its
+	// problems.
+	user userModels
 }
 
 // fileStamp is what a reader compares to see a write of another process.
@@ -122,6 +125,12 @@ type modelRefresher struct {
 	// snapshot of a newer one.
 	loadMu sync.Mutex
 	stamp  fileStamp
+	// files is the one loader of the user models.json of the process, and
+	// fileGen the generation of the file in the current snapshot.
+	files   *settings.ModelsFiles
+	fileGen uint64
+	// existing is the result of existingProviders, made once.
+	existing []string
 
 	mu           sync.Mutex
 	stopped      bool
@@ -157,6 +166,12 @@ func newModelRefresher(home string, service *auth.Service, cfg ModelRefresh) (*m
 	} else {
 		r.log.Warn("model cache unavailable", zap.Error(err))
 	}
+	r.existing = existingProviders(r.base, service)
+	files, err := settings.NewModelsFiles(home, r.existing)
+	if err != nil {
+		return nil, err
+	}
+	r.files = files
 	r.ctx, r.cancel = context.WithCancel(context.Background())
 	r.Load()
 	return r, nil
@@ -182,34 +197,52 @@ func (r *modelRefresher) currentGeneration() uint64 {
 	return fn()
 }
 
-// Current returns the snapshot. It loads the cache again first when another
-// writer changed the file since the last load.
+// Current returns the snapshot. It builds the snapshot again first when
+// another writer changed the cache file, or when the user models.json changed,
+// since the last build. Only the rebuild points call it: the session start,
+// the model list and the model switch. A request reads Snapshot.
 func (r *modelRefresher) Current() modelSnapshot {
-	r.reloadIfChanged()
+	r.load(false)
 	return *r.snap.Load()
 }
 
-// Load builds the snapshot from the cache and swaps it in. It makes no
-// network call. A missing, unreadable or unsafe cache counts as empty: the
-// catalog still gives a list.
-func (r *modelRefresher) Load() {
+// Snapshot returns the stored snapshot with an atomic load. It reads no file,
+// takes no lock and builds nothing, so the request path uses it.
+func (r *modelRefresher) Snapshot() *modelSnapshot { return r.snap.Load() }
+
+func (r *modelRefresher) view() *ModelView { return &ModelView{load: r.Snapshot} }
+
+// Load builds the snapshot from the cache and the user models.json and swaps
+// it in. It runs after each write of the cache. It makes no network call. A
+// missing, unreadable or unsafe cache counts as empty: the catalog still gives
+// a list.
+func (r *modelRefresher) Load() { r.load(true) }
+
+// load builds the snapshot when force is set or when an input changed. When
+// the user file changed, the cached value commands are forgotten, so a removed
+// or changed command does not run again.
+func (r *modelRefresher) load(force bool) {
 	r.loadMu.Lock()
 	defer r.loadMu.Unlock()
 	// Stat before the read: a write between the two makes the stamp older than
 	// the data, so the next check loads again rather than missing the write.
-	r.stamp = r.statCache()
-	data := r.readCache()
-	snap := buildModelSnapshot(context.WithoutCancel(r.ctx), r.base, data, r.service, r.log)
-	r.snap.Store(&snap)
-}
-
-func (r *modelRefresher) reloadIfChanged() {
-	r.loadMu.Lock()
-	changed := r.statCache() != r.stamp
-	r.loadMu.Unlock()
-	if changed {
-		r.Load()
+	stamp := r.statCache()
+	file, problems, generation := r.files.Load()
+	if !force && stamp == r.stamp && generation == r.fileGen {
+		return
 	}
+	if r.fileGen != 0 && generation != r.fileGen && r.service != nil {
+		r.service.Values().ForgetAll()
+	}
+	r.stamp, r.fileGen = stamp, generation
+	data := r.readCache()
+	var former map[modelKey]bool
+	if prev := r.snap.Load(); prev != nil {
+		former = prev.user.former
+	}
+	f := userFile{path: r.files.Path(), file: file, problems: problems, existing: r.existing}
+	snap := buildModelSnapshot(context.WithoutCancel(r.ctx), r.base, data, r.service, r.log, f, former)
+	r.snap.Store(&snap)
 }
 
 func (r *modelRefresher) statCache() fileStamp {
@@ -242,10 +275,13 @@ func readModelCache(ctx context.Context, cache *settings.ModelCache, log *zap.Lo
 	return data
 }
 
-// buildModelSnapshot merges the catalog, the overlay of data and, for each
-// provider, the cached list of its current credential. A provider whose
-// current credential has no known list keeps all its rows.
-func buildModelSnapshot(ctx context.Context, base []providers.Model, data settings.ModelCacheData, service *auth.Service, log *zap.Logger) modelSnapshot {
+// buildModelSnapshot merges the catalog, the overlay of data, for each
+// provider the cached list of its current credential, and the user file f. A
+// provider whose current credential has no known list keeps all its rows. Both
+// lists get the user file, so a row of the file is in the catalog too and its
+// overrides win after each refresh. former is the set of endpoints that the
+// tables of earlier snapshots had, or nil.
+func buildModelSnapshot(ctx context.Context, base []providers.Model, data settings.ModelCacheData, service *auth.Service, log *zap.Logger, f userFile, former map[modelKey]bool) modelSnapshot {
 	var overlay []providers.Model
 	if data.Overlay != nil && len(data.Overlay.Payload) > 0 {
 		rows, err := providers.MapModelsDev(data.Overlay.Payload)
@@ -268,10 +304,12 @@ func buildModelSnapshot(ctx context.Context, base []providers.Model, data settin
 		}
 		accounts[provider] = providers.AccountView{Known: true, IDs: ids}
 	}
-	return modelSnapshot{
-		set:     providers.NewModelSet(base, overlay, accounts),
-		catalog: providers.NewModelSet(base, overlay, nil),
-	}
+	mapping := mapModelsFile(f)
+	set := providers.NewModelSet(base, overlay, accounts, mapping.config)
+	catalog := providers.NewModelSet(base, overlay, nil, mapping.config)
+	user := userTables(f, slices.Concat(set.All(), catalog.All()), former)
+	user.problems = slices.Concat(f.problems, mapping.problems, mapping.configProblems(set.Problems()))
+	return modelSnapshot{set: set, catalog: catalog, user: user}
 }
 
 // providerIDs lists the providers of rows once each, in row order.
@@ -283,17 +321,6 @@ func providerIDs(rows []providers.Model) []string {
 		}
 	}
 	return out
-}
-
-// CachedModelSet returns the model list of the cache in home and the catalog,
-// with no network call. A nil service gives unknown access for every account.
-// A process that does not run a refresher (`ask -p`) selects through it.
-func CachedModelSet(ctx context.Context, home string, service *auth.Service) *providers.ModelSet {
-	log := zap.NewNop()
-	// A home that cannot hold a cache gives the catalog alone.
-	cache, _ := settings.NewModelCache(home)
-	snap := buildModelSnapshot(ctx, providers.GeneratedCatalog(), readModelCache(ctx, cache, log), service, log)
-	return snap.set
 }
 
 // goRun starts fn on the root context unless the refresher stopped. Stop

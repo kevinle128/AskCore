@@ -5,7 +5,6 @@ import (
 	"encoding/json"
 	"fmt"
 	"slices"
-	"strings"
 
 	"AskCore/internal/agent"
 	"AskCore/internal/providers"
@@ -117,20 +116,14 @@ func ModelID(m providers.Model) string { return modelID(m) }
 func ParseModelID(s string) (providers.Ref, error) { return parseModelID(s) }
 
 // parseModelID is the reverse of modelID. A name without "@api" gives an empty
-// API, which the catalog refuses when two rows match.
+// API, which the catalog refuses when two rows match. It uses the split of the
+// model pattern grammar and also needs the provider part.
 func parseModelID(s string) (providers.Ref, error) {
-	provider, rest, ok := strings.Cut(s, "/")
-	if !ok || provider == "" || rest == "" {
+	ref, err := providers.ParseRef(s)
+	if err != nil || ref.Provider == "" {
 		return providers.Ref{}, newKindError(protocol.ACPErrInvalidModel, "model id is not provider/id@api")
 	}
-	id, api := rest, ""
-	if i := strings.LastIndex(rest, "@"); i >= 0 {
-		id, api = rest[:i], rest[i+1:]
-		if id == "" || api == "" {
-			return providers.Ref{}, newKindError(protocol.ACPErrInvalidModel, "model id is not provider/id@api")
-		}
-	}
-	return providers.Ref{Provider: provider, ID: id, API: providers.API(api)}, nil
+	return ref, nil
 }
 
 func (a *Adapter) state(_ context.Context, raw json.RawMessage) (any, error) {
@@ -150,6 +143,7 @@ func (a *Adapter) state(_ context.Context, raw json.RawMessage) (any, error) {
 		Steering:      steering,
 		FollowUp:      followUp,
 		ModelFallback: s.fallbackNow(),
+		LevelDropped:  s.droppedNow(),
 	}
 	if t := s.trustNow(); t != nil {
 		trust := t.Trust
@@ -202,13 +196,52 @@ func (a *Adapter) models(ctx context.Context, raw json.RawMessage) (any, error) 
 	// can hide it. The client reads the context window and the thinking
 	// support of the session model from its row, so the row always stays.
 	// The session keeps its model either way.
+	// When the user model file changed the endpoint of the session model, the
+	// row with the same id is a new row: the session row is marked, so the
+	// client asks the user to choose the model again.
 	hasRow := func(m providers.Model) bool { return modelID(m) == out.Current }
-	if out.Current != "" && !slices.ContainsFunc(out.Models, func(r protocol.ACPModel) bool { return r.ModelID == out.Current }) {
+	notInConfig := out.Current != "" && a.cfg.NotInConfig != nil && a.cfg.NotInConfig(current)
+	if i := slices.IndexFunc(out.Models, func(r protocol.ACPModel) bool { return r.ModelID == out.Current }); out.Current != "" && i >= 0 {
+		out.Models[i].NotInConfig = notInConfig
+	} else if out.Current != "" {
 		row := acpModel(current)
-		row.NotInAccount = !slices.ContainsFunc(rows, hasRow)
+		row.NotInConfig = notInConfig
+		row.NotInAccount = !notInConfig && !slices.ContainsFunc(rows, hasRow)
 		out.Models = append(out.Models, row)
 	}
+	out.Scope = a.scopeRows(ctx, rows, s.scopeNow())
+	if a.cfg.ModelProblems != nil {
+		out.Diagnostics = a.cfg.ModelProblems()
+	}
 	return out, nil
+}
+
+// scopeRows expands the scope entries of a session against the rows of this
+// list, so a row that a refresh or a file edit removed leaves the cycle list
+// too. A host with provider setup keeps only the rows of usable providers, as
+// its start choice does. Problems of the entries are not repeated here: the
+// session start reported them.
+func (a *Adapter) scopeRows(ctx context.Context, rows []providers.Model, entries []string) []protocol.ACPScopedModel {
+	if len(entries) == 0 {
+		return nil
+	}
+	scoped, _ := providers.ExpandScope(rows, entries)
+	usable := map[string]bool{}
+	var out []protocol.ACPScopedModel
+	for _, sm := range scoped {
+		if a.cfg.ProviderSetup != nil {
+			ok, seen := usable[sm.Model.Provider]
+			if !seen {
+				ok = a.cfg.ProviderSetup.Usable(ctx, sm.Model.Provider)
+				usable[sm.Model.Provider] = ok
+			}
+			if !ok {
+				continue
+			}
+		}
+		out = append(out, protocol.ACPScopedModel{ModelID: modelID(sm.Model), ThinkingLevel: sm.Level})
+	}
+	return out
 }
 
 // acpModel is the wire row of a model.
@@ -222,7 +255,9 @@ func acpModel(m providers.Model) protocol.ACPModel {
 
 // setModel switches the model of an idle session. The sign-in method that the
 // client names must be the configured one. A refusal changes nothing and starts
-// no inference.
+// no inference. A thinking level in the request is set in the same call, under
+// the same session guard, after the model; the result echoes the level that
+// the new model allows.
 func (a *Adapter) setModel(ctx context.Context, raw json.RawMessage) (any, error) {
 	var req protocol.ACPModelRequest
 	if err := decodeParams(raw, &req); err != nil {
@@ -237,6 +272,9 @@ func (a *Adapter) setModel(ctx context.Context, raw json.RawMessage) (any, error
 		return nil, err
 	}
 	defer release()
+	if req.ThinkingLevel != "" && !validThinking(req.ThinkingLevel) {
+		return nil, newKindError(protocol.ACPErrInvalidParams, "unknown thinking level")
+	}
 	ref, err := parseModelID(req.ModelID)
 	if err != nil {
 		return nil, err
@@ -273,6 +311,11 @@ func (a *Adapter) setModel(ctx context.Context, raw json.RawMessage) (any, error
 		}
 		return nil, err
 	}
+	if req.ThinkingLevel != "" {
+		if err := a.applyLevel(s, routeOf(ctx), req.ThinkingLevel); err != nil {
+			return nil, err
+		}
+	}
 	st := s.Agent().State()
 	res := protocol.ACPSetModelResult{ModelID: modelID(st.Model), ThinkingLevel: st.ThinkingLevel}
 	if req.SaveDefault && a.cfg.SaveDefault != nil {
@@ -293,6 +336,17 @@ func validThinking(l protocol.ThinkingLevel) bool {
 	return false
 }
 
+// applyLevel sets the thinking level of the session model. The caller holds
+// the session guard.
+func (a *Adapter) applyLevel(s *Session, route *protocol.ACPRouteMeta, level protocol.ThinkingLevel) error {
+	commit, err := s.mutationCommit(route)
+	if err != nil {
+		return err
+	}
+	defer commit()
+	return s.Agent().SetThinkingLevel(level)
+}
+
 func (a *Adapter) setThinking(ctx context.Context, raw json.RawMessage) (any, error) {
 	var req protocol.ACPThinkingRequest
 	if err := decodeParams(raw, &req); err != nil {
@@ -310,12 +364,7 @@ func (a *Adapter) setThinking(ctx context.Context, raw json.RawMessage) (any, er
 	if !validThinking(req.Level) {
 		return nil, newKindError(protocol.ACPErrInvalidParams, "unknown thinking level")
 	}
-	commit, err := s.mutationCommit(routeOf(ctx))
-	if err != nil {
-		return nil, err
-	}
-	defer commit()
-	if err := s.Agent().SetThinkingLevel(req.Level); err != nil {
+	if err := a.applyLevel(s, routeOf(ctx), req.Level); err != nil {
 		return nil, err
 	}
 	return protocol.ACPThinkingResult{Level: s.Agent().State().ThinkingLevel}, nil

@@ -39,6 +39,16 @@ type SessionTrust struct {
 	ThinkingFold string
 }
 
+// ModelStart is how the Factory applied the model options of a session.
+type ModelStart struct {
+	// Scope are the raw scope entries of the session: the --models option, else
+	// the enabledModels setting of the session start.
+	Scope []string
+	// LevelDropped is the requested thinking level that the start model did
+	// not use because it has no thinking, or nil.
+	LevelDropped *protocol.ACPLevelDropped
+}
+
 // SettingsScope names the settings that apply to a session: its cwd and
 // whether its project layer applies.
 type SettingsScope struct {

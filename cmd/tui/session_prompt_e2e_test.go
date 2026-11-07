@@ -370,7 +370,7 @@ func TestSessionFlagsReachTheRequestOverTheInProcessAgent(t *testing.T) {
 	}})
 	require.NoError(t, err)
 	assert.False(t, info.FlagsIgnored)
-	_, err = c.SetModel(ctx, anthropicModel, false)
+	_, err = c.SetModel(ctx, anthropicModel, "", false)
 	require.NoError(t, err)
 	_, err = c.Prompt("go")
 	require.NoError(t, err)

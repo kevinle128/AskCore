@@ -102,7 +102,7 @@ func RefreshModelLists(ctx context.Context, home string, service *auth.Service, 
 	if err != nil {
 		return ModelListReport{}, cacheError(err)
 	}
-	set := buildModelSnapshot(ctx, r.base, after, service, r.log).set
+	set := buildModelSnapshot(ctx, r.base, after, service, r.log, userFile{}, nil).set
 	report := ModelListReport{Metadata: overlayState(before.Overlay, after.Overlay, start)}
 	for _, provider := range names {
 		report.Providers = append(report.Providers, ProviderModels{

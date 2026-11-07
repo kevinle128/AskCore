@@ -36,7 +36,7 @@ import (
 // A selector or a box replaces the prompt rows and has the same cap.
 
 const (
-	statusMaxRows  = 2
+	statusMaxRows  = 3
 	pendingMaxRows = 3
 	menuMaxRows    = 8
 	// modalMaxRows is the most rows that a selector or dialog takes before the

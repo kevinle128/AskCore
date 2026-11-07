@@ -26,7 +26,7 @@ import (
 const leaderUsage = `ask leader - the local router that holds one agent for all local clients
 
 Usage:
-  ask leader                     run the leader in the foreground
+  ask leader [--offline]         run the leader in the foreground
   ask leader status [--json]     show identity and counts of the running leader
   ask leader list [--json]       list the leaders of this home (one)
   ask leader stop                stop the running leader
@@ -36,6 +36,8 @@ The leader listens on <ASK_HOME>/leader.sock (default ~/.ask), with mode 0600 in
 directory of mode 0700, and accepts only the user that owns that directory. Clients
 start it on demand. "ask leader" started by hand keeps the terminal; one that a
 client started has --spawned-by-client and writes to <ASK_HOME>/leader.log.
+--offline turns off the network refresh of the model list (as
+ASK_DISABLE_MODEL_REFRESH=1); it belongs to the foreground leader only.
 status, list and stop never start a leader. stop sends a shutdown request first and
 falls back to SIGTERM on Linux only through a stable process handle that it
 verified as ask leader. Other platforms require socket shutdown.
@@ -58,6 +60,7 @@ type leaderOptions struct {
 	spawned bool
 	json    bool
 	help    bool
+	offline bool
 }
 
 func parseLeaderArgs(argv []string) (leaderOptions, error) {
@@ -70,6 +73,8 @@ func parseLeaderArgs(argv []string) (leaderOptions, error) {
 			o.spawned = true
 		case "--json":
 			o.json = true
+		case "--offline":
+			o.offline = true
 		case "status", "list", "stop":
 			if o.sub != "" {
 				return o, errors.New("one subcommand only; use ask leader --help")
@@ -82,6 +87,8 @@ func parseLeaderArgs(argv []string) (leaderOptions, error) {
 	switch {
 	case o.sub != "" && o.spawned:
 		return o, errors.New("--spawned-by-client belongs to the foreground leader only")
+	case o.sub != "" && o.offline:
+		return o, errors.New("--offline belongs to the foreground leader only")
 	case o.json && o.sub != "status" && o.sub != "list":
 		return o, errors.New("--json belongs to status and list")
 	}
@@ -103,6 +110,9 @@ func runLeader(argv []string, stdout, stderr io.Writer, deps runDependencies, si
 	if err != nil {
 		report(stderr, "Error:", err)
 		return 1
+	}
+	if o.offline {
+		deps = offlineDeps(deps)
 	}
 	switch o.sub {
 	case "status":

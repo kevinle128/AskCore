@@ -243,8 +243,10 @@ func TestPrint(t *testing.T) {
 		{"last prompt fails", "", []string{"-p", "first", "fail late"}, result{"", "late\n", 1}},
 		{"unknown provider", "", []string{"--provider", "unavailable", "-p", "hi"},
 			result{"", "Error: provider \"unavailable\" is not available\n", 1}},
-		{"unknown model", "", []string{"--model", "gpt", "-p", "hi"},
-			result{"", "Error: model \"gpt\" not found for provider \"faux\"\n", 1}},
+		// The pattern names no provider and no row, so the run never reaches
+		// a credential or the network, whatever the Ask home of the machine.
+		{"unknown model", "", []string{"--model", "no-such-provider-x/no-such-model-x", "-p", "hi"},
+			result{"", "Error: unknown model \"no-such-provider-x/no-such-model-x\"\n", 1}},
 		{"stdin joins the message", "a", []string{"-p", "b"}, result{"ab\n", "", 0}},
 		{"piped stdin alone selects print mode", "piped\n", nil, result{"piped\n", "", 0}},
 		{"slash stays literal", "", []string{"-p", "/help"}, result{"/help\n", "", 0}},

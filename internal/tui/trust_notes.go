@@ -292,22 +292,28 @@ func (b trustOKNote) Lines(rc RenderContext) []string {
 
 // ---- settings problems ----
 
-// diagnosticsBlock is the list of the settings problems of a session start,
-// grouped by file in the order of the list.
+// diagnosticsBlock is a list of settings problems, grouped by file in the
+// order of the list. The heading is "Settings problems" unless it is set. A
+// problem of a command line flag has no file, so it has no path row.
 type diagnosticsBlock struct {
-	items []protocol.ACPDiagnostic
-	home  string
+	heading string
+	items   []protocol.ACPDiagnostic
+	home    string
 }
 
 func (b diagnosticsBlock) Lines(rc RenderContext) []string {
-	rows := textRows(rc, []span{{"Settings problems", RoleWarning, true}}, glyphIndent, glyphIndent)
+	heading := b.heading
+	if heading == "" {
+		heading = "Settings problems"
+	}
+	rows := textRows(rc, []span{{heading, RoleWarning, true}}, glyphIndent, glyphIndent)
 	shown := b.items
 	if len(shown) > diagnosticRowsMax {
 		shown = shown[:diagnosticRowsMax]
 	}
 	path := ""
 	for i, d := range shown {
-		if i == 0 || d.Path != path {
+		if (i == 0 || d.Path != path) && d.Path != "" {
 			path = d.Path
 			for _, part := range wrapPath(safeText(tildePath(d.Path, b.home)), textWidth(rc, textIndent)) {
 				rows = append(rows, spansRow{textIndent, []span{{part, RoleMuted, false}}})

@@ -26,12 +26,13 @@ const fauxEnv = "ASK_FAUX"
 const acpUsage = `ask acp - serve ACP v1 (Agent Client Protocol) over stdin and stdout
 
 Usage:
-  ask acp [--approve | --no-approve]
+  ask acp [--approve | --no-approve] [--offline]
   ask acp --help
 
 Options:
   --approve, -a         Trust the project settings of every session of this process
   --no-approve, -na     Do not trust the project settings of any session of this process
+  --offline             Do not refresh the model list from the network (as ASK_DISABLE_MODEL_REFRESH=1)
 
 Reads one JSON-RPC frame per line from stdin and writes one per line to stdout.
 Diagnostics go to stderr. The command opens no network listener and no database.
@@ -41,34 +42,49 @@ Exit codes: 0 input ended, 1 error or lost output, 130 SIGINT, 143 SIGTERM, 129 
 A second signal ends the process before the cleanup finishes.
 `
 
+type acpArgs struct {
+	help    bool
+	trust   protocol.ACPTrustOverride
+	offline bool
+}
+
 // parseACPArgs reads the arguments after "acp". The command takes only the
-// trust flags, because a prompt, a mode or a provider belongs to the protocol,
-// not to the command line.
-func parseACPArgs(argv []string) (help bool, trust protocol.ACPTrustOverride, err error) {
+// trust flags and --offline, because a prompt, a mode, a provider or a model
+// belongs to the protocol, not to the command line.
+func parseACPArgs(argv []string) (acpArgs, error) {
 	if len(argv) == 1 && (argv[0] == "--help" || argv[0] == "-h") {
-		return true, "", nil
+		return acpArgs{help: true}, nil
 	}
+	var out acpArgs
 	var flags []protocol.ACPTrustOverride
 	for _, arg := range argv {
+		if arg == "--offline" {
+			out.offline = true
+			continue
+		}
 		f, ok := trustFlags[arg]
 		if !ok {
-			return false, "", errors.New("acp does not accept arguments other than --approve and --no-approve; use ask acp --help")
+			return acpArgs{}, errors.New("acp does not accept arguments other than --approve, --no-approve and --offline; use ask acp --help")
 		}
 		flags = append(flags, f)
 	}
-	trust, err = trustOverride(flags)
-	return false, trust, err
+	trust, err := trustOverride(flags)
+	if err != nil {
+		return acpArgs{}, err
+	}
+	out.trust = trust
+	return out, nil
 }
 
 // runACP serves the protocol on stdin and stdout until the input ends, the
 // output fails or a signal comes.
 func runACP(argv []string, stdin io.Reader, stdout, stderr io.Writer, deps runDependencies, sigs <-chan os.Signal) int {
-	help, trust, err := parseACPArgs(argv)
+	args, err := parseACPArgs(argv)
 	if err != nil {
 		report(stderr, "Error:", err)
 		return 1
 	}
-	if help {
+	if args.help {
 		if _, err := io.WriteString(stdout, acpUsage); err != nil {
 			report(stderr, err)
 			return 1
@@ -80,7 +96,10 @@ func runACP(argv []string, stdin io.Reader, stdout, stderr io.Writer, deps runDe
 	// ordinary stdout of the process goes to stderr for the whole run.
 	defer guardStdout(stderr)()
 
-	params, err := acpParams(deps, trust)
+	if args.offline {
+		deps = offlineDeps(deps)
+	}
+	params, err := acpParams(deps, args.trust)
 	if err != nil {
 		report(stderr, "Error:", err)
 		return 1

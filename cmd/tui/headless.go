@@ -11,6 +11,7 @@ import (
 	"os"
 	"os/signal"
 	"slices"
+	"strings"
 	"syscall"
 	"time"
 
@@ -85,7 +86,6 @@ func runWithDependencies(argv []string, stdin io.Reader, stdout, stderr io.Write
 	signal.Notify(sigs, slices.Collect(maps.Keys(signalExitCodes))...)
 	defer signal.Stop(sigs)
 	env := func(k string) (string, bool) { v := deps.getenv(k); return v, v != "" }
-	var service *auth.Service
 	if len(argv) > 0 && argv[0] == "auth" {
 		o, err := parseAuthArgs(argv[1:])
 		if err != nil {
@@ -99,7 +99,7 @@ func runWithDependencies(argv []string, stdin io.Reader, stdout, stderr io.Write
 			}
 			return 0
 		}
-		service, err = app.NewNativeAuth(deps.getenv("ASK_HOME"), env, auth.NativeOptions{HTTPClient: deps.authHTTP, Now: deps.now, Wait: deps.wait})
+		service, err := app.NewNativeAuth(deps.getenv("ASK_HOME"), env, auth.NativeOptions{HTTPClient: deps.authHTTP, Now: deps.now, Wait: deps.wait})
 		if err != nil {
 			report(stderr, "Error:", err)
 			return 1
@@ -145,10 +145,14 @@ func runWithDependencies(argv []string, stdin io.Reader, stdout, stderr io.Write
 		return 0
 	}
 
+	if o.offline {
+		deps = offlineDeps(deps)
+	}
+
 	stdinTTY := isTerminal(stdin)
 	mode := selectMode(o, stdinTTY, isTerminal(stdout))
 	if mode == modeInteractive {
-		return runInteractive(stdin, stdout, stderr, deps, sigs, o.noLeader, o.trust, o.session)
+		return runInteractive(stdin, stdout, stderr, deps, sigs, o)
 	}
 	defer guardStdout(stderr)()
 
@@ -162,13 +166,6 @@ func runWithDependencies(argv []string, stdin io.Reader, stdout, stderr io.Write
 	}
 	newAuth := func() (*auth.Service, error) {
 		return app.NewNativeAuth(deps.getenv("ASK_HOME"), env, auth.NativeOptions{HTTPClient: deps.authHTTP, Now: deps.now, Wait: deps.wait})
-	}
-	if o.provider != defaultProvider {
-		var err error
-		if service, err = newAuth(); err != nil {
-			report(stderr, "Error:", err)
-			return 1
-		}
 	}
 	cwd, err := os.Getwd()
 	if err != nil {
@@ -186,27 +183,16 @@ func runWithDependencies(argv []string, stdin io.Reader, stdout, stderr io.Write
 		report(stderr, "Error:", err)
 		return 1
 	}
-	for _, line := range session.Warnings() {
-		report(stderr, line)
-	}
-	// Without --provider and --model, the saved default model of the
-	// settings selects the model. The project layer counts only when the
-	// project is trusted.
-	var start providers.Model
-	if !o.modelGiven && session.Settings.DefaultModel != "" {
-		if service, err = newAuth(); err != nil {
-			report(stderr, "Error:", err)
-			return 1
-		}
-		if start, err = savedStartModel(&o, deps.getenv, service, session.Settings.DefaultModel, stderr); err != nil {
-			report(stderr, "Error:", err)
-			return 1
-		}
+	start, service, view, err := printStartModel(&o, deps.getenv, newAuth, &session, stderr)
+	if err != nil {
+		report(stderr, "Error:", err)
+		return 1
 	}
 	o.bgLimit = printBackgroundLimit(deps.getenv)
 	ag, jt, err := newPrintAgent(o, deps.getenv, service, app.AgentSpec{
 		SessionID: newSessionID(), Cwd: cwd, Start: start, Session: session,
-		Warn: func(line string) { report(stderr, line) },
+		Warn:   func(line string) { report(stderr, line) },
+		Models: view,
 	})
 	if err != nil {
 		report(stderr, "Error:", err)
@@ -232,33 +218,95 @@ func runWithDependencies(argv []string, stdin io.Reader, stdout, stderr io.Write
 	return code
 }
 
-// savedStartModel chooses the model of a print-mode run from the saved
-// default model id saved, with the rules of a new TUI session. The demo model
-// is the fallback, as it is the model of a run with no saved default. When the
-// saved default cannot be used, it writes one warning line to stderr.
+// printStartModel chooses the model of a print-mode run with the rules of a
+// new session: the --model pattern (with --provider as its provider part),
+// then the scope of --models or enabledModels, then the saved default, then
+// the demo model. It reads the user models.json once when the choice needs the
+// model list; a bad file gives warning lines and no custom rows. It writes the
+// warning lines of the session start, of the scope, of a saved default that
+// cannot be used, and of a dropped thinking level.
 //
-// It returns the zero model when the demo model is chosen, so the run builds
-// its agent as before. Otherwise it sets the provider and the model of o, so
-// the run acts as with --provider and --model.
-func savedStartModel(o *options, getenv func(string) string, service *auth.Service, saved string, stderr io.Writer) (providers.Model, error) {
+// It sets the provider, the model and the thinking level of o, so the run acts
+// as with --provider, --model and --thinking. The returned model is zero when
+// the demo model is chosen, so the run builds its agent as before. service is
+// nil when the run needs no credential.
+func printStartModel(o *options, getenv func(string) string, newAuth func() (*auth.Service, error), session *app.SessionStart, stderr io.Writer) (providers.Model, *auth.Service, *app.ModelView, error) {
+	pattern := o.modelPattern()
+	opts := app.ModelOptions{Pattern: pattern, Thinking: o.thinking, Scope: o.models}
+	eff := session.Settings
+	// --provider faux keeps the run on the demo model: it needs no credential
+	// and no model list, and a scope cannot change its start model.
+	demoOnly := o.providerGiven && o.provider == defaultProvider
+	if demoOnly {
+		opts.Scope, eff.EnabledModels = nil, nil
+	}
+	// Token Plan has each model on two wires; print mode uses the Messages
+	// wire when the pattern names no wire, as it always did.
+	if strings.HasPrefix(pattern, anthropic.ProviderID+"/") {
+		opts.PreferAPI = providers.APIAnthropicMessages
+	}
+	needList := !demoOnly && (pattern != "" || len(opts.Scope) > 0 || len(eff.EnabledModels) > 0 || eff.DefaultModel != "")
+	var service *auth.Service
+	var view *app.ModelView
+	if needList {
+		var err error
+		if service, err = newAuth(); err != nil {
+			return providers.Model{}, nil, nil, err
+		}
+		if view, err = app.LoadModelView(context.Background(), getenv("ASK_HOME"), service); err != nil {
+			return providers.Model{}, nil, nil, err
+		}
+		session.Settings.Diagnostics = slices.Concat(session.Settings.Diagnostics, view.Problems())
+		if o.providerGiven && !slices.Contains(providerNames(view.Set()), o.provider) {
+			return providers.Model{}, nil, nil, fmt.Errorf("provider %q is not available", o.provider)
+		}
+	}
 	_, demo, err := fauxStream(defaultModel, getenv)
 	if err != nil {
-		return providers.Model{}, err
+		return providers.Model{}, nil, nil, err
 	}
-	m, warning := app.ChooseSavedModel(context.Background(), getenv("ASK_HOME"), service, demo, saved)
-	if warning != "" {
-		report(stderr, warning)
+	choice, err := app.ChooseStartModel(context.Background(), view, service, demo, eff, opts)
+	if err != nil {
+		return providers.Model{}, nil, nil, err
 	}
-	if m.Provider == demo.Provider {
-		return providers.Model{}, nil
+	session.Settings.Diagnostics = slices.Concat(session.Settings.Diagnostics, choice.Diagnostics)
+	for _, line := range session.Warnings() {
+		report(stderr, line)
 	}
-	o.provider, o.model = m.Provider, m.ID
-	return m, nil
+	if line := choice.FallbackWarning(); line != "" {
+		report(stderr, line)
+	}
+	if choice.Dropped != nil {
+		report(stderr, "Warning: "+choice.Dropped.Text())
+	}
+	if choice.Level != "" {
+		o.thinking = choice.Level
+	}
+	if choice.Model.ID == "" || choice.Model.Provider == demo.Provider {
+		o.provider, o.model = defaultProvider, demo.ID
+		if choice.Model.ID != "" {
+			o.model = choice.Model.ID
+		}
+		return providers.Model{}, service, view, nil
+	}
+	o.provider, o.model = choice.Model.Provider, choice.Model.ID
+	return choice.Model, service, view, nil
+}
+
+func offlineDeps(deps runDependencies) runDependencies {
+	getenv := deps.getenv
+	deps.getenv = func(k string) string {
+		if k == disableModelRefreshEnv {
+			return "1"
+		}
+		return getenv(k)
+	}
+	return deps
 }
 
 // newPrintAgent builds the agent of a print-mode run. A zero start model
-// opens the provider of the command line; another start model is a catalog
-// model, which the native wires serve.
+// opens the provider of the command line; another start model is a model of
+// the model list, which the native wires serve.
 func newPrintAgent(o options, getenv func(string) string, service *auth.Service, spec app.AgentSpec) (*agent.Agent, *jobs.Table, error) {
 	if spec.Start.ID == "" {
 		return newNativeAgent(o, getenv, service, spec)
@@ -361,9 +409,17 @@ func newHeadlessAgentWithAuth(o options, getenv func(string) string, service *au
 
 // newNativeAgent builds one independent agent for the session and directory.
 // The headless run and every ACP session use it, so both share one composition.
-// The model of the command line replaces spec.Start.
+// The model of the command line replaces spec.Start. A run on a catalog model
+// without spec.Models reads the model list once here.
 func newNativeAgent(o options, getenv func(string) string, service *auth.Service, spec app.AgentSpec, extra ...tools.Tool) (*agent.Agent, *jobs.Table, error) {
-	stream, model, err := openProvider(o, getenv, service)
+	if spec.Models == nil && o.provider != defaultProvider {
+		view, err := app.LoadModelView(context.Background(), getenv("ASK_HOME"), service)
+		if err != nil {
+			return nil, nil, err
+		}
+		spec.Models = view
+	}
+	stream, model, err := openProvider(o, getenv, spec.Models)
 	if err != nil {
 		return nil, nil, err
 	}
@@ -387,6 +443,9 @@ const commandGuardEnv = "ASK_COMMAND_GUARD"
 func newNativeAgentOn(o options, getenv func(string) string, service *auth.Service, spec app.AgentSpec, stream providers.StreamFn, extra ...tools.Tool) (*agent.Agent, *jobs.Table, error) {
 	sessionID, cwd, model := spec.SessionID, spec.Cwd, spec.Start
 	reasoning := o.thinking
+	if spec.Thinking != "" {
+		reasoning = spec.Thinking
+	}
 	if o.provider == anthropic.ProviderID && reasoning == "" {
 		reasoning = protocol.ThinkingMedium
 	}
@@ -474,7 +533,7 @@ func newNativeAgentOn(o options, getenv func(string) string, service *auth.Servi
 		cfg.Pipeline = pl
 	}
 	native := app.NativeAgentConfig{
-		Config: cfg, InitialStream: stream, Auth: service,
+		Config: cfg, InitialStream: stream, Auth: service, Models: spec.Models,
 		Env: func(k string) (string, bool) { v := getenv(k); return v, v != "" },
 	}
 	if o.provider == "faux" {

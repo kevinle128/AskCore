@@ -13,6 +13,7 @@ import (
 	"time"
 
 	"AskCore/internal/app"
+	"AskCore/internal/auth"
 	"AskCore/internal/bootstrap"
 	"AskCore/internal/settings"
 	"AskCore/internal/workspace"
@@ -25,9 +26,11 @@ const settingsUsage = `Usage:
 
 Print the settings of the current folder: the project trust decision, each
 known key with its value and the layer that sets it (default, user or project),
-and each problem that the read found. The command reads files only. It writes
-nothing, and it starts no leader and no database. It does not read the project
-settings of a project that is not trusted.
+the user models.json, the key source of each provider, and each problem that
+the read found. The command reads files only. It writes nothing, runs no
+models.json command, and starts no leader and no database. It does not read
+the project settings of a project that is not trusted. A key source names
+where the key comes from, never the key.
 
 Options:
   --json                Print one JSON object
@@ -130,6 +133,28 @@ type settingsDump struct {
 	Context []settingsContextFile `json:"context"`
 	// SkillDiagnostics lists the skills that do not load.
 	SkillDiagnostics []settingsDiagnostic `json:"skillDiagnostics"`
+	// ModelsFile is the user models.json. Its problems are in Diagnostics.
+	ModelsFile settingsModelsFile `json:"modelsFile"`
+	// KeySources names, for each provider, the source of the key that a
+	// request uses. It never holds a key.
+	KeySources []settingsKeySource `json:"keySources"`
+}
+
+type settingsModelsFile struct {
+	Path string `json:"path"`
+	// State is "loaded", "problem" (the file has a problem) or "missing".
+	State string `json:"state"`
+}
+
+type settingsKeySource struct {
+	Provider string `json:"provider"`
+	// Source is "override", "saved:<method>", "config:$NAME",
+	// "config:command", "config:literal", "env:<NAME>", "none", or "problem"
+	// when a models.json value cannot give a key.
+	Source string `json:"source"`
+	// Problem is the text of a models.json value problem. It names a variable
+	// or a label, never a value.
+	Problem string `json:"problem,omitempty"`
 }
 
 type settingsContextFile struct {
@@ -174,7 +199,18 @@ type settingsDiagnostic struct {
 // with no UI, then reads the settings layers. The decision comes first, so an
 // untrusted project settings file is never opened.
 func runSettingsShow(ctx context.Context, o settingsOptions, stdout, stderr io.Writer, deps runDependencies) int {
-	dump, err := loadSettingsDump(ctx, deps.getenv("ASK_HOME"), o.trust)
+	env := func(k string) (string, bool) { v := deps.getenv(k); return v, v != "" }
+	service, err := app.NewNativeAuth(deps.getenv("ASK_HOME"), env, auth.NativeOptions{HTTPClient: deps.authHTTP, Now: deps.now, Wait: deps.wait})
+	if err == nil {
+		// The command writes nothing, so the key sources read the credential
+		// store with no lock.
+		service.Store, err = settings.NewAuthStoreReader(deps.getenv("ASK_HOME"))
+	}
+	if err != nil {
+		report(stderr, "Error:", err)
+		return 1
+	}
+	dump, err := loadSettingsDump(ctx, deps.getenv("ASK_HOME"), o.trust, service)
 	if err != nil {
 		report(stderr, "Error:", err)
 		return 1
@@ -197,7 +233,10 @@ func runSettingsShow(ctx context.Context, o settingsOptions, stdout, stderr io.W
 	return 0
 }
 
-func loadSettingsDump(ctx context.Context, askHome string, trust protocol.ACPTrustOverride) (settingsDump, error) {
+// loadSettingsDump reads the settings, the user models.json and the key
+// source of each provider. The key sources come from the source selection of
+// a request, as a dry run with no command run and no token refresh.
+func loadSettingsDump(ctx context.Context, askHome string, trust protocol.ACPTrustOverride, service *auth.Service) (settingsDump, error) {
 	home, err := settings.ResolveHome(askHome)
 	if err != nil {
 		return settingsDump{}, err
@@ -213,6 +252,11 @@ func loadSettingsDump(ctx context.Context, askHome string, trust protocol.ACPTru
 	if err != nil {
 		return settingsDump{}, err
 	}
+	view, err := app.LoadModelView(ctx, home, service)
+	if err != nil {
+		return settingsDump{}, err
+	}
+	session.Settings.Diagnostics = append(session.Settings.Diagnostics, view.Problems()...)
 	outcome, eff := session.Trust, session.Settings
 	d := settingsDump{
 		Home:     home,
@@ -224,10 +268,15 @@ func loadSettingsDump(ctx context.Context, askHome string, trust protocol.ACPTru
 			Gated:   append([]string{}, outcome.Gated...),
 			Warning: outcome.Warning,
 		},
-		Settings:         make([]settingsValue, 0, 5),
+		Settings:         make([]settingsValue, 0, 6),
 		Diagnostics:      make([]settingsDiagnostic, 0, len(eff.Diagnostics)),
 		Context:          contextRows(session.Context),
 		SkillDiagnostics: make([]settingsDiagnostic, 0, len(session.Skills.Diagnostics)),
+		KeySources:       []settingsKeySource{},
+	}
+	d.ModelsFile.Path, d.ModelsFile.State = view.ModelsFileState()
+	for _, k := range view.KeySources(ctx, service) {
+		d.KeySources = append(d.KeySources, settingsKeySource{Provider: k.Provider, Source: k.Source, Problem: k.Problem})
 	}
 	switch {
 	case !outcome.HasLayer:
@@ -248,6 +297,7 @@ func loadSettingsDump(ctx context.Context, askHome string, trust protocol.ACPTru
 		{"defaultProjectTrust", string(eff.DefaultProjectTrust)},
 		{"defaultTools", joinDefaultTools(eff.DefaultTools)},
 		{"skillsMaxContextTokens", skillsTokensValue(eff.SkillsMaxContextTokens)},
+		{"enabledModels", strings.Join(eff.EnabledModels, ",")},
 	} {
 		source := eff.Sources[v.key]
 		if source == "" {
@@ -350,6 +400,7 @@ func (d settingsDump) text() string {
 		{"Project trust", trust},
 		{"Gated files", gated},
 		{"Project settings", layer},
+		{"User models", d.ModelsFile.Path + " (" + d.ModelsFile.State + ")"},
 	}
 	for _, r := range rows {
 		fmt.Fprintf(&b, "%-17s %s\n", r[0]+":", r[1])
@@ -361,6 +412,14 @@ func (d settingsDump) text() string {
 			value = "(none)"
 		}
 		fmt.Fprintf(&b, "  %-22s %-32s %s\n", v.Key, value, v.Source)
+	}
+	b.WriteString("\nKey sources:\n")
+	for _, k := range d.KeySources {
+		line := fmt.Sprintf("  %-22s %s", k.Provider, k.Source)
+		if k.Problem != "" {
+			line += " (" + k.Problem + ")"
+		}
+		b.WriteString(line + "\n")
 	}
 	if d.Project.Warning != "" {
 		b.WriteString("\nWarning: " + d.Project.Warning + "\n")

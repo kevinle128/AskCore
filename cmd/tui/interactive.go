@@ -54,11 +54,14 @@ type terminalConfig struct {
 // runInteractive is the entry for `ask` on a terminal without a prompt. It
 // runs the alternate-screen TUI against the leader of the Ask home, or against
 // an agent in this process when the leader cannot be reached at startup.
-// noLeader skips the leader and always runs the agent in this process. trust
-// is the override of --approve or --no-approve: every session of the program
-// starts with it, and the TUI asks no trust question. flags are the prompt and
-// tool flags of the command line.
-func runInteractive(stdin io.Reader, stdout, stderr io.Writer, deps runDependencies, sigs <-chan os.Signal, noLeader bool, trust protocol.ACPTrustOverride, flags protocol.ACPSessionOptions) int {
+// --no-leader skips the leader and always runs the agent in this process. The
+// trust override of --approve or --no-approve starts every session of the
+// program, and the TUI asks no trust question. The prompt, tool and model
+// flags go to the host in the session options; the host resolves the model
+// patterns against its model list. With --offline a leader that this program
+// starts gets ASK_DISABLE_MODEL_REFRESH=1; a running leader keeps its own
+// setting.
+func runInteractive(stdin io.Reader, stdout, stderr io.Writer, deps runDependencies, sigs <-chan os.Signal, o options) int {
 	in, inOK := stdin.(*os.File)
 	out, outOK := stdout.(*os.File)
 	if !inOK || !outOK {
@@ -72,21 +75,43 @@ func runInteractive(stdin io.Reader, stdout, stderr io.Writer, deps runDependenc
 	}
 	home, _ := os.UserHomeDir()
 	exe, _ := os.Executable()
+	clientOpts := tuiClientOptions{callerExe: exe, noLeader: o.noLeader, env: spawnLeaderEnv(o.offline, os.Environ)}
 	return runTerminal(terminalConfig{
 		in: in, out: out, stderr: stderr, sigs: sigs, cwd: cwd, home: home, version: buildIdentity(),
 		thinkingFold: thinkingFoldSetting(deps.getenv("ASK_HOME")),
-		trust:        trust,
-		flags:        flags,
+		trust:        o.trust,
+		flags:        interactiveSessionFlags(o),
 		open: func(ctx context.Context) (tui.Client, error) {
 			// No warning callback: a line written to the terminal while the
 			// program draws would break the screen.
-			c, err := openTUIClient(ctx, deps, tuiClientOptions{callerExe: exe, noLeader: noLeader})
+			c, err := openTUIClient(ctx, deps, clientOpts)
 			if err != nil {
 				return nil, err
 			}
 			return c.Client, nil
 		},
 	})
+}
+
+// spawnLeaderEnv is the environment of a leader that the TUI starts. Nil keeps the
+// environment of this process. With --offline the leader gets
+// ASK_DISABLE_MODEL_REFRESH=1 after any value of the environment, so it wins.
+func spawnLeaderEnv(offline bool, environ func() []string) []string {
+	if !offline {
+		return nil
+	}
+	return append(environ(), disableModelRefreshEnv+"=1")
+}
+
+// interactiveSessionFlags are the session options of the command line: the
+// prompt and tool flags, the model pattern (with --provider as its provider
+// part), --thinking and --models.
+func interactiveSessionFlags(o options) protocol.ACPSessionOptions {
+	flags := o.session
+	flags.Model = o.modelPattern()
+	flags.Thinking = o.thinking
+	flags.Models = o.models
+	return flags
 }
 
 // clientSlot holds the client that the open command produced, so the entry can

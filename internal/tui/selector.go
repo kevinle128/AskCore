@@ -83,6 +83,10 @@ type selector struct {
 	// empty is true for a model list with no row: the box shows a hint and has
 	// no filter row.
 	empty bool
+	// problems is the number of problems of the user model file that the
+	// list answer holds. The box shows a summary row; the block pane has the
+	// list.
+	problems int
 }
 
 // visible returns the indexes of the rows that match the filter. Group headers
@@ -229,7 +233,14 @@ func (sl *selector) slot(width, height int, th *Theme) EditorSlot {
 			}
 		}
 	}
-	errRows := 0
+	if sl.problems > 0 {
+		text := "models.json has " + plural(sl.problems, "problem") + "; the list is in the transcript."
+		if width < shortWidth {
+			text = "models.json: " + plural(sl.problems, "problem")
+		}
+		errLines = append(errLines, errLine{text: truncateTo(text, max(1, inner-1)), role: RoleWarning, lead: " "})
+	}
+	errRows, gap := 0, true
 	if len(errLines) > 0 {
 		errRows = len(errLines) + 1
 	}
@@ -237,6 +248,12 @@ func (sl *selector) slot(width, height int, th *Theme) EditorSlot {
 	vis := sl.visible()
 	disp := sl.display(vis)
 	budget := sl.rowBudget(height, errRows)
+	if total := min(selectorRows, height); sl.problems > 0 && sl.err == "" && 4+errRows+budget > total {
+		// The summary row outranks the list: a short box drops the empty row
+		// above it, then list rows, down to one row and "… n more".
+		gap, errRows = false, len(errLines)
+		budget = max(2, min(selectorMaxRows, total-4-errRows))
+	}
 	sel := min(sl.sel, max(0, len(vis)-1))
 	selPos := 0
 	for i, d := range disp {
@@ -268,7 +285,9 @@ func (sl *selector) slot(width, height int, th *Theme) EditorSlot {
 		rows = append(rows, styledBoxed(more, th.Render(RoleDim, more)))
 	}
 	if len(errLines) > 0 {
-		rows = append(rows, boxed(""))
+		if gap {
+			rows = append(rows, boxed(""))
+		}
 		for _, l := range errLines {
 			rows = append(rows, styledBoxed(l.lead+l.text, th.Render(l.role, l.lead+l.text)))
 		}
@@ -364,7 +383,7 @@ func newModelSelector(models []protocol.ACPModel, current string) *selector {
 // current model starts selected; a saved default that is not current gets a
 // tag of its own.
 func newModelSelectorFor(res protocol.ACPModelsResult, current string) *selector {
-	sl := &selector{kind: selectModel, title: "Select model", hint: "enter select  ·  esc close  ·  your draft is kept"}
+	sl := &selector{kind: selectModel, title: "Select model", hint: "enter select  ·  esc close  ·  your draft is kept", problems: len(res.Diagnostics)}
 	grouped := res.UsableOnly
 	order := map[string]int{}
 	// One model can be listed on two wire formats. The label then names the
@@ -421,7 +440,13 @@ func newModelSelectorFor(res protocol.ACPModelsResult, current string) *selector
 			right:  window + padTo(tag, tagColWidth) + " ",
 			filter: name + " " + label,
 		}
-		if m.NotInAccount && m.ModelID == current {
+		switch {
+		case m.NotInConfig && m.ModelID == current:
+			// The user model file no longer has the endpoint of the running
+			// model; a request on it fails until the model is chosen again.
+			it.note = " · not in models.json"
+			it.noteRight = window + padTo("changed", tagColWidth) + " "
+		case m.NotInAccount && m.ModelID == current:
 			// The leader sends the row of the running model also when the
 			// account list no longer has it.
 			it.note = " · not in account list"

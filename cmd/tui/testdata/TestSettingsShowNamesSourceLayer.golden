@@ -37,6 +37,11 @@
       "key": "skillsMaxContextTokens",
       "value": "",
       "source": "default"
+    },
+    {
+      "key": "enabledModels",
+      "value": "",
+      "source": "default"
     }
   ],
   "diagnostics": [
@@ -48,5 +53,27 @@
     }
   ],
   "context": [],
-  "skillDiagnostics": []
+  "skillDiagnostics": [],
+  "modelsFile": {
+    "path": "/home/.ask/models.json",
+    "state": "missing"
+  },
+  "keySources": [
+    {
+      "provider": "alibaba-token-plan",
+      "source": "none"
+    },
+    {
+      "provider": "openai",
+      "source": "none"
+    },
+    {
+      "provider": "anthropic",
+      "source": "none"
+    },
+    {
+      "provider": "xai",
+      "source": "none"
+    }
+  ]
 }

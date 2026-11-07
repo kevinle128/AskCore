@@ -298,7 +298,7 @@ func TestClientSetModelReadinessFailure(t *testing.T) {
 	for _, m := range models.Models {
 		require.NotEqual(t, "openai", m.Provider, "the list has usable providers only")
 	}
-	_, err = c.SetModel(ctx, other, false)
+	_, err = c.SetModel(ctx, other, "", false)
 	var re *tui.RequestError
 	require.ErrorAs(t, err, &re, "the readiness failure comes back as a request error")
 	st, err := c.State(ctx)
@@ -306,7 +306,7 @@ func TestClientSetModelReadinessFailure(t *testing.T) {
 	require.Equal(t, models.Current, st.ModelID, "the model did not change")
 
 	// A ready model changes.
-	res, err := c.SetModel(ctx, models.Current, false)
+	res, err := c.SetModel(ctx, models.Current, "", false)
 	require.NoError(t, err)
 	require.Equal(t, models.Current, res.ModelID)
 }
@@ -597,7 +597,7 @@ func TestClientInProcessAgent(t *testing.T) {
 	models, err := c.Models(ctx)
 	require.NoError(t, err)
 	require.NotEmpty(t, models.Models)
-	res, err := c.SetModel(ctx, models.Current, false)
+	res, err := c.SetModel(ctx, models.Current, "", false)
 	require.NoError(t, err)
 	require.Equal(t, models.Current, res.ModelID)
 	_, err = c.Usage(ctx)

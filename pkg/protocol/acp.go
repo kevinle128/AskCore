@@ -3,6 +3,7 @@ package protocol
 import (
 	"encoding/json"
 	"fmt"
+	"strings"
 )
 
 // Ask ACP methods extend the standard agent protocol without changing its frames.
@@ -57,11 +58,14 @@ type ACPSessionRequest struct {
 // ACPModelRequest constrains the existing host auth method when supplied.
 // SaveDefault asks the leader to keep the choice as its default model for new
 // sessions. A client that does not set it leaves the saved default alone.
+// ThinkingLevel, when set, is applied with the model in the same call; the
+// result echoes the level that the model allows. An older host ignores it.
 type ACPModelRequest struct {
-	SessionID    string `json:"sessionId"`
-	ModelID      string `json:"modelId"`
-	AuthMethodID string `json:"authMethodId,omitempty"`
-	SaveDefault  bool   `json:"saveDefault,omitempty"`
+	SessionID     string        `json:"sessionId"`
+	ModelID       string        `json:"modelId"`
+	AuthMethodID  string        `json:"authMethodId,omitempty"`
+	SaveDefault   bool          `json:"saveDefault,omitempty"`
+	ThinkingLevel ThinkingLevel `json:"thinkingLevel,omitempty"`
 }
 
 type ACPThinkingRequest struct {
@@ -190,6 +194,28 @@ type ACPStateResult struct {
 	// ThinkingFold is the effective thinkingFold setting of the session:
 	// "expanded", "truncated" or "collapsed". An older host omits it.
 	ThinkingFold string `json:"thinkingFold,omitempty"`
+	// LevelDropped is set when the session start asked for a thinking level
+	// that the start model does not have. It is not a settings problem, so it
+	// is not in Diagnostics. It stays until the model changes. An older host
+	// omits it.
+	LevelDropped *ACPLevelDropped `json:"levelDropped,omitempty"`
+}
+
+// ACPLevelDropped names a requested thinking level that a model without
+// thinking did not use. ModelID is "provider/id@api".
+type ACPLevelDropped struct {
+	ModelID string        `json:"modelId"`
+	Level   ThinkingLevel `json:"level"`
+}
+
+// Text is the notice of the dropped level, with the model as "provider/id".
+// Print mode writes it after "Warning: ", and the TUI shows it as a notice.
+func (d ACPLevelDropped) Text() string {
+	model := d.ModelID
+	if i := strings.LastIndex(model, "@"); i > 0 {
+		model = model[:i]
+	}
+	return model + " has no thinking; level " + string(d.Level) + " is not used."
 }
 
 // ACPModel is one catalog row. ModelID is "provider/id@api" and names one row,
@@ -212,17 +238,38 @@ type ACPModel struct {
 	// longer has it. The row stays, so that a client keeps the data of the
 	// running model; the session model does not change.
 	NotInAccount bool `json:"notInAccount,omitempty"`
+	// NotInConfig marks the model of the session when the user model file no
+	// longer has its endpoint, because the file changed. A request on it fails
+	// until the user chooses the model again. It replaces NotInAccount on that
+	// row. An older peer omits it.
+	NotInConfig bool `json:"notInConfig,omitempty"`
 }
 
 // ACPModelsResult lists the catalog rows. Current is empty when the session
 // has no model. UsableOnly echoes the request flag, so a client can tell a
 // leader that filtered the list from one that ignored the flag. Default is the
 // saved default model id and is omitted when none is saved.
+//
+// Scope is the cycle list of the session in order: the rows that --models, or
+// else the enabledModels setting, select. It is empty when the session has no
+// scope or no scope entry selects a row; the client then cycles the rows of
+// Models. Diagnostics are the problems of the user model file that the host
+// found when it read the list. An older host omits both.
 type ACPModelsResult struct {
-	Current    string     `json:"current"`
-	Models     []ACPModel `json:"models"`
-	UsableOnly bool       `json:"usableOnly,omitempty"`
-	Default    string     `json:"default,omitempty"`
+	Current     string           `json:"current"`
+	Models      []ACPModel       `json:"models"`
+	UsableOnly  bool             `json:"usableOnly,omitempty"`
+	Default     string           `json:"default,omitempty"`
+	Scope       []ACPScopedModel `json:"scope,omitempty"`
+	Diagnostics []ACPDiagnostic  `json:"diagnostics,omitempty"`
+}
+
+// ACPScopedModel is one entry of the cycle list. ModelID is the resolved
+// "provider/id@api", never the pattern of the entry. ThinkingLevel is the
+// level of the entry; empty means that the entry states no level.
+type ACPScopedModel struct {
+	ModelID       string        `json:"modelId"`
+	ThinkingLevel ThinkingLevel `json:"thinkingLevel,omitempty"`
 }
 
 // ACPSetModelResult names the model and thinking level now in force.
@@ -301,6 +348,10 @@ const (
 	ACPErrNotDriver ACPErrorKind = "not_driver"
 	// ACPErrClientNotInitialized means this client has not run initialize on the leader.
 	ACPErrClientNotInitialized ACPErrorKind = "client_not_initialized"
+	// ACPErrConfig means the user model configuration of the session model
+	// changed, so the request was not sent. The client asks the user to
+	// choose the model again. An older client shows the text of the kind.
+	ACPErrConfig ACPErrorKind = "config"
 )
 
 // Ask-only codes use the reserved implementation range and avoid the codes
@@ -321,6 +372,9 @@ const (
 	ACPCodeNoModel = -32018
 	// ACPCodeProviderBusy is the code of a sign-in that another client already holds.
 	ACPCodeProviderBusy = -32019
+	// ACPCodeConfig is the code of a request that a changed model
+	// configuration stopped.
+	ACPCodeConfig = -32020
 )
 
 // ACPRouteMetaKey is the _meta key of the route context. Only the leader router
@@ -374,6 +428,8 @@ func ACPErrorCode(k ACPErrorKind) int {
 		return ACPCodeNotDriver
 	case ACPErrClientNotInitialized:
 		return ACPCodeNotInitializedClient
+	case ACPErrConfig:
+		return ACPCodeConfig
 	default:
 		return -32603
 	}
@@ -423,10 +479,16 @@ func ACPErrorMessage(k ACPErrorKind) string {
 		return "only the driver of the session can do this; take the session first"
 	case ACPErrClientNotInitialized:
 		return "initialize this connection first"
+	case ACPErrConfig:
+		return ModelConfigChanged
 	default:
 		return "internal error"
 	}
 }
+
+// ModelConfigChanged is the fixed text of a request that a changed model
+// configuration stopped.
+const ModelConfigChanged = "model configuration changed; choose the model again"
 
 // ACPErrorData is the only error data Ask sends. It holds no provider text and no credential facts.
 type ACPErrorData struct {

@@ -1,0 +1,24 @@
+ ◢◤ ask
+────────────────────────────────────────────────────────────────────────────────
+
+  Problems in models.json, read again when /model opened
+    ~/.ask/models.json
+      providers.local.models[2].contextWindow: must be a number; the model is
+        skipped
+      providers.gateway: unknown key
+
+────────────────────────────────────────────────────────────────────────────────
+╭─ Select model ───────────────────────────────────────────────────────────────╮
+│  ⌕ type to filter                                                            │
+│   ● local                                                                    │
+│     llama4-scout                                            128k             │
+│ ❯   qwen3-coder:30b                                         256k  current    │
+│   ● openai                                                                   │
+│     gpt-5.5                                                   1M  reasoning  │
+│                                                                              │
+│  models.json has 2 problems; the list is in the transcript.                  │
+╰──────────────────────────────────────────────────────────────────────────────╯
+   enter select  ·  esc close  ·  your draft is kept
+────────────────────────────────────────────────────────────────────────────────
+ ⌂ ~/src/askcore                             local/qwen3-coder:30b  ▱▱▱▱▱▱▱▱ 6%
+ Tab blocks · ctrl+t thinking · ctrl+l model · / commands

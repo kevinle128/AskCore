@@ -394,7 +394,7 @@ func TestInProcessClientCloseKillsBackgroundJobs(t *testing.T) {
 	defer cancel()
 	_, err = c.NewSession(ctx, repo, tui.NewSessionOptions{})
 	require.NoError(t, err)
-	_, err = c.SetModel(ctx, anthropicModel, false)
+	_, err = c.SetModel(ctx, anthropicModel, "", false)
 	require.NoError(t, err)
 
 	_, err = c.Prompt("start the job")

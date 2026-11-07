@@ -86,10 +86,9 @@ func (p *providerSetup) List(ctx context.Context) (protocol.ACPProvidersResult, 
 		if !ok {
 			i = len(res.Providers)
 			index[m.Provider] = i
-			ready, known := usable[m.Provider]
-			if !known {
-				ready = p.usable(ctx, m.Provider)
-			}
+			// A provider with no saved or environment credential can still
+			// be usable through a key of the user models.json.
+			ready := usable[m.Provider] || p.usable(ctx, m.Provider)
 			res.Providers = append(res.Providers, protocol.ACPProviderStatus{ProviderID: m.Provider, Usable: ready})
 		}
 		res.Providers[i].ModelCount++

@@ -68,6 +68,13 @@ type AgentSpec struct {
 	// Warn receives the warning lines that Render returns, each with the
 	// "Warning: " prefix. Nil drops them.
 	Warn func(line string)
+	// Models is the model view of the process. The request path of the
+	// session reads the key and header tables of the user models.json from
+	// it. Nil means no user file.
+	Models *ModelView
+	// Thinking is the start thinking level of the session, or empty to keep
+	// the default of the agent constructor.
+	Thinking protocol.ThinkingLevel
 }
 
 // PrepareSession does all the file reads of a session start. The trust
@@ -250,6 +257,11 @@ func (s SessionStart) Warnings() []string {
 		lines = append(lines, "Warning: project settings ignored: "+s.Trust.Root+" is not trusted. Use --approve, or save a decision in the TUI with /trust.")
 	}
 	for _, d := range s.Settings.Diagnostics {
+		// A problem of a command line flag has no file: the key names the flag.
+		if d.Path == "" && d.Key != "" {
+			lines = append(lines, "Warning: "+d.Key+": "+d.Text)
+			continue
+		}
 		line := "Warning: settings: " + d.Path
 		if d.Key != "" {
 			line += ": " + d.Key

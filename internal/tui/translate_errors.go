@@ -26,6 +26,7 @@ var errorKinds = map[string]errorKind{
 	"EMPTY_RESPONSE":          {"provider", "Send again."},
 	"STREAM_CLOSED":           {"provider", "Send again."},
 	"MALFORMED_RESPONSE":      {"provider", "Send again."},
+	"MODEL_CONFIG":            {"config", "Choose a model with ctrl+l or /model. Then send again."},
 }
 
 const genericNext = "Send again."

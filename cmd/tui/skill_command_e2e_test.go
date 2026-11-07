@@ -100,7 +100,7 @@ func TestInProcessClientListsSkillsAndExpandsThePrompt(t *testing.T) {
 	require.NoError(t, err)
 	assert.Equal(t, []protocol.ACPSkill{{Name: "demo", Description: "A demo skill", Path: file, Scope: protocol.ACPSkillUser, ModelInvocable: true}}, list.Skills)
 
-	_, err = c.SetModel(ctx, anthropicModel, false)
+	_, err = c.SetModel(ctx, anthropicModel, "", false)
 	require.NoError(t, err)
 	_, err = c.Prompt("/skill:demo go on")
 	require.NoError(t, err)

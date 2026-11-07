@@ -155,7 +155,7 @@ func TestACPWireDeferredMethods(t *testing.T) {
 }
 
 func TestACPWireErrorMessages(t *testing.T) {
-	kinds := []ACPErrorKind{ACPErrUnknownSession, ACPErrUnknownSubscription, ACPErrNotInitialized, ACPErrBusy, ACPErrDisposed, ACPErrNoAPIKey, ACPErrModelAccess, ACPErrQueueFull, ACPErrInvalidModel, ACPErrInvalidContent, ACPErrInvalidParams, ACPErrInvalidState, ACPErrCancelled, ACPErrUnsupported, ACPErrOutputFailure, ACPErrInternal, ACPErrNoModel, ACPErrProviderBusy}
+	kinds := []ACPErrorKind{ACPErrUnknownSession, ACPErrUnknownSubscription, ACPErrNotInitialized, ACPErrBusy, ACPErrDisposed, ACPErrNoAPIKey, ACPErrModelAccess, ACPErrQueueFull, ACPErrInvalidModel, ACPErrInvalidContent, ACPErrInvalidParams, ACPErrInvalidState, ACPErrCancelled, ACPErrUnsupported, ACPErrOutputFailure, ACPErrInternal, ACPErrNoModel, ACPErrProviderBusy, ACPErrConfig}
 	seen := map[string]ACPErrorKind{}
 	for _, k := range kinds {
 		m := ACPErrorMessage(k)
@@ -169,6 +169,9 @@ func TestACPWireErrorMessages(t *testing.T) {
 	}
 	if ACPErrorCode(ACPErrModelAccess) != ACPCodeModelAccess {
 		t.Fatal("model access code mapping changed")
+	}
+	if ACPErrorCode(ACPErrConfig) != ACPCodeConfig || ACPErrorMessage(ACPErrConfig) != ModelConfigChanged {
+		t.Fatal("the config kind lost its code or its fixed text")
 	}
 	if m := ACPErrorMessage(ACPErrNoAPIKey); !strings.Contains(m, "ask auth") {
 		t.Fatalf("auth guidance missing: %q", m)
