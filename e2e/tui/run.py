@@ -252,14 +252,16 @@ def product_hashes():
 
 ASK_CASES = ['ask-idle', 'ask-turn', 'ask-resize', 'ask-selector', 'ask-providers', 'ask-mouse',
              'ask-exit-quit', 'ask-exit-ctrl-c', 'ask-exit-sigterm', 'ask-exit-sighup',
-             'ask-copy', 'ask-in-process', 'ask-trust-prompt', 'ask-trust-prompt-no-leader']
+             'ask-copy', 'ask-in-process', 'ask-trust-prompt', 'ask-trust-prompt-no-leader',
+             'ask-model-cycle']
 # Cases that run with the in-process agent and start no leader.
 IN_PROCESS_CASES = {'ask-in-process', 'ask-trust-prompt-no-leader'}
 # In-process cases whose ASK_HOME is a symlink, which the leader connect refuses as an unsafe
 # endpoint, so the TUI falls back at startup. The other in-process cases use --no-leader.
 SYMLINK_HOME_CASES = {'ask-in-process'}
 # Arguments of `ask` for a case; the other cases start `ask` with no arguments.
-CASE_ARGS = {'ask-trust-prompt-no-leader': ('--no-leader',)}
+CASE_ARGS = {'ask-trust-prompt-no-leader': ('--no-leader',),
+             'ask-model-cycle': ('--models', 'faux/faux-1,local/*')}
 # Files in ASK_HOME that a leader creates: its socket, its lock and its log.
 LEADER_FILES = ('leader.sock', 'leader.lock', 'leader.log')
 # Cases that run as if over SSH, so /copy skips the native clipboard command and uses OSC 52.
@@ -1310,6 +1312,45 @@ def ask_exit_sighup(session):
     return ask_exit_signal(session, signal.SIGHUP, 'SIGHUP')
 
 
+# The second and third models of the `ask-model-cycle` scope: a provider that only the user
+# models.json defines, with a literal key. The case sends no prompt, so nothing connects to its
+# URL. Three entries tell a back step from a forward step.
+CYCLE_MODELS_FILE = {'providers': {'local': {
+    'baseUrl': 'http://127.0.0.1:9/v1', 'api': 'openai-completions', 'apiKey': 'local-runner-key',
+    'models': [{'id': 'alpha'}, {'id': 'beta'}]}}}
+
+
+def prepare_model_home(home):
+    """A private ASK_HOME with a user models.json; the loader needs mode 0700 and 0600."""
+    home.mkdir(mode=0o700)
+    path = home / 'models.json'
+    path.write_text(json.dumps(CYCLE_MODELS_FILE) + '\n')
+    path.chmod(0o600)
+
+
+def cycle_step(session, key, model, position):
+    """Press key and wait for the footer row and the status row of the new model."""
+    session.key(key)
+    state = session.wait(lambda s: model in footer_row(screen_lines(s)) and
+                         f'✓ Model: {model}' in s['text'] and f'{position} of 3' in s['text'])
+    return state
+
+
+def ask_model_cycle(session):
+    """ctrl+p and ctrl+shift+p move the session model through the --models scope."""
+    idle_screen(session)
+    cycle_step(session, 'ctrl+p', 'local/alpha', 2)
+    session.capture('forward')
+    # A forward step would show local/beta here.
+    cycle_step(session, 'ctrl+shift+p', 'faux/faux-1', 1)
+    session.capture('back')
+    # The list wraps: back from the first entry is the last entry.
+    cycle_step(session, 'ctrl+shift+p', 'local/beta', 3)
+    session.capture('wrap')
+    session.quit()
+    return {'scope': ['faux/faux-1', 'local/alpha', 'local/beta'], 'forward': True, 'back': True, 'wrap': True}
+
+
 CASES = {
     'ask-idle': (ask_idle, ASK_COLUMNS, ASK_ROWS, {}),
     'ask-turn': (ask_turn, ASK_COLUMNS, ASK_ROWS, {}),
@@ -1326,6 +1367,8 @@ CASES = {
     'ask-in-process': (ask_in_process, ASK_COLUMNS, ASK_ROWS, {}),
     'ask-trust-prompt': (ask_trust_prompt, ASK_COLUMNS, ASK_ROWS, {}),
     'ask-trust-prompt-no-leader': (ask_trust_prompt_no_leader, ASK_COLUMNS, ASK_ROWS, {}),
+    # The leader gets no model list from the network, so the scope comes from the file only.
+    'ask-model-cycle': (ask_model_cycle, ASK_COLUMNS, ASK_ROWS, {'ASK_DISABLE_MODEL_REFRESH': '1'}),
 }
 assert list(CASES) == ASK_CASES
 
@@ -1335,6 +1378,8 @@ CASE_PREPARE = {'ask-trust-prompt': prepare_gated_project, 'ask-trust-prompt-no-
 # Cases that start on another screen than the idle prompt. No session exists on that
 # screen yet, so the case checks the link itself after the first session starts.
 CASE_READY = {'ask-trust-prompt': trust_prompt_ready, 'ask-trust-prompt-no-leader': trust_prompt_ready}
+# Cases that need files in ASK_HOME before `ask` starts.
+CASE_HOME = {'ask-model-cycle': prepare_model_home}
 
 
 def compile_ask(base, artifacts):
@@ -1368,6 +1413,8 @@ def run_ask(args, cli, run_id, artifacts, results):
                 work.mkdir()
                 if scenario in CASE_PREPARE:
                     CASE_PREPARE[scenario](work)
+                if scenario in CASE_HOME:
+                    CASE_HOME[scenario](home)
                 in_process = scenario in IN_PROCESS_CASES
                 if scenario in SYMLINK_HOME_CASES:
                     # The real home is behind a symlink; the leader connect refuses it.
