@@ -146,8 +146,8 @@ func (a *askTerm) requireLastLine(want string) {
 // onlySessionID returns the one live session of the home.
 func onlySessionID(t *testing.T, bin, home string) string {
 	t.Helper()
-	// The header shows the leader before the session exists, so the session
-	// is polled for.
+	// The screen draws before the leader holds the session, so the session is
+	// polled for.
 	ids := liveSessionIDs(t, bin, home)
 	for deadline := time.Now().Add(exitWait); len(ids) == 0 && time.Now().Before(deadline); {
 		time.Sleep(50 * time.Millisecond)
@@ -176,10 +176,9 @@ func TestInteractiveExitLineAndTerminalState(t *testing.T) {
 			bin, home := newE2EHome(t)
 			a := startAskTerm(t, bin, home, askTermOptions{})
 			a.waitText("Ask anything")
-			// The header shows the leader once the link is up. It must not be the
-			// in-process agent.
-			a.waitText("● leader")
-			require.False(t, containsRow(a.rows(), "in-process"))
+			// The screen does not show the link, so the leader of the home tells
+			// that the session is not the in-process agent.
+			requireLeaderLink(t, a, bin, home)
 			a.requireRaw()
 			id := onlySessionID(t, bin, home)
 			tc.end(t, a)
@@ -206,14 +205,23 @@ func (c *sessionClient) Info() tui.ConnInfo {
 	return tui.ConnInfo{Mode: tui.ModeLeader, InstanceID: "inst_0123456789abcdef"}
 }
 func (c *sessionClient) Close() error { return nil }
-func (c *sessionClient) NewSession(_ context.Context, cwd string) (tui.SessionInfo, error) {
+func (c *sessionClient) NewSession(_ context.Context, cwd string, _ tui.NewSessionOptions) (tui.SessionInfo, error) {
 	return tui.SessionInfo{ID: c.id, Role: protocol.ACPRoleDriver, Cwd: cwd}, nil
+}
+
+// TrustState answers as an older leader does: the UI then starts the session
+// with no trust prompt.
+func (c *sessionClient) TrustState(context.Context, string) (protocol.ACPTrustStateResult, error) {
+	return protocol.ACPTrustStateResult{}, tui.ErrTrustNotAvailable
 }
 func (c *sessionClient) State(context.Context) (protocol.ACPStateResult, error) {
 	return protocol.ACPStateResult{}, nil
 }
 func (c *sessionClient) Usage(context.Context) (protocol.ACPUsageResult, error) {
 	return protocol.ACPUsageResult{}, nil
+}
+func (c *sessionClient) Skills(context.Context) (protocol.ACPSkillsResult, error) {
+	return protocol.ACPSkillsResult{}, nil
 }
 func (c *sessionClient) Models(context.Context) (protocol.ACPModelsResult, error) {
 	return protocol.ACPModelsResult{}, nil

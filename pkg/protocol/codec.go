@@ -147,6 +147,30 @@ func EncodeEvent(ev Event) ([]byte, error) {
 			Result     ToolExecutionResult `json:"result"`
 			IsError    bool                `json:"isError"`
 		}{newEnvelopeWire(&e.Envelope, e.EventType()), e.ToolCallID, e.ToolName, e.Result, e.IsError})
+	case *TaskStart:
+		return marshalJSON(struct {
+			envelopeWire
+			TaskID    string `json:"taskId"`
+			Kind      string `json:"kind"`
+			Title     string `json:"title"`
+			StartedAt int64  `json:"startedAt"`
+		}{newEnvelopeWire(&e.Envelope, e.EventType()), e.TaskID, e.Kind, e.Title, e.StartedAt})
+	case *TaskUpdate:
+		return marshalJSON(struct {
+			envelopeWire
+			TaskID      string `json:"taskId"`
+			OutputBytes int64  `json:"outputBytes"`
+			OutputLines int64  `json:"outputLines"`
+		}{newEnvelopeWire(&e.Envelope, e.EventType()), e.TaskID, e.OutputBytes, e.OutputLines})
+	case *TaskEnd:
+		return marshalJSON(struct {
+			envelopeWire
+			TaskID     string `json:"taskId"`
+			Status     string `json:"status"`
+			ExitCode   *int   `json:"exitCode,omitempty"`
+			OutputFile string `json:"outputFile,omitempty"`
+			DurationMS int64  `json:"durationMs"`
+		}{newEnvelopeWire(&e.Envelope, e.EventType()), e.TaskID, e.Status, e.ExitCode, e.OutputFile, e.DurationMS})
 	case *RawEvent:
 		return encodeRawEvent(e)
 	default:
@@ -436,6 +460,41 @@ func DecodeEvent(data []byte) (Event, error) {
 		}
 		return &ToolExecutionEnd{
 			Envelope: env, ToolCallID: w.ToolCallID, ToolName: w.ToolName, Result: w.Result, IsError: w.IsError,
+		}, nil
+	case TypeTaskStart:
+		var w struct {
+			TaskID    string `json:"taskId"`
+			Kind      string `json:"kind"`
+			Title     string `json:"title"`
+			StartedAt int64  `json:"startedAt"`
+		}
+		if err := json.Unmarshal(data, &w); err != nil {
+			return nil, err
+		}
+		return &TaskStart{Envelope: env, TaskID: w.TaskID, Kind: w.Kind, Title: w.Title, StartedAt: w.StartedAt}, nil
+	case TypeTaskUpdate:
+		var w struct {
+			TaskID      string `json:"taskId"`
+			OutputBytes int64  `json:"outputBytes"`
+			OutputLines int64  `json:"outputLines"`
+		}
+		if err := json.Unmarshal(data, &w); err != nil {
+			return nil, err
+		}
+		return &TaskUpdate{Envelope: env, TaskID: w.TaskID, OutputBytes: w.OutputBytes, OutputLines: w.OutputLines}, nil
+	case TypeTaskEnd:
+		var w struct {
+			TaskID     string `json:"taskId"`
+			Status     string `json:"status"`
+			ExitCode   *int   `json:"exitCode"`
+			OutputFile string `json:"outputFile"`
+			DurationMS int64  `json:"durationMs"`
+		}
+		if err := json.Unmarshal(data, &w); err != nil {
+			return nil, err
+		}
+		return &TaskEnd{
+			Envelope: env, TaskID: w.TaskID, Status: w.Status, ExitCode: w.ExitCode, OutputFile: w.OutputFile, DurationMS: w.DurationMS,
 		}, nil
 	default:
 		return &RawEvent{Envelope: env, Type: head.Type, Data: append(json.RawMessage(nil), bytes.TrimSpace(data)...)}, nil

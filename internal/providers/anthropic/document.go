@@ -70,7 +70,10 @@ func buildDocument(msgs []protocol.Message, model providers.Model, pr *providers
 	} else {
 		extra["output_config"] = map[string]any{"effort": pr.Effort}
 		if model.Provider == providers.ProviderAnthropic && model.Reasoning {
-			extra["thinking"] = map[string]any{"type": "adaptive"}
+			// From Claude Opus 4.7 on, the default display is "omitted": the
+			// thinking blocks come back with empty text. "summarized" asks for
+			// a readable summary, so the user can see the reasoning.
+			extra["thinking"] = map[string]any{"type": "adaptive", "display": "summarized"}
 		}
 		if pr.Temperature != nil {
 			diags = append(diags, protocol.Diagnostic{
@@ -98,17 +101,22 @@ func buildDocument(msgs []protocol.Message, model providers.Model, pr *providers
 
 // effectiveThinking is the thinking level that a request uses: the requested
 // level, medium when none was asked, and off when the model is an Anthropic
-// model and the request forces a tool.
+// model and the request forces a tool. ClampThinkingLevel then fits the level
+// to the model, so a model with Reasoning false always sends thinking
+// disabled and no effort, and a model that refuses thinking off sends its
+// lowest effort.
 func effectiveThinking(model providers.Model, opts providers.StreamOptions) (protocol.ThinkingLevel, error) {
 	level := opts.Reasoning
-	if model.Provider == providers.ProviderAnthropic && opts.ToolChoice != "" {
-		if level != "" && level != protocol.ThinkingOff {
-			return "", fmt.Errorf("%w: forced tool choice cannot use Anthropic thinking", providers.ErrUnsupportedRequest)
-		}
-		level = protocol.ThinkingOff
-	}
+	forced := model.Provider == providers.ProviderAnthropic && opts.ToolChoice != ""
 	if level == "" {
 		level = protocol.ThinkingMedium
+		if forced {
+			level = protocol.ThinkingOff
+		}
+	}
+	level = providers.ClampThinkingLevel(model, level)
+	if forced && level != protocol.ThinkingOff {
+		return "", fmt.Errorf("%w: forced tool choice cannot use Anthropic thinking", providers.ErrUnsupportedRequest)
 	}
 	return level, nil
 }
@@ -130,13 +138,17 @@ func effortOf(level protocol.ThinkingLevel) string {
 	}
 }
 
+// clampMaxTokens fits the output limit into the model limits. RequestLimits
+// gives the family default for a limit that the row does not know, so a row
+// with unknown limits does not send max_tokens 1.
 func clampMaxTokens(model providers.Model, opts providers.StreamOptions, estimate int) int {
-	limit := model.MaxTokens
+	modelMax, window := providers.RequestLimits(model)
+	limit := modelMax
 	if opts.MaxTokens > 0 && (limit == 0 || opts.MaxTokens < limit) {
 		limit = opts.MaxTokens
 	}
-	if model.ContextWindow > 0 {
-		room := model.ContextWindow - estimate - 4096
+	if window > 0 {
+		room := window - estimate - 4096
 		if room < 1 {
 			room = 1
 		}
@@ -147,8 +159,8 @@ func clampMaxTokens(model providers.Model, opts providers.StreamOptions, estimat
 	if limit < 1 {
 		limit = 1
 	}
-	if model.MaxTokens > 0 && limit > model.MaxTokens {
-		limit = model.MaxTokens
+	if modelMax > 0 && limit > modelMax {
+		limit = modelMax
 	}
 	return limit
 }

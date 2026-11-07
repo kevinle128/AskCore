@@ -15,15 +15,18 @@ import (
 // content only. It draws itself for a width and a theme when asked, so a resize
 // or a color change draws the same block again. Rows start at column 0 of the
 // transcript: the two-column indent and the glyph column are part of each
-// block.
+// block. A block draws no empty row above or below its content: the block pane
+// owns the gap rows between blocks.
 
 const (
 	// glyphIndent is the indent before a glyph, and textIndent is where the
-	// text of a block starts: indent, glyph and one space. Column 0 of every
-	// row is the gutter: it is blank here, and the pane may draw a selection
-	// mark in it without any row changing its width.
-	glyphIndent = 2
-	textIndent  = 4
+	// text of a block starts: indent, glyph and one space. textRightPad is the
+	// number of columns at the right edge that text leaves blank. Column 0 and
+	// the last column of every row thus hold no text, so that the pane can draw
+	// the selection box there without any row changing its width.
+	glyphIndent  = 2
+	textIndent   = 4
+	textRightPad = 2
 	// replyIndent is where the text of an assistant reply starts. A reply has
 	// no glyph: the step glyph marks tools and thinking.
 	replyIndent = 2
@@ -133,6 +136,10 @@ func wrapUntrusted(s string, width int) []string { return wrapLines(ansi.Strip(s
 // bodyWidth is the width for text after the indent.
 func bodyWidth(rc RenderContext) int { return max(1, rc.Width-textIndent) }
 
+// textWidth is the width for text in the pane that starts at column indent: it
+// ends textRightPad columns before the right edge.
+func textWidth(rc RenderContext, indent int) int { return max(1, rc.Width-indent-textRightPad) }
+
 // styleRows styles each row with a role.
 func styleRows(th *Theme, role Role, rows []string) []string {
 	out := make([]string, len(rows))
@@ -179,19 +186,13 @@ const promptEdge = 3
 // by the send time.
 func (b userPromptBlock) wrapped(width int) []string {
 	// Columns: indent, glyph and space on the left; two spaces at the right.
-	avail := max(1, width-textIndent-promptRightPad)
-	first := avail
-	if b.at != "" {
-		first = max(1, avail-displayWidth(b.at)-1)
-	}
-	rows := wrapHanging(b.text, first, avail)
+	avail := max(1, width-textIndent-textRightPad)
+	rows := wrapHanging(b.text, rowTimeRoom(avail, b.at), avail)
 	if len(rows) == 0 {
 		rows = []string{""}
 	}
 	return rows
 }
-
-const promptRightPad = 2
 
 // A prompt of more than promptEdge rows folds. It has two forms, so its lowest
 // mode is Truncated: a Collapsed prompt would draw the same rows and a fold key
@@ -199,9 +200,9 @@ const promptRightPad = 2
 func (b userPromptBlock) foldable(width int) bool {
 	return len(b.wrapped(width)) > promptEdge
 }
-func (b userPromptBlock) defaultFold() FoldMode  { return FoldTruncated }
-func (b userPromptBlock) collapseFold() FoldMode { return FoldTruncated }
-func (b userPromptBlock) foldGroup() foldGroup   { return groupNone }
+func (b userPromptBlock) defaultFold(foldDefaults) FoldMode { return FoldTruncated }
+func (b userPromptBlock) collapseFold() FoldMode            { return FoldTruncated }
+func (b userPromptBlock) foldGroup() foldGroup              { return groupNone }
 
 func (b userPromptBlock) Lines(rc RenderContext) []string {
 	th := rc.Theme
@@ -219,93 +220,85 @@ func (b userPromptBlock) Lines(rc RenderContext) []string {
 	muted := th.onBackground(RoleMuted, RolePanel)
 	fill := func(n int) string { return band.Render(strings.Repeat(" ", max(0, n))) }
 
-	out := make([]string, 0, len(rows)+2)
+	out := make([]string, 0, len(rows)+1)
 	for i, row := range rows {
 		var line string
-		used := textIndent + displayWidth(row)
 		if i == 0 {
 			line = fill(glyphIndent) + glyph.Render(GlyphUser) + fill(1) + text.Render(row)
-			if b.at != "" && rc.Width-promptRightPad-used-displayWidth(b.at) >= 1 {
-				gap := rc.Width - promptRightPad - used - displayWidth(b.at)
-				line += fill(gap) + dim.Render(b.at)
-				used += gap + displayWidth(b.at)
-			}
+			line, _ = withRowTime(line, rc.Width-textRightPad, b.at, dim, fill)
 		} else {
 			line = fill(textIndent) + text.Render(row)
 		}
-		out = append(out, line+fill(rc.Width-used))
+		out = append(out, line+fill(rc.Width-displayWidth(line)))
 	}
 	if hidden > 0 {
 		word := "lines"
 		if hidden == 1 {
 			word = "line"
 		}
-		hint := truncateTo(fmt.Sprintf("… +%d %s · e to expand", hidden, word), max(1, rc.Width-textIndent))
+		hint := truncateTo(fmt.Sprintf("… +%d %s · e to expand", hidden, word), textWidth(rc, textIndent))
 		out = append(out, fill(textIndent)+muted.Render(hint)+fill(rc.Width-textIndent-displayWidth(hint)))
 	}
-	return append(out, "")
+	return out
 }
 
 // --- assistant text ---
 
 // A long reply is shown by several blocks, one after the other, so that a block
 // that is final stops changing while the rest still streams. A block that
-// continues a reply starts with an empty row. The first block of a reply starts
-// with an empty row only when a step comes right before it. Together the rows
-// are the rows of one block that holds the whole text.
+// continues a reply starts with an empty row: the break between two
+// paragraphs. Together the rows are the rows of one block that holds the whole
+// text.
 
 type assistantTextBlock struct {
 	text  string
 	md    *markdownStream
 	first bool
-	// lead is true when the first block follows a step and needs an empty row
-	// above it.
-	lead bool
+	// at is the 24h time that the first row shows at its right, or "".
+	at string
 }
 
 // NewAssistantTextBlock returns a reply block that draws its text as markdown.
 func NewAssistantTextBlock(text string) Block {
-	return newAssistantTextBlock(text, newMarkdownStream(), true, false)
+	return newAssistantTextBlock(text, newMarkdownStream(), true)
 }
 
 // newAssistantTextBlock returns a block for a part of a reply. Blocks that
 // stand for the same part while it streams share one stream, which caches the
 // parts of the text that are drawn.
-func newAssistantTextBlock(text string, stream *markdownStream, first, lead bool) Block {
-	return assistantTextBlock{text: text, md: stream, first: first, lead: lead}
+func newAssistantTextBlock(text string, stream *markdownStream, first bool) Block {
+	return assistantTextBlock{text: text, md: stream, first: first}
+}
+
+// newTimedReplyBlock returns the first block of a reply. Its first row shows
+// the time at (clockTime) at the right when the row has room for it.
+func newTimedReplyBlock(text string, stream *markdownStream, at string) Block {
+	return assistantTextBlock{text: text, md: stream, first: true, at: at}
 }
 
 func (b assistantTextBlock) Lines(rc RenderContext) []string {
 	th := rc.Theme
-	rows, _ := b.md.render(b.text, max(1, rc.Width-replyIndent), th)
+	width := textWidth(rc, replyIndent)
+	rows, _ := b.md.renderFirstRoom(b.text, width, rowTimeRoom(width, b.at), th)
 	if len(rows) == 0 {
 		return nil
 	}
 	var out []string
-	if !b.first || b.lead {
+	if !b.first {
 		out = append(out, "")
 	}
 	pad := strings.Repeat(" ", replyIndent)
-	for _, row := range rows {
-		switch {
-		case row.panel:
-			out = append(out, " "+panelPad(th, replyIndent-1)+row.text)
-		case row.text == "":
-			out = append(out, "")
-		default:
-			out = append(out, pad+row.text)
+	for i, row := range rows {
+		line := pad + row.text
+		if row.text == "" {
+			line = ""
 		}
+		if i == 0 && row.textRow() {
+			line, _ = withRowTime(line, rc.Width-textRightPad, b.at, th.Style(RoleDim), spaces)
+		}
+		out = append(out, line)
 	}
 	return out
-}
-
-// panelPad is n columns of the code panel color, or plain spaces without color.
-func panelPad(th *Theme, n int) string {
-	bg := bgSequence(th, RoleCodePanel)
-	if bg == "" {
-		return strings.Repeat(" ", n)
-	}
-	return bg + strings.Repeat(" ", n) + "\x1b[0m"
 }
 
 // --- notes ---
@@ -320,15 +313,15 @@ type noteBlock struct {
 
 func (b noteBlock) Lines(rc RenderContext) []string {
 	th := rc.Theme
-	body := styleRows(th, b.textRole, wrapUntrusted(b.text, bodyWidth(rc)))
+	body := styleRows(th, b.textRole, wrapUntrusted(b.text, textWidth(rc, textIndent)))
 	out := leadRows(th.Render(b.glyphRole, b.glyph), body)
 	if b.next != "" {
 		pad := strings.Repeat(" ", textIndent)
-		for _, row := range styleRows(th, RoleMuted, wrapUntrusted(b.next, bodyWidth(rc))) {
+		for _, row := range styleRows(th, RoleMuted, wrapUntrusted(b.next, textWidth(rc, textIndent))) {
 			out = append(out, pad+row)
 		}
 	}
-	return append(out, "")
+	return out
 }
 
 // NewRetryNote returns the note of a retry: "↻ <text>".
@@ -360,14 +353,14 @@ type successNote struct {
 
 func (b successNote) Lines(rc RenderContext) []string {
 	th := rc.Theme
-	out := leadRows(th.Render(RoleSuccess, GlyphOK), styleRows(th, RoleSuccess, wrapUntrusted(b.text, bodyWidth(rc))))
+	out := leadRows(th.Render(RoleSuccess, GlyphOK), styleRows(th, RoleSuccess, wrapUntrusted(b.text, textWidth(rc, textIndent))))
 	pad := strings.Repeat(" ", textIndent)
 	for _, m := range b.more {
-		for _, row := range styleRows(th, RoleMuted, wrapUntrusted(m, bodyWidth(rc))) {
+		for _, row := range styleRows(th, RoleMuted, wrapUntrusted(m, textWidth(rc, textIndent))) {
 			out = append(out, pad+row)
 		}
 	}
-	return append(out, "")
+	return out
 }
 
 // NewCancelMarker returns the marker for a cancelled run: "⊘ <text>".
@@ -389,7 +382,7 @@ func ErrorHeadline(kind, message string) string {
 	return "Error (" + kind + "): " + message
 }
 
-// --- meta line, divider, spacer ---
+// --- meta line, divider ---
 
 type metaLineBlock struct{ text string }
 
@@ -399,7 +392,7 @@ func NewMetaLineBlock(text string) Block { return metaLineBlock{text: text} }
 
 func (b metaLineBlock) Lines(rc RenderContext) []string {
 	pad := strings.Repeat(" ", replyIndent)
-	return []string{pad + rc.Theme.Render(RoleDim, truncateTo(oneLine(b.text), max(1, rc.Width-replyIndent))), ""}
+	return []string{pad + rc.Theme.Render(RoleDim, truncateTo(oneLine(b.text), textWidth(rc, replyIndent)))}
 }
 
 type dividerBlock struct{ text string }
@@ -409,12 +402,5 @@ func NewDividerBlock(text string) Block { return dividerBlock{text: text} }
 
 func (b dividerBlock) Lines(rc RenderContext) []string {
 	label := "── " + oneLine(b.text) + " ──"
-	return []string{strings.Repeat(" ", glyphIndent) + rc.Theme.Render(RoleDim, truncateTo(label, max(1, rc.Width-glyphIndent))), ""}
+	return []string{strings.Repeat(" ", glyphIndent) + rc.Theme.Render(RoleDim, truncateTo(label, textWidth(rc, glyphIndent)))}
 }
-
-type spacerBlock struct{}
-
-// NewSpacerBlock returns one empty row.
-func NewSpacerBlock() Block { return spacerBlock{} }
-
-func (spacerBlock) Lines(RenderContext) []string { return []string{""} }

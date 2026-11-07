@@ -13,6 +13,7 @@ import (
 
 	"AskCore/internal/jobs"
 	"AskCore/internal/sandbox"
+	"AskCore/internal/tasks"
 	"AskCore/pkg/protocol"
 )
 
@@ -73,11 +74,13 @@ func (*Bash) Decl() protocol.ToolDecl {
 			"A command that runs longer moves to the background and goes on as a job; it is not stopped. "+
 			"Set run_in_background to true to start a long command, such as a server or a build, in the background at once. "+
 			"A notice arrives when a background job finishes, so do not poll job_output. Stop a job with job_kill. "+
-			"Do not end the command with &. Background jobs end when the session closes, and when `ask -p` ends.",
+			"Do not end the command with &. Background jobs end when the session closes. "+
+			"In a non-interactive run the run waits for its background jobs, and a background job stops after a time limit "+
+			"(by default 10 minutes); with run_in_background, `timeout` sets that limit, up to 2 hours.",
 			DefaultMaxLines, DefaultMaxBytes/1024, int(bashDefaultTimeout/time.Second), int(bashMaxTimeout/time.Second)),
 		Parameters: json.RawMessage(`{"type":"object","properties":{` +
 			`"command":{"type":"string","description":"Bash command to execute"},` +
-			`"timeout":{"type":"number","description":"Seconds to wait before the command moves to the background (default 120, maximum 600)"},` +
+			`"timeout":{"type":"number","description":"Seconds to wait before the command moves to the background (default 120, maximum 600). With run_in_background, the seconds the job may run in the background in a non-interactive run (default 600, maximum 7200)"},` +
 			`"run_in_background":{"type":"boolean","description":"Start the command as a background job and return at once"}},` +
 			`"required":["command"]}`),
 	}
@@ -103,14 +106,27 @@ func (b *Bash) Execute(ctx context.Context, tc Context, args json.RawMessage) (p
 	if endsInBackgroundOperator(in.Command) {
 		return protocol.ToolExecutionResult{}, failf("%s", trailingAmpersandText)
 	}
-	budget, clamped, err := waitBudget(in.Timeout)
+	background := in.RunInBackground != nil && *in.RunInBackground
+	var budget, limit time.Duration
+	clamped := false
+	var err error
+	if background {
+		// With run_in_background, timeout is the background limit of a session
+		// that has one (ask -p); the table caps it.
+		limit, err = backgroundLimit(in.Timeout)
+	} else {
+		budget, clamped, err = waitBudget(in.Timeout)
+	}
 	if err != nil {
 		return protocol.ToolExecutionResult{}, err
 	}
 
-	background := in.RunInBackground != nil && *in.RunInBackground
+	owner, err := jobOwnerOf(tc)
+	if err != nil {
+		return protocol.ToolExecutionResult{}, err
+	}
 	// A foreground command is waited for below; its end must not also come as a notice.
-	job, err := b.table.Start(jobs.StartSpec{Kind: jobs.KindBash, Command: in.Command, Cwd: tc.Cwd, Foreground: !background})
+	job, err := b.table.Start(jobs.StartSpec{Kind: jobs.KindBash, Command: in.Command, Cwd: tc.Cwd, Foreground: !background, Owner: owner, BackgroundLimit: limit})
 	if err != nil {
 		return protocol.ToolExecutionResult{}, startFailure(err)
 	}
@@ -213,6 +229,23 @@ func waitBudget(timeout *float64) (budget time.Duration, clamped bool, err error
 	return max(time.Duration(*timeout*float64(time.Second)), time.Millisecond), false, nil
 }
 
+// backgroundLimit returns the background limit that timeout asks for, zero
+// when it asks for none.
+func backgroundLimit(timeout *float64) (time.Duration, error) {
+	if timeout == nil {
+		return 0, nil
+	}
+	if math.IsNaN(*timeout) || *timeout <= 0 {
+		return 0, failf("timeout must be more than 0 seconds. With run_in_background it is the time the job may run in the background.")
+	}
+	// The job table caps the limit at its maximum; clamp here only so the
+	// conversion cannot overflow.
+	if *timeout >= float64(math.MaxInt64)/float64(time.Second) {
+		return time.Duration(math.MaxInt64), nil
+	}
+	return max(time.Duration(*timeout*float64(time.Second)), time.Millisecond), nil
+}
+
 // startFailure turns an error of the job table into text for the model.
 func startFailure(err error) error {
 	switch {
@@ -220,6 +253,8 @@ func startFailure(err error) error {
 		return failf("%s", err)
 	case errors.Is(err, jobs.ErrClosed):
 		return failf("Cannot start the command: the session is closing.")
+	case errors.Is(err, jobs.ErrBackgroundDisabled):
+		return failf("Background jobs are turned off in this session. Run the command in the foreground.")
 	}
 	return failf("Cannot start the command: %v", err)
 }
@@ -361,4 +396,29 @@ func endsInBackgroundOperator(command string) bool {
 		}
 	}
 	return last == '&' && prev != '&' && prev != '>' && prev != '<' && prev != '|'
+}
+
+// errNoConversation refuses a job tool that runs outside an Agent: a job needs
+// a conversation for its notices and its visibility.
+var errNoConversation = errors.New("this tool needs an agent conversation; it has none")
+
+// jobOwner is the conversation of a tool call as the job table sees it: the
+// notices of the job wake that conversation at its next turn boundary.
+type jobOwner struct{ port tasks.Port }
+
+func (o jobOwner) Gen() uint64 { return o.port.Gen() }
+
+func (o jobOwner) Notify(msg protocol.Message) (string, error) {
+	return o.port.Notify(tasks.NoticeWake, msg)
+}
+
+func (o jobOwner) Remove(id string) bool { return o.port.Remove(id) }
+
+// jobOwnerOf returns the owner of the jobs that the call starts or sees. It
+// never falls back to a default generation.
+func jobOwnerOf(tc Context) (jobOwner, error) {
+	if tc.Notices == nil {
+		return jobOwner{}, errNoConversation
+	}
+	return jobOwner{port: tc.Notices}, nil
 }

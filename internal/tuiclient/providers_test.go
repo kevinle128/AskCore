@@ -549,12 +549,12 @@ func TestClientPassesDefaultSavedAndFallback(t *testing.T) {
 	c.mu.Unlock()
 	ctx := context.Background()
 
-	res, err := c.SetModel(ctx, "m1", true)
+	res, err := c.SetModel(ctx, "m1", "", true)
 	require.NoError(t, err)
 	require.True(t, res.DefaultSaved)
 	require.True(t, decode[protocol.ACPModelRequest](t, sc.last(protocol.ACPSetModel).Params).SaveDefault)
 
-	_, err = c.SetModel(ctx, "m1", false)
+	_, err = c.SetModel(ctx, "m1", "", false)
 	require.NoError(t, err)
 	require.False(t, decode[protocol.ACPModelRequest](t, sc.last(protocol.ACPSetModel).Params).SaveDefault)
 
@@ -563,6 +563,24 @@ func TestClientPassesDefaultSavedAndFallback(t *testing.T) {
 	require.NotNil(t, st.ModelFallback)
 	require.Equal(t, protocol.ACPFallbackNoCredential, st.ModelFallback.Reason)
 	require.Equal(t, "m1", st.ModelFallback.SavedDefault)
+}
+
+// A model change with a thinking level sends both in one set_model call, and
+// the result keeps the level that the host echoes.
+func TestClientSetModelSendsThinkingLevel(t *testing.T) {
+	sc := newScript(map[string]func(sent) (any, string, bool){
+		protocol.ACPSetModel: fixed(protocol.ACPSetModelResult{ModelID: "m1", ThinkingLevel: protocol.ThinkingOff}),
+	})
+	c := openScripted(t, sc, tui.ModeLeader, "leader-a")
+	defer func() { require.NoError(t, c.Close()) }()
+	c.mu.Lock()
+	c.sess = sessionState{has: true, id: "s"}
+	c.mu.Unlock()
+
+	res, err := c.SetModel(context.Background(), "m1", protocol.ThinkingHigh, false)
+	require.NoError(t, err)
+	require.Equal(t, protocol.ThinkingOff, res.ThinkingLevel)
+	require.JSONEq(t, `{"sessionId":"s","modelId":"m1","thinkingLevel":"high"}`, string(sc.last(protocol.ACPSetModel).Params))
 }
 
 func TestClientCancelsOpenLoginOnClose(t *testing.T) {

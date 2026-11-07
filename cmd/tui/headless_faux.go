@@ -2,15 +2,16 @@ package main
 
 import (
 	"context"
+	"errors"
 	"fmt"
-	"net/http"
+	"slices"
 	"strconv"
 	"strings"
 
+	"AskCore/internal/app"
 	"AskCore/internal/providers"
 	"AskCore/internal/providers/anthropic"
 	"AskCore/internal/providers/faux"
-	"AskCore/internal/providers/openai"
 	"AskCore/pkg/protocol"
 )
 
@@ -69,44 +70,44 @@ func fauxStream(modelID string, getenv func(string) string) (providers.StreamFn,
 	return stream, m, nil
 }
 
-func openProvider(o options, getenv func(string) string) (providers.StreamFn, providers.Model, error) {
-	switch o.provider {
-	case defaultProvider:
+// openProvider returns the stream and the model of a headless run. Only the
+// demo provider has a stream of its own. Every other provider, Token Plan too,
+// resolves through the model list of view (the cache, the catalog and the user
+// models.json) and returns a nil stream: the native wires of the agent serve
+// the row by its API. It makes no network call.
+func openProvider(o options, getenv func(string) string, view *app.ModelView) (providers.StreamFn, providers.Model, error) {
+	if o.provider == defaultProvider {
 		return fauxStream(o.model, getenv)
-	case anthropic.ProviderID:
-		return tokenPlanStream(o.model, getenv, o.transport)
-	case providers.ProviderAnthropic, providers.ProviderOpenAI, providers.ProviderXAI:
-		m, err := providers.Find(providers.Ref{Provider: o.provider, ID: o.model})
-		if err != nil {
-			return nil, providers.Model{}, err
-		}
-		env := func(k string) (string, bool) { v := getenv(k); return v, v != "" }
-		client := &http.Client{Transport: o.transport}
-		if m.API == providers.APIAnthropicMessages {
-			p := anthropic.New(anthropic.WithEnv(env), anthropic.WithHTTPClient(client))
-			return p.Stream, m, nil
-		}
-		p := openai.NewResponses(openai.WithEnv(env), openai.WithHTTPClient(client))
-		return p.Stream, m, nil
-	default:
+	}
+	set := view.Set()
+	if set == nil {
 		return nil, providers.Model{}, fmt.Errorf("provider %q is not available", o.provider)
 	}
+	ref := providers.Ref{Provider: o.provider, ID: o.model}
+	m, err := set.Find(ref)
+	if errors.Is(err, providers.ErrAmbiguousModel) && o.provider == anthropic.ProviderID {
+		// A Token Plan model is on two wires; print mode uses the Messages
+		// wire, as it always did.
+		ref.API = providers.APIAnthropicMessages
+		m, err = set.Find(ref)
+	}
+	if err != nil {
+		if !slices.Contains(providerNames(set), o.provider) {
+			return nil, providers.Model{}, fmt.Errorf("provider %q is not available", o.provider)
+		}
+		return nil, providers.Model{}, err
+	}
+	return nil, m, nil
 }
 
-func tokenPlanStream(modelID string, getenv func(string) string, rt http.RoundTripper) (providers.StreamFn, providers.Model, error) {
-	m := anthropic.ModelFor(modelID)
-	opts := []anthropic.Option{anthropic.WithEnv(func(k string) (string, bool) {
-		v := getenv(k)
-		if v == "" {
-			return "", false
+func providerNames(set *providers.ModelSet) []string {
+	var out []string
+	for _, m := range set.All() {
+		if !slices.Contains(out, m.Provider) {
+			out = append(out, m.Provider)
 		}
-		return v, true
-	})}
-	if rt != nil {
-		opts = append(opts, anthropic.WithHTTPClient(&http.Client{Transport: rt}))
 	}
-	p := anthropic.New(opts...)
-	return p.Stream, m, nil
+	return out
 }
 
 func blockText(blocks []protocol.UserBlock) string {

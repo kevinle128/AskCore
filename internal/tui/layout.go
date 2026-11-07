@@ -9,7 +9,7 @@ import (
 //
 // The TUI owns the whole alternate screen. Top to bottom the rows are:
 //
-//	header row
+//	header row            the logo only
 //	rule
 //	block pane            all rows that no other part uses
 //	queue rows            only when inputs wait
@@ -17,12 +17,14 @@ import (
 //	rule
 //	prompt pane           menu rows, then the editor rows (or a selector or box)
 //	rule
+//	footer row            the status data: directory, model, context use
 //	shortcut bar
 //
 // Layout counts terminal columns and rows, never bytes. It gives rows to the
 // parts in a fixed priority order, so a small terminal keeps the prompt usable:
-//  1. the prompt pane keeps one row, the bar and the header stay, the block
-//     pane keeps one row (below 4 rows the pane and then the header give way)
+//  1. the prompt pane keeps one row, the bar and the footer row stay, the
+//     block pane keeps one row, then the header row (below 5 rows the header
+//     row gives way first, then the pane, then the footer row)
 //  2. the three rules, all or none: they exist from rulesMinHeight rows
 //  3. the status row
 //  4. the prompt pane grows up to half of the screen height
@@ -34,7 +36,7 @@ import (
 // A selector or a box replaces the prompt rows and has the same cap.
 
 const (
-	statusMaxRows  = 2
+	statusMaxRows  = 3
 	pendingMaxRows = 3
 	menuMaxRows    = 8
 	// modalMaxRows is the most rows that a selector or dialog takes before the
@@ -42,9 +44,9 @@ const (
 	// under its seven rows needs 14.
 	modalMaxRows = 14
 	// rulesMinHeight is the height from which the rules are drawn. At this
-	// height the header, its rule, one pane row, one status row, the two prompt
-	// rules, one prompt row and the bar fill the screen.
-	rulesMinHeight = 8
+	// height the header row, its rule, one pane row, one status row, the two
+	// prompt rules, one prompt row, the footer row and the bar fill the screen.
+	rulesMinHeight = 9
 	// minPaneHeight is the number of pane rows that a screen of 4 rows or more
 	// keeps.
 	minPaneHeight = 1
@@ -85,6 +87,9 @@ type EditorSlot struct {
 type Slots struct {
 	// Header is the row at the top of the screen.
 	Header string
+	// Footer is the status row of the session, between the prompt pane and
+	// the bar.
+	Footer string
 	Editor EditorSlot
 	// Status is the run status. A line feed splits it into rows; layout gives
 	// it at most statusMaxRows.
@@ -130,7 +135,7 @@ type demand struct {
 // alloc is the number of rows each part gets. headerRule is 0 or 1 and
 // promptRules is 0 or 2.
 type alloc struct {
-	header, headerRule, pane, queue, status, promptRules, prompt, menu, bar int
+	header, headerRule, pane, queue, status, promptRules, prompt, menu, footer, bar int
 }
 
 // allocate gives rows to the parts in priority order. The rows add up to
@@ -148,8 +153,9 @@ func allocate(height int, d demand) alloc {
 	}
 	a.prompt = take(1, 1)
 	a.bar = take(1, 1)
-	a.header = take(1, 1)
+	a.footer = take(1, 1)
 	a.pane = take(minPaneHeight, minPaneHeight)
+	a.header = take(1, 1)
 	if height >= rulesMinHeight {
 		a.headerRule = take(1, 1)
 		a.promptRules = take(2, 2)
@@ -231,6 +237,9 @@ func composeFrame(s Slots, pane func(rows int) []string, w, h int, th *Theme) Fr
 	}
 	if a.promptRules > 0 {
 		rule()
+	}
+	if a.footer > 0 {
+		add(s.Footer)
 	}
 	if a.bar > 0 {
 		add(s.Bar)

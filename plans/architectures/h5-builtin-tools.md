@@ -240,6 +240,7 @@ Recommendation given: A.
 Answer: A.
 Supersession note: this replaces the Grok `block_until_ms` and 10 h cap part of Q4; the move-to-background behavior of Q4 stays.
 Consequence: Pi's parameter name `timeout` stays, its meaning changes from kill to move to the background; one time parameter only.
+Supersession note (user, 2026-10-26): in `ask -p` only, a background job now has a time limit (10 min by default, up to 2 h), and `timeout` with `run_in_background` sets that limit. The TUI and the leader keep no background limit. See `docs/adr/0005-shell-jobs-use-the-notify-port.md`.
 
 ### Q10. Monitor shape
 
@@ -260,6 +261,7 @@ Recommendation given: A.
 Answer: A.
 Consequence: monitor events go through `Steer`, coalesced into one message per delivery and limited by the flood guard (about 10 events, 1 refilled every 2 s).
 Consequence: job completion notices still go through `FollowUp`, as DeepSeek.
+Supersession note (user, 2026-10-26): `Steer` and `FollowUp` are no longer called by the job table. Completion notices and monitor events go through `Agent.Notify` on the notice port of the conversation that started the job; a completion notice enters an active run at the next turn boundary, as Claude Code. See `docs/adr/0005-shell-jobs-use-the-notify-port.md`.
 
 ### Q12. Child environment of `bash`
 
@@ -280,6 +282,7 @@ Recommendation given: A.
 Answer: A.
 Consequence: `sandbox` owns process groups, environment, the two-wave kill, the head and tail buffer and the overflow spill file.
 Consequence: `jobs` owns the per-session job table, states, read cursors, the cap of 10, the monitor with its flood guard, and notices to the Agent through a small interface with `FollowUp` and `Steer`; it does not import `agent`.
+Supersession note (user, 2026-10-26): the small interface is now the per-job `Owner` (a `tasks.Port` bound to the conversation generation), not a table-wide `FollowUp`/`Steer` notifier.
 Consequence: `tools` holds thin tools: `bash`, `job_output`, `job_kill`, `job_list`, `monitor`, plus `read`, `write`, `edit`, `grep`, `find`, `ls`.
 Consequence: the composition root creates the job table with each session's Agent and closes it when the session closes.
 
@@ -321,6 +324,7 @@ Answer: exactly as Grok CLI (grok-build `crates/codegen/xai-grok-tools/src/imple
 Supersession note: this replaces "lines that match a pattern become events" in the architecture (Jobs section) and the Q10 consequence wording "lines matching a pattern become events". Q10 (separate tool), Q11 (Steer) and Q14 (`<system-reminder>`) stay.
 Consequence: `monitor(command, description, timeout_ms?, persistent?)`; no pattern parameter; each stdout line is an event; the command's exit ends the watch; filtering is the command's job, and the description tells the model to print only DONE/FAILED/CANCELLED lines, to use `grep --line-buffered` in pipes, and to print FAILED at once.
 Consequence: `timeout_ms` default 36,000,000 (10 h), max 10 h; `persistent: true` means no timeout (runs until `job_kill` or session end); `timeout_ms` above the max with `persistent` false is a validation error. This differs from `bash` background jobs, which have no time limit (Q9).
+Supersession note (user, 2026-10-26): in `ask -p` every monitor, a persistent one too, is capped at the background limit of print mode (10 min by default).
 Consequence: the monitor starts its own background job `monitor-N`, counted toward the cap of 10; the result returns the job id, the resolved timeout and `persistent`.
 Consequence: event shaping as Grok: lines cut at 500 chars, batches cut at 3,000 chars, 200 ms debounce batching, token bucket 10 refilled 1 per 2,000 ms, auto-stop after 30,000 ms of continuous violation; Ask improvement: auto-stop kills the process group.
 

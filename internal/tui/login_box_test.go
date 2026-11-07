@@ -59,9 +59,11 @@ func TestBrowserBoxGoldens(t *testing.T) {
 		r.requireOnScreen("Open this URL in a browser and sign in to openai:", "ctrl+y copy URL  ·  esc cancel")
 		fc.releaseLogin(protocol.ACPLoginOutcome{Status: protocol.ACPLoginStatusCancelled})
 	})
-	t.Run("narrow_40x14", func(t *testing.T) {
+	// A 15 row screen: the header row with its rule, the status row, the two
+	// prompt rules, the footer row and the bar leave seven rows for the box.
+	t.Run("narrow_40x15", func(t *testing.T) {
 		fc := browserFake()
-		r := startView(t, 40, 14, withFake(fc))
+		r := startView(t, 40, 15, withFake(fc))
 		r.openChatGPT()
 		r.h.waitText("ctrl+y copies the full URL")
 		r.clock.advance(12 * time.Second)
@@ -120,7 +122,7 @@ func startLinkView(t *testing.T, width, height int, fc *fakeClient) *viewRig {
 	r.h = startScreen(t, m, width, height, tea.WithColorProfile(colorprofile.TrueColor))
 	t.Cleanup(func() { close(fc.events) })
 	r.h.waitText("Ask anything")
-	r.waitCall("usage")
+	r.waitCall("state")
 	r.h.settle()
 	return r
 }
@@ -129,12 +131,14 @@ func startLinkView(t *testing.T, width, height int, fc *fakeClient) *viewRig {
 // reads the link of each cell from the virtual terminal. The renderer skips a
 // link that equals the link of the row before, so the test fails when two rows
 // carry the same link sequence. The narrow screen shows only a part of the URL
-// with a note, so there the linked cells must be the prefix that is shown.
+// with a note, so there the linked cells must be the prefix that is shown. The
+// narrow screen has 15 rows: the header row with its rule and the footer row
+// leave a box with a status row above it seven rows, enough for three URL rows.
 func TestURLLinkCoversEveryRowOnScreen(t *testing.T) {
 	for _, size := range []struct {
 		w, h   int
 		capped bool
-	}{{80, 24, false}, {40, 14, true}} {
+	}{{80, 24, false}, {40, 15, true}} {
 		t.Run(fmt.Sprintf("%dx%d", size.w, size.h), func(t *testing.T) {
 			fc := browserFake()
 			r := startLinkView(t, size.w, size.h, fc)
@@ -549,13 +553,15 @@ func TestCheckingAddressIgnoresCopyKey(t *testing.T) {
 	fc.releaseLogin(protocol.ACPLoginOutcome{Status: protocol.ACPLoginStatusCancelled})
 }
 
+// The warning, the input row and the hint need seven box rows. The header row
+// with its rule, the status row and the footer row leave them at 15 rows.
 func TestNarrowAddressTraceWarningKeepsInputAndCancel(t *testing.T) {
 	fc := browserFake()
 	fc.loginStart.Kind = protocol.ACPLoginKindBrowserAddress
 	r := startView(t, 80, 24, withFake(fc), withOptions(func(o *Options) { o.TraceFile = "/tmp/ask-trace.log" }))
 	r.openChatGPT()
 	r.h.waitText("address  ")
-	r.h.resize(40, 14)
+	r.h.resize(40, 15)
 	r.h.settle()
 	r.requireOnScreen("TEA_TRACE is on:", "/tmp/ask-trace.log.", "address  ", "esc cancel")
 	fc.releaseLogin(protocol.ACPLoginOutcome{Status: protocol.ACPLoginStatusCancelled})
@@ -577,9 +583,10 @@ func TestNarrowKeyRefusalKeepsInputAndCancel(t *testing.T) {
 func TestShortKeyBoxTitleKeepsCancel(t *testing.T) {
 	k := newKeyFlow(t, providerFake())
 	k.open()
-	k.r.h.resize(80, 5)
+	k.r.h.resize(80, 6)
 	k.r.h.settle()
-	// The slot is half of 5 rows: the title row and the input row stay.
+	// Six rows hold the header row, one pane row, the footer row and the bar;
+	// the two rows that are left stay: the title row and the input row.
 	k.r.requireOnScreen("Sign in to openai · esc cancel", "key  paste")
 }
 
@@ -623,7 +630,7 @@ func TestKeySavedNotCheckedNote(t *testing.T) {
 	fc := noModelFake()
 	fc.keyOutcome = protocol.ACPLoginOutcome{Status: protocol.ACPLoginStatusSaved, NotChecked: true, Generation: 2}
 	r := startView(t, 80, 24, withFake(fc))
-	r.waitCall("usage")
+	r.waitCall("state")
 	r.typeText("/providers")
 	r.key("enter")
 	r.h.waitText("Type to search")
@@ -691,7 +698,7 @@ func TestModelSelectorGroupsUsableProviders(t *testing.T) {
 
 func TestModelSelectorEmptyHint(t *testing.T) {
 	r := startView(t, 80, 24, withFake(noModelFake()))
-	r.waitCall("usage")
+	r.waitCall("state")
 	r.key("ctrl+l")
 	r.h.waitText("No usable models yet.")
 	requireContentGolden(t, r.h)

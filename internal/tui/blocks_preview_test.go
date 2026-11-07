@@ -50,6 +50,15 @@ func numberedRows(prefix string, from, to int) []string {
 	return out
 }
 
+// openBody returns the body rows of an open step: the rows after the header
+// row and the one blank row under it.
+func openBody(t *testing.T, rows []string) []string {
+	t.Helper()
+	require.Greater(t, len(rows), 2, "the open step has body rows: %q", rows)
+	require.Empty(t, rows[1], "one blank row follows the header: %q", rows)
+	return rows[2:]
+}
+
 // --- truncated form ---
 
 // feedTool plays a finished tool call with a result text and details.
@@ -63,11 +72,12 @@ func TestToolTruncatedShowsFirstThreeHintAndLastThree(t *testing.T) {
 	x.rc.Fold = FoldTruncated
 	feedTool(x, "bash", `{"command":"go test"}`, fixtureLines("out", 12), protocol.ToolResultDetails{Kind: protocol.ToolKindExecute}, false)
 	rows := x.rows()
-	require.Equal(t, "  ◆ Ran go test", rows[0], "no command row in the truncated form")
-	require.Equal(t, numberedRows("out", 1, 3), rows[1:4])
-	require.Equal(t, "    ⋮ 6 more lines · e to expand · Enter full screen", rows[4])
-	require.Equal(t, numberedRows("out", 10, 12), rows[5:8])
-	require.Len(t, rows, 8, "no empty row below a step")
+	require.Equal(t, "  › Ran go test", rows[0])
+	body := openBody(t, rows)
+	require.Equal(t, numberedRows("out", 1, 3), body[0:3], "no command row in the truncated form")
+	require.Equal(t, "    ⋮ 6 more lines · e to expand · Enter full screen", body[3])
+	require.Equal(t, numberedRows("out", 10, 12), body[4:7])
+	require.Len(t, body, 7, "no empty row below a step")
 	require.Equal(t, 1, x.tr.Frontier(), "a finished block is final")
 }
 
@@ -77,7 +87,7 @@ func TestToolTruncatedAtTheCriteriaFailure(t *testing.T) {
 	out := "--- FAIL: TestCount (0.00s)\n    parser_test.go:12: want 2, got 3\n=== RUN   TestCountEmpty\n--- PASS: TestCountEmpty (0.00s)\n=== RUN   TestCountOne\n--- PASS: TestCountOne (0.00s)\nFAIL\nFAIL\tp\t0.012s\nFAIL"
 	feedTool(x, "bash", `{"command":"go test ./..."}`, "exit: 1\n"+out, producerDetails(t, realBashFailDetails), true)
 	rows := x.rows()
-	require.True(t, strings.HasPrefix(rows[0], "  ◆ Ran go test ./..."), rows[0])
+	require.True(t, strings.HasPrefix(rows[0], "  › Ran go test ./..."), rows[0])
 	require.True(t, strings.HasSuffix(rows[0], "✗ exit 1"), rows[0])
 	require.Equal(t, []string{
 		"    --- FAIL: TestCount (0.00s)",
@@ -87,7 +97,7 @@ func TestToolTruncatedAtTheCriteriaFailure(t *testing.T) {
 		"    FAIL",
 		"    FAIL    p   0.012s",
 		"    FAIL",
-	}, rows[1:])
+	}, openBody(t, rows))
 }
 
 func TestToolTruncatedWithSixLinesOrFewerShowsAllAndNoHint(t *testing.T) {
@@ -96,36 +106,36 @@ func TestToolTruncatedWithSixLinesOrFewerShowsAllAndNoHint(t *testing.T) {
 		x.rc.Fold = FoldTruncated
 		feedTool(x, "read", `{"path":"a.go"}`, fixtureLines("l", n), protocol.ToolResultDetails{}, false)
 		rows := x.rows()
-		require.Equal(t, numberedRows("l", 1, n), rows[1:], "%d lines", n)
+		require.Equal(t, numberedRows("l", 1, n), openBody(t, rows), "%d lines", n)
 	}
 	x := newTx(t)
 	x.rc.Fold = FoldTruncated
 	feedTool(x, "read", `{"path":"a.go"}`, fixtureLines("l", 7), protocol.ToolResultDetails{}, false)
 	rows := x.rows()
-	require.Equal(t, "    ⋮ 1 more line · e to expand · Enter full screen", rows[4], "seven lines hide one")
+	require.Equal(t, "    ⋮ 1 more line · e to expand · Enter full screen", openBody(t, rows)[3], "seven lines hide one")
 }
 
 func TestToolTruncatedHintIsShortUnderSixtyColumns(t *testing.T) {
 	x := newTx(t)
 	x.rc = RenderContext{Width: 59, Theme: NewTheme(0), Fold: FoldTruncated}
 	feedTool(x, "ls", `{"path":"."}`, fixtureLines("f", 20), protocol.ToolResultDetails{}, false)
-	require.Equal(t, "    ⋮ 14 more lines · e", x.rows()[4])
+	require.Equal(t, "    ⋮ 14 more lines · e", openBody(t, x.rows())[3])
 	x.rc.Width = 60
-	require.Equal(t, "    ⋮ 14 more lines · e to expand · Enter full screen", x.rows()[4])
+	require.Equal(t, "    ⋮ 14 more lines · e to expand · Enter full screen", openBody(t, x.rows())[3])
 }
 
 func TestToolTruncatedHintDoesNotCountTheFinalLineEnd(t *testing.T) {
 	x := newTx(t)
 	x.rc.Fold = FoldTruncated
 	feedTool(x, "bash", `{}`, fixtureLines("out", 7)+"\n", protocol.ToolResultDetails{}, false)
-	require.Equal(t, "    ⋮ 1 more line · e to expand · Enter full screen", x.rows()[4])
+	require.Equal(t, "    ⋮ 1 more line · e to expand · Enter full screen", openBody(t, x.rows())[3])
 }
 
 func TestToolTruncatedKeepsInnerEmptyLines(t *testing.T) {
 	x := newTx(t)
 	x.rc.Fold = FoldTruncated
 	feedTool(x, "read", `{}`, "a\n\nb", protocol.ToolResultDetails{}, false)
-	require.Equal(t, []string{"    a", "", "    b"}, x.rows()[1:])
+	require.Equal(t, []string{"    a", "", "    b"}, openBody(t, x.rows()))
 }
 
 func TestToolWithoutOutputHasNoBodyRows(t *testing.T) {
@@ -145,9 +155,10 @@ func TestToolFailureKeepsReasonOnTheRow(t *testing.T) {
 	feedTool(x, "bash", `{"command":"go test"}`, "exit: 1\n"+fixtureLines("out", 8), producerDetails(t, realBashFailDetails), true)
 	rows := x.rows()
 	require.True(t, strings.HasSuffix(rows[0], "✗ exit 1"), rows[0])
-	require.Equal(t, numberedRows("out", 1, 3), rows[1:4])
-	require.Equal(t, "    ⋮ 2 more lines · e to expand · Enter full screen", rows[4])
-	require.Equal(t, numberedRows("out", 6, 8), rows[5:8])
+	body := openBody(t, rows)
+	require.Equal(t, numberedRows("out", 1, 3), body[0:3])
+	require.Equal(t, "    ⋮ 2 more lines · e to expand · Enter full screen", body[3])
+	require.Equal(t, numberedRows("out", 6, 8), body[4:7])
 }
 
 // --- expanded form ---
@@ -157,8 +168,9 @@ func TestToolExpandedShowsCommandRowThenAllOutput(t *testing.T) {
 	x.rc.Fold = FoldExpanded
 	feedTool(x, "bash", `{"command":"go test ./..."}`, "exit: 1\n"+fixtureLines("out", 9), producerDetails(t, realBashFailDetails), true)
 	rows := x.rows()
-	require.Equal(t, "    $ go test ./...", rows[1], "the first body row is the command")
-	require.Equal(t, numberedRows("out", 1, 9), rows[2:])
+	body := openBody(t, rows)
+	require.Equal(t, "    $ go test ./...", body[0], "the first body row is the command")
+	require.Equal(t, numberedRows("out", 1, 9), body[1:])
 }
 
 func TestToolExpandedWrapsLongLinesAndCutsNothing(t *testing.T) {
@@ -167,7 +179,8 @@ func TestToolExpandedWrapsLongLinesAndCutsNothing(t *testing.T) {
 	long := strings.Repeat("0123456789", 6)
 	feedTool(x, "read", `{}`, long, protocol.ToolResultDetails{}, false)
 	rows := x.rows()
-	require.Equal(t, []string{"    " + long[:26], "    " + long[26:52], "    " + long[52:]}, rows[1:])
+	// The body text ends textRightPad columns before the edge: 24 columns.
+	require.Equal(t, []string{"    " + long[:24], "    " + long[24:48], "    " + long[48:]}, openBody(t, rows))
 }
 
 func TestToolExpandedCommandWrapsAndKeepsEveryLine(t *testing.T) {
@@ -175,12 +188,12 @@ func TestToolExpandedCommandWrapsAndKeepsEveryLine(t *testing.T) {
 	x.rc = RenderContext{Width: 30, Theme: NewTheme(0), Fold: FoldExpanded}
 	feedTool(x, "bash", `{"command":"echo one\necho two three four five six seven"}`, "", protocol.ToolResultDetails{}, false)
 	rows := x.rows()
-	require.Equal(t, "  ◆ Ran echo one …", rows[0], "the row shows the first line and the ellipsis")
+	require.Equal(t, "  › Ran echo one …", rows[0], "the row shows the first line and the ellipsis")
 	require.Equal(t, []string{
 		"    $ echo one",
-		"      echo two three four five",
-		"      six seven",
-	}, rows[1:])
+		"      echo two three four",
+		"      five six seven",
+	}, openBody(t, rows))
 }
 
 func TestToolExpandedEditShowsTheUnifiedDiff(t *testing.T) {
@@ -191,7 +204,8 @@ func TestToolExpandedEditShowsTheUnifiedDiff(t *testing.T) {
 	}}
 	feedTool(x, "edit", `{"path":"status.go"}`, "Edited status.go.", d, false)
 	require.Equal(t, []string{
-		"  ◆ Edited status.go  +1 -1",
+		"  › Edited status.go  +1 -1",
+		"",
 		"       1   a",
 		"       2 - b",
 		"       2 + B",
@@ -265,19 +279,20 @@ func TestToolTruncatedLongLineIsCutToOneRow(t *testing.T) {
 	long := strings.Repeat("0123456789", 6)
 	feedTool(x, "read", `{}`, long+"\nshort", protocol.ToolResultDetails{}, false)
 	rows := x.rows()
-	require.Len(t, rows, 3)
-	require.Equal(t, "    "+long[:35]+"…", rows[1])
-	require.Equal(t, 40, displayWidth(rows[1]))
-	require.Equal(t, "    short", rows[2])
+	body := openBody(t, rows)
+	require.Len(t, body, 2)
+	require.Equal(t, "    "+long[:33]+"…", body[0])
+	require.Equal(t, 40-textRightPad, displayWidth(body[0]), "the cut row ends textRightPad columns before the edge")
+	require.Equal(t, "    short", body[1])
 }
 
 func TestToolTruncatedCutNeverSplitsAWideCharacter(t *testing.T) {
 	x := newTx(t)
 	x.rc = RenderContext{Width: 40, Theme: NewTheme(0), Fold: FoldTruncated}
-	text := strings.Repeat("a", 34) + "日本語の文字"
+	text := strings.Repeat("a", 32) + "日本語の文字"
 	feedTool(x, "read", `{}`, text, protocol.ToolResultDetails{}, false)
-	row := x.rows()[1]
-	require.Equal(t, "    "+strings.Repeat("a", 34)+"…", row)
+	row := openBody(t, x.rows())[0]
+	require.Equal(t, "    "+strings.Repeat("a", 32)+"…", row)
 	require.LessOrEqual(t, displayWidth(row), 40)
 }
 
@@ -286,17 +301,17 @@ func TestToolExpandsTabsAndMarksControls(t *testing.T) {
 	x.rc.Fold = FoldTruncated
 	text := "a\tb\n\x1b[31mred\x1b[0m\nbell\x07x\n"
 	feedTool(x, "read", `{}`, text, protocol.ToolResultDetails{}, false)
-	rows := x.rows()
-	require.Equal(t, "    a   b", rows[1])
-	require.Equal(t, "    red", rows[2])
-	require.Equal(t, "    bell?x", rows[3])
+	rows := openBody(t, x.rows())
+	require.Equal(t, "    a   b", rows[0])
+	require.Equal(t, "    red", rows[1])
+	require.Equal(t, "    bell?x", rows[2])
 }
 
 func TestToolTreatsWindowsLineEndsAsLineEnds(t *testing.T) {
 	x := newTx(t)
 	x.rc.Fold = FoldTruncated
 	feedTool(x, "read", `{}`, "a\r\nb\r\n", protocol.ToolResultDetails{}, false)
-	require.Equal(t, []string{"    a", "    b"}, x.rows()[1:])
+	require.Equal(t, []string{"    a", "    b"}, openBody(t, x.rows()))
 }
 
 // --- truncation rows: the expanded form and the viewer only ---
@@ -370,9 +385,9 @@ func TestToolTruncationPathIsWrappedAndNeverCut(t *testing.T) {
 	}
 	feedTool(x, "read", `{}`, "x", d, false)
 	rows := x.rows()
-	require.Equal(t, "    model saw 2000 lines (50 KB) of 2.4…", rows[2])
+	require.Equal(t, "    model saw 2000 lines (50 KB) of 2…", rows[3])
 	var joined strings.Builder
-	for _, r := range rows[3:] {
+	for _, r := range rows[4:] {
 		require.LessOrEqual(t, displayWidth(r), 40, r)
 		joined.WriteString(strings.TrimSpace(r))
 	}
@@ -385,7 +400,7 @@ func TestToolTruncationRowsWithoutOutputSitUnderTheRow(t *testing.T) {
 	x.rc.Fold = FoldExpanded
 	d := protocol.ToolResultDetails{Truncation: &protocol.ToolTruncation{TruncatedBy: "lines", TotalLines: 9, OutputLines: 3}}
 	feedTool(x, "ls", `{}`, "", d, false)
-	require.Equal(t, []string{"    model saw 3 of 9 lines"}, x.rows()[1:])
+	require.Equal(t, []string{"    model saw 3 of 9 lines"}, openBody(t, x.rows()))
 }
 
 func TestToolSizeText(t *testing.T) {
@@ -408,20 +423,21 @@ func TestToolStreamingBashShowsLiveOutputInTheOpenForms(t *testing.T) {
 
 	x.rc.Fold = FoldTruncated
 	rows := x.rows()
-	require.Equal(t, numberedRows("ok", 1, 3), rows[1:], "a short output shows all lines and no hint")
+	require.Equal(t, numberedRows("ok", 1, 3), openBody(t, rows), "a short output shows all lines and no hint")
 
 	x.feed(resultUpdate("c1", "bash", fixtureLines("ok", 42), 100))
 	rows = x.rows()
-	require.True(t, strings.HasPrefix(rows[0], "  ◆ Running go test ./..."), rows[0])
+	require.True(t, strings.HasPrefix(rows[0], "  › Running go test ./..."), rows[0])
 	require.True(t, strings.HasSuffix(rows[0], "⠋"), rows[0])
-	require.Equal(t, numberedRows("ok", 1, 3), rows[1:4])
-	require.Equal(t, "    ⋮ 36 more lines · e to expand · Enter full screen", rows[4])
-	require.Equal(t, numberedRows("ok", 40, 42), rows[5:8])
+	body := openBody(t, rows)
+	require.Equal(t, numberedRows("ok", 1, 3), body[0:3])
+	require.Equal(t, "    ⋮ 36 more lines · e to expand · Enter full screen", body[3])
+	require.Equal(t, numberedRows("ok", 40, 42), body[4:7])
 	require.Zero(t, x.tr.Frontier(), "a running block is not final")
 
 	x.feed(resultEnd("c1", "bash", fixtureLines("ok", 43), protocol.ToolResultDetails{}, false, 200))
 	rows = x.rows()
-	require.Equal(t, numberedRows("ok", 41, 43), rows[5:8])
+	require.Equal(t, numberedRows("ok", 41, 43), openBody(t, rows)[4:7])
 	require.Equal(t, 1, x.tr.Frontier())
 }
 
@@ -436,7 +452,7 @@ func TestToolSettleKeepsTheLastPartialOutputOfAnInterruptedTool(t *testing.T) {
 	x.feed(toolStart("c1", "bash", `{}`, 0), resultUpdate("c1", "bash", "partial", 10), &protocol.AgentSettled{})
 	rows := x.rows()
 	require.True(t, strings.HasSuffix(rows[0], "✗ interrupted"), rows[0])
-	require.Equal(t, "    partial", rows[1])
+	require.Equal(t, "    partial", openBody(t, rows)[0])
 }
 
 // --- snapshot ---

@@ -119,9 +119,14 @@ func OpenAIGPT56Sol() Model {
 // Find returns the one row for ref.
 // API set: exact triple. API empty: the unique provider+id row.
 // Two rows (Token Plan) with API empty return an error that names both APIs.
-func Find(ref Ref) (Model, error) {
+func Find(ref Ref) (Model, error) { return findIn(catalog(), ref) }
+
+// findIn applies the Find rules to rows, so the compiled catalog and a
+// ModelSet give the same answers and the same errors. The error is a
+// *ModelError of class ErrUnknownModel or ErrAmbiguousModel.
+func findIn(rows []Model, ref Ref) (Model, error) {
 	var matches []Model
-	for _, m := range catalog() {
+	for _, m := range rows {
 		if m.Provider != ref.Provider || m.ID != ref.ID {
 			continue
 		}
@@ -132,9 +137,9 @@ func Find(ref Ref) (Model, error) {
 	switch len(matches) {
 	case 0:
 		if ref.API != "" {
-			return Model{}, fmt.Errorf("unknown model %s/%s API %s", ref.Provider, ref.ID, ref.API)
+			return Model{}, unknownModel(fmt.Sprintf("unknown model %s/%s API %s", ref.Provider, ref.ID, ref.API))
 		}
-		return Model{}, fmt.Errorf("unknown model %s/%s", ref.Provider, ref.ID)
+		return Model{}, unknownModel(fmt.Sprintf("unknown model %s/%s", ref.Provider, ref.ID))
 	case 1:
 		return matches[0], nil
 	default:
@@ -142,7 +147,7 @@ func Find(ref Ref) (Model, error) {
 		for _, m := range matches {
 			apis = append(apis, string(m.API))
 		}
-		return Model{}, fmt.Errorf("ambiguous model %s/%s: %s", ref.Provider, ref.ID, strings.Join(apis, " and "))
+		return Model{}, ambiguousModel(fmt.Sprintf("ambiguous model %s/%s: %s", ref.Provider, ref.ID, strings.Join(apis, " and ")), matches)
 	}
 }
 
@@ -158,7 +163,7 @@ func AnthropicSonnet46() Model {
 func XAIGrok47() Model {
 	return Model{ID: ModelGrok47, Name: "Grok 4.7", Provider: ProviderXAI, API: APIOpenAIResponses, BaseURL: XAIURL,
 		Reasoning: true, Input: []string{"text", "image"}, ContextWindow: 500_000, MaxTokens: 500_000,
-		ThinkingLevelMap: ThinkingLevelMap{protocol.ThinkingOff: nil, protocol.ThinkingMinimal: nil, protocol.ThinkingXHigh: stringPointer("xhigh"), protocol.ThinkingMax: nil},
+		ThinkingLevelMap: ThinkingLevelMap{protocol.ThinkingOff: nil, protocol.ThinkingMinimal: nil, protocol.ThinkingLow: stringPointer("low"), protocol.ThinkingMedium: stringPointer("medium"), protocol.ThinkingHigh: stringPointer("high"), protocol.ThinkingXHigh: stringPointer("xhigh"), protocol.ThinkingMax: nil},
 		Compat:           ResponsesCompat{Store: false, SupportsMaxOutputTokens: true}}
 }
 

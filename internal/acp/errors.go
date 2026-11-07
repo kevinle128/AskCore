@@ -5,6 +5,7 @@ import (
 	"errors"
 
 	"AskCore/internal/agent"
+	"AskCore/internal/providers"
 	"AskCore/pkg/protocol"
 
 	sdk "github.com/coder/acp-go-sdk"
@@ -111,6 +112,9 @@ func runError(res Result) error {
 	}
 	if res.Code == "AUTH" {
 		return ErrAuth
+	}
+	if res.Code == providers.CodeModelConfig {
+		return newKindError(protocol.ACPErrConfig, "")
 	}
 	return newKindError(protocol.ACPErrInternal, "model request failed: "+safeCode(res.Code))
 }

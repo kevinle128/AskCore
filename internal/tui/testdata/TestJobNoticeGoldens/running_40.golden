@@ -1,14 +1,14 @@
-◢◤ ask ● 7c1e    deepseek-v4.1-flash 0%
+ ◢◤ ask
 ────────────────────────────────────────
-  alibaba/deepseek-v4.1-flash
-
   ❯ run the build in the         08:53
     background and tell me when it is
     done
 
   ◆ Ran npm run build
+
 ┊ ◌ 1 job
 ────────────────────────────────────────
  ❯ Ask anything
 ────────────────────────────────────────
+         alibaba/deepseek-v4.1-flash 0%
  Tab blocks · / commands

@@ -41,7 +41,7 @@ func allEvents() []Event {
 		&TurnEnd{Envelope: env(10), Message: finalAssistant(),
 			ToolResults: []ToolResultMessage{{ToolCallID: "a", ToolName: "echo", Content: []UserBlock{Text{Text: "done"}}}}},
 		&AgentEnd{Envelope: env(11), Messages: []Message{UserMessage{Content: []UserBlock{}}, finalAssistant(),
-			RawMessage{RoleName: "custom", Data: json.RawMessage(`{"role":"custom"}`)}}},
+			RawMessage{RoleName: "branchSummary", Data: json.RawMessage(`{"role":"branchSummary"}`)}}},
 		&AgentSettled{Envelope: env(12)},
 		&AutoRetryStart{Envelope: env(13), Attempt: 1, MaxAttempts: 5, DelayMs: 500, ErrorMessage: "slow down"},
 		&AutoRetryEnd{Envelope: env(14), Success: false, Attempt: 5, FinalError: "failed"},

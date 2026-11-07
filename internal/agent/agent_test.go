@@ -34,6 +34,7 @@ func newAgent(t testing.TB, p *faux.Provider, m providers.Model, edit func(*agen
 		Tools:      registry(t, tools.Echo{}),
 		SessionID:  "s1",
 		Clock:      fixedClock,
+		TaskDir:    t.TempDir(),
 	}
 	if edit != nil {
 		edit(&cfg)

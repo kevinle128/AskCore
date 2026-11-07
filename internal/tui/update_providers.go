@@ -117,7 +117,7 @@ func newLoginID() string {
 // because it does not change the run.
 func (s *sessionView) openProviders() tea.Cmd {
 	switch {
-	case s.opening:
+	case s.startPending():
 		s.setNotice("Starting, please wait…", false)
 		return nil
 	case s.info.Mode == ModeInProcess:
@@ -861,7 +861,7 @@ func (s *sessionView) applyModelList(token uint64, res protocol.ACPModelsResult)
 	if token < s.fetchSeq || token < s.appliedFetch {
 		return false
 	}
-	s.appliedFetch, s.modelList, s.models = token, res, res.Models
+	s.appliedFetch, s.modelList, s.models, s.modelListGen = token, res, res.Models, s.gen
 	return true
 }
 
@@ -919,7 +919,6 @@ func (s *sessionView) onLogoutDone(msg logoutDoneMsg) tea.Cmd {
 		if !msg.res.ClearPending {
 			s.modelID = ""
 			s.modelSeq++
-			s.lastRef = modelRef{}
 		}
 	}
 	s.appendBlock(NewSuccessNote("Removed the saved credential for "+provider+".", rows...))

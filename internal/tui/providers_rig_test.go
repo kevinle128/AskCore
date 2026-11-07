@@ -141,14 +141,15 @@ func (r *viewRig) rows() []string {
 	return out
 }
 
-// content returns the settled rows without the rule under the header and
-// without blank rows above and below: the header row comes first, then the
-// rows of the pane.
+// content returns the settled rows without the header row, the rule under it
+// and the blank rows above and below: the rows of the pane come first, and the
+// footer row and the bar come last. A screen with no header row (the viewer) is
+// returned whole.
 func (r *viewRig) content() []string {
 	r.t.Helper()
 	rows := r.rows()
-	if len(rows) > 1 {
-		rows = append(rows[:1:1], rows[2:]...)
+	if len(rows) > 1 && rows[0] == sketchHeader {
+		rows = rows[2:]
 	}
 	for len(rows) > 0 && rows[0] == "" {
 		rows = rows[1:]
@@ -163,9 +164,10 @@ func (r *viewRig) content() []string {
 func (r *viewRig) railRows(n int) []string {
 	r.t.Helper()
 	rows := r.content()
-	// The prompt pane is a rule, the prompt rows and a rule above the bar.
+	// The prompt pane is a rule, the prompt rows and a rule above the footer
+	// row and the bar.
 	top := -1
-	for i := len(rows) - 3; i >= 0; i-- {
+	for i := len(rows) - 4; i >= 0; i-- {
 		if rows[i] != "" && strings.Trim(rows[i], "─") == "" {
 			top = i
 			break

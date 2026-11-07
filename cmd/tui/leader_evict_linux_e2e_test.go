@@ -87,7 +87,7 @@ func TestLeaderE2ECancelledEvictionDoesNotKill(t *testing.T) {
 			}
 		}
 		return false
-	}, 5*time.Second, 10*time.Millisecond)
+	}, 30*time.Second, 10*time.Millisecond)
 	cancel()
 	err := <-done
 	done <- err

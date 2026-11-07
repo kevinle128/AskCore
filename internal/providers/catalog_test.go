@@ -5,6 +5,8 @@ import (
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+
+	"AskCore/pkg/protocol"
 )
 
 func TestFind(t *testing.T) {
@@ -188,4 +190,17 @@ func TestCatalogOneRecommendedModelPerProvider(t *testing.T) {
 	assert.False(t, ok)
 	ref, _ := RecommendedModel(ProviderTokenPlan)
 	assert.Equal(t, Ref{Provider: ProviderTokenPlan, ID: ModelDeepSeekFlash, API: APIAnthropicMessages}, ref)
+}
+
+// The grok-4.7 row has a nil entry for off, because xAI documents that the
+// reasoning of grok-4.7 cannot be turned off
+// (https://docs.x.ai/developers/models/grok-4.7). A request for off therefore
+// uses the lowest level that the row supports.
+func TestGrok47ThinkingOffUsesTheLowestLevel(t *testing.T) {
+	t.Parallel()
+	m := XAIGrok47()
+	assert.Equal(t, protocol.ThinkingLow, ClampThinkingLevel(m, protocol.ThinkingOff))
+	assert.Equal(t, protocol.ThinkingLow, ClampThinkingLevel(m, protocol.ThinkingMinimal))
+	assert.Equal(t, protocol.ThinkingLow, ClampThinkingLevel(m, ""))
+	assert.Equal(t, protocol.ThinkingXHigh, ClampThinkingLevel(m, protocol.ThinkingMax))
 }

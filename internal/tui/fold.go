@@ -36,8 +36,9 @@ type foldBlock interface {
 	foldable(width int) bool
 	// defaultFold is the mode of the block while the user has not set one. The
 	// pane asks again when the content of the block changes, so a block can
-	// leave a streaming form when it ends.
-	defaultFold() FoldMode
+	// leave a streaming form when it ends. d holds the modes that the session
+	// chose; a block that has no use for them ignores them.
+	defaultFold(d foldDefaults) FoldMode
 	// collapseFold is the lowest mode that the block has now: FoldCollapsed, or
 	// a higher mode for a block that stays visible while it runs.
 	collapseFold() FoldMode
@@ -61,13 +62,52 @@ const (
 // isStep reports whether the fold-all command of steps moves the group.
 func (g foldGroup) isStep() bool { return g != groupNone }
 
+// foldDefaults are the modes that the session chose for blocks that the user
+// has not folded. The pane keeps them and gives them to defaultFold, so that a
+// block never reads state outside itself.
+type foldDefaults struct {
+	// endedThinking is the mode of a thinking step that has ended: the session
+	// mode. The thinkingFold setting gives its first value, and ctrl+t changes
+	// it.
+	endedThinking FoldMode
+}
+
 // blockDefaultFold returns the first mode of a block.
-func blockDefaultFold(b Block) FoldMode {
+func blockDefaultFold(b Block, d foldDefaults) FoldMode {
 	if fb, ok := b.(foldBlock); ok {
-		return fb.defaultFold()
+		return fb.defaultFold(d)
 	}
 	return FoldExpanded
 }
+
+// ThinkingFold is the mode that a thinking step takes when it ends, at the
+// start of the TUI. The zero value is ThinkingExpanded, the default of the
+// thinkingFold setting.
+type ThinkingFold uint8
+
+const (
+	// ThinkingExpanded shows all lines of an ended thinking step.
+	ThinkingExpanded ThinkingFold = iota
+	// ThinkingTruncated shows the last lines of an ended thinking step.
+	ThinkingTruncated
+	// ThinkingCollapsed shows an ended thinking step as one row.
+	ThinkingCollapsed
+)
+
+// Fold returns the fold mode of the value. An unknown value gives
+// FoldExpanded, as the zero value does.
+func (t ThinkingFold) Fold() FoldMode {
+	switch t {
+	case ThinkingTruncated:
+		return FoldTruncated
+	case ThinkingCollapsed:
+		return FoldCollapsed
+	}
+	return FoldExpanded
+}
+
+// defaults returns the session modes that start from the value.
+func (t ThinkingFold) defaults() foldDefaults { return foldDefaults{endedThinking: t.Fold()} }
 
 // nextFold returns the mode that follows cur when the user cycles: collapsed,
 // truncated, expanded, then back to the lowest mode of the block.

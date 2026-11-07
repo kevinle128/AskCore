@@ -1,0 +1,14 @@
+ ◢◤ ask
+────────────────────────────────────────
+
+────────────────────────────────────────
+╭─ Select model ───────────────────────╮
+│  ⌕ type to filter                    │
+│     llama4-scout    128k             │
+│ ❯   qwen3-coder:30b 256k  changed    │
+│    … 3 more                          │
+╰──────────────────────────────────────╯
+   enter select  ·  esc close  ·  your …
+────────────────────────────────────────
+               local/qwen3-coder:30b 6%
+ Tab blocks · / commands

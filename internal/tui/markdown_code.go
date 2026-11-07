@@ -14,10 +14,14 @@ import (
 
 // Fenced code blocks.
 //
-// The block is drawn on the code panel. The first row is the language name in
-// the dim role (it is left out when the fence names no language), then the
-// code. Rows fill the width so that the panel color is a clean band. Without
-// color the panel has no color, and the rows are plain text.
+// The block is drawn on the code panel, codePanelPad columns from the left
+// edge of the panel. There is no language row: the language only selects the
+// colors. Rows fill the width so that the panel color is a clean band. Without
+// color the panel has no color, and the rows are plain text with the same
+// indent.
+
+// codePanelPad is the number of panel columns before the code.
+const codePanelPad = 2
 
 var (
 	codeStyleOnce sync.Once
@@ -52,17 +56,14 @@ func askCodeStyle() *chroma.Style {
 
 // codeRows draws the code of a fenced block for a width.
 func codeRows(lang, body string, width int, th *Theme) []mdRow {
+	if body == "" {
+		return nil
+	}
+	// A very narrow panel gives up the padding before the code.
+	pad := strings.Repeat(" ", min(codePanelPad, max(0, width-1)))
 	var rows []mdRow
-	panel := func(text string) {
-		rows = append(rows, mdRow{text: panelRow(text, width, th), panel: true})
-	}
-	if lang != "" {
-		panel(th.Render(RoleDim, truncateTo(cleanText(lang), width)))
-	}
-	if body != "" {
-		for _, line := range highlightLines(lang, body, width, th) {
-			panel(line)
-		}
+	for _, line := range highlightLines(lang, body, width-len(pad), th) {
+		rows = append(rows, mdRow{text: panelRow(pad+line, width, th), panel: true})
 	}
 	return rows
 }

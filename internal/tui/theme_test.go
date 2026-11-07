@@ -61,6 +61,7 @@ func TestNoColorFallbackReadable(t *testing.T) {
 		RoleAccent: bold, RoleAssistant: bold, RoleTool: bold, RoleHook: bold,
 		RoleSuccess: bold, RoleWarning: bold, RoleError: bold,
 		RoleThinking: italic, RoleLogo: bold,
+		RoleH1: bold, RoleH2: bold, RoleH3: bold,
 	}
 	require.Len(t, want, len(allRoles), "the table covers every role")
 
@@ -108,12 +109,15 @@ func TestThemePaletteTruecolor(t *testing.T) {
 		{RoleProv2, "38;2;244;114;182"},
 		{RoleProv3, "38;2;45;212;191"},
 		{RoleProv4, "38;2;122;162;247"},
+		{RoleH1, "38;2;45;212;191"},
+		{RoleH2, "38;2;122;162;247"},
+		{RoleH3, "38;2;167;139;250"},
 	}
 	for _, c := range cases {
 		out := th.Render(c.role, "x")
 		require.Contains(t, strings.Join(sgrParams(out), ";"), c.want, "role %s: %q", c.role, out)
 	}
-	require.True(t, hasParam(sgrParams(th.Render(RoleThinking, "x")), "3"), "thinking is italic in every profile")
+	require.False(t, hasParam(sgrParams(th.Render(RoleThinking, "x")), "3"), "thinking is not italic when the terminal has color")
 }
 
 func TestThemePalette256(t *testing.T) {
@@ -129,12 +133,13 @@ func TestThemePalette256(t *testing.T) {
 		{RoleThinking, "38;5;103"}, {RoleCode, "38;5;209"}, {RoleSuccess, "38;5;78"},
 		{RoleWarning, "38;5;220"}, {RoleError, "38;5;203"},
 		{RoleProv4, "38;5;111"},
+		{RoleH1, "38;5;43"}, {RoleH2, "38;5;111"}, {RoleH3, "38;5;141"},
 	}
 	for _, c := range cases {
 		out := th.Render(c.role, "x")
 		require.Contains(t, strings.Join(sgrParams(out), ";"), c.want, "role %s: %q", c.role, out)
 	}
-	require.True(t, hasParam(sgrParams(th.Render(RoleThinking, "x")), "3"))
+	require.False(t, hasParam(sgrParams(th.Render(RoleThinking, "x")), "3"), "thinking is not italic when the terminal has color")
 }
 
 func TestThemeLogoGradient(t *testing.T) {

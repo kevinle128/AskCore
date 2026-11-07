@@ -17,6 +17,7 @@ import (
 	"golang.org/x/term"
 
 	"AskCore/internal/tui"
+	"AskCore/pkg/protocol"
 )
 
 const (
@@ -41,12 +42,26 @@ type terminalConfig struct {
 	home    string
 	version string
 	open    func(ctx context.Context) (tui.Client, error)
+	// thinkingFold is the first session mode of thinking steps that end.
+	thinkingFold tui.ThinkingFold
+	// trust is the project trust override of the command line, or empty.
+	trust protocol.ACPTrustOverride
+	// flags are the per-session flags of the command line. Every session that
+	// the TUI opens sends them to its host.
+	flags protocol.ACPSessionOptions
 }
 
 // runInteractive is the entry for `ask` on a terminal without a prompt. It
 // runs the alternate-screen TUI against the leader of the Ask home, or against
 // an agent in this process when the leader cannot be reached at startup.
-func runInteractive(stdin io.Reader, stdout, stderr io.Writer, deps runDependencies, sigs <-chan os.Signal) int {
+// --no-leader skips the leader and always runs the agent in this process. The
+// trust override of --approve or --no-approve starts every session of the
+// program, and the TUI asks no trust question. The prompt, tool and model
+// flags go to the host in the session options; the host resolves the model
+// patterns against its model list. With --offline a leader that this program
+// starts gets ASK_DISABLE_MODEL_REFRESH=1; a running leader keeps its own
+// setting.
+func runInteractive(stdin io.Reader, stdout, stderr io.Writer, deps runDependencies, sigs <-chan os.Signal, o options) int {
 	in, inOK := stdin.(*os.File)
 	out, outOK := stdout.(*os.File)
 	if !inOK || !outOK {
@@ -60,18 +75,43 @@ func runInteractive(stdin io.Reader, stdout, stderr io.Writer, deps runDependenc
 	}
 	home, _ := os.UserHomeDir()
 	exe, _ := os.Executable()
+	clientOpts := tuiClientOptions{callerExe: exe, noLeader: o.noLeader, env: spawnLeaderEnv(o.offline, os.Environ)}
 	return runTerminal(terminalConfig{
 		in: in, out: out, stderr: stderr, sigs: sigs, cwd: cwd, home: home, version: buildIdentity(),
+		thinkingFold: thinkingFoldSetting(deps.getenv("ASK_HOME")),
+		trust:        o.trust,
+		flags:        interactiveSessionFlags(o),
 		open: func(ctx context.Context) (tui.Client, error) {
 			// No warning callback: a line written to the terminal while the
 			// program draws would break the screen.
-			c, err := openTUIClient(ctx, deps, tuiClientOptions{callerExe: exe})
+			c, err := openTUIClient(ctx, deps, clientOpts)
 			if err != nil {
 				return nil, err
 			}
 			return c.Client, nil
 		},
 	})
+}
+
+// spawnLeaderEnv is the environment of a leader that the TUI starts. Nil keeps the
+// environment of this process. With --offline the leader gets
+// ASK_DISABLE_MODEL_REFRESH=1 after any value of the environment, so it wins.
+func spawnLeaderEnv(offline bool, environ func() []string) []string {
+	if !offline {
+		return nil
+	}
+	return append(environ(), disableModelRefreshEnv+"=1")
+}
+
+// interactiveSessionFlags are the session options of the command line: the
+// prompt and tool flags, the model pattern (with --provider as its provider
+// part), --thinking and --models.
+func interactiveSessionFlags(o options) protocol.ACPSessionOptions {
+	flags := o.session
+	flags.Model = o.modelPattern()
+	flags.Thinking = o.thinking
+	flags.Models = o.models
+	return flags
 }
 
 // clientSlot holds the client that the open command produced, so the entry can
@@ -175,7 +215,9 @@ func runTerminal(c terminalConfig) (code int) {
 		Profile: colorprofile.Detect(c.out, os.Environ()),
 		// Bubble Tea writes raw input to this file when it is set. The TUI
 		// warns about it where a key or a code is typed.
-		TraceFile: os.Getenv("TEA_TRACE"),
+		TraceFile:    os.Getenv("TEA_TRACE"),
+		ThinkingFold: c.thinkingFold,
+		Session:      tui.NewSessionOptions{Trust: c.trust, Flags: c.flags},
 	})
 	// Bubble Tea would end SIGTERM with exit code 0 and ignores SIGHUP, so ask
 	// handles the signals itself.

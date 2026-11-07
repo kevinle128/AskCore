@@ -4,7 +4,9 @@ import (
 	"context"
 	"net/http"
 	"os"
+	"path/filepath"
 	"regexp"
+	"slices"
 	"sort"
 	"strconv"
 	"strings"
@@ -121,14 +123,14 @@ func (a *askTerm) quitDetached() {
 }
 
 // selectModel opens the selector, filters it, and chooses the first row.
-func (a *askTerm) selectModel(filter, row, headerModel string) {
+func (a *askTerm) selectModel(filter, row, footerModel string) {
 	a.t.Helper()
 	a.write(keyCtrlL)
 	a.waitText("Select model")
 	a.write(filter)
 	a.waitRow("│", row)
 	a.write("\r")
-	a.waitFor("the model in the header row", func(rows []string) bool { return hasRow(rows, "leader ", headerModel) })
+	a.waitFor("the model in the footer row", func(rows []string) bool { return footerHas(rows, footerModel) })
 	a.waitFor("the editor after model selection", func(rows []string) bool { return !containsRow(rows, "Select model") })
 }
 
@@ -197,7 +199,7 @@ func TestInteractivePromptStreams(t *testing.T) {
 	bin, home := newE2EHome(t)
 	a := startAskTerm(t, bin, home, askTermOptions{}, pacedEnv(8)...)
 	a.waitText("Ask anything")
-	requireLeaderHeader(t, a, bin, home)
+	requireLeaderLink(t, a, bin, home)
 
 	// With the leader frozen the prompt cannot be accepted: the draft stays in
 	// the editor and the status says so.
@@ -225,7 +227,7 @@ func TestInteractivePromptStreams(t *testing.T) {
 
 	a.waitReplyMeta("faux-1")
 	a.waitFor("the status gone", func(rows []string) bool { return !containsRow(rows, "Working…") })
-	requireLeaderHeader(t, a, bin, home)
+	requireLeaderLink(t, a, bin, home)
 	a.quitDetached()
 }
 
@@ -233,7 +235,7 @@ func TestInteractiveRefusedPromptKeepsDraft(t *testing.T) {
 	bin, home := newE2EHome(t)
 	a := startAskTerm(t, bin, home, askTermOptions{})
 	a.waitText("Ask anything")
-	requireLeaderHeader(t, a, bin, home)
+	requireLeaderLink(t, a, bin, home)
 
 	// A second client attaches and takes the session. The first screen does not
 	// know yet, so its next prompt is refused by the leader.
@@ -258,7 +260,7 @@ func TestInteractiveRefusedPromptKeepsDraft(t *testing.T) {
 	st, err := other.State(ctx)
 	require.NoError(t, err)
 	require.Zero(t, st.MessageCount, "the leader ran nothing")
-	requireLeaderHeader(t, a, bin, home)
+	requireLeaderLink(t, a, bin, home)
 	a.write(keyCtrlC) // clears the draft
 	a.waitText("Ask anything")
 	a.quitDetached()
@@ -302,7 +304,7 @@ func TestInteractiveEchoToolLine(t *testing.T) {
 	bin, home := newE2EHome(t)
 	a := startAskTerm(t, bin, home, askTermOptions{})
 	a.waitText("Ask anything")
-	requireLeaderHeader(t, a, bin, home)
+	requireLeaderLink(t, a, bin, home)
 
 	a.write("echo tool output words\r")
 	// The echo tool returns at once, so the running row lasts less than a frame.
@@ -310,7 +312,9 @@ func TestInteractiveEchoToolLine(t *testing.T) {
 	// argument. The right column is empty after a success.
 	const stepRow = "  ◆ echo tool output words"
 	a.waitFor("the tool step row", func(rows []string) bool { return containsExactRow(rows, stepRow) })
-	a.waitFor("the reply after the tool", func(rows []string) bool { return containsExactRow(rows, replyPrefix+"tool output words") })
+	// The first row of the reply ends with its 24h time.
+	replyRow := regexp.MustCompile(`^` + replyPrefix + `tool output words +[0-2][0-9]:[0-5][0-9]$`)
+	a.waitFor("the reply after the tool", func(rows []string) bool { return slices.ContainsFunc(rows, replyRow.MatchString) })
 	a.waitReplyMeta("faux-1")
 	rows := a.rows()
 	require.Equal(t, 1, countRows(rows, "◆ echo"), "one tool row:\n%s", a.screen())
@@ -322,7 +326,7 @@ func TestInteractiveQueueRoundTrip(t *testing.T) {
 	bin, home := newE2EHome(t)
 	a := startAskTerm(t, bin, home, askTermOptions{}, pacedEnv(5)...)
 	a.waitText("Ask anything")
-	requireLeaderHeader(t, a, bin, home)
+	requireLeaderLink(t, a, bin, home)
 
 	a.write(strings.Repeat(slowPrompt, 6) + "\r")
 	a.waitText("Working…")
@@ -359,7 +363,7 @@ func TestInteractiveCancelThenPrompt(t *testing.T) {
 	bin, home := newE2EHome(t)
 	a := startAskTerm(t, bin, home, askTermOptions{}, pacedEnv(8)...)
 	a.waitText("Ask anything")
-	requireLeaderHeader(t, a, bin, home)
+	requireLeaderLink(t, a, bin, home)
 
 	a.write(strings.Repeat(slowPrompt, 6) + "\r")
 	a.waitFor("a partial reply", func(rows []string) bool { return hasRowPrefix(rows, replyPrefix+"slow words") })
@@ -402,9 +406,9 @@ func TestInteractiveModelSwitch(t *testing.T) {
 	a := startAskTerm(t, bin, home, askTermOptions{}, "ANTHROPIC_API_KEY=sk-ant-placeholder-for-readiness",
 		"ALIBABA_TOKEN_PLAN_API_KEY=placeholder-for-the-model-list")
 	a.waitText("Ask anything")
-	requireLeaderHeader(t, a, bin, home)
+	requireLeaderLink(t, a, bin, home)
 	// The model name arrives with the state answer, after the leader id.
-	a.waitFor("the start model in the header row", func(rows []string) bool { return hasRow(rows, "leader ", "faux-1") })
+	a.waitFor("the start model in the footer row", func(rows []string) bool { return footerHas(rows, "faux-1") })
 
 	a.write("keep this draft")
 	a.write(keyCtrlL)
@@ -423,14 +427,15 @@ func TestInteractiveModelSwitch(t *testing.T) {
 	a.waitRow("│", "● anthropic")
 	a.waitRow("│", sonnetModel+" ")
 	a.write("\r")
-	a.waitFor("the new model in the header row", func(rows []string) bool { return hasRow(rows, "leader ", sonnetModel) })
-	// The change shows once in the transcript, with the model it replaced.
-	a.waitRow("  model  anthropic/"+sonnetModel, "· was faux/faux-1")
-	require.Equal(t, 1, countRows(a.rows(), "· was faux/faux-1"), a.screen())
+	a.waitFor("the new model in the footer row", func(rows []string) bool { return footerHas(rows, sonnetModel) })
+	// The footer row names the new model; the transcript draws no line for the
+	// change.
+	require.False(t, hasRowPrefix(a.rows(), "  model  "), "the pane has a model line:\n%s", a.screen())
+	require.False(t, containsRow(a.rows(), "· was "), "the pane has a change line:\n%s", a.screen())
 	a.waitFor("the editor back with the draft", func(rows []string) bool { return hasRowPrefix(rows, draftPrompt+"keep this draft") })
 	require.False(t, containsRow(a.rows(), "Select model"))
-	require.False(t, hasRow(a.rows(), "leader ", "faux-1"), "the old model left the header row:\n%s", a.screen())
-	requireLeaderHeader(t, a, bin, home)
+	require.False(t, footerHas(a.rows(), "faux-1"), "the old model left the footer row:\n%s", a.screen())
+	requireLeaderLink(t, a, bin, home)
 
 	a.write(keyCtrlC) // clears the draft
 	a.waitText("Ask anything")
@@ -458,7 +463,7 @@ func TestInteractiveRetryVisible(t *testing.T) {
 	env := append(envPairs(f.env()), "ANTHROPIC_API_KEY=sk-ant-placeholder-for-fixture")
 	a := startAskTerm(t, bin, home, askTermOptions{}, env...)
 	a.waitText("Ask anything")
-	requireLeaderHeader(t, a, bin, home)
+	requireLeaderLink(t, a, bin, home)
 	a.selectModel("anthropic/"+sonnetModel, "anthropic/"+sonnetModel, sonnetModel)
 	require.Zero(t, f.calls(), "choosing the model sends no request")
 
@@ -515,9 +520,10 @@ data:{"type":"message_stop"}
 `
 }
 
-func TestInteractiveThinkingToggle(t *testing.T) {
-	bin, home := newE2EHome(t)
-	const thought = "Check the stale socket before the deadline."
+// thinkingTerm starts the built ask against a fixture provider whose every
+// reply has one line of thinking, with the anthropic model selected.
+func thinkingTerm(t *testing.T, bin, home, thought string) *askTerm {
+	t.Helper()
 	f := newProviderFixture(t)
 	f.inference = func(int, *http.Request, []byte) (int, string, string) {
 		return http.StatusOK, "text/event-stream", sseThinking(thought, "The probe is slow.")
@@ -525,26 +531,70 @@ func TestInteractiveThinkingToggle(t *testing.T) {
 	env := append(envPairs(f.env()), "ANTHROPIC_API_KEY=sk-ant-placeholder-for-fixture")
 	a := startAskTerm(t, bin, home, askTermOptions{}, env...)
 	a.waitText("Ask anything")
-	requireLeaderHeader(t, a, bin, home)
+	requireLeaderLink(t, a, bin, home)
 	a.selectModel("anthropic/"+sonnetModel, "anthropic/"+sonnetModel, sonnetModel)
+	return a
+}
+
+func TestInteractiveThinkingToggle(t *testing.T) {
+	bin, home := newE2EHome(t)
+	const thought = "Check the stale socket before the deadline."
+	a := thinkingTerm(t, bin, home, thought)
 
 	a.write("why is the probe slow\r")
 	a.waitFor("the reply", func(rows []string) bool { return hasRowPrefix(rows, replyPrefix+"The probe is slow.") })
 	a.waitReplyMeta(sonnetModel)
-	// A finished thinking step is one collapsed row; its text is not on screen.
-	a.waitFor("the collapsed thinking row", func(rows []string) bool {
-		return hasRowPrefix(rows, "  ◆ Thought for ") && !containsRow(rows, thought)
+	// Without a setting, a finished thinking step shows all its lines.
+	a.waitFor("the expanded thinking", func(rows []string) bool {
+		return hasRowPrefix(rows, "  › Thought for ") && hasRowPrefix(rows, "    "+thought)
 	})
-
-	a.write(keyCtrlT)
-	a.waitFor("expanded thinking", func(rows []string) bool {
-		return hasRow(rows, "┃", thought) && containsRow(rows, tui.ThinkingNotice(true))
-	})
-	require.True(t, hasRowPrefix(a.rows(), replyPrefix+"The probe is slow."), "the reply stays:\n%s", a.screen())
 
 	a.write(keyCtrlT)
 	a.waitFor("collapsed thinking", func(rows []string) bool {
 		return hasRowPrefix(rows, "  ◆ Thought for ") && !containsRow(rows, thought) && containsRow(rows, tui.ThinkingNotice(false))
+	})
+	require.True(t, hasRowPrefix(a.rows(), replyPrefix+"The probe is slow."), "the reply stays:\n%s", a.screen())
+
+	a.write(keyCtrlT)
+	a.waitFor("expanded thinking", func(rows []string) bool {
+		return hasRowPrefix(rows, "  › Thought for ") && hasRowPrefix(rows, "    "+thought) && containsRow(rows, tui.ThinkingNotice(true))
+	})
+	a.quitDetached()
+}
+
+func TestInteractiveThinkingFoldSettingCollapsed(t *testing.T) {
+	bin, home := newE2EHome(t)
+	// The settings file of the Ask home must be private, as the leader keeps it.
+	require.NoError(t, os.MkdirAll(home, 0o700))
+	require.NoError(t, os.WriteFile(filepath.Join(home, "settings.json"), []byte(`{"thinkingFold":"collapsed"}`), 0o600))
+	const thought = "Check the stale socket before the deadline."
+	a := thinkingTerm(t, bin, home, thought)
+
+	a.write("why is the probe slow\r")
+	a.waitFor("the reply", func(rows []string) bool { return hasRowPrefix(rows, replyPrefix+"The probe is slow.") })
+	a.waitReplyMeta(sonnetModel)
+	// The setting folds the finished thinking step to one row.
+	a.waitFor("the collapsed thinking row", func(rows []string) bool {
+		return hasRowPrefix(rows, "  ◆ Thought for ") && !containsRow(rows, thought)
+	})
+
+	// ctrl+t opens all thinking and makes later steps end open too.
+	a.write(keyCtrlT)
+	a.waitFor("expanded thinking", func(rows []string) bool {
+		return hasRowPrefix(rows, "  › Thought for ") && containsRow(rows, tui.ThinkingNotice(true))
+	})
+	a.write("and the second probe\r")
+	a.waitFor("the second step open", func(rows []string) bool {
+		// The rows after the second prompt: an open step with its line, then
+		// the reply.
+		for i, r := range rows {
+			if strings.Contains(r, "and the second probe") {
+				after := rows[i+1:]
+				return hasRowPrefix(after, "  › Thought for ") && hasRowPrefix(after, "    "+thought) &&
+					hasRowPrefix(after, replyPrefix+"The probe is slow.")
+			}
+		}
+		return false
 	})
 	a.quitDetached()
 }
@@ -579,7 +629,7 @@ func TestInteractiveAuthErrorBlock(t *testing.T) {
 	// No API key in the environment: the saved sign-in is the credential.
 	a := startAskTerm(t, bin, home, askTermOptions{}, envPairs(f.env())...)
 	a.waitText("Ask anything")
-	requireLeaderHeader(t, a, bin, home)
+	requireLeaderLink(t, a, bin, home)
 	a.selectModel("anthropic/"+sonnetModel, "anthropic/"+sonnetModel, sonnetModel)
 
 	// From now on the token service refuses the refresh, as it does for a
@@ -620,7 +670,7 @@ func TestInteractiveLeaderDownShowsDisconnected(t *testing.T) {
 	bin, home := newE2EHome(t)
 	a := startAskTerm(t, bin, home, askTermOptions{})
 	a.waitText("Ask anything")
-	requireLeaderHeader(t, a, bin, home)
+	requireLeaderLink(t, a, bin, home)
 	a.write("first words\r")
 	a.waitReplyMeta("faux-1")
 	a.write("also check the lock timeout")
@@ -634,7 +684,6 @@ func TestInteractiveLeaderDownShowsDisconnected(t *testing.T) {
 	require.Eventually(t, func() bool { return len(leaderProcesses(bin)) == 0 }, exitWait, 50*time.Millisecond, "the leader stopped")
 
 	a.waitRow("✗ Disconnected from the leader", "reconnecting (attempt")
-	a.waitRow("leader lost")
 	a.waitRow("draft kept · sending waits until the leader is back · nothing is resent")
 	a.write("\r")
 	a.waitRow("Reconnecting, please wait…")
@@ -662,7 +711,7 @@ func TestInteractiveSessionGone(t *testing.T) {
 	bin, home := newE2EHome(t)
 	a := startAskTerm(t, bin, home, askTermOptions{})
 	a.waitText("Ask anything")
-	oldLeader := requireLeaderHeader(t, a, bin, home)
+	oldLeader := requireLeaderLink(t, a, bin, home)
 	a.write("remember this\r")
 	a.waitReplyMeta("faux-1")
 	a.write("also check the lock timeout")
@@ -688,7 +737,6 @@ func TestInteractiveSessionGone(t *testing.T) {
 	st, err := leader.Status(ctx, e2eConnect(home, bin))
 	require.NoError(t, err)
 	require.NotEqual(t, oldLeader, st.InstanceID, "a new leader runs")
-	a.waitFor("the new leader in the header row", func(rows []string) bool { return hasRow(rows, "leader "+tui.ShortID(st.InstanceID)) })
 	require.Zero(t, st.Sessions, "the new leader holds no session yet")
 	rows := a.rows()
 	require.Equal(t, 1, countRows(rows, "❯ remember this"), "the old transcript is kept once:\n%s", a.screen())
@@ -717,7 +765,7 @@ func watchingPair(t *testing.T, bin, home string) (driver, observer *askTerm, sh
 	t.Helper()
 	driver = startAskTerm(t, bin, home, askTermOptions{}, pacedEnv(8)...)
 	driver.waitText("Ask anything")
-	requireLeaderHeader(t, driver, bin, home)
+	requireLeaderLink(t, driver, bin, home)
 	// The run must outlast the start of the second screen.
 	driver.write(strings.Repeat(slowPrompt, 16) + "\r")
 	driver.waitText("Working…")
@@ -727,7 +775,7 @@ func watchingPair(t *testing.T, bin, home string) (driver, observer *askTerm, sh
 
 	observer = startAskTerm(t, bin, home, askTermOptions{})
 	observer.waitText("Ask anything")
-	requireLeaderHeader(t, observer, bin, home)
+	requireLeaderLink(t, observer, bin, home)
 	observer.write("/sessions\r")
 	observer.waitText("Live sessions")
 	return driver, observer, short
@@ -740,7 +788,6 @@ func TestInteractiveSecondClientObserves(t *testing.T) {
 	observer.waitRow("│", short, "driver busy")
 	observer.write("\r")
 
-	observer.waitRow("◉ observer " + short)
 	observer.waitRow("◉ Watching. Type /take to take control when the run ends.")
 	observer.waitRow("Working…", "another client drives this session")
 	require.False(t, containsRow(observer.rows(), "Ask anything"), "the editor slot shows the watching text:\n%s", observer.screen())
@@ -749,8 +796,8 @@ func TestInteractiveSecondClientObserves(t *testing.T) {
 	driver.waitReplyMeta("faux-1")
 	observer.waitFor("the run ended on the observer", func(rows []string) bool { return !containsRow(rows, "Working…") })
 	observer.write("/take\r")
-	observer.waitFor("the editor and the leader in the header row", func(rows []string) bool {
-		return hasRow(rows, "Ask anything") && hasRow(rows, "leader ") && !containsRow(rows, "◉ observer")
+	observer.waitFor("the editor back and the watching text gone", func(rows []string) bool {
+		return hasRow(rows, "Ask anything") && !containsRow(rows, "Watching.")
 	})
 	observer.quitDetached()
 	driver.quitDetached()
@@ -767,21 +814,11 @@ func TestInteractiveSessionsAttach(t *testing.T) {
 	observer.write("\r")
 
 	observer.waitRow("── session " + short + " ──")
-	// The divider is followed by the model of the session that is watched.
-	observer.waitFor("the model line under the divider", func(rows []string) bool {
-		for i, r := range rows {
-			if !strings.Contains(r, "── session "+short+" ──") {
-				continue
-			}
-			for _, next := range rows[i+1:] {
-				if strings.HasPrefix(next, "  model  faux/faux-1") {
-					return true
-				}
-			}
-		}
-		return false
-	})
-	observer.waitRow("◉ observer " + short)
+	// The footer row names the model of the session that is watched; the pane
+	// has no model line under the divider.
+	observer.waitFor("the model in the footer row", func(rows []string) bool { return footerHas(rows, "faux/faux-1") })
+	requireHeaderAndNoLinkState(t, observer)
+	require.False(t, hasRowPrefix(observer.rows(), "  model  "), "the pane has a model line:\n%s", observer.screen())
 	// The followed reply streams in the transcript of the observer.
 	observer.waitFor("the followed reply", func(rows []string) bool { return hasRowPrefix(rows, replyPrefix+"slow words") })
 	require.True(t, containsRow(observer.rows(), "Working…"), "the run goes on:\n%s", observer.screen())
@@ -827,7 +864,7 @@ func TestInteractiveSwitchFromRunningSession(t *testing.T) {
 	a.write(tui.ShortID(target))
 	a.waitRow("│", tui.ShortID(target), "driver busy")
 	a.write("\r")
-	a.waitRow("◉ observer " + tui.ShortID(target))
+	a.waitRow("◉ Watching. Type /take")
 	a.waitRow("Working…", "another client drives this session")
 	require.Eventually(t, func() bool {
 		state, err := old.State(ctx)

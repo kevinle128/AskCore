@@ -4,6 +4,7 @@ import (
 	"context"
 	"net"
 	"testing"
+	"time"
 
 	"github.com/stretchr/testify/require"
 	"google.golang.org/grpc"
@@ -43,4 +44,33 @@ func TestGreeterRPC(t *testing.T) {
 	response, err = client.SayHello(context.Background(), &proto.HelloRequest{})
 	require.NoError(t, err)
 	require.Equal(t, "Hello, World!", response.GetMessage())
+}
+
+// cancelStream is a greeting stream whose client cancels after the first
+// greeting.
+type cancelStream struct {
+	grpc.ServerStream
+	ctx    context.Context
+	cancel context.CancelFunc
+	sent   int
+}
+
+func (s *cancelStream) Context() context.Context { return s.ctx }
+
+func (s *cancelStream) Send(*proto.HelloReply) error {
+	s.sent++
+	s.cancel()
+	return nil
+}
+
+func TestGreeterStreamStopsWhenClientCancels(t *testing.T) {
+	ctx, cancel := context.WithCancel(context.Background())
+	stream := &cancelStream{ctx: ctx, cancel: cancel}
+
+	start := time.Now()
+	err := NewGreeterService().SayHelloStream(&proto.HelloRequest{Name: "x"}, stream)
+
+	require.ErrorIs(t, err, context.Canceled)
+	require.Equal(t, 1, stream.sent)
+	require.Less(t, time.Since(start), greetingInterval, "the stream waited out its pace after the cancel")
 }

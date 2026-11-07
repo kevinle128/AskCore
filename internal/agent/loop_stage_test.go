@@ -33,12 +33,12 @@ func TestTurnStagesOrder(t *testing.T) {
 // loop by hand.
 type stubInputs struct{ steering []input }
 
-func (s *stubInputs) claimSteering() []input {
+func (s *stubInputs) claimSteering(bool) []input {
 	got := s.steering
 	s.steering = nil
 	return got
 }
-func (s *stubInputs) claimCycle(bool) []input { return s.claimSteering() }
+func (s *stubInputs) claimCycle(bool) []input { return s.claimSteering(true) }
 func (s *stubInputs) nextID() string          { return "stub" }
 
 // TestSteerStageAdmission verifies the steer stage: it opens every turn after

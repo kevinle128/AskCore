@@ -37,18 +37,40 @@ type fakeNotifier struct {
 	removed []string
 	err     error
 	n       int
+	gen     uint64
 }
 
 func newFakeNotifier() *fakeNotifier {
 	return &fakeNotifier{pending: map[string]bool{}}
 }
 
-func (f *fakeNotifier) notifier() Notifier {
-	return Notifier{
-		FollowUp: func(m protocol.Message) (string, error) { return f.accept(m, true) },
-		Steer:    func(m protocol.Message) (string, error) { return f.accept(m, false) },
-		Remove:   f.remove,
+// Gen, Notify and Remove make the fake the Owner of the jobs of a rig. A
+// monitor event is recorded as a steer and a completion as a follow-up, the
+// two kinds that the tests tell apart.
+func (f *fakeNotifier) Gen() uint64 {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	return f.gen
+}
+
+func (f *fakeNotifier) Notify(m protocol.Message) (string, error) {
+	return f.accept(m, !strings.Contains(messageText(m), "<monitor-event"))
+}
+
+func (f *fakeNotifier) Remove(id string) bool { return f.remove(id) }
+
+func messageText(m protocol.Message) string {
+	um, ok := m.(protocol.UserMessage)
+	if !ok {
+		return ""
 	}
+	text := ""
+	for _, b := range um.Content {
+		if tb, ok := b.(protocol.Text); ok {
+			text += tb.Text
+		}
+	}
+	return text
 }
 
 func (f *fakeNotifier) accept(m protocol.Message, followUp bool) (string, error) {
@@ -127,10 +149,23 @@ type rig struct {
 	clock *fakeClock
 	dir   string
 
-	mu    sync.Mutex
-	errs  []error
-	pgids []int
+	mu      sync.Mutex
+	errs    []error
+	pgids   []int
+	noOwner bool
 }
+
+// owner is the Owner of the jobs that the rig starts: its fake notifier, or
+// none for a rig without one.
+func (r *rig) owner() Owner {
+	if r.noOwner {
+		return nil
+	}
+	return r.n
+}
+
+// gen is the generation of the rig's owner.
+func (r *rig) gen() uint64 { return r.n.Gen() }
 
 type rigOption func(*rigConfig)
 
@@ -168,9 +203,7 @@ func newRig(t *testing.T, opts ...rigOption) *rig {
 		m(&o)
 	}
 	r.tb = New(o)
-	if !cfg.noNotifier {
-		r.tb.SetNotifier(r.n.notifier())
-	}
+	r.noOwner = cfg.noNotifier
 	t.Cleanup(func() {
 		_ = r.tb.Close()
 		r.mu.Lock()
@@ -186,7 +219,7 @@ func newRig(t *testing.T, opts ...rigOption) *rig {
 // bash starts command as a bash job.
 func (r *rig) bash(command string) *Job {
 	r.t.Helper()
-	j, err := r.tb.Start(StartSpec{Command: command, Cwd: r.dir})
+	j, err := r.tb.Start(StartSpec{Owner: r.owner(), Command: command, Cwd: r.dir})
 	require.NoError(r.t, err)
 	r.track(j)
 	return j
@@ -199,6 +232,9 @@ func (r *rig) monitor(spec MonitorSpec) *Job {
 	}
 	if spec.Description == "" {
 		spec.Description = "watch"
+	}
+	if spec.Owner == nil {
+		spec.Owner = r.owner()
 	}
 	j, err := r.tb.StartMonitor(spec)
 	require.NoError(r.t, err)

@@ -91,6 +91,9 @@ type ACPFallbackReason string
 const (
 	ACPFallbackNoCredential ACPFallbackReason = "no_credential" // no credential and no environment key
 	ACPFallbackNotInCatalog ACPFallbackReason = "not_in_catalog"
+	// ACPFallbackNotInAccount means that the model is in the catalog but the
+	// model list of the signed-in account does not have it.
+	ACPFallbackNotInAccount ACPFallbackReason = "not_in_account"
 )
 
 // Every Generation below is the one counter of the leader instance, as decimal

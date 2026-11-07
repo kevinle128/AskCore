@@ -23,7 +23,7 @@ func (s *sessionView) onRestored(v SessionRestoredMsg) tea.Cmd {
 	s.conn = connUp
 	s.reconnect = reconnectView{}
 	s.useSession(v.Session)
-	s.addStartSlot(startRestore, "Reconnected. Session "+ShortID(v.Session.ID)+" restored.")
+	s.appendBlock(restoredNote{text: "Reconnected. Session " + ShortID(v.Session.ID) + " restored."})
 	return tea.Batch(s.refreshCmd(false), s.onBoxReconnected())
 }
 

@@ -11,7 +11,7 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-// fakeSource stands in for the header, editor, status, pending and bar
+// fakeSource stands in for the footer, editor, status, pending and bar
 // components.
 // It is immutable: a test that needs another draft starts another model.
 type fakeSource struct {
@@ -19,8 +19,8 @@ type fakeSource struct {
 	cursorCol   int // columns after the prompt marker
 	placeholder bool
 	status      string
-	headerL     string
-	headerR     string
+	footerL     string
+	footerR     string
 	pending     []string
 	menu        []string
 	modal       []string
@@ -38,9 +38,10 @@ func (s fakeSource) Slots(width int) Slots {
 		}
 		out.Editor = EditorSlot{Rows: []string{truncateTo(text, max(1, PromptInnerWidth(width)))}, Cursor: &CursorPos{Row: 0, Col: 2 + s.cursorCol}}
 	}
-	if s.headerL != "" {
-		gap := max(1, width-displayWidth(s.headerL)-displayWidth(s.headerR))
-		out.Header = s.headerL + strings.Repeat(" ", gap) + s.headerR
+	out.Header = " ◢◤ ask"
+	if s.footerL != "" {
+		gap := max(1, width-displayWidth(s.footerL)-displayWidth(s.footerR))
+		out.Footer = s.footerL + strings.Repeat(" ", gap) + s.footerR
 	}
 	out.Bar = " " + pick(width < shortWidth, barTextShort, barText)
 	return out
@@ -52,7 +53,7 @@ type promptBlock struct{ text, at string }
 
 func (b promptBlock) Lines(rc RenderContext) []string {
 	rows := wrapLines(b.text, max(1, rc.Width-4))
-	out := make([]string, 0, len(rows)+1)
+	out := make([]string, 0, len(rows))
 	for i, r := range rows {
 		if i == 0 {
 			line := "  ❯ " + r
@@ -64,14 +65,14 @@ func (b promptBlock) Lines(rc RenderContext) []string {
 		}
 		out = append(out, "    "+r)
 	}
-	return append(out, "")
+	return out
 }
 
 type replyBlock struct{ text string }
 
 func (b replyBlock) Lines(rc RenderContext) []string {
 	rows := wrapLines(b.text, max(1, rc.Width-4))
-	out := make([]string, 0, len(rows)+1)
+	out := make([]string, 0, len(rows))
 	for i, r := range rows {
 		if i == 0 {
 			out = append(out, "  ◆ "+r)
@@ -79,7 +80,7 @@ func (b replyBlock) Lines(rc RenderContext) []string {
 		}
 		out = append(out, "    "+r)
 	}
-	return append(out, "")
+	return out
 }
 
 func newTestModel(src SlotSource) *Model {
@@ -145,7 +146,7 @@ func TestViewUsesTheAlternateScreenAndTheMouse(t *testing.T) {
 // focus and the follow state do not change, and no row is wider than the new
 // terminal.
 func TestResizeKeepsDraftFocusAndFollow(t *testing.T) {
-	src := fakeSource{draft: "draft 日本語", cursorCol: displayWidth("draft 日本"), headerL: "◢◤ ask  ● leader 7c1e", headerR: "model  "}
+	src := fakeSource{draft: "draft 日本語", cursorCol: displayWidth("draft 日本"), footerL: " ⌂ ~/src/askcore", footerR: "openai/model  "}
 	model := newTestModel(src)
 	model.SetFocus(FocusEditor)
 	h := startScreen(t, model, 80, 24)
@@ -211,9 +212,10 @@ func TestTallStreamingBlockShowsItsEnd(t *testing.T) {
 }
 
 func TestScreenGoldens(t *testing.T) {
-	logo := "◢◤ ask  "
-	header := func(left string) (string, string) {
-		return logo + left, "deepseek-v4.1-flash  ▰▱▱▱▱▱▱▱ 18%  $0.04 "
+	// The footer row of the sketches: the directory and the model with the
+	// context use.
+	footer := func(left string) (string, string) {
+		return left, "openai/gpt-5.4-mini ◐ medium  ▱▱▱▱▱▱▱▱ 4% "
 	}
 	history := func(h *screenHarness) {
 		appendSettled(h, "p1", promptBlock{"why does TestLeaderStale fail on CI?", "14:02"}, true)
@@ -221,24 +223,24 @@ func TestScreenGoldens(t *testing.T) {
 	}
 
 	t.Run("idle_80x24", func(t *testing.T) {
-		l, r := header("● leader 7c1e  ⌂ ~/src/askcore")
-		h := startScreen(t, newTestModel(fakeSource{placeholder: true, cursorCol: 0, headerL: l, headerR: r}), 80, 24)
+		l, r := footer(" ⌂ ~/src/askcore")
+		h := startScreen(t, newTestModel(fakeSource{placeholder: true, cursorCol: 0, footerL: l, footerR: r}), 80, 24)
 		history(h)
 		h.waitText("probe can take")
 		h.requireGolden()
 	})
 
 	t.Run("idle_120x40", func(t *testing.T) {
-		l, r := header("● leader 7c1e  ⌂ ~/src/askcore")
-		h := startScreen(t, newTestModel(fakeSource{placeholder: true, headerL: l, headerR: r}), 120, 40)
+		l, r := footer(" ⌂ ~/src/askcore")
+		h := startScreen(t, newTestModel(fakeSource{placeholder: true, footerL: l, footerR: r}), 120, 40)
 		history(h)
 		h.waitText("probe can take")
 		h.requireGolden()
 	})
 
 	t.Run("streaming_80x24", func(t *testing.T) {
-		l, r := header("● leader 7c1e  ⌂ ~/src/askcore")
-		src := fakeSource{placeholder: true, status: "┊ ◌ Working… 4s · esc to interrupt", headerL: l, headerR: r}
+		l, r := footer(" ⌂ ~/src/askcore")
+		src := fakeSource{placeholder: true, status: "┊ ◌ Working… 4s · esc to interrupt", footerL: l, footerR: r}
 		h := startScreen(t, newTestModel(src), 80, 24)
 		history(h)
 		appendSettled(h, "p2", promptBlock{"show me the probe code", "14:03"}, true)
@@ -249,9 +251,9 @@ func TestScreenGoldens(t *testing.T) {
 	})
 
 	t.Run("queue_80x24", func(t *testing.T) {
-		l, r := header("● leader 7c1e  ⌂ ~/src/askcore")
+		l, r := footer(" ⌂ ~/src/askcore")
 		src := fakeSource{
-			placeholder: true, status: "┊ ◌ Working… 9s · esc to interrupt", headerL: l, headerR: r,
+			placeholder: true, status: "┊ ◌ Working… 9s · esc to interrupt", footerL: l, footerR: r,
 			pending: []string{
 				"┆ ⧗ steer   use the fake clock from internal/testsupport",
 				"┆ ⧗ next    then run the leader tests",
@@ -266,7 +268,7 @@ func TestScreenGoldens(t *testing.T) {
 	})
 
 	t.Run("selector_80x24", func(t *testing.T) {
-		l, r := header("● leader 7c1e  ⌂ ~/src/askcore")
+		l, r := footer(" ⌂ ~/src/askcore")
 		inner := 78
 		row := func(s string) string { return "│" + padTo(s, inner) + "│" }
 		modal := []string{
@@ -279,14 +281,14 @@ func TestScreenGoldens(t *testing.T) {
 			"╰" + strings.Repeat("─", inner) + "╯",
 			"   enter select  ·  esc close  ·  your draft is kept",
 		}
-		h := startScreen(t, newTestModel(fakeSource{modal: modal, modalCur: &CursorPos{Row: 1, Col: 6}, headerL: l, headerR: r}), 80, 24)
+		h := startScreen(t, newTestModel(fakeSource{modal: modal, modalCur: &CursorPos{Row: 1, Col: 6}, footerL: l, footerR: r}), 80, 24)
 		history(h)
 		h.waitText("Select model")
 		h.requireGolden()
 	})
 
 	t.Run("narrow_40x14", func(t *testing.T) {
-		src := fakeSource{placeholder: true, status: "┊ ◌ Working… 3s · esc", headerL: "◢◤ ask ● 7c1e", headerR: "deepseek-v4.1-flash 18% "}
+		src := fakeSource{placeholder: true, status: "┊ ◌ Working… 3s · esc", footerL: " ", footerR: "openai/gpt-5.4-mini 4% "}
 		h := startScreen(t, newTestModel(src), 40, 14)
 		appendSettled(h, "p1", promptBlock{"giải thích lỗi\n日本語のテスト", "14:05"}, true)
 		appendSettled(h, "r1", replyBlock{"The 日本語 test fails because each wide character uses two columns."}, true)
@@ -329,7 +331,7 @@ func TestCursorStaysOnTheDraftWhileBlocksArrive(t *testing.T) {
 // A row from a block that is wider than the terminal is wrapped, not cut and
 // not left to the terminal, so the row count of the pane stays right.
 func TestWideBlockRowsAreWrapped(t *testing.T) {
-	h := startScreen(t, newTestModel(fakeSource{placeholder: true}), 30, 12)
+	h := startScreen(t, newTestModel(fakeSource{placeholder: true}), 30, 14)
 	appendBlock(h, "long", rawBlock{strings.Repeat("x", 70)}, true)
 	appendBlock(h, "after", textBlock{"after"}, true)
 	h.waitText("after")
@@ -373,7 +375,9 @@ func TestResizeKeepsAScrolledWindow(t *testing.T) {
 	}
 	m.View()
 	require.True(t, m.pane.Following())
-	m.pane.ScrollBy(-30)
+	// Each block is one row and its gap row; the window top lands on a row of
+	// text.
+	m.pane.ScrollBy(-31)
 	require.False(t, m.pane.Following())
 	top := func() string {
 		rows := strings.Split(ansi.Strip(m.View().Content), "\n")

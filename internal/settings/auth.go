@@ -53,6 +53,8 @@ type Credential struct {
 type AuthStore struct {
 	home string
 	ops  fileOps
+	// readOnly makes every read lock-free and every write fail.
+	readOnly bool
 }
 
 type fileOps struct {
@@ -65,20 +67,29 @@ type fileOps struct {
 
 // NewAuthStore constructs a local credential store. Empty home uses ASK_HOME or ~/.ask.
 func NewAuthStore(home string) (*AuthStore, error) {
-	if home == "" {
-		home = os.Getenv("ASK_HOME")
-	}
-	if home == "" {
-		dir, err := os.UserHomeDir()
-		if err != nil {
-			return nil, err
-		}
-		home = filepath.Join(dir, ".ask")
-	}
-	if !filepath.IsAbs(home) {
-		return nil, fmt.Errorf("%w: home must be absolute", ErrUnsafeStore)
+	home, err := ResolveHome(home)
+	if err != nil {
+		return nil, err
 	}
 	return &AuthStore{home: home, ops: fileOps{write: func(f *os.File, b []byte) (int, error) { return f.Write(b) }, syncFile: (*os.File).Sync, closeFile: (*os.File).Close, rename: os.Rename, syncDir: (*os.File).Sync}}, nil
+}
+
+// ErrReadOnlyStore is the error of a write to a store that NewAuthStoreReader
+// made.
+var ErrReadOnlyStore = errors.New("settings: the credential store is read only")
+
+// NewAuthStoreReader returns a store that never changes the file system. Read
+// and ReadProvider take no lock and create nothing: a writer replaces
+// auth.json with a rename, so a read sees one whole version. A missing home
+// reads as empty. Every method that writes fails with ErrReadOnlyStore. A
+// command that must write nothing, such as `ask settings show`, uses it.
+func NewAuthStoreReader(home string) (*AuthStore, error) {
+	s, err := NewAuthStore(home)
+	if err != nil {
+		return nil, err
+	}
+	s.readOnly = true
+	return s, nil
 }
 
 type authDocument struct {
@@ -225,6 +236,9 @@ func (s *AuthStore) transaction(ctx context.Context, provider string, update fun
 	if !validProvider(provider) {
 		return 0, fmt.Errorf("%w: provider", ErrUnsafeStore)
 	}
+	if s.readOnly {
+		return 0, ErrReadOnlyStore
+	}
 	if err := ensureHome(s.home); err != nil {
 		return 0, err
 	}
@@ -274,17 +288,27 @@ func (s *AuthStore) writeDocument(ctx context.Context, path, provider string, d 
 	return d.revision, nil
 }
 
+// commit replaces path, a file in the home, with b and mode 0600.
 func (s *AuthStore) commit(ctx context.Context, path string, b []byte) error {
+	return s.commitIn(ctx, s.home, path, b, 0600)
+}
+
+// commitIn replaces path, a file in dir, with b and mode. It writes a
+// temporary file in dir, syncs it, renames it over path and syncs dir. A
+// failure before the rename keeps the old file and removes the temporary
+// file. A failure after the rename returns ErrIndeterminate, because the new
+// file can be visible.
+func (s *AuthStore) commitIn(ctx context.Context, dir, path string, b []byte, mode os.FileMode) error {
 	if err := ctx.Err(); err != nil {
 		return err
 	}
-	f, err := os.CreateTemp(s.home, ".auth-*")
+	f, err := os.CreateTemp(dir, ".auth-*")
 	if err != nil {
 		return err
 	}
 	name := f.Name()
 	defer func() { _ = os.Remove(name) }()
-	if err = f.Chmod(0600); err != nil {
+	if err = f.Chmod(mode); err != nil {
 		_ = f.Close()
 		return err
 	}
@@ -324,16 +348,16 @@ func (s *AuthStore) commit(ctx context.Context, path string, b []byte) error {
 	if err = ctx.Err(); err != nil {
 		return fmt.Errorf("%w: %w", ErrIndeterminate, err)
 	}
-	dir, err := os.Open(s.home)
+	d, err := os.Open(dir)
 	if err != nil {
 		return fmt.Errorf("%w: %v", ErrIndeterminate, err)
 	}
 	if err = ctx.Err(); err != nil {
-		_ = dir.Close()
+		_ = d.Close()
 		return fmt.Errorf("%w: %w", ErrIndeterminate, err)
 	}
-	err = s.ops.syncDir(dir)
-	closeErr := dir.Close()
+	err = s.ops.syncDir(d)
+	closeErr := d.Close()
 	if err != nil {
 		return fmt.Errorf("%w: %v", ErrIndeterminate, err)
 	}
@@ -362,16 +386,23 @@ func (s *AuthStore) read(ctx context.Context, provider string, scoped bool) (Cre
 	if !validProvider(provider) {
 		return c, 0, fmt.Errorf("%w: provider", ErrUnsafeStore)
 	}
-	if err := ensureHome(s.home); err != nil {
-		return c, 0, err
+	if s.readOnly {
+		exists, err := CheckPrivateDir(s.home)
+		if err != nil || !exists {
+			return c, 0, err
+		}
+	} else {
+		if err := ensureHome(s.home); err != nil {
+			return c, 0, err
+		}
+		unlock, err := lockSidecar(ctx, filepath.Join(s.home, "auth.json.lock"))
+		if err != nil {
+			return c, 0, err
+		}
+		defer unlock()
 	}
-	unlock, err := lockSidecar(ctx, filepath.Join(s.home, "auth.json.lock"))
-	if err != nil {
-		return c, 0, err
-	}
-	defer unlock()
 	path := filepath.Join(s.home, "auth.json")
-	if err = checkEntry(path, 0600); err != nil {
+	if err := checkEntry(path, 0600); err != nil {
 		return c, 0, err
 	}
 	d, err := readDocument(path)
@@ -528,6 +559,9 @@ func (s *AuthStore) Refresh(ctx context.Context, p string, generation uint64, at
 	var empty Credential
 	if !validProvider(p) || strings.TrimSpace(attemptID) == "" || exchange == nil {
 		return empty, fmt.Errorf("%w: refresh arguments", ErrUnsafeStore)
+	}
+	if s.readOnly {
+		return empty, ErrReadOnlyStore
 	}
 	if err := ensureHome(s.home); err != nil {
 		return empty, err

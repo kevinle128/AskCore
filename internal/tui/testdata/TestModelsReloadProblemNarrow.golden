@@ -1,0 +1,14 @@
+ ◢◤ ask
+────────────────────────────────────────
+
+────────────────────────────────────────
+╭─ Select model ───────────────────────╮
+│  ⌕ type to filter                    │
+│ ❯   qwen3-coder:30b 256k  current    │
+│    … 4 more                          │
+│  models.json: 2 problems             │
+╰──────────────────────────────────────╯
+   enter select  ·  esc close  ·  your …
+────────────────────────────────────────
+               local/qwen3-coder:30b 6%
+ Tab blocks · / commands

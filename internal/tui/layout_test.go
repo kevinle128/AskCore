@@ -63,15 +63,18 @@ func TestAllocateScreenRows(t *testing.T) {
 			height int
 			want   alloc
 		}{
-			{40, alloc{header: 1, headerRule: 1, pane: 22, queue: 3, status: 1, promptRules: 2, prompt: 1, menu: 8, bar: 1}},
-			{24, alloc{header: 1, headerRule: 1, pane: 6, queue: 3, status: 1, promptRules: 2, prompt: 1, menu: 8, bar: 1}},
-			{8, alloc{header: 1, headerRule: 1, pane: 1, status: 1, promptRules: 2, prompt: 1, bar: 1}},
-			// Under 8 rows the rules are gone; the queue rows come before the
+			{40, alloc{header: 1, headerRule: 1, pane: 21, queue: 3, status: 1, promptRules: 2, prompt: 1, menu: 8, footer: 1, bar: 1}},
+			{24, alloc{header: 1, headerRule: 1, pane: 5, queue: 3, status: 1, promptRules: 2, prompt: 1, menu: 8, footer: 1, bar: 1}},
+			{9, alloc{header: 1, headerRule: 1, pane: 1, status: 1, promptRules: 2, prompt: 1, footer: 1, bar: 1}},
+			// Under 9 rows the rules are gone; the queue rows come before the
 			// pane rows that are left.
-			{7, alloc{header: 1, pane: 1, queue: 2, status: 1, prompt: 1, bar: 1}},
-			{5, alloc{header: 1, pane: 1, status: 1, prompt: 1, bar: 1}},
-			{4, alloc{header: 1, pane: 1, prompt: 1, bar: 1}},
-			{3, alloc{header: 1, prompt: 1, bar: 1}},
+			{8, alloc{header: 1, pane: 1, queue: 2, status: 1, prompt: 1, footer: 1, bar: 1}},
+			{7, alloc{header: 1, pane: 1, queue: 1, status: 1, prompt: 1, footer: 1, bar: 1}},
+			{5, alloc{header: 1, pane: 1, prompt: 1, footer: 1, bar: 1}},
+			// Under 5 rows the header row gives way first, then the pane, then
+			// the footer row.
+			{4, alloc{pane: 1, prompt: 1, footer: 1, bar: 1}},
+			{3, alloc{prompt: 1, footer: 1, bar: 1}},
 			{2, alloc{prompt: 1, bar: 1}},
 			{1, alloc{prompt: 1}},
 		}
@@ -89,13 +92,16 @@ func TestAllocateScreenRows(t *testing.T) {
 				require.Equal(t, 1, a.bar, "the bar stays at height %d", h)
 			}
 			if h >= 3 {
-				require.Equal(t, 1, a.header, "the header stays at height %d", h)
+				require.Equal(t, 1, a.footer, "the footer row stays at height %d", h)
 			}
 			if h >= 4 {
 				require.GreaterOrEqual(t, a.pane, 1, "the pane keeps a row at height %d", h)
 			}
-			if h < 8 {
-				require.Zero(t, a.headerRule+a.promptRules, "the rules go first under 8 rows, height %d", h)
+			if h >= 5 {
+				require.Equal(t, 1, a.header, "the header row stays at height %d", h)
+			}
+			if h < 9 {
+				require.Zero(t, a.headerRule+a.promptRules, "the rules go first under 9 rows, height %d", h)
 			} else {
 				require.Equal(t, 3, a.headerRule+a.promptRules, "height %d", h)
 			}
@@ -106,19 +112,19 @@ func TestAllocateScreenRows(t *testing.T) {
 	})
 
 	t.Run("the status row goes after the rules", func(t *testing.T) {
-		require.Equal(t, 1, allocate(5, demand{prompt: 1, status: 1}).status)
-		require.Zero(t, allocate(4, demand{prompt: 1, status: 1}).status, "four rows hold header, pane, prompt and bar")
+		require.Equal(t, 1, allocate(6, demand{prompt: 1, status: 1}).status)
+		require.Zero(t, allocate(5, demand{prompt: 1, status: 1}).status, "five rows hold the header, the pane, the prompt, the footer row and the bar")
 	})
 
 	t.Run("empty parts use no rows", func(t *testing.T) {
 		a := allocate(24, demand{prompt: 1})
-		require.Equal(t, alloc{header: 1, headerRule: 1, pane: 18, promptRules: 2, prompt: 1, bar: 1}, a)
+		require.Equal(t, alloc{header: 1, headerRule: 1, pane: 17, promptRules: 2, prompt: 1, footer: 1, bar: 1}, a)
 	})
 
 	t.Run("the prompt pane grows to half of the height", func(t *testing.T) {
 		require.Equal(t, 12, allocate(24, demand{prompt: 12}).prompt)
 		require.Equal(t, 12, allocate(24, demand{prompt: 13}).prompt, "a 13th line scrolls inside the pane")
-		require.Equal(t, 7, allocate(24, demand{prompt: 12}).pane)
+		require.Equal(t, 6, allocate(24, demand{prompt: 12}).pane)
 		require.Equal(t, 20, allocate(40, demand{prompt: 30}).prompt)
 		require.Equal(t, 3, allocate(24, demand{prompt: 3}).prompt)
 	})
@@ -144,12 +150,13 @@ func TestPromptSlotRows(t *testing.T) {
 }
 
 func (a alloc) total() int {
-	return a.header + a.headerRule + a.pane + a.queue + a.status + a.promptRules + a.prompt + a.menu + a.bar
+	return a.header + a.headerRule + a.pane + a.queue + a.status + a.promptRules + a.prompt + a.menu + a.footer + a.bar
 }
 
 func testSlots() Slots {
 	return Slots{
 		Header: "header",
+		Footer: "footer",
 		Editor: EditorSlot{Rows: []string{"❯ x"}, Cursor: &CursorPos{Row: 0, Col: 3}},
 		Bar:    "bar",
 	}
@@ -168,16 +175,18 @@ func TestComposeFrameScreenParts(t *testing.T) {
 		require.Len(t, rows, 24)
 		require.Equal(t, "header", rows[0])
 		require.Equal(t, strings.Repeat("─", 80), rows[1], "the rule under the header")
-		require.Equal(t, "b87", rows[2], "the pane shows its last 14 rows")
-		require.Equal(t, "b100", rows[15])
+		require.Equal(t, "b88", rows[2], "the pane shows its last 13 rows")
+		require.Equal(t, "b100", rows[14])
+		require.Equal(t, FrameGeo{PaneTop: 2, PaneRows: 13, PromptTop: 20, PromptRows: 1}, f.Geo)
+		require.Equal(t, []string{"q1", "q2"}, rows[15:17], "the queue is above the status")
+		require.Equal(t, "status", rows[17], "the status row is right above the rule")
+		require.Equal(t, strings.Repeat("─", 80), rows[18], "the rule above the prompt pane")
+		require.Equal(t, "m1", rows[19], "the menu is inside the prompt pane, above the draft")
+		require.Equal(t, " ❯ x", rows[20])
+		require.Equal(t, strings.Repeat("─", 80), rows[21], "the rule under the prompt pane")
+		require.Equal(t, "footer", rows[22], "the footer row is under the lower rule")
 		require.Equal(t, "bar", rows[23])
-		require.Equal(t, strings.Repeat("─", 80), rows[22], "the rule under the prompt pane")
-		require.Equal(t, " ❯ x", rows[21])
-		require.Equal(t, "m1", rows[20], "the menu is inside the prompt pane, above the draft")
-		require.Equal(t, strings.Repeat("─", 80), rows[19], "the rule above the prompt pane")
-		require.Equal(t, "status", rows[18], "the status row is right above the rule")
-		require.Equal(t, []string{"q1", "q2"}, rows[16:18], "the queue is above the status")
-		require.Equal(t, &CursorPos{Row: 21, Col: 4}, f.Cursor, "the cursor is in the prompt pane, after the left pad")
+		require.Equal(t, &CursorPos{Row: 20, Col: 4}, f.Cursor, "the cursor is in the prompt pane, after the left pad")
 	})
 
 	t.Run("80x24 with a 12 line draft", func(t *testing.T) {
@@ -186,21 +195,21 @@ func TestComposeFrameScreenParts(t *testing.T) {
 		f := composeFrame(s, paneOf(numbered("b", 100)), 80, 24, th)
 		rows := plainRows(f.Rows)
 		require.Len(t, rows, 24)
-		require.Equal(t, "b94", rows[2], "the pane has 7 rows")
-		require.Equal(t, "b100", rows[8])
-		require.Equal(t, strings.Repeat("─", 80), rows[9])
-		require.Equal(t, " line 1", rows[10])
-		require.Equal(t, " line 12", rows[21])
-		require.Equal(t, strings.Repeat("─", 80), rows[22])
-		require.Equal(t, &CursorPos{Row: 21, Col: 2}, f.Cursor)
+		require.Equal(t, "b95", rows[2], "the pane has 6 rows")
+		require.Equal(t, "b100", rows[7])
+		require.Equal(t, strings.Repeat("─", 80), rows[8])
+		require.Equal(t, " line 1", rows[9])
+		require.Equal(t, " line 12", rows[20])
+		require.Equal(t, strings.Repeat("─", 80), rows[21])
+		require.Equal(t, &CursorPos{Row: 20, Col: 2}, f.Cursor)
 	})
 
 	t.Run("80x24 with a 13 line draft scrolls inside the pane", func(t *testing.T) {
 		s := testSlots()
 		s.Editor = EditorSlot{Rows: numbered("line ", 13), Cursor: &CursorPos{Row: 12, Col: 1}}
 		rows := plainRows(composeFrame(s, paneOf(numbered("b", 100)), 80, 24, th).Rows)
-		require.Equal(t, " line 2", rows[10])
-		require.Equal(t, " line 13", rows[21])
+		require.Equal(t, " line 2", rows[9])
+		require.Equal(t, " line 13", rows[20])
 	})
 
 	t.Run("40x14", func(t *testing.T) {
@@ -208,12 +217,13 @@ func TestComposeFrameScreenParts(t *testing.T) {
 		rows := plainRows(f.Rows)
 		require.Len(t, rows, 14)
 		require.Equal(t, "header", rows[0])
-		require.Equal(t, "bar", rows[13])
 		require.Equal(t, strings.Repeat("─", 40), rows[1])
-		require.Equal(t, strings.Repeat("─", 40), rows[10])
-		require.Equal(t, strings.Repeat("─", 40), rows[12])
-		require.Equal(t, " ❯ x", rows[11])
 		require.Equal(t, "b3", rows[4])
+		require.Equal(t, strings.Repeat("─", 40), rows[9])
+		require.Equal(t, " ❯ x", rows[10])
+		require.Equal(t, strings.Repeat("─", 40), rows[11])
+		require.Equal(t, "footer", rows[12])
+		require.Equal(t, "bar", rows[13])
 	})
 
 	t.Run("28x14", func(t *testing.T) {
@@ -223,13 +233,32 @@ func TestComposeFrameScreenParts(t *testing.T) {
 			require.LessOrEqual(t, displayWidth(r), 28)
 		}
 		require.Equal(t, strings.Repeat("─", 28), rows[1])
+		require.Equal(t, strings.Repeat("─", 28), rows[9])
 	})
 
-	t.Run("7 rows have no rules", func(t *testing.T) {
+	t.Run("8 rows have no rules", func(t *testing.T) {
 		s := testSlots()
 		s.Status = "status"
-		rows := plainRows(composeFrame(s, paneOf(numbered("b", 100)), 40, 7, th).Rows)
-		require.Equal(t, []string{"header", "b98", "b99", "b100", "status", " ❯ x", "bar"}, rows)
+		rows := plainRows(composeFrame(s, paneOf(numbered("b", 100)), 40, 8, th).Rows)
+		require.Equal(t, []string{"header", "b98", "b99", "b100", "status", " ❯ x", "footer", "bar"}, rows)
+	})
+
+	t.Run("9 rows with a status show the three rules", func(t *testing.T) {
+		s := testSlots()
+		s.Status = "status"
+		rows := plainRows(composeFrame(s, paneOf(numbered("b", 100)), 80, 9, th).Rows)
+		rule := strings.Repeat("─", 80)
+		require.Equal(t, []string{"header", rule, "b100", "status", rule, " ❯ x", rule, "footer", "bar"}, rows)
+	})
+
+	t.Run("4 rows lose the header row first", func(t *testing.T) {
+		rows := plainRows(composeFrame(testSlots(), paneOf(numbered("b", 100)), 80, 4, th).Rows)
+		require.Equal(t, []string{"b100", " ❯ x", "footer", "bar"}, rows)
+	})
+
+	t.Run("3 rows keep the prompt, the footer row and the bar", func(t *testing.T) {
+		rows := plainRows(composeFrame(testSlots(), paneOf(numbered("b", 100)), 80, 3, th).Rows)
+		require.Equal(t, []string{" ❯ x", "footer", "bar"}, rows)
 	})
 
 	t.Run("a short pane callback is padded to its rows", func(t *testing.T) {
@@ -250,15 +279,15 @@ func TestComposeFrameEditorScrollsWithTheCursor(t *testing.T) {
 	s := testSlots()
 	s.Editor = EditorSlot{Rows: rows, Cursor: &CursorPos{Row: 0, Col: 1}}
 	got := plainRows(composeFrame(s, paneOf(nil), 20, 24, th).Rows)
-	require.Equal(t, " line 1", got[10])
-	require.Equal(t, " line 12", got[21])
+	require.Equal(t, " line 1", got[9])
+	require.Equal(t, " line 12", got[20])
 
 	s.Editor.Cursor = &CursorPos{Row: 29, Col: 1}
 	f := composeFrame(s, paneOf(nil), 20, 24, th)
 	got = plainRows(f.Rows)
-	require.Equal(t, " line 19", got[10])
-	require.Equal(t, " line 30", got[21])
-	require.Equal(t, &CursorPos{Row: 21, Col: 2}, f.Cursor)
+	require.Equal(t, " line 19", got[9])
+	require.Equal(t, " line 30", got[20])
+	require.Equal(t, &CursorPos{Row: 20, Col: 2}, f.Cursor)
 }
 
 func TestComposeFrameOverflowMarkers(t *testing.T) {
@@ -291,11 +320,12 @@ func TestComposeFrameModalTakesThePromptSlot(t *testing.T) {
 	f := composeFrame(s, paneOf(numbered("b", 100)), 20, 24, th)
 	rows := plainRows(f.Rows)
 	require.Len(t, rows, 24)
-	require.Equal(t, strings.Repeat("─", 20), rows[17])
-	require.Equal(t, sel, rows[18:22], "modal rows are between the rules and are not padded or boxed again")
-	require.Equal(t, strings.Repeat("─", 20), rows[22])
+	require.Equal(t, strings.Repeat("─", 20), rows[16])
+	require.Equal(t, sel, rows[17:21], "modal rows are between the rules and are not padded or boxed again")
+	require.Equal(t, strings.Repeat("─", 20), rows[21])
+	require.Equal(t, "footer", rows[22], "the footer row stays under the selector")
 	require.Equal(t, "bar", rows[23])
-	require.Equal(t, &CursorPos{Row: 19, Col: 4}, f.Cursor)
+	require.Equal(t, &CursorPos{Row: 18, Col: 4}, f.Cursor)
 }
 
 func TestComposeFrameModalKeepsFirstRowsAtTheCap(t *testing.T) {
@@ -305,20 +335,20 @@ func TestComposeFrameModalKeepsFirstRowsAtTheCap(t *testing.T) {
 	f := composeFrame(s, paneOf(nil), 20, 24, th)
 	require.Nil(t, f.Cursor, "a cursor outside the visible rows is hidden")
 	rows := plainRows(f.Rows)
-	require.Equal(t, "row1", rows[10])
-	require.Equal(t, "row12", rows[21])
+	require.Equal(t, "row1", rows[9])
+	require.Equal(t, "row12", rows[20])
 }
 
 func TestComposeFrameNeverExceedsWidthOrHeight(t *testing.T) {
 	th := NewTheme(colorprofile.TrueColor)
 	long := strings.Repeat("日本語", 30)
 	s := Slots{
-		Header: long, Bar: long, Status: long,
+		Header: long, Footer: long, Bar: long, Status: long,
 		Editor:  EditorSlot{Rows: []string{long}},
 		Pending: []string{long}, Menu: []string{long},
 	}
 	for _, w := range []int{1, 2, 5, 17, 40, 80} {
-		for _, h := range []int{1, 3, 7, 8, 14, 24} {
+		for _, h := range []int{1, 3, 4, 5, 8, 9, 14, 24} {
 			f := composeFrame(s, paneOf([]string{long, long}), w, h, th)
 			require.Len(t, f.Rows, h, "width %d height %d", w, h)
 			for _, r := range f.Rows {
@@ -333,5 +363,5 @@ func TestComposeFrameRowOrder(t *testing.T) {
 	s := testSlots()
 	s.Status = "status"
 	f := composeFrame(s, paneOf([]string{"b1", "b2"}), 12, 12, th)
-	require.Equal(t, "header,rule,b1,b2,-,-,-,status,rule, ❯ x,rule,bar", rowKinds(plainRows(f.Rows)))
+	require.Equal(t, "header,rule,b1,b2,-,-,status,rule, ❯ x,rule,footer,bar", rowKinds(plainRows(f.Rows)))
 }

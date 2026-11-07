@@ -13,12 +13,13 @@ type blockList struct {
 	// selected is the id of the first block of the selected unit, or empty.
 	selected string
 	// hover is the id of the block under the mouse pointer, or empty. The mouse
-	// handling sets it; the pane shows the expand indicator for it.
+	// handling sets it; the pane shows GlyphStepOpen on it when it is a step.
 	hover string
 }
 
 // joinsPrevious reports whether a block belongs to the unit of the block before
-// it: a continuation paragraph of a reply, or the usage line of a reply.
+// it: a continuation paragraph of a reply, or the usage line of a reply. The
+// block pane uses the same units for its gap rows.
 func joinsPrevious(prev, cur Block) bool {
 	if _, ok := prev.(assistantTextBlock); !ok {
 		return false
@@ -32,13 +33,17 @@ func joinsPrevious(prev, cur Block) bool {
 	return false
 }
 
-// selectable reports whether the user can select the unit that starts at block
-// i. A block that draws no rows, and the empty spacer between blocks, have no
-// content to select.
-func (m *Model) selectable(i int) bool {
-	_, spacer := m.transcript.entries[i].block.(spacerBlock)
-	return !spacer && m.pane.RowsOf(i) > 0
+// gapInUnit reports whether a block that joins the unit before it keeps one
+// empty row above it. The usage line of a reply stays apart from the reply
+// text, but it is still part of the reply unit.
+func gapInUnit(b Block) bool {
+	_, ok := b.(metaLineBlock)
+	return ok
 }
+
+// selectable reports whether the user can select the unit that starts at block
+// i. A block that draws no rows has no content to select.
+func (m *Model) selectable(i int) bool { return m.pane.RowsOf(i) > 0 }
 
 // unitBounds returns the first and the last block of the unit that holds block
 // i.

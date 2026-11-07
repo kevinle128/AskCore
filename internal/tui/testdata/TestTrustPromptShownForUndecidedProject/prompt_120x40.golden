@@ -1,0 +1,40 @@
+ ◢◤ ask
+────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+  ~/src/acme has project files that Ask has not read or run:
+    .ask/settings.json  .ask/skills  .agents/skills
+  If you trust this folder, Ask loads its project settings, system prompt files, skills, prompts, extensions and MCP
+  config.
+  Trust does not give permission to run shell commands or tools. Trust does not apply to AGENTS.md or CLAUDE.md.
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+╭─ Trust this project folder? ─────────────────────────────────────────────────────────────────────────────────────────╮
+│ ❯ Not now              Do not load them now. Ask again in the next session.                                          │
+│   Trust this folder    Load them now and in later sessions.                                                          │
+│   Trust parent folder  Trust ~/src and every folder in it.                                                           │
+│   Do not trust         Do not load them. Do not ask again.                                                           │
+╰──────────────────────────────────────────────────────────────────────────────────────────────────────────────────────╯
+   ↑↓ choose  ·  enter confirm  ·  esc not now  ·  your draft is kept
+────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+ ⌂ ~/src/acme                                                                                               ▱▱▱▱▱▱▱▱ 0%
+ Tab blocks · ctrl+t thinking · ctrl+l model · / commands · shift/option+drag select

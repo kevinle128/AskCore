@@ -1,6 +1,7 @@
 package tui
 
 import (
+	"strings"
 	"testing"
 
 	"github.com/stretchr/testify/require"
@@ -9,8 +10,9 @@ import (
 )
 
 // The client was away while the model changed twice. The leader names the end
-// of the replay, so the two replayed events add no change line, also when the
-// state answer shows the final model before the replay arrives.
+// of the replay, so the two replayed events leave the footer row on the final
+// model, also when the state answer shows it before the replay arrives. The
+// pane draws no line for any change.
 func TestRestoreMissedModelChangesDrawNoLine(t *testing.T) {
 	fc := providerFake()
 	fc.setModels(protocol.ACPModelsResult{Current: deepseekChat, Models: singleFormatModels(), UsableOnly: true})
@@ -28,17 +30,19 @@ func TestRestoreMissedModelChangesDrawNoLine(t *testing.T) {
 			Cursor: protocol.ACPCursor{Epoch: "e1", Seq: 10}, Head: protocol.ACPCursor{Epoch: "e1", Seq: 12}},
 	)
 	// The state answer lands before the replay.
-	r.h.waitText("model  openai/gpt-5.5")
+	r.h.waitFor("the final model in the footer row", func(*screenHarness) bool { return strings.Contains(r.footerOf(), "openai/gpt-5.5") })
 	fc.push(
 		SessionEventMsg{SessionID: testSessionID, Epoch: "e1", Seq: 11, Event: &protocol.ModelUpdate{Provider: "anthropic", ID: "claude-sonnet-4-6", API: "anthropic-messages"}},
 		SessionEventMsg{SessionID: testSessionID, Epoch: "e1", Seq: 12, Event: &protocol.ModelUpdate{Provider: "openai", ID: "gpt-5.5", API: "responses"}},
 	)
 	r.h.settle()
-	require.Zero(t, r.h.count("· was"), "no change line for a change that the state already holds:\n%s", r.screen())
-	require.Zero(t, r.h.count("model  anthropic/"), r.screen())
-	require.Equal(t, 1, r.h.count("model  openai/gpt-5.5"), r.screen())
+	requireNoModelLine(t, r.content())
+	require.Contains(t, r.footerOf(), "openai/gpt-5.5", r.screen())
+	require.NotContains(t, r.footerOf(), "anthropic/", r.screen())
 
-	// A change after the head is a real change and draws its line.
+	// A change after the head is a real change: the footer row follows it, the
+	// pane still draws no line.
 	fc.push(SessionEventMsg{SessionID: testSessionID, Epoch: "e1", Seq: 13, Event: &protocol.ModelUpdate{Provider: "anthropic", ID: "claude-sonnet-4-6", API: "anthropic-messages"}})
-	r.h.waitText("model  anthropic/claude-sonnet-4-6 · was openai/gpt-5.5")
+	r.h.waitFor("the new model in the footer row", func(*screenHarness) bool { return strings.Contains(r.footerOf(), "anthropic/claude-sonnet-4-6") })
+	requireNoModelLine(t, r.content())
 }

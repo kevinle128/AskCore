@@ -218,7 +218,9 @@ func TestLeaderE2ESpawnRace(t *testing.T) {
 func compileSpawnCaller(t *testing.T, dir string) string {
 	t.Helper()
 	out := filepath.Join(dir, "ask-server")
-	b, err := exec.Command("go", "build", "-o", out, "./testdata/spawncaller").CombinedOutput()
+	build := exec.Command("go", "build", "-o", out, "./testdata/spawncaller")
+	build.Dir = packageDir
+	b, err := build.CombinedOutput()
 	require.NoError(t, err, string(b))
 	return out
 }

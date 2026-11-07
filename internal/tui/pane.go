@@ -19,6 +19,14 @@ import (
 // never needs the row count of the whole session, so a wheel step or a delta
 // in the last block touches only the blocks near the window.
 //
+// The pane owns the spacing between blocks: one empty row after each unit,
+// and blocks draw no empty row of their own at their edges. Inside a unit, a
+// block for which gapInUnit is true also has one empty row above it. A unit is what the
+// user sees as one block: a prompt, a step, a note, or a whole reply (see
+// joinsPrevious). The gap row belongs to the last block of the unit that draws
+// rows, so that there is one empty row between any two units and one after the
+// last unit, and none above the first.
+//
 // Follow mode keeps the window at the end of the transcript. A scroll up turns
 // it off and new output then does not move the window. While follow is off the
 // last pane row belongs to the bottom marker, and the window shows height-1
@@ -68,8 +76,8 @@ type PaneMarker struct {
 // PaneFrame is what the pane shows after one draw.
 type PaneFrame struct {
 	// Rows has one entry for each pane row and no row wider than the pane. A
-	// row that holds no content is empty. The selection mark of a block is part
-	// of its rows; the pane adds no other style.
+	// row that holds no content is empty. The pane adds no style to the rows of
+	// the blocks except the selection box (see paintBox).
 	// When Marker.Show is true the last row is empty: it is the marker slot.
 	Rows []string
 	// FirstBlock and LastBlock are the indexes of the first and the last block
@@ -83,11 +91,14 @@ type PaneFrame struct {
 type paneItem struct {
 	id   string
 	fold FoldMode
-	// userSet is true while the user holds a mode above the lowest mode of the
-	// block. The pane then keeps it when the block changes; before that, and
-	// after the user folds the block back to its lowest mode, it asks the block
-	// for its default.
+	// userSet is true after the user set a mode on the block. Before that the
+	// pane asks the block for its default each time the block changes. After
+	// that the pane keeps the user's mode.
 	userSet bool
+	// lowest is true when the user's mode is the lowest mode of the block. The
+	// mode then follows the lowest mode when the block changes, so a thinking
+	// step that the user folded while it streamed is one row when it ends.
+	lowest bool
 
 	// mark is the selection and hover state of the block. A block draws again
 	// when its mark changes, so a move of the selection touches two blocks.
@@ -96,10 +107,13 @@ type paneItem struct {
 	// seen is the content version that the last frame saw. It tells new output.
 	seen uint64
 
-	// The drawing and what it was drawn from. h is the row count of the
-	// drawing; the rows of the drawing are valid only when valid() is true.
+	// The drawing and what it was drawn from. body holds the rows that the
+	// block drew; they are valid only when current() is true. gap is true when
+	// the pane puts the empty row of its unit after them. h is the row count of
+	// the item in the pane: the body and the gap row.
 	drawn     bool
-	rows      []string
+	body      []string
+	gap       bool
 	h         int
 	version   uint64
 	state     uint64
@@ -110,12 +124,8 @@ type paneItem struct {
 }
 
 // itemMark is what the pane tells a block about the user's pointer and
-// selection. skipHead and skipTail say that the first or the last block of a
-// selected group leaves its outer empty rows without a mark.
-type itemMark struct {
-	selected, hover    bool
-	skipHead, skipTail bool
-}
+// selection.
+type itemMark struct{ selected, hover bool }
 
 // Pane is a virtualized view of a transcript. It is not safe for concurrent
 // use: the model owns it and calls it from the update loop.
@@ -125,9 +135,9 @@ type Pane struct {
 	width, height int
 	theme         *Theme
 
-	// DefaultFold overrides the default mode of a block, which is what the block
-	// itself reports. A nil function uses the block.
-	DefaultFold func(id string, b Block) FoldMode
+	// defaults are the modes that the session chose for blocks that the user
+	// has not folded. See SetThinkingFold.
+	defaults foldDefaults
 
 	// follow is true while the window shows the end of the transcript.
 	follow bool
@@ -141,7 +151,8 @@ type Pane struct {
 	// follow was off.
 	newOutput bool
 
-	// selIdx and hoverIdx are the items that carry a mark now.
+	// selIdx and hoverIdx are the items that carry a mark now. selIdx is in
+	// transcript order.
 	selIdx   []int
 	hoverIdx int
 	hasHover bool
@@ -152,7 +163,14 @@ type Pane struct {
 
 // NewPane returns a pane over a transcript. Set the size and the theme before
 // the first frame.
-func NewPane(t *Transcript) *Pane { return &Pane{tr: t, follow: true} }
+func NewPane(t *Transcript) *Pane {
+	return &Pane{tr: t, follow: true, defaults: ThinkingExpanded.defaults()}
+}
+
+// SetThinkingFold sets the session mode: the mode that a thinking step takes
+// when it ends. A step that has ended already keeps its mode; a step that ends
+// or loads later takes the new one.
+func (p *Pane) SetThinkingFold(m FoldMode) { p.defaults.endedThinking = m }
 
 // SetSize sets the pane size. A new width draws the blocks again, lazily: a
 // block draws when the window or a scroll meets it. A new height needs no
@@ -201,9 +219,7 @@ func (p *Pane) sync() {
 	for i, it := range p.items {
 		if v := es[i].version; it.seen != v {
 			it.seen = v
-			if !it.userSet {
-				it.fold = p.defaultFold(es[i])
-			}
+			p.refold(it, es[i])
 			if !p.follow && i >= p.ai {
 				p.newOutput = true
 			}
@@ -220,10 +236,21 @@ func (p *Pane) sync() {
 
 // defaultFold returns the mode that an entry has before the user sets one.
 func (p *Pane) defaultFold(e *entry) FoldMode {
-	if p.DefaultFold != nil {
-		return p.DefaultFold(e.id, e.block)
+	return blockDefaultFold(e.block, p.defaults)
+}
+
+// refold sets the mode of an item after its block changed: the default of the
+// block, or the lowest mode of the block when the user chose the lowest mode.
+// Another mode that the user set stays.
+func (p *Pane) refold(it *paneItem, e *entry) {
+	switch {
+	case !it.userSet:
+		it.fold = p.defaultFold(e)
+	case it.lowest:
+		if fb, ok := e.block.(foldBlock); ok {
+			it.fold = fb.collapseFold()
+		}
 	}
-	return blockDefaultFold(e.block)
 }
 
 // current returns the drawing state of block i and whether its drawing is
@@ -238,22 +265,60 @@ func (p *Pane) current(i int) (state uint64, ok bool) {
 	return state, ok
 }
 
-// measure draws block i when its drawing is not valid, and returns its row
-// count.
-func (p *Pane) measure(i int) int {
+// draw draws block i when its drawing is not valid, and returns the number of
+// rows that the block drew, without the gap row.
+func (p *Pane) draw(i int) int {
 	it, e := p.items[i], p.tr.entries[i]
 	if state, ok := p.current(i); !ok {
 		rc := RenderContext{Width: p.width, Theme: p.theme, Fold: it.fold, Pointed: it.mark.selected || it.mark.hover}
-		it.rows = paintSelection(rc, e.block, it.mark, renderRows(e.block, rc))
-		if it.drawn && it.version != e.version && it.width == p.width && it.drawnFold == it.fold && len(it.rows) < it.h {
+		body := renderRows(e.block, rc)
+		if it.drawn && it.version != e.version && it.width == p.width && it.drawnFold == it.fold && len(body) < len(it.body) {
 			p.keepScroll = false
 		}
-		it.h = len(it.rows)
+		it.body = body
 		it.drawn, it.version, it.state = true, e.version, state
 		it.width, it.theme, it.drawnFold, it.drawnMark = p.width, p.theme, it.fold, it.mark
 		p.draws++
 	}
+	return len(it.body)
+}
+
+// measure draws block i when its drawing is not valid, and returns its row
+// count in the pane: its rows and its gap row.
+func (p *Pane) measure(i int) int {
+	it := p.items[i]
+	it.gap = p.endsUnit(i)
+	it.h = len(it.body)
+	if it.gap {
+		it.h++
+	}
 	return it.h
+}
+
+// endsUnit draws block i and reports whether it gets the gap row: it drew
+// rows, and no later block of its unit drew rows, or the next block of its
+// unit that draws rows keeps an empty row above it (gapInUnit). A unit can end
+// with a block that draws no rows, such as the empty paragraph that a
+// streaming reply opens next.
+func (p *Pane) endsUnit(i int) bool {
+	if p.draw(i) == 0 {
+		return false
+	}
+	es := p.tr.entries
+	for j := i + 1; j < len(p.items) && joinsPrevious(es[j-1].block, es[j].block); j++ {
+		if p.draw(j) > 0 {
+			return gapInUnit(es[j].block)
+		}
+	}
+	return true
+}
+
+// row returns row r of the item: a row of the block, or the empty gap row.
+func (it *paneItem) row(r int) string {
+	if r < len(it.body) {
+		return it.body[r]
+	}
+	return ""
 }
 
 // viewRows is the number of content rows in the window. While follow is off
@@ -389,29 +454,39 @@ func (p *Pane) ScrollToBottom() {
 	p.follow, p.newOutput, p.keepScroll = true, false, false
 }
 
-// Reveal moves the window by the fewest rows that show block i. A block above
-// the window goes to the top row. A block that is taller than the window shows
+// Reveal moves the window by the fewest rows that show block i with the row
+// above it and its gap row: the rows where the selection box draws its top and
+// bottom edges. A block above the window goes to the second row, below the row
+// above it. A block that is taller than the window shows the row above it and
 // its first rows. A block that is already in view does not move the window.
 func (p *Pane) Reveal(i int) {
 	p.sync()
 	if i < 0 || i >= len(p.items) || p.height < 1 || p.width < 1 {
 		return
 	}
+	// (ti, tr) is the first row to show: the last row of the block above that
+	// has rows, or the first row of block i when there is none.
+	ti, tr, h := i, 0, p.measure(i)
+	for j := i - 1; j >= 0; j-- {
+		if n := p.measure(j); n > 0 {
+			ti, tr, h = j, n-1, h+1
+			break
+		}
+	}
 	ai, ar := p.windowTop()
-	if i < ai || (i == ai && ar > 0 && p.measure(i) > 0) {
-		p.setTop(i, 0)
+	if ti < ai || (ti == ai && tr < ar) {
+		p.setTop(ti, tr)
 		return
 	}
-	// s is the row of the block start, counted from the window top.
+	// s is the row of the first row to show, counted from the window top.
 	view := p.viewRows(p.follow)
-	s := -ar
-	for j := ai; j < i; j++ {
+	s := tr - ar
+	for j := ai; j < ti; j++ {
 		s += p.measure(j)
 	}
-	h := p.measure(i)
 	switch {
 	case s < view && s+h <= view:
-		// The block is in view.
+		// The rows are in view.
 	case h >= view:
 		p.ScrollBy(s)
 	default:
@@ -434,11 +509,12 @@ func (p *Pane) window() (ai, ar, view int) {
 }
 
 // BlockAt returns the block that a pane row shows and the row inside that
-// block, counted from the first row of the block. The row counts from the top
-// of the pane. ok is false for a row that holds no content: a row below the
-// last block, or the row of the bottom marker. It answers for the window that
-// the next frame draws, so a click that follows a scroll finds what the user
-// sees.
+// block, counted from the first row of the block. The gap row of a block
+// belongs to it: its row is the row count of the block. The row counts from
+// the top of the pane. ok is false for a row that holds no content: a row
+// below the last block, or the row of the bottom marker. It answers for the
+// window that the next frame draws, so a click that follows a scroll finds
+// what the user sees.
 func (p *Pane) BlockAt(row int) (block, offset int, ok bool) {
 	p.sync()
 	if row < 0 || p.height < 1 || p.width < 1 || len(p.items) == 0 {
@@ -487,28 +563,69 @@ func (p *Pane) Frame() PaneFrame {
 	out := f.Rows[:0]
 	i, row := ai, ar
 	for ; i < len(p.items) && len(out) < view; i++ {
-		p.measure(i)
+		h := p.measure(i)
 		it := p.items[i]
-		if f.FirstBlock < 0 && row < len(it.rows) {
+		if f.FirstBlock < 0 && row < h {
 			f.FirstBlock = i
 		}
-		take := min(view-len(out), len(it.rows)-row)
+		take := min(view-len(out), h-row)
 		if take > 0 {
-			out = append(out, it.rows[row:row+take]...)
+			for r := row; r < row+take; r++ {
+				out = append(out, it.row(r))
+			}
 			f.LastBlock = i
 		}
-		if row+take < len(it.rows) {
+		if row+take < h {
 			// The window ends inside this block.
 			row += take
 			break
 		}
 		row = 0
 	}
+	if top, bottom, ok := p.boxEdges(ai, ar, view); ok {
+		paintBox(p.theme, f.Rows[:view], top, bottom, p.width)
+	}
 	if p.follow {
 		return f
 	}
 	f.Marker = p.marker(i, row)
 	return f
+}
+
+// boxEdges returns the window rows of the top and the bottom edge of the
+// selection box for a window that starts at row ar of block ai and shows view
+// rows. The top edge is the row above the first row of the selected blocks, and
+// the bottom edge is the gap row after their last row. An edge outside the
+// window has a row below 0 or not below view. ok is false when nothing is
+// selected or the box has no row in the window.
+func (p *Pane) boxEdges(ai, ar, view int) (top, bottom int, ok bool) {
+	first, last := -1, -1
+	for _, i := range p.selIdx {
+		if p.draw(i) > 0 {
+			if first < 0 {
+				first = i
+			}
+			last = i
+		}
+	}
+	if first < 0 || last < ai {
+		return 0, 0, false
+	}
+	top = -1 // The selection starts above the window.
+	for j, s := ai, -ar; j <= last; j++ {
+		if j == first {
+			top = s - 1
+		}
+		if j == last {
+			return top, s + len(p.items[j].body), top < view
+		}
+		if s += p.measure(j); s > view {
+			// The blocks after block j start below the window, so the bottom
+			// edge is below it too. The box shows only when it started.
+			return top, s, first <= j
+		}
+	}
+	return 0, 0, false
 }
 
 // marker returns the bottom marker for a window that ends before row row of
@@ -542,12 +659,14 @@ func (p *Pane) marker(i, row int) PaneMarker {
 	return m
 }
 
-// setFold sets a mode as the user's choice. A block that goes back to its
-// lowest mode is no longer held by the user, so that it folds again by itself
-// when its content ends, as a thinking block does.
+// setFold sets a mode as the user's choice. The pane keeps it when the block
+// changes. A choice of the lowest mode follows the lowest mode of the block, so
+// a thinking step that the user folded while it streamed folds to one row when
+// it ends.
 func (it *paneItem) setFold(m FoldMode, fb foldBlock) {
 	it.fold = m
-	it.userSet = m != fb.collapseFold()
+	it.userSet = true
+	it.lowest = m == fb.collapseFold()
 }
 
 // --- selection marks ---
@@ -558,7 +677,7 @@ func (it *paneItem) setFold(m FoldMode, fb foldBlock) {
 func (p *Pane) SetSelected(ids ...string) {
 	p.sync()
 	for _, i := range p.selIdx {
-		p.items[i].mark.selected, p.items[i].mark.skipHead, p.items[i].mark.skipTail = false, false, false
+		p.items[i].mark.selected = false
 	}
 	p.selIdx = p.selIdx[:0]
 	for _, id := range ids {
@@ -566,9 +685,8 @@ func (p *Pane) SetSelected(ids ...string) {
 			p.selIdx = append(p.selIdx, i)
 		}
 	}
-	for k, i := range p.selIdx {
-		m := &p.items[i].mark
-		m.selected, m.skipHead, m.skipTail = true, k == 0, k == len(p.selIdx)-1
+	for _, i := range p.selIdx {
+		p.items[i].mark.selected = true
 	}
 }
 
@@ -651,41 +769,45 @@ func (p *Pane) CollapseBlock(id string) error {
 	return nil
 }
 
-// toggleAll expands every foldable block of the group set when one of them is
-// at its lowest mode, and collapses them all otherwise. It returns true when
-// the blocks are expanded now, and false when they are collapsed or when no
-// block matches.
-func (p *Pane) toggleAll(match func(foldGroup) bool) bool {
+// toggleAll expands every foldable block of the group set when open is true
+// for one of them, and collapses them all otherwise. It returns true when the
+// blocks are expanded now, and false when they are collapsed or when no block
+// matches.
+func (p *Pane) toggleAll(match func(foldGroup) bool, open func(fold FoldMode, fb foldBlock) bool) bool {
 	p.sync()
 	type target struct {
 		it *paneItem
 		fb foldBlock
 	}
 	var targets []target
-	anyLow := false
+	expand := false
 	for i, it := range p.items {
 		fb, ok := p.tr.entries[i].block.(foldBlock)
 		if !ok || !match(fb.foldGroup()) || !fb.foldable(max(1, p.width)) {
 			continue
 		}
 		targets = append(targets, target{it, fb})
-		anyLow = anyLow || it.fold == fb.collapseFold()
+		expand = expand || open(it.fold, fb)
 	}
 	for _, t := range targets {
-		if anyLow {
+		if expand {
 			t.it.setFold(FoldExpanded, t.fb)
 		} else {
 			t.it.setFold(t.fb.collapseFold(), t.fb)
 		}
 	}
-	return anyLow && len(targets) > 0
+	return expand && len(targets) > 0
 }
 
 // ToggleAllSteps expands all tool and thinking steps, or collapses them all
 // when none is at its lowest mode. It returns true when they are expanded.
-func (p *Pane) ToggleAllSteps() bool { return p.toggleAll(foldGroup.isStep) }
+func (p *Pane) ToggleAllSteps() bool {
+	return p.toggleAll(foldGroup.isStep, func(fold FoldMode, fb foldBlock) bool { return fold == fb.collapseFold() })
+}
 
-// ToggleAllThinking does the same for the thinking steps only.
+// ToggleAllThinking expands all thinking steps when one of them is not
+// expanded, and collapses them all otherwise. It returns true when they are
+// expanded. It does not change the session mode: see SetThinkingFold.
 func (p *Pane) ToggleAllThinking() bool {
-	return p.toggleAll(func(g foldGroup) bool { return g == groupThinking })
+	return p.toggleAll(func(g foldGroup) bool { return g == groupThinking }, func(fold FoldMode, _ foldBlock) bool { return fold != FoldExpanded })
 }

@@ -51,6 +51,5 @@ func TestErrorBlockForProviderBodyKeepsShape(t *testing.T) {
 	require.Equal(t, []string{
 		"  ✗ Error (auth): openai rejected the credentials (HTTP 401).",
 		"    Run in a shell: ask auth login --provider openai. Then send again.",
-		"",
 	}, x.rows())
 }

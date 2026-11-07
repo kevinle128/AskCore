@@ -52,7 +52,9 @@ func acpBinary(t *testing.T) string {
 			return
 		}
 		acpBuildPath = filepath.Join(acpBuildDir, "ask")
-		out, err := exec.Command("go", "build", "-o", acpBuildPath, ".").CombinedOutput()
+		build := exec.Command("go", "build", "-o", acpBuildPath, ".")
+		build.Dir = packageDir
+		out, err := build.CombinedOutput()
 		if err != nil {
 			acpBuildErr = fmt.Errorf("go build: %w\n%s", err, out)
 		}
@@ -164,7 +166,7 @@ func startE2E(t *testing.T, o e2eOptions) *e2ePeer {
 		home = filepath.Join(root, "ask-home")
 		require.NoError(t, os.MkdirAll(home, 0o700))
 	}
-	env := []string{"PATH=" + os.Getenv("PATH"), "HOME=" + root, "ASK_HOME=" + home, "ASK_FAUX=1", "TZ=Asia/Saigon"}
+	env := []string{"PATH=" + os.Getenv("PATH"), "HOME=" + root, "ASK_HOME=" + home, "ASK_FAUX=1", "TZ=Asia/Saigon", disableModelRefreshEnv + "=1"}
 	for k, v := range o.env {
 		env = append(env, k+"="+v)
 	}
@@ -947,7 +949,7 @@ func TestACPE2ERemove(t *testing.T) {
 func askAuth(t *testing.T, home, input string, args ...string) (string, error) {
 	t.Helper()
 	cmd := exec.Command(acpBinary(t), append([]string{"auth"}, args...)...)
-	cmd.Env = []string{"PATH=" + os.Getenv("PATH"), "HOME=" + t.TempDir(), "ASK_HOME=" + home}
+	cmd.Env = []string{"PATH=" + os.Getenv("PATH"), "HOME=" + t.TempDir(), "ASK_HOME=" + home, disableModelRefreshEnv + "=1"}
 	cmd.Stdin = strings.NewReader(input)
 	out, err := cmd.CombinedOutput()
 	return string(out), err
@@ -1680,7 +1682,7 @@ func TestACPE2ERetryUsageProvider(t *testing.T) {
 func startProductionOAuth(t *testing.T, home string, env map[string]string) *oauthProcess {
 	t.Helper()
 	cmd := exec.Command(acpBinary(t), "auth", "login", "--provider", "anthropic", "--method", "anthropic-oauth", "--interaction", "copy-code")
-	cmd.Env = []string{"PATH=" + os.Getenv("PATH"), "HOME=" + t.TempDir(), "ASK_HOME=" + home}
+	cmd.Env = []string{"PATH=" + os.Getenv("PATH"), "HOME=" + t.TempDir(), "ASK_HOME=" + home, disableModelRefreshEnv + "=1"}
 	for k, v := range env {
 		cmd.Env = append(cmd.Env, k+"="+v)
 	}
@@ -1799,4 +1801,64 @@ func TestACPE2ERetryUsage(t *testing.T) {
 	require.Equal(t, "unknown_session", p.call("_ask/session/usage", e2eSession("sess_missing")).errKind(t))
 	// The session takes the next prompt after the failure.
 	require.Nil(t, p.call("session/prompt", e2ePrompt(sid, "again")).Error)
+}
+
+// ask acp decides trust with no UI. --approve trusts every session of the
+// process, and the trust methods are not served on an editor link.
+func TestACPE2EApprove(t *testing.T) {
+	type sessionState struct {
+		Trust *struct {
+			Trusted bool   `json:"trusted"`
+			Source  string `json:"source"`
+		} `json:"trust"`
+		ThinkingFold string `json:"thinkingFold"`
+		Diagnostics  []struct {
+			Layer string `json:"layer"`
+			Key   string `json:"key"`
+		} `json:"diagnostics"`
+	}
+	project := t.TempDir()
+	require.NoError(t, os.Mkdir(filepath.Join(project, ".ask"), 0o755))
+	require.NoError(t, os.WriteFile(filepath.Join(project, ".ask", "settings.json"), []byte(`{"thinkingFold":"collapsed","env":{"A":"b"}}`), 0o644))
+	open := func(p *e2ePeer, meta map[string]any) sessionState {
+		t.Helper()
+		params := map[string]any{"cwd": project, "mcpServers": []any{}}
+		if meta != nil {
+			params["_meta"] = meta
+		}
+		var res struct {
+			SessionID string `json:"sessionId"`
+		}
+		p.ok("session/new", params, &res)
+		var st sessionState
+		p.ok("_ask/session/state", e2eSession(res.SessionID), &st)
+		return st
+	}
+
+	plain := startE2E(t, e2eOptions{})
+	plain.initialize()
+	st := open(plain, nil)
+	require.NotNil(t, st.Trust)
+	require.False(t, st.Trust.Trusted)
+	require.Equal(t, "no_ui", st.Trust.Source)
+	require.Equal(t, "expanded", st.ThinkingFold)
+	require.Empty(t, st.Diagnostics)
+	require.Equal(t, "unsupported", plain.call("_ask/trust/state", map[string]any{"cwd": project}).errKind(t))
+	require.Equal(t, "unsupported", plain.call("_ask/trust/set", map[string]any{"cwd": project, "target": "folder", "decision": "trust"}).errKind(t))
+	plain.waitFor("untrusted warning", func() bool { return strings.Contains(plain.stderr.String(), "is not trusted") })
+
+	approved := startE2E(t, e2eOptions{args: []string{"--approve"}})
+	approved.initialize()
+	st = open(approved, nil)
+	require.True(t, st.Trust.Trusted)
+	require.Equal(t, "flag", st.Trust.Source)
+	require.Equal(t, "collapsed", st.ThinkingFold)
+	require.Len(t, st.Diagnostics, 1)
+	require.Equal(t, "env", st.Diagnostics[0].Key)
+	approved.waitFor("diagnostic on stderr", func() bool { return strings.Contains(approved.stderr.String(), "Warning: settings: ") })
+	// The override of one session wins over the flag.
+	st = open(approved, map[string]any{"ask.dev/trust": "deny"})
+	require.False(t, st.Trust.Trusted)
+	_, err := os.Stat(filepath.Join(approved.home, "trust.json"))
+	require.True(t, os.IsNotExist(err), "a flag saves nothing")
 }

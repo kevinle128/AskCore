@@ -10,13 +10,13 @@ Prompt snippet: Execute bash commands (ls, grep, find, etc.)
 
 Description:
 
-> Execute a bash command in the current working directory and return its stdout and stderr. The command runs without a terminal and with a non-interactive environment: no pager, no prompt, no color. A result starts with the exit code. If the output is longer than 2000 lines or 50KB, the middle is left out and the full output is saved to a file that the result names. The command is a job. It runs in the foreground for at most `timeout` seconds (default 120, maximum 600). A command that runs longer moves to the background and goes on as a job; it is not stopped. Set run_in_background to true to start a long command, such as a server or a build, in the background at once. A notice arrives when a background job finishes, so do not poll job_output. Stop a job with job_kill. Do not end the command with &. Background jobs end when the session closes, and when `ask -p` ends.
+> Execute a bash command in the current working directory and return its stdout and stderr. The command runs without a terminal and with a non-interactive environment: no pager, no prompt, no color. A result starts with the exit code. If the output is longer than 2000 lines or 50KB, the middle is left out and the full output is saved to a file that the result names. The command is a job. It runs in the foreground for at most `timeout` seconds (default 120, maximum 600). A command that runs longer moves to the background and goes on as a job; it is not stopped. Set run_in_background to true to start a long command, such as a server or a build, in the background at once. A notice arrives when a background job finishes, so do not poll job_output. Stop a job with job_kill. Do not end the command with &. Background jobs end when the session closes. In a non-interactive run the run waits for its background jobs, and a background job stops after a time limit (by default 10 minutes); with run_in_background, `timeout` sets that limit, up to 2 hours.
 
 Parameters:
 
 - `command` (string, required): Bash command to execute
 - `run_in_background` (boolean, optional): Start the command as a background job and return at once
-- `timeout` (number, optional): Seconds to wait before the command moves to the background (default 120, maximum 600)
+- `timeout` (number, optional): Seconds to wait before the command moves to the background (default 120, maximum 600). With run_in_background, the seconds the job may run in the background in a non-interactive run (default 600, maximum 7200)
 
 Guidelines:
 
@@ -144,7 +144,7 @@ Prompt snippet: Watch a long-running command: each of its stdout lines arrives a
 
 Description:
 
-> Start a background monitor that streams events from a long-running script. Each stdout line is an event; you can keep working and notifications arrive in the chat. Exit ends the watch. Output volume: every stdout line wakes the agent. Print only DONE/FAILED/CANCELLED lines, no progress lines. Use `grep --line-buffered` in pipes (plain `grep` buffers and delays events by minutes). Responsiveness: print FAILED at once when any tracked item fails; never wait for unrelated work to finish. Set persistent: true for session-length watches (PR monitoring, log tails); the monitor then runs until you call job_kill or the session ends. Otherwise it stops at timeout_ms (default 10 h).
+> Start a background monitor that streams events from a long-running script. Each stdout line is an event; you can keep working and notifications arrive in the chat. Exit ends the watch. Output volume: every stdout line wakes the agent. Print only DONE/FAILED/CANCELLED lines, no progress lines. Use `grep --line-buffered` in pipes (plain `grep` buffers and delays events by minutes). Responsiveness: print FAILED at once when any tracked item fails; never wait for unrelated work to finish. Set persistent: true for session-length watches (PR monitoring, log tails); the monitor then runs until you call job_kill or the session ends. Otherwise it stops at timeout_ms (default 10 h). In a non-interactive run every monitor, a persistent one included, stops after at most 10 minutes; start it again if it is still needed.
 
 Parameters:
 

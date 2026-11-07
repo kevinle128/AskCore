@@ -1,0 +1,40 @@
+ ◢◤ ask
+────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+  ❯ explain tool_coordinator.go                                                                                  17:30
+
+  tool_coordinator.go runs one batch of tool calls: it prepares them, runs them in parallel with a limit, and    17:30
+  commits them in order.
+
+  Types
+
+  ┌──────────┬────────────────────────────┐
+  │ Type     │ Job                        │
+  ├──────────┼────────────────────────────┤
+  │ toolSlot │ State of one call          │
+  │ toolDone │ A worker is done           │
+  │ updater  │ Progress that never blocks │
+  └──────────┴────────────────────────────┘
+
+  The batch loop
+
+  1. Find the last assistant entry in the log.
+  2. MaxParallelTools (default 10) limits the workers.
+  3. Commit in order: progress, afterTool, emitToolEnd.
+
+  Safety
+
+  • toolGuarded turns a panic into an error.
+  • cloneToolResult deep-copies before emit.
+
+    body, e = p.tool.Execute(bodyCtx, tc, args)
+
+  claude-sonnet-5-5 · 14s · ↑10.2k ↓1.8k
+
+
+
+
+────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+ ❯ Ask anything  ·  / commands  ·  ctrl+l model
+────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+ ⌂ ~/src/askcore                                                              alibaba/deepseek-v4.1-flash  ▰▱▱▱▱▱▱▱ 18%
+ Tab blocks · ctrl+t thinking · ctrl+l model · / commands

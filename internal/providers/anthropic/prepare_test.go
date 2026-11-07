@@ -92,3 +92,76 @@ func TestPrepareRejectsAForcedToolThatIsNotDeclared(t *testing.T) {
 	_, err := New().(providers.Preparer).Prepare(Model(), helloReq(), providers.StreamOptions{ToolChoice: "missing"})
 	assert.ErrorContains(t, err, "not declared")
 }
+
+// generatedRow returns the generated catalog row of an Anthropic model.
+func generatedRow(t *testing.T, id string) providers.Model {
+	t.Helper()
+	for _, m := range providers.GeneratedCatalog() {
+		if m.Provider == providers.ProviderAnthropic && m.ID == id && m.API == providers.APIAnthropicMessages {
+			return m
+		}
+	}
+	t.Fatalf("no generated row %s", id)
+	return providers.Model{}
+}
+
+// prepareAndEncode runs the real Prepare and Encode and returns the request
+// document that Stream would send.
+func prepareAndEncode(t *testing.T, m providers.Model, opts providers.StreamOptions) (*providers.Prepared, map[string]any) {
+	t.Helper()
+	p := New().(providers.Preparer)
+	pr, err := p.Prepare(m, helloReq(), opts)
+	require.NoError(t, err)
+	enc, err := p.Encode(context.Background(), m, pr, helloReq(), providers.AuthBinding{})
+	require.NoError(t, err)
+	var body map[string]any
+	require.NoError(t, json.Unmarshal(enc.Body, &body))
+	return pr, body
+}
+
+func TestPrepareReasoningFalseRowSendsThinkingDisabled(t *testing.T) {
+	// The 4.5 models refuse adaptive thinking and an effort word. Without the
+	// clamp, an empty level became medium and sent output_config.effort.
+	m := generatedRow(t, "claude-haiku-4-5")
+	require.False(t, m.Reasoning)
+	for _, level := range []protocol.ThinkingLevel{"", protocol.ThinkingHigh, protocol.ThinkingMax} {
+		pr, body := prepareAndEncode(t, m, providers.StreamOptions{Reasoning: level})
+		assert.Equal(t, protocol.ThinkingOff, pr.Thinking, "level %q", level)
+		assert.Empty(t, pr.Effort, "level %q", level)
+		assert.Equal(t, map[string]any{"type": "disabled"}, body["thinking"], "level %q", level)
+		assert.NotContains(t, body, "output_config", "level %q", level)
+	}
+}
+
+func TestPrepareRowThatRefusesOffSendsItsLowestEffort(t *testing.T) {
+	// These models refuse thinking disabled, so off becomes the lowest effort.
+	m := generatedRow(t, "claude-fable-5")
+	for _, level := range []protocol.ThinkingLevel{protocol.ThinkingOff, protocol.ThinkingMinimal} {
+		pr, body := prepareAndEncode(t, m, providers.StreamOptions{Reasoning: level})
+		assert.Equal(t, protocol.ThinkingLow, pr.Thinking, "level %q", level)
+		assert.Equal(t, "low", pr.Effort, "level %q", level)
+		assert.Equal(t, map[string]any{"type": "adaptive", "display": "summarized"}, body["thinking"], "level %q", level)
+		assert.Equal(t, map[string]any{"effort": "low"}, body["output_config"], "level %q", level)
+	}
+}
+
+func TestPrepareForcedToolChoiceWithThinking(t *testing.T) {
+	// A model that refuses off cannot take a forced tool: Anthropic refuses a
+	// forced tool with thinking on.
+	_, err := New().(providers.Preparer).Prepare(generatedRow(t, "claude-opus-5-5"), helloReq(), providers.StreamOptions{ToolChoice: "echo"})
+	require.ErrorIs(t, err, providers.ErrUnsupportedRequest)
+
+	// A model with Reasoning false runs with thinking off whatever level is asked.
+	pr, body := prepareAndEncode(t, generatedRow(t, "claude-opus-4-5"), providers.StreamOptions{ToolChoice: "echo", Reasoning: protocol.ThinkingHigh})
+	assert.Equal(t, protocol.ThinkingOff, pr.Thinking)
+	assert.Equal(t, map[string]any{"type": "disabled"}, body["thinking"])
+}
+
+func TestPrepareUnknownLimitsUseTheFamilyDefault(t *testing.T) {
+	// A row with no limit data used to send max_tokens 1.
+	m := generatedRow(t, "claude-sonnet-4-6")
+	m.MaxTokens, m.ContextWindow = 0, 0
+	pr, body := prepareAndEncode(t, m, providers.StreamOptions{})
+	assert.Equal(t, 128_000, pr.MaxTokens)
+	assert.EqualValues(t, 128_000, body["max_tokens"])
+}

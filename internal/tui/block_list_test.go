@@ -50,7 +50,7 @@ func TestTabAndEscReturnToThePrompt(t *testing.T) {
 		require.Equal(t, FocusEditor, m.Focus(), key)
 		require.Equal(t, "", m.selectedBlock(), key)
 		require.NotNil(t, m.View().Cursor, key)
-		require.NotContains(t, strings.Join(screenOf(m), "\n"), "┃", "the selection mark ends with the list focus")
+		require.NotContains(t, strings.Join(screenOf(m), "\n"), "┐", "the selection box ends with the list focus")
 	}
 }
 
@@ -113,7 +113,7 @@ func TestSelectionStaysInView(t *testing.T) {
 	press(t, m, "tab", "g")
 	require.Contains(t, strings.Join(screenOf(m), "\n"), "run seq 1 40")
 	press(t, m, "G")
-	require.Contains(t, strings.Join(screenOf(m), "\n"), "┃ claude-sonnet-5-5")
+	require.Contains(t, strings.Join(screenOf(m), "\n"), "│ claude-sonnet-5-5")
 	for range 4 {
 		press(t, m, "k")
 	}
@@ -135,7 +135,7 @@ func TestEFoldsTheSelectedBlockThroughThreeModes(t *testing.T) {
 	require.Contains(t, barOf(m), "e fold: collapsed")
 
 	press(t, m, "e")
-	rows := screenOf(m)
+	rows := unboxedScreen(m)
 	text := strings.Join(rows, "\n")
 	require.Contains(t, barOf(m), "e fold: truncated")
 	require.NotContains(t, text, "$ go test ./...", "no command row in the truncated form")
@@ -147,18 +147,19 @@ func TestEFoldsTheSelectedBlockThroughThreeModes(t *testing.T) {
 	}
 	require.Greater(t, at, 0)
 	want := []string{
-		"┃   --- FAIL: TestCount (0.00s)",
-		"┃       parser_test.go:12: want 2, got 3",
-		"┃   === RUN   TestCountEmpty",
-		"┃   ⋮ 3 more lines · e to expand · Enter full screen",
-		"┃   FAIL",
-		"┃   FAIL    example.com/p/parser    0.012s",
-		"┃   FAIL",
+		"│",
+		"│   --- FAIL: TestCount (0.00s)",
+		"│       parser_test.go:12: want 2, got 3",
+		"│   === RUN   TestCountEmpty",
+		"│   ⋮ 3 more lines · e to expand · Enter full screen",
+		"│   FAIL",
+		"│   FAIL    example.com/p/parser    0.012s",
+		"│   FAIL",
 	}
 	require.Equal(t, want, rows[at+1:at+1+len(want)])
 
 	press(t, m, "e")
-	rows = screenOf(m)
+	rows = unboxedScreen(m)
 	require.Contains(t, barOf(m), "e fold: expanded")
 	at = -1
 	for i, r := range rows {
@@ -166,12 +167,13 @@ func TestEFoldsTheSelectedBlockThroughThreeModes(t *testing.T) {
 			at = i
 		}
 	}
-	require.Equal(t, "┃   $ go test ./...", rows[at+1], "the command is the first body row")
-	require.Equal(t, "┃   --- FAIL: TestCount (0.00s)", rows[at+2])
+	require.Equal(t, "│", rows[at+1], "one blank row follows the header")
+	require.Equal(t, "│   $ go test ./...", rows[at+2], "the command is the first body row")
+	require.Equal(t, "│   --- FAIL: TestCount (0.00s)", rows[at+3])
 
 	press(t, m, "e")
 	require.Contains(t, barOf(m), "e fold: collapsed")
-	require.Regexp(t, `(?m)^  › Ran go test \./\.\.\. +✗ exit 1$`, strings.Join(screenOf(m), "\n"))
+	require.Regexp(t, `(?m)^│ › Ran go test \./\.\.\. +✗ exit 1$`, strings.Join(unboxedScreen(m), "\n"))
 }
 
 func TestEOnAToolWithFiveLinesShowsAllAndNoHint(t *testing.T) {
@@ -183,9 +185,9 @@ func TestEOnAToolWithFiveLinesShowsAllAndNoHint(t *testing.T) {
 	)
 	m := listModelAt(t, colorprofile.NoTTY, 80, 24, events...)
 	press(t, m, "tab", "e")
-	text := strings.Join(screenOf(m), "\n")
+	text := strings.Join(unboxedScreen(m), "\n")
 	for _, n := range []string{"1", "2", "3", "4", "5"} {
-		require.Regexp(t, `(?m)^┃   `+n+`$`, text)
+		require.Regexp(t, `(?m)^│   `+n+`$`, text)
 	}
 	require.NotContains(t, text, "⋮")
 }
@@ -195,9 +197,9 @@ func TestEOnAnEditShowsTheDiffThenOneRow(t *testing.T) {
 	press(t, m, "tab", "k", "k")
 	require.Equal(t, toolID(t, m, "edit", 0), m.selectedBlock())
 	press(t, m, "e", "e")
-	text := strings.Join(screenOf(m), "\n")
-	require.Regexp(t, `(?m)^┃\s+\d+ - `, text)
-	require.Regexp(t, `(?m)^┃\s+\d+ \+ `, text)
+	text := strings.Join(unboxedScreen(m), "\n")
+	require.Regexp(t, `(?m)^│\s+\d+ - `, text)
+	require.Regexp(t, `(?m)^│\s+\d+ \+ `, text)
 	press(t, m, "e")
 	text = strings.Join(screenOf(m), "\n")
 	require.NotRegexp(t, `\d+ - `, text)
@@ -294,7 +296,7 @@ func TestCtrlTTogglesThinkingInEveryFocusAndCtrlEOnlyInTheList(t *testing.T) {
 	m := listModel(t, 80, 24)
 	typed(t, m, "draft")
 	press(t, m, "ctrl+t")
-	require.Contains(t, strings.Join(screenOf(m), "\n"), "┃ Count splits on a comma.", "thinking is expanded")
+	require.Contains(t, strings.Join(screenOf(m), "\n"), "\n    Count splits on a comma.", "thinking is expanded")
 	require.Equal(t, "draft", m.sv.editor.Text())
 	press(t, m, "ctrl+t")
 	require.NotContains(t, strings.Join(screenOf(m), "\n"), "Count splits on a comma.")
@@ -519,7 +521,7 @@ func TestNewTranscriptEndsTheListFocusAndTheViewer(t *testing.T) {
 	require.Equal(t, "", m.selectedBlock())
 }
 
-// --- selection marks ---
+// --- selection box ---
 
 func rawRows(m *Model) []string { return strings.Split(m.View().Content, "\n") }
 
@@ -528,32 +530,68 @@ func hasShade(th *Theme, row string) bool {
 	return on != "" && strings.Contains(row, on)
 }
 
-func TestSelectedReplyHasARailOnEveryRowAndNoShade(t *testing.T) {
-	m := listModelAt(t, colorprofile.TrueColor, 80, 24)
-	press(t, m, "tab")
-	rows := rawRows(m)
-	plain := screenOf(m)
-	var marked []string
+// unboxedScreen is the plain rows of the screen without the right side of
+// the selection box and without trailing spaces. The left side stays.
+func unboxedScreen(m *Model) []string {
+	rows := screenOf(m)
 	for i, r := range rows {
-		require.False(t, hasShade(m.theme, r), "no row is shaded: %q", plain[i])
-		if strings.HasPrefix(plain[i], "┃") {
-			marked = append(marked, plain[i])
+		if c := []rune(r); len(c) > 0 && strings.ContainsRune("│┌└┆", c[0]) && strings.ContainsRune("│┐┘┆", c[len(c)-1]) {
+			rows[i] = strings.TrimRight(string(c[:len(c)-1]), " ")
 		}
 	}
-	require.Len(t, marked, 3, "two text rows and the usage row")
-	require.Contains(t, marked[2], "claude-sonnet-5-5 · 6.2s")
-	// The rail is in the accent role.
-	var first string
-	for i, r := range rows {
-		if strings.HasPrefix(plain[i], "┃") {
-			first = r
-			break
-		}
-	}
-	require.Contains(t, first, m.theme.Style(RoleAccent).Bold(true).Render("┃"))
+	return rows
 }
 
-func TestSelectedReplyRailCoversTheEmptyRowBetweenParagraphs(t *testing.T) {
+// screenCells returns the plain rows of the screen as runes, padded to the
+// width, so that a rune index is a column.
+func screenCells(m *Model) [][]rune {
+	rows := screenOf(m)
+	out := make([][]rune, len(rows))
+	for i, r := range rows {
+		out[i] = []rune(r + strings.Repeat(" ", max(0, m.width-displayWidth(r))))
+	}
+	return out
+}
+
+// requireBoxEdges checks the glyphs in the first and the last column of a
+// screen row.
+func requireBoxEdges(t *testing.T, m *Model, row int, left, right rune) {
+	t.Helper()
+	cells := screenCells(m)[row]
+	require.Equal(t, string(left), string(cells[0]), "column 0 of row %d: %q", row, string(cells))
+	require.Equal(t, string(right), string(cells[len(cells)-1]), "last column of row %d: %q", row, string(cells))
+}
+
+// requireBox checks a closed box: the corners on the rows above and below and
+// the sides on every row between.
+func requireBox(t *testing.T, m *Model, first, last int) {
+	t.Helper()
+	requireBoxEdges(t, m, first-1, '┌', '┐')
+	for i := first; i <= last; i++ {
+		requireBoxEdges(t, m, i, '│', '│')
+	}
+	requireBoxEdges(t, m, last+1, '└', '┘')
+	cells := screenCells(m)
+	require.Equal(t, strings.Repeat(" ", m.width-2), string(cells[first-1][1:m.width-1]), "the row above holds only the corners")
+	require.Equal(t, strings.Repeat(" ", m.width-2), string(cells[last+1][1:m.width-1]), "the row below holds only the corners")
+}
+
+func TestSelectedReplyHasAThinBoxAndNoRail(t *testing.T) {
+	m := listModelAt(t, colorprofile.TrueColor, 80, 24)
+	press(t, m, "tab")
+	first, last := rowIndex(t, m, "Count now skips"), rowIndex(t, m, "claude-sonnet-5-5 · 6.2s")
+	require.Equal(t, 3, last-first, "two text rows, the blank row and the usage row")
+	requireBox(t, m, first, last)
+	rows, plain := rawRows(m), screenOf(m)
+	for i, r := range rows {
+		require.NotContains(t, plain[i], "┃", "no row shows the accent rail")
+		require.False(t, hasShade(m.theme, r), "no row is shaded: %q", plain[i])
+	}
+	require.Contains(t, rows[first], m.theme.Render(RoleBorder, "│"), "the box is in the border role")
+	require.Contains(t, rows[first-1], m.theme.Render(RoleBorder, "┌"))
+}
+
+func TestSelectedReplyBoxCoversTheEmptyRowBetweenParagraphs(t *testing.T) {
 	text := "para one\n\npara two"
 	events := flat(
 		&protocol.AgentStart{},
@@ -564,134 +602,64 @@ func TestSelectedReplyRailCoversTheEmptyRowBetweenParagraphs(t *testing.T) {
 	)
 	m := listModelAt(t, colorprofile.NoTTY, 80, 24, events...)
 	press(t, m, "tab")
-	var rail []string
-	for _, r := range screenOf(m) {
-		if strings.HasPrefix(r, "┃") {
-			rail = append(rail, r)
-		}
-	}
-	require.Len(t, rail, 4, "paragraph, gap, paragraph and the usage row")
-	require.Equal(t, "┃ para one", rail[0])
-	require.Equal(t, "┃", rail[1], "the gap between paragraphs carries the rail")
-	require.Equal(t, "┃ para two", rail[2])
-	rows := screenOf(m)
-	for i, r := range rows {
-		if r == "┃ para one" {
-			require.Equal(t, "", rows[i-1], "the lead row above the reply has no rail")
-		}
-	}
+	first, last := rowIndex(t, m, "para one"), rowIndex(t, m, "m · 0.1s")
+	require.Equal(t, 4, last-first, "paragraph, break, paragraph, the blank row and the usage row")
+	requireBox(t, m, first, last)
+	require.Equal(t, "│", strings.TrimSpace(string(screenCells(m)[first+1][:m.width-1])), "the break between paragraphs is inside the box")
 }
 
-func TestSelectedThinkingAtItsLowestModeIsShaded(t *testing.T) {
-	m := listModelAt(t, colorprofile.TrueColor, 80, 24)
+func TestSelectedReplyBoxCoversWrappedRows(t *testing.T) {
+	// The height leaves room for the whole reply and both corner rows.
+	m := listModel(t, 40, 16)
+	press(t, m, "tab")
+	last := rowIndex(t, m, "claude-sonnet-5-5")
+	n := 0
+	for i := last; i >= 0 && screenCells(m)[i][0] == '│'; i-- {
+		n++
+	}
+	require.Equal(t, 6, n, "four wrapped rows, the blank row and the usage row")
+	requireBoxEdges(t, m, last+1, '└', '┘')
+}
+
+func TestSelectedOpenThinkingHasTheCornersOnItsGapRows(t *testing.T) {
+	m := listModel(t, 80, 24)
+	press(t, m, "tab", "k", "k", "k", "k", "k", "right")
+	require.Equal(t, blockID(t, m, isThinking), m.selectedBlock())
+	requireBox(t, m, rowIndex(t, m, "Thought for 0.5s"), rowIndex(t, m, "An empty field must not count."))
+}
+
+func TestSelectedCollapsedThinkingHasTheBoxOnItsOneRow(t *testing.T) {
+	m := listModel(t, 80, 24)
 	press(t, m, "tab", "k", "k", "k", "k", "k")
 	require.Equal(t, blockID(t, m, isThinking), m.selectedBlock())
-	rows, plain := rawRows(m), screenOf(m)
-	n := 0
-	for i, r := range rows {
-		if hasShade(m.theme, r) {
-			n++
-			require.Contains(t, plain[i], "› Thought for 0.5s")
-		}
-	}
-	require.Equal(t, 1, n)
+	row := rowIndex(t, m, "Thought for 0.5s")
+	require.Contains(t, screenOf(m)[row], "› Thought for 0.5s")
+	requireBox(t, m, row, row)
 }
 
-func TestTabIsIgnoredWhileTheCommandListIsOpen(t *testing.T) {
-	m := listModel(t, 80, 24)
-	typed(t, m, "/mo")
-	require.Contains(t, strings.Join(screenOf(m), "\n"), "/model")
-	press(t, m, "tab")
-	require.Equal(t, FocusEditor, m.Focus())
-	require.Equal(t, "/mo", m.sv.editor.Text())
-	require.Contains(t, strings.Join(screenOf(m), "\n"), "/model", "the list stays with the prompt")
-}
-
-func TestSelectedReplyRailCoversWrappedRows(t *testing.T) {
-	m := listModel(t, 40, 14)
-	press(t, m, "tab")
-	rows := screenOf(m)
-	n := 0
-	for _, r := range rows {
-		if strings.HasPrefix(r, "┃") {
-			n++
-		}
-	}
-	require.Equal(t, 4, n, "three wrapped rows and the usage row")
-	for i, r := range rows {
-		if strings.Contains(r, "claude-sonnet-5-5 ·") {
-			require.True(t, strings.HasPrefix(r, "┃"), "usage row %d", i)
-		}
-	}
-}
-
-func TestSelectedCollapsedStepIsShadedAndHasNoRail(t *testing.T) {
+func TestSelectedCollapsedStepHasTheBoxAndNoShade(t *testing.T) {
 	m := listModelAt(t, colorprofile.TrueColor, 80, 24)
 	press(t, m, "tab", "k")
-	rows, plain := rawRows(m), screenOf(m)
-	shaded := 0
+	row := rowIndex(t, m, "Ran go test ./...")
+	requireBox(t, m, row, row)
+	rows := rawRows(m)
 	for i, r := range rows {
-		if hasShade(m.theme, r) {
-			shaded++
-			require.Contains(t, plain[i], "Ran go test ./...")
-			require.False(t, strings.Contains(plain[i], "┃"))
-			require.Equal(t, 80, displayWidth(ansi.Strip(r)), "the shade covers the whole row")
-		}
+		require.False(t, hasShade(m.theme, r), "no row is shaded: %q", screenOf(m)[i])
 	}
-	require.Equal(t, 1, shaded)
-	for _, p := range plain {
-		require.False(t, strings.HasPrefix(p, "┃"))
+	for i := row - 1; i <= row+1; i++ {
+		require.Equal(t, 80, displayWidth(ansi.Strip(rows[i])), "row %d is as wide as the pane", i)
 	}
 
-	// Expanded: the shade goes and the rail covers every row of the block.
+	// Expanded: the box goes around every row of the step.
 	press(t, m, "right")
-	rows, plain = rawRows(m), screenOf(m)
-	for i, r := range rows {
-		require.False(t, hasShade(m.theme, r), plain[i])
-	}
-	start := -1
-	for i, p := range plain {
-		if strings.Contains(p, "Ran go test") {
-			start = i
-		}
-	}
-	require.Equal(t, "┃ ⌄ Ran go test ./...                                                  ✗ exit 1", strings.TrimRight(plain[start], " "))
-	for i := start; i < start+11; i++ {
-		require.True(t, strings.HasPrefix(plain[i], "┃"), "row %d: %q", i, plain[i])
-	}
-	require.False(t, strings.HasPrefix(plain[start+11], "┃"), "the empty row below the block has no rail")
-
-	press(t, m, "left")
-	rows = rawRows(m)
-	shaded = 0
-	for _, r := range rows {
-		if hasShade(m.theme, r) {
-			shaded++
-		}
-	}
-	require.Equal(t, 1, shaded, "the shade is back when the block is one row again")
-}
-
-func TestSelectedStepWithoutColorIsReversed(t *testing.T) {
-	m := listModel(t, 80, 24)
-	press(t, m, "tab", "k")
-	var row string
-	for _, r := range rawRows(m) {
-		if strings.Contains(ansi.Strip(r), "Ran go test") {
-			row = r
-		}
-	}
-	require.True(t, strings.HasPrefix(row, ansiRev), "reverse starts the row: %q", row)
-	require.Equal(t, 80, displayWidth(ansi.Strip(row)))
-	// Every style reset inside the row starts the reverse again.
-	require.Equal(t, strings.Count(row, ansiReset), strings.Count(row, ansiReset+ansiRev)+1)
+	requireBox(t, m, rowIndex(t, m, "Ran go test ./..."), rowIndex(t, m, "FAIL    example.com/p/parser")+1)
 }
 
 // twoRowStep is a step of two rows at its lowest mode, as a hook step is.
 type twoRowStep struct{}
 
 func (b twoRowStep) Lines(rc RenderContext) []string {
-	r := stepRow{glyph: "⚓", glyphRole: RoleTool, verb: "PreToolUse hook", what: "(project/lint-guard)", indicator: indicatorFor(rc, FoldCollapsed)}
+	r := stepRow{glyph: "⚓", glyphRole: RoleTool, verb: "PreToolUse hook", what: "(project/lint-guard)", open: rc.Pointed || rc.Fold != FoldCollapsed}
 	row, _ := r.render(rc)
 	rows := []string{row, "    " + rc.Theme.Render(RoleMuted, "Runs gofmt on the file")}
 	if rc.Fold != FoldCollapsed {
@@ -699,74 +667,63 @@ func (b twoRowStep) Lines(rc RenderContext) []string {
 	}
 	return rows
 }
-func (twoRowStep) foldable(int) bool      { return true }
-func (twoRowStep) defaultFold() FoldMode  { return FoldCollapsed }
-func (twoRowStep) collapseFold() FoldMode { return FoldCollapsed }
-func (twoRowStep) foldGroup() foldGroup   { return groupTool }
+func (twoRowStep) foldable(int) bool                 { return true }
+func (twoRowStep) defaultFold(foldDefaults) FoldMode { return FoldCollapsed }
+func (twoRowStep) collapseFold() FoldMode            { return FoldCollapsed }
+func (twoRowStep) foldGroup() foldGroup              { return groupTool }
 
-func TestSelectedCollapsedStepOfTwoRowsIsShadedOnBothRows(t *testing.T) {
+func TestSelectedStepOfTwoRowsHasTheBoxOnBothRows(t *testing.T) {
 	m := listModelAt(t, colorprofile.TrueColor, 80, 24)
 	require.NoError(t, m.transcript.Append("hook", twoRowStep{}, true))
 	press(t, m, "tab")
 	require.Equal(t, "hook", m.selectedBlock(), "the last block is selected")
-	plain := screenOf(m)
-	rows := rawRows(m)
-	var shaded []string
-	for i, r := range rows {
-		if hasShade(m.theme, r) {
-			shaded = append(shaded, plain[i])
-		}
-	}
-	require.Equal(t, []string{"  ›  PreToolUse hook (project/lint-guard)", "    Runs gofmt on the file"}, shaded)
+	first := rowIndex(t, m, "PreToolUse hook")
+	requireBox(t, m, first, first+1)
 
-	// One cycle step: both rows leave the shade and take the rail.
+	// One cycle step: the box grows with the block.
 	press(t, m, "e")
-	for _, r := range rawRows(m) {
-		require.False(t, hasShade(m.theme, r))
-	}
-	got := 0
-	for _, p := range screenOf(m) {
-		if strings.HasPrefix(p, "┃") {
-			got++
-		}
-	}
-	require.Equal(t, 3, got)
+	requireBox(t, m, rowIndex(t, m, "PreToolUse hook"), rowIndex(t, m, "more detail"))
 }
 
-func TestSelectedPromptKeepsItsBandUnderTheRail(t *testing.T) {
+func TestSelectedFirstPromptKeepsItsBandAndShowsTheClipMark(t *testing.T) {
 	m := listModelAt(t, colorprofile.TrueColor, 80, 24)
 	press(t, m, "tab", "g")
-	rows, plain := rawRows(m), screenOf(m)
-	i := 2
-	require.True(t, strings.HasPrefix(plain[i], "┃ ❯ run seq 1 40"), plain[i])
-	band := bgSequence(m.theme, RolePanel)
-	require.Contains(t, rows[i], band)
+	rows := rawRows(m)
+	i := rowIndex(t, m, "❯ run seq 1 40")
+	require.Equal(t, 2, i, "the prompt is the first pane row")
+	// The first block has no gap row above it: its first row shows the clip
+	// mark in place of the top corners.
+	requireBoxEdges(t, m, i, '┆', '┆')
+	requireBoxEdges(t, m, i+1, '└', '┘')
+	require.Contains(t, rows[i], bgSequence(m.theme, RolePanel), "the band stays inside the box")
 	require.Equal(t, 80, displayWidth(ansi.Strip(rows[i])))
-	require.False(t, strings.HasPrefix(plain[i+1], "┃"), "the empty row after the band has no rail")
 }
 
-func TestMovingTheSelectionNeverReflows(t *testing.T) {
+// The box draws only on column 0, the last column and the gap rows, and the
+// indicator replaces the glyph of a step: no other cell of the pane changes.
+func TestMovingTheSelectionChangesNoRowOfABlock(t *testing.T) {
 	m := listModel(t, 80, 24)
-	plain := screenOf(m)
 	press(t, m, "tab")
-	base := len(screenOf(m))
-	for _, k := range []string{"k", "k", "k", "j", "g", "G"} {
-		press(t, m, k)
-		require.Len(t, screenOf(m), base)
-	}
-	// The text after the gutter and the glyph column is the same with and
-	// without a selection.
-	tail := func(r string) string {
-		runes := []rune(r)
-		if len(runes) < 4 {
-			return ""
+	cells := func(rows []string) []string {
+		out := make([]string, len(rows))
+		for i, r := range rows {
+			c := []rune(ansi.Strip(r) + strings.Repeat(" ", m.width))[:m.width]
+			c[0], c[2], c[3], c[m.width-1] = ' ', ' ', ' ', ' '
+			out[i] = string(c)
 		}
-		return string(runes[4:])
+		return out
 	}
-	press(t, m, "k", "k")
-	marked := screenOf(m)
-	for i := 2; i <= 12; i++ {
-		require.Equal(t, tail(plain[i]), tail(marked[i]), "row %d", i)
+	for _, k := range []string{"k", "k", "k", "k", "k", "k", "j", "g", "G"} {
+		press(t, m, k)
+		m.View()
+		marked := m.pane.Frame().Rows
+		m.pane.SetSelected()
+		m.pane.SetHover("")
+		bare := m.pane.Frame().Rows
+		require.Len(t, marked, len(bare), k)
+		require.Equal(t, cells(bare), cells(marked), "after %s", k)
+		require.NotEqual(t, bare, marked, "the box shows after %s", k)
+		m.View()
 	}
 }
 
@@ -776,7 +733,7 @@ func TestSelectedCollapsedStepShowsTheExpandIndicator(t *testing.T) {
 	m := listModel(t, 80, 24)
 	press(t, m, "tab", "k")
 	text := strings.Join(screenOf(m), "\n")
-	require.Regexp(t, `(?m)^  › Ran go test \./\.\.\.`, text)
+	require.Regexp(t, `(?m)^│ › Ran go test \./\.\.\.`, text)
 	require.Regexp(t, `(?m)^  ◆ Ran seq 1 40$`, text, "other steps keep their glyph")
 	require.Contains(t, text, "  ❯ run seq 1 40, then read parser.go", "the prompt band keeps its text")
 	require.Contains(t, text, "  Count now skips empty fields.", "the reply keeps its text")
@@ -791,23 +748,23 @@ func TestHoverShowsTheExpandIndicatorWithoutSelection(t *testing.T) {
 	m.list.hover = read
 	m.View()
 	require.Regexp(t, `^  › Read parser\.go`, rowWith(t, m, "Read parser.go"))
-	require.NotContains(t, strings.Join(screenOf(m), "\n"), "┃", "a hover is no selection")
+	require.NotContains(t, strings.Join(screenOf(m), "\n"), "┐", "a hover is no selection")
 	m.list.hover = ""
 	m.View()
 	require.Regexp(t, `^  ◆ Read parser\.go`, rowWith(t, m, "Read parser.go"))
 }
 
-func TestIndicatorForExpandedAndTruncatedSteps(t *testing.T) {
+func TestOpenStepsShowTheOpenMarkWithAndWithoutSelection(t *testing.T) {
 	m := listModel(t, 80, 24)
 	press(t, m, "tab", "k", "e")
-	require.Regexp(t, `(?m)^┃ ◆ Ran go test`, strings.Join(screenOf(m), "\n"), "truncated keeps its glyph")
+	require.Regexp(t, `(?m)^│ › Ran go test`, strings.Join(screenOf(m), "\n"), "truncated shows the open mark")
 	press(t, m, "e")
-	require.Regexp(t, `(?m)^┃ ⌄ Ran go test`, strings.Join(screenOf(m), "\n"))
+	require.Regexp(t, `(?m)^│ › Ran go test`, strings.Join(screenOf(m), "\n"), "expanded shows the open mark")
 	press(t, m, "esc")
-	require.Regexp(t, `(?m)^  ◆ Ran go test`, strings.Join(screenOf(m), "\n"), "an open step that is not pointed at keeps its glyph")
-	m.list.hover = toolID(t, m, "bash", 1)
-	m.View()
-	require.Regexp(t, `(?m)^  ⌄ Ran go test`, strings.Join(screenOf(m), "\n"), "hover shows it on an open step")
+	require.Regexp(t, `(?m)^  › Ran go test`, strings.Join(screenOf(m), "\n"), "an open step shows the open mark without the selection")
+	press(t, m, "tab", "k", "e")
+	press(t, m, "esc")
+	require.Regexp(t, `(?m)^  ◆ Ran go test`, strings.Join(screenOf(m), "\n"), "a folded step that is not selected shows its own mark")
 }
 
 func TestNonFoldableBlocksNeverShowAnIndicator(t *testing.T) {
@@ -829,23 +786,19 @@ func TestNonFoldableBlocksNeverShowAnIndicator(t *testing.T) {
 	require.NotContains(t, rowWith(t, m, "sleep 9"), "›")
 }
 
-func TestExpandIndicatorOfAWideGlyphKeepsTheRowWidth(t *testing.T) {
+func TestOpenMarkOfAWideGlyphKeepsTheRowWidth(t *testing.T) {
 	th := NewTheme(colorprofile.NoTTY)
 	base := stepRow{glyph: "⚓", glyphRole: RoleTool, verb: "PreToolUse hook", what: "(project/lint-guard) · edit parser.go", right: "✓ allowed 0.1s", rightRole: RoleSuccess}
 	rc := RenderContext{Width: 80, Theme: th}
 	plain, _ := base.render(rc)
-	base.indicator = IndicatorExpand
+	base.open = true
 	marked, _ := base.render(rc)
-	require.Equal(t, 80, displayWidth(ansi.Strip(plain)), "the glyph takes two columns")
-	require.Equal(t, 80, displayWidth(ansi.Strip(marked)))
+	require.Equal(t, 80-textRightPad, displayWidth(ansi.Strip(plain)), "the glyph takes two columns")
+	require.Equal(t, 80-textRightPad, displayWidth(ansi.Strip(marked)))
 	require.True(t, strings.HasPrefix(ansi.Strip(marked), "  ›  PreToolUse hook"), ansi.Strip(marked))
-
-	one := stepRow{glyph: "◆", glyphRole: RoleTool, verb: "Ran", what: "x", indicator: IndicatorOpen}
-	row, _ := one.render(rc)
-	require.True(t, strings.HasPrefix(ansi.Strip(row), "  ⌄ Ran x"))
 }
 
-func TestIndicatorIsAccentBold(t *testing.T) {
+func TestOpenMarkOnHoverKeepsTheRoleColor(t *testing.T) {
 	m := listModelAt(t, colorprofile.TrueColor, 80, 24)
 	press(t, m, "esc")
 	m.list.hover = toolID(t, m, "read", 0)
@@ -856,10 +809,10 @@ func TestIndicatorIsAccentBold(t *testing.T) {
 			row = r
 		}
 	}
-	require.Contains(t, row, m.theme.Style(RoleAccent).Bold(true).Render("›"))
+	require.Contains(t, row, m.theme.Render(RoleTool, GlyphStepOpen))
 }
 
-func TestStreamingThinkingAtItsLowestModeShowsTheIndicatorAndARail(t *testing.T) {
+func TestStreamingThinkingAtItsLowestModeShowsTheIndicatorInTheBox(t *testing.T) {
 	events := flat(
 		&protocol.AgentStart{},
 		assistantStart("m", 0),
@@ -870,7 +823,7 @@ func TestStreamingThinkingAtItsLowestModeShowsTheIndicatorAndARail(t *testing.T)
 	press(t, m, "tab")
 	require.Equal(t, blockID(t, m, isThinking), m.selectedBlock())
 	text := strings.Join(screenOf(m), "\n")
-	require.Regexp(t, `(?m)^┃ › Thinking…`, text)
+	require.Regexp(t, `(?m)^┆ › Thinking…`, text, "the first block has no row above it: the clip mark shows")
 }
 
 // --- user-set mode ---
@@ -896,18 +849,22 @@ func TestCollapsingAStreamingThinkingFoldsItAgainWhenItEnds(t *testing.T) {
 	play(updateAt(900, protocol.ThinkingEndEvent{ContentIndex: 0, Content: "a\nb\nc"}),
 		assistantEndUsage("m", protocol.StopStop, 1000, protocol.Usage{}, protocol.Thinking{Thinking: "a\nb\nc"}))
 	m.View()
-	require.Equal(t, FoldCollapsed, m.pane.Fold(id), "folding back cleared the user's choice")
+	require.Equal(t, FoldCollapsed, m.pane.Fold(id), "the user's lowest mode follows the step when it ends")
 }
 
-func TestCyclingBackToTheLowestModeClearsTheUsersChoice(t *testing.T) {
+func TestCyclingBackToTheLowestModeKeepsTheUsersChoice(t *testing.T) {
 	m := foldModel(t, 80, 24)
 	m.View()
 	id := blockID(t, m, isThinking)
+	it := m.pane.items[m.transcript.index[id]]
 	require.NoError(t, m.pane.CycleFold(id))
 	require.NoError(t, m.pane.CycleFold(id))
-	require.True(t, m.pane.items[m.transcript.index[id]].userSet)
+	require.True(t, it.userSet)
+	require.False(t, it.lowest)
 	require.NoError(t, m.pane.CycleFold(id))
-	require.False(t, m.pane.items[m.transcript.index[id]].userSet)
+	require.Equal(t, FoldCollapsed, m.pane.Fold(id))
+	require.True(t, it.userSet, "a session mode change does not move the step")
+	require.True(t, it.lowest, "the step follows its lowest mode")
 }
 
 // --- screens ---
