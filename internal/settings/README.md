@@ -1,6 +1,6 @@
 # `internal/settings`
 
-The files under `~/.ask/` (override with `ASK_HOME`) and the project `.ask/` folder. It owns three things. The first is `auth.json`, the credentials file: mode 0600, a file lock, and read-merge-write so that two processes do not lose each other's keys. The second is `settings.json`, the user settings, and the project `.ask/settings.json`, which loads only after the project is trusted. The third is the bytes of `trust.json`, the saved trust decisions. It also keeps `model-cache.json`, a cache of model metadata and account model lists. `config` may be imported only by `app` and `cmd/*`, so runtime settings need this separate package. Cloud mode keeps the same files on the server.
+The files under `~/.ask/` (override with `ASK_HOME`) and the project `.ask/` folder. It owns three things. The first is `auth.json`, the credentials file: mode 0600, a file lock, and read-merge-write so that two processes do not lose each other's keys. The second is `settings.json`, the user settings, and the project `.ask/settings.json`, which loads only after the project is trusted. The third is the bytes of `trust.json`, the saved trust decisions. It also keeps `model-cache.json`, a cache of model metadata and account model lists, and reads the user `models.json`, the custom providers and models. `config` may be imported only by `app` and `cmd/*`, so runtime settings need this separate package. Cloud mode keeps the same files on the server.
 
 ## What belongs here
 
@@ -8,6 +8,7 @@ The files under `~/.ask/` (override with `ASK_HOME`) and the project `.ask/` fol
 - User and project settings: load, merge, typed read and write (`settings.go`, `merge.go`, `project.go`)
 - `trust.json` read and write with a lock (`trust.go`)
 - `model-cache.json` read and write with a lock (`model_cache.go`)
+- The user `models.json` read, JSONC strip, typed decode and process memory (`models_file.go`, `jsonc.go`, `models_files.go`)
 - Path rules for `~/.ask` and `.ask` (`paths.go`)
 
 ## What does not belong here
@@ -29,6 +30,7 @@ The credential transaction owner is [AuthStore](auth.go).
 `Replace` and `Logout` compare that revision, so a logout of an absent provider still rejects an earlier login attempt.
 Native sign-in and logout use `ReadProvider`, `ReplaceProvider`, and `LogoutProvider` to compare only that provider's revision.
 This permits a pending sign-in to finish after another provider changes, while a removal of the same provider still rejects it.
+`NewAuthStoreReader` makes a store for a command that writes nothing (`ask settings show`): `Read` takes no lock and creates nothing (a writer replaces `auth.json` by rename, so a read sees one whole version), a missing home reads as empty, and every write gives `ErrReadOnlyStore`.
 The optional `providerRevisions` object records the last store revision, a migration baseline, and the last revision of each changed provider, including removed providers.
 The existing global-revision API and schema version 1 stay the same.
 An older writer keeps this unknown object but advances only the global revision.
@@ -77,6 +79,7 @@ The match ignores letter case. The typed read takes the exact key names from the
 | `defaultProjectTrust` | `ask` (default), `always`, `never` | user only |
 | `skillsMaxContextTokens` | positive integer, the token budget of the skill list (`skills` caps it at 10000). Unset is `Effective.SkillsMaxContextTokens == 0`. A zero, negative, fractional or non-number value gives a diagnostic and stays unset | user, project |
 | `defaultTools` | array of tool names (`["read","grep"]`), or of `+name`/`-name` entries over every built-in (`["-bash"]`); not both. `[]` selects no built-in tools. Unset is `Effective.DefaultTools == nil` | user, project |
+| `enabledModels` | array of at most 64 model patterns and globs of 1 to 256 bytes (`["anthropic/*","gpt-5.5:low"]`): the start model and the cycle list of a session when `--models` is not given. Unset is `Effective.EnabledModels == nil`. `settings` checks only the shape; `app` resolves the entries against the model list. `Effective.KeyPath` names the file of the layer that set it | user, project |
 
 A bad value of a known key gives the default and a diagnostic for the layer that set it. A bad `defaultTools` value (not an array of strings matching `^[+-]?[a-z][a-z0-9_]*$`, or plain names mixed with `+`/`-` entries) leaves it unset. The array replaces across layers, so a trusted project's `defaultTools` replaces the user's. Entry names are checked against the built-in tools by `tools.Selection.Resolve`, not here.
 
@@ -133,9 +136,22 @@ The next write replaces a corrupt file and discards a file of an older schema.
 A file of a newer schema is read-only: `Update` returns `ErrModelCacheNewerSchema` and writes nothing.
 `DeleteProvider` removes the account entries of one provider and keeps the overlay.
 
+## Models file
+
+[ModelsFiles](models_files.go) is the process memory of the user file `<ASK_HOME>/models.json`. Use one value for each process. Ask reads no project `.ask/models.json`.
+
+- The file follows the user `settings.json` file rules through the same byte reader (`readUserFileBytes` in [settings.go](settings.go)): a 0700 home, an owner-only 0600 regular file of at most 1 MiB, an open that does not follow a link and does not block on a FIFO. A wrong mode is a file problem.
+- The file is JSONC: `//` and `/* */` comments and trailing commas are allowed ([jsonc.go](jsonc.go)).
+- [models_file.go](models_file.go) decodes `providers.<id>{baseUrl, api, apiKey, headers, compat, models[], modelOverrides{}}` into `ModelsFile`, `ProviderEntry`, `ModelEntry`, `ModelOverride` and `CostEntry`. `apiKey` and header values stay raw strings; this package does not interpret `$` or `!`. `compat` stays raw JSON, because its keys depend on the API.
+- Rules: a provider id follows the `auth.json` store rule (`a-z`, `0-9`, `-`). A provider with models that is not built in needs `baseUrl` and `apiKey`. A provider without models needs one more field. A model needs an `id`, and an `api` on the model or the provider. `contextWindow` and `maxTokens` are positive integers, `input` items are `text` or `image`, a `thinkingLevelMap` key is a protocol thinking level and its value is a string or `null`, a price is a number that is not negative, and a string field is not empty. The built-in provider ids arrive through `NewModelsFiles`.
+- A bad model row or override drops only that entry; a bad provider value drops only that provider. Each gives one `Diagnostic`. An unknown key loads and gives `unknown key; it is ignored`, with `did you mean <key>?` when a schema key is within two edits.
+- `ProviderEntry.Position` and `ModelEntry.Position` are the places of the entries in the file, counted with dropped entries, so the mapping in `app` can name a later problem with the file positions.
+- A `Diagnostic` never holds user text: `Key` is a schema path with positions, for example `providers[2].models[0].contextWindow`. A provider id, a model id, an unknown key name and a value never appear. A file problem gives a line number only.
+- `Load` reads and parses without the lock. The stamp (mode, modification time and size) comes from the opened file. Under the lock it compares the stamp: the same stamp returns the stored result; another stamp stores the new result and increases the generation. A valid file replaces the last valid copy. A file problem keeps the last valid copy and adds `the last valid copy is used`. A missing file or home clears the copy. The first `Load` returns generation 1 or more. `Load` creates nothing, and has no timer and no watcher. The returned values are read only.
+
 ## File names
 
-`auth.go`, `lock.go`, `lock_unix.go`, `settings.go`, `merge.go`, `project.go`, `trust.go`, `paths.go`, `host-id.go`, `model_cache.go`
+`auth.go`, `lock.go`, `lock_unix.go`, `settings.go`, `merge.go`, `project.go`, `trust.go`, `paths.go`, `host-id.go`, `model_cache.go`, `models_file.go`, `models_files.go`, `jsonc.go`
 
 ## Imports
 

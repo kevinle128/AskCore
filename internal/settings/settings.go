@@ -14,6 +14,7 @@ import (
 	"regexp"
 	"sort"
 	"strings"
+	"syscall"
 	"unicode"
 )
 
@@ -31,6 +32,17 @@ const defaultProjectTrustKey = "defaultProjectTrust"
 const defaultToolsKey = "defaultTools"
 
 const skillsMaxContextTokensKey = "skillsMaxContextTokens"
+
+// EnabledModelsKey is the key of the model scope: an array of model patterns
+// and globs.
+const EnabledModelsKey = "enabledModels"
+
+// Bounds of the enabledModels array. They match the bounds of the --models
+// session option.
+const (
+	maxEnabledModels     = 64
+	maxEnabledModelBytes = 256
+)
 
 var toolEntry = regexp.MustCompile(`^[+-]?[a-z][a-z0-9_]*$`)
 
@@ -153,34 +165,74 @@ func ensureHomeShared(home string) error {
 	return err
 }
 
-func readSettings(path string) (map[string]json.RawMessage, error) {
-	f, err := openNoFollow(path, os.O_RDONLY, 0)
-	if errors.Is(err, os.ErrNotExist) {
+// decodeSettings decodes the bytes of a settings file into its top-level
+// fields. Nil data (a missing file) gives empty fields.
+func decodeSettings(data []byte) (map[string]json.RawMessage, error) {
+	if data == nil {
 		return map[string]json.RawMessage{}, nil
 	}
+	var fields map[string]json.RawMessage
+	if err := json.Unmarshal(data, &fields); err != nil || fields == nil {
+		return nil, fmt.Errorf("%w: invalid JSON", ErrUnsafeStore)
+	}
+	return fields, nil
+}
+
+// readUserFileBytes reads <home>/<name> with the user file rules: an
+// owner-only 0700 home, and an owner-only 0600 regular file of at most 1 MiB
+// that is not a link. A missing home or file gives nil data, nil info and no
+// error. On success, info is the FileInfo of the opened file, so it always
+// belongs to data. On an error, problemPath is the path that has the problem:
+// the home or the file. It creates nothing.
+func readUserFileBytes(home, name string) (data []byte, info os.FileInfo, problemPath string, err error) {
+	exists, err := CheckPrivateDir(home)
 	if err != nil {
-		return nil, err
+		return nil, nil, home, err
+	}
+	if !exists {
+		return nil, nil, "", nil
+	}
+	path := filepath.Join(home, name)
+	if err = checkEntry(path, 0600); err != nil {
+		return nil, nil, path, err
+	}
+	data, info, err = readPrivateFile(path)
+	if err != nil {
+		return nil, nil, path, err
+	}
+	return data, info, "", nil
+}
+
+// readPrivateFile opens path without following a link and without blocking on
+// a FIFO, then checks the opened file: an owner-only 0600 regular file of at
+// most 1 MiB. A missing file gives nil data, nil info and no error.
+func readPrivateFile(path string) ([]byte, os.FileInfo, error) {
+	f, err := openNoFollow(path, os.O_RDONLY|syscall.O_NONBLOCK, 0)
+	if errors.Is(err, os.ErrNotExist) {
+		return nil, nil, nil
+	}
+	if err != nil {
+		return nil, nil, err
 	}
 	defer func() { _ = f.Close() }()
 	info, err := f.Stat()
 	if err != nil {
-		return nil, err
+		return nil, nil, err
 	}
 	if !info.Mode().IsRegular() || info.Mode().Perm() != 0600 || !owner(info) {
-		return nil, fmt.Errorf("%w: settings file mode", ErrUnsafeStore)
+		return nil, nil, fmt.Errorf("%w: file mode", ErrUnsafeStore)
 	}
 	b, err := io.ReadAll(io.LimitReader(f, maxSettingsFileLen+1))
 	if err != nil {
-		return nil, err
+		return nil, nil, err
 	}
 	if len(b) > maxSettingsFileLen {
-		return nil, fmt.Errorf("%w: settings file too large", ErrUnsafeStore)
+		return nil, nil, fmt.Errorf("%w: file too large", ErrUnsafeStore)
 	}
-	var fields map[string]json.RawMessage
-	if err = json.Unmarshal(b, &fields); err != nil || fields == nil {
-		return nil, fmt.Errorf("%w: invalid JSON", ErrUnsafeStore)
+	if b == nil {
+		b = []byte{}
 	}
-	return fields, nil
+	return b, info, nil
 }
 
 // Layer names the source of a settings value.
@@ -209,7 +261,7 @@ const (
 )
 
 // shippedKeys are the keys that Effective decodes, in a fixed order.
-var shippedKeys = []string{defaultModelKey, thinkingFoldKey, defaultProjectTrustKey, defaultToolsKey, skillsMaxContextTokensKey}
+var shippedKeys = []string{defaultModelKey, thinkingFoldKey, defaultProjectTrustKey, defaultToolsKey, skillsMaxContextTokensKey, EnabledModelsKey}
 
 // Diagnostic is one problem that a load found. It never contains file
 // content: only the layer, the path, the key and a fixed text.
@@ -237,11 +289,29 @@ type Effective struct {
 	// SkillsMaxContextTokens is the skillsMaxContextTokens value: 0 when
 	// unset, else a positive count of tokens for the skill list.
 	SkillsMaxContextTokens int
+	// EnabledModels is the enabledModels array: the model patterns and globs
+	// of the scope, or nil when unset. The settings package does not resolve
+	// them; it checks only that each entry is a short non-empty string.
+	EnabledModels []string
 	// Sources maps each shipped key to the layer of its value.
 	Sources     map[string]Layer
 	Diagnostics []Diagnostic
 	// merged holds the merged fields with the barred project keys removed.
 	merged map[string]json.RawMessage
+	// userPath and projectPath are the files of the two layers.
+	userPath, projectPath string
+}
+
+// KeyPath returns the file whose layer gives the value of key, or "" when the
+// key has its default value.
+func (eff Effective) KeyPath(key string) string {
+	switch eff.Sources[key] {
+	case LayerUser:
+		return eff.userPath
+	case LayerProject:
+		return eff.projectPath
+	}
+	return ""
 }
 
 // Layered reads the user settings file and, for a trusted project, the
@@ -346,20 +416,13 @@ func (l *Layered) readUser() (map[string]json.RawMessage, *Diagnostic) {
 // readUserFile reads the user file with the rules of readUser. On an error it
 // returns the path that has the problem: the home or the file.
 func (l *Layered) readUserFile() (map[string]json.RawMessage, string, error) {
-	exists, err := CheckPrivateDir(l.home)
+	data, _, problemPath, err := readUserFileBytes(l.home, settingsFile)
 	if err != nil {
-		return nil, l.home, err
+		return nil, problemPath, err
 	}
-	if !exists {
-		return map[string]json.RawMessage{}, "", nil
-	}
-	path := l.userPath()
-	if err = checkEntry(path, 0600); err != nil {
-		return nil, path, err
-	}
-	fields, err := readSettings(path)
+	fields, err := decodeSettings(data)
 	if err != nil {
-		return nil, path, err
+		return nil, l.userPath(), err
 	}
 	return fields, "", nil
 }
@@ -414,6 +477,8 @@ func decodeEffective(user, project map[string]json.RawMessage, userPath, project
 		DefaultProjectTrust: ProjectTrustAsk,
 		Sources:             make(map[string]Layer, len(shippedKeys)),
 		merged:              merged,
+		userPath:            userPath,
+		projectPath:         projectPath,
 	}
 	for _, key := range shippedKeys {
 		eff.Sources[key] = LayerDefault
@@ -469,7 +534,29 @@ func (eff *Effective) set(key string, raw json.RawMessage) string {
 			return "must be a positive integer; it is ignored"
 		}
 		eff.SkillsMaxContextTokens = n
+	case EnabledModelsKey:
+		return eff.setEnabledModels(raw)
 	}
+	return ""
+}
+
+// setEnabledModels reads the enabledModels array. A bad value leaves the key
+// unset.
+func (eff *Effective) setEnabledModels(raw json.RawMessage) string {
+	const problem = "must be an array of at most 64 model patterns of 1 to 256 bytes; it is ignored"
+	var entries []string
+	if json.Unmarshal(raw, &entries) != nil || len(entries) > maxEnabledModels {
+		return problem
+	}
+	for _, e := range entries {
+		if e == "" || len(e) > maxEnabledModelBytes {
+			return problem
+		}
+	}
+	if entries == nil {
+		entries = []string{}
+	}
+	eff.EnabledModels = entries
 	return ""
 }
 
