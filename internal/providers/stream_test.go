@@ -333,3 +333,46 @@ func TestErrStreamIncompleteText(t *testing.T) {
 	assert.Contains(t, ErrStreamIncomplete.Error(), "ended without")
 	assert.False(t, errors.Is(ErrStreamIncomplete, context.Canceled))
 }
+
+func TestRelayCallsHookBeforeTheEndIsSeen(t *testing.T) {
+	failure := NewFailure(CodeAuth, 401, 0, "unauthorized", nil)
+	inner := newTestStream(context.Background(), 0, func(a *Assembler) {
+		a.Start()
+		i := a.TextStart("")
+		a.TextDelta(i, "partial")
+		a.TextEnd(i, "partial", nil)
+		a.Fail(protocol.StopError, "unauthorized", failure)
+	})
+	inner.WithBinding(AuthBinding{Method: "api-key"})
+	var hookErr error
+	called := false
+	relay := Relay(context.Background(), inner, func(err error) { hookErr, called = err, true })
+	var kinds []string
+	for it := range relay.Events() {
+		if _, end := it.Event.(protocol.ErrorEvent); end {
+			require.True(t, called, "the hook runs before the terminal item")
+		}
+		kinds = append(kinds, it.Event.EventType())
+	}
+	require.True(t, called)
+	var f *Failure
+	require.ErrorAs(t, hookErr, &f)
+	assert.Equal(t, 401, f.Status)
+	_, err := waitResult(t, relay)
+	require.ErrorAs(t, err, &f, "the result keeps the typed failure of inner")
+	assert.Equal(t, "api-key", relay.Binding().Method)
+	assert.Equal(t, []string{"start", "text_start", "text_delta", "text_end", "error"}, kinds)
+}
+
+func TestRelayEndsWhenTheRequestIsCancelled(t *testing.T) {
+	ctx, cancel := context.WithCancel(context.Background())
+	inner := newTestStream(ctx, 0, func(a *Assembler) {
+		a.Start()
+		<-a.Context().Done()
+	})
+	relay := Relay(ctx, inner, nil)
+	cancel()
+	drain(relay)
+	_, err := waitResult(t, relay)
+	require.ErrorIs(t, err, context.Canceled)
+}

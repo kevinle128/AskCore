@@ -122,7 +122,8 @@ func OpenAIGPT56Sol() Model {
 func Find(ref Ref) (Model, error) { return findIn(catalog(), ref) }
 
 // findIn applies the Find rules to rows, so the compiled catalog and a
-// ModelSet give the same answers and the same errors.
+// ModelSet give the same answers and the same errors. The error is a
+// *ModelError of class ErrUnknownModel or ErrAmbiguousModel.
 func findIn(rows []Model, ref Ref) (Model, error) {
 	var matches []Model
 	for _, m := range rows {
@@ -136,9 +137,9 @@ func findIn(rows []Model, ref Ref) (Model, error) {
 	switch len(matches) {
 	case 0:
 		if ref.API != "" {
-			return Model{}, fmt.Errorf("unknown model %s/%s API %s", ref.Provider, ref.ID, ref.API)
+			return Model{}, unknownModel(fmt.Sprintf("unknown model %s/%s API %s", ref.Provider, ref.ID, ref.API))
 		}
-		return Model{}, fmt.Errorf("unknown model %s/%s", ref.Provider, ref.ID)
+		return Model{}, unknownModel(fmt.Sprintf("unknown model %s/%s", ref.Provider, ref.ID))
 	case 1:
 		return matches[0], nil
 	default:
@@ -146,7 +147,7 @@ func findIn(rows []Model, ref Ref) (Model, error) {
 		for _, m := range matches {
 			apis = append(apis, string(m.API))
 		}
-		return Model{}, fmt.Errorf("ambiguous model %s/%s: %s", ref.Provider, ref.ID, strings.Join(apis, " and "))
+		return Model{}, ambiguousModel(fmt.Sprintf("ambiguous model %s/%s: %s", ref.Provider, ref.ID, strings.Join(apis, " and ")), matches)
 	}
 }
 

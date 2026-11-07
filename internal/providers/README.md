@@ -48,6 +48,24 @@ A known account list keeps only the rows that it names, directly or through an a
 An unknown list (not read, or refused) keeps all rows of the provider, because inference can still work.
 [auth](../auth/README.md) reads the lists, and the [cache](../settings/README.md) keeps them; this package imports neither.
 
+The user model configuration is the last layer (`model_config.go`).
+The app maps the file to `ModelConfig` and gives it to `NewModelSet`; this package does not read files.
+`ModelConfig` has no key and no header field, because a row of a `ModelSet` is copied to many places.
+The order is: a provider `BaseURL`, then the custom rows, then the overrides.
+A custom row needs an API and no family rule; omitted fields take the defaults 128000 context, 16384 output, text input, reasoning off and zero prices.
+A custom row replaces the row with the same provider, id and API, and a known account list does not remove it.
+An override on a built-in row can set the name, the limits, the price and the input types, and can only turn thinking levels off; it cannot set the API or the compat.
+An override price (`PricePatch`) sets only the fields it names; the other fields come from the base price of the row, and a patch that sets no price keeps the price tiers.
+A provider whose `BaseURL` the configuration changes gets no account filter, because its list tells the access at the default host.
+`ModelSet.Problems` gives what did not apply, with schema paths and no file values, and `ModelSet.Origin` tells if the configuration made or changed a row.
+
+`model_pattern.go` resolves the model names that a user types: `[provider/]id[@api][:level]`.
+`ParseRef` is the one split of `provider/id@api`; the ACP name parser uses it too.
+`ResolvePattern` tries the whole pattern as an exact name first, so an id such as `qwen3-coder:30b` wins over a level suffix.
+A valid `:level` suffix is then split off; with no valid suffix, an alias match and then a fuzzy match run on the whole pattern.
+Every exact step uses the rules of `Find`, so an id on two APIs, or in two providers, is `ErrAmbiguousModel` with the choices.
+`ExpandScope` turns a scope list of patterns and globs into rows; an entry that matches nothing is a problem, not an error.
+
 To update the embedded snapshot, run `ASK_UPDATE_CATALOG=1 go test -run TestCatalogSnapshot ./internal/providers`.
 The test downloads models.dev, keeps the Ask providers and the fields that the mapper reads, and writes `catalog_snapshot.json`.
 Without the variable the test sends no request.
@@ -61,6 +79,7 @@ Registrations without a preparer retain policy capture and compute adapter value
 The Prepared and PolicyOnly contracts are owned by prepare.go.
 
 Adapters return typed failures rather than deciding Agent lifecycle transitions.
+`Relay` wraps a stream, forwards every item unchanged and calls a hook with the result error before the terminal item reaches the consumer; its producer is the only goroutine, and it ends with the inner stream.
 The failure codes and Retry-After parsing are owned by failure.go.
 The Agent [recovery owner](../agent/recover.go) selects eligible retries and [sessions](../sessions/entry.go) owns their safe records.
 Provider SDK retries stay disabled so one recorded Agent attempt does not hide multiple wire requests.

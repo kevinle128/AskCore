@@ -25,7 +25,9 @@ type AccountView struct {
 // method returns rows that share no storage with the set. A nil set has no
 // rows.
 type ModelSet struct {
-	rows []Model
+	rows     []Model
+	origins  map[Ref]Origin
+	problems []ConfigProblem
 }
 
 // NewModelSet merges the rows of the catalog (normally GeneratedCatalog), the
@@ -41,9 +43,17 @@ type ModelSet struct {
 //   - A listed id with no row gets a fallback row when a shown family rule
 //     matches it. Ask cannot build a correct request for any other id, so
 //     such an id gets no row.
+//   - A provider whose base URL a configuration changes gets no account
+//     filter and no fallback rows: its list tells the access at the default
+//     host, not at the new one, so its access is unknown.
+//   - Each configuration then applies in order, so a later one wins: the
+//     provider base URL, the rows of the configuration (they replace a row
+//     with the same provider, id and API, and an account list does not remove
+//     them), and last the overrides. The constructor runs on each build, so an
+//     override wins after every refresh. Problems returns what did not apply.
 //
 // The rows are in the display order of Ask, never in the vendor order.
-func NewModelSet(base, overlay []Model, accounts map[string]AccountView) *ModelSet {
+func NewModelSet(base, overlay []Model, accounts map[string]AccountView, configs ...ModelConfig) *ModelSet {
 	seen := map[Ref]bool{}
 	var merged []Model
 	for _, m := range slices.Concat(base, overlay) {
@@ -52,13 +62,14 @@ func NewModelSet(base, overlay []Model, accounts map[string]AccountView) *ModelS
 			merged = append(merged, cloneModel(m))
 		}
 	}
+	repointed := repointedProviders(merged, configs)
 	rows := slices.DeleteFunc(merged, func(m Model) bool {
 		v := accounts[m.Provider]
-		return v.Known && !slices.ContainsFunc(v.IDs, func(id string) bool { return sameModelID(m.ID, id) })
+		return v.Known && !repointed[m.Provider] && !slices.ContainsFunc(v.IDs, func(id string) bool { return sameModelID(m.ID, id) })
 	})
 	for _, provider := range slices.Sorted(maps.Keys(accounts)) {
 		v := accounts[provider]
-		if !v.Known {
+		if !v.Known || repointed[provider] {
 			continue
 		}
 		// Sorted ids put an alias before its dated snapshots, so a listed
@@ -74,8 +85,28 @@ func NewModelSet(base, overlay []Model, accounts map[string]AccountView) *ModelS
 			}
 		}
 	}
-	sortForDisplay(rows)
-	return &ModelSet{rows: rows}
+	st := applyConfigs(rows, configs)
+	sortForDisplay(st.rows)
+	return &ModelSet{rows: st.rows, origins: st.origins, problems: st.problems}
+}
+
+// Origin tells if the configuration made or changed the row of ref. ref must
+// name one row with its API. Every other ref, also one that the set does not
+// have, is OriginBuiltin.
+func (s *ModelSet) Origin(ref Ref) Origin {
+	if s != nil && s.origins[ref] == OriginUser {
+		return OriginUser
+	}
+	return OriginBuiltin
+}
+
+// Problems returns the parts of the configuration that the build did not
+// apply, in the order of the configuration.
+func (s *ModelSet) Problems() []ConfigProblem {
+	if s == nil {
+		return nil
+	}
+	return slices.Clone(s.problems)
 }
 
 // All returns every row in display order.

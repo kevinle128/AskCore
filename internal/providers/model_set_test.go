@@ -336,3 +336,87 @@ func TestModelSetRowsShareNoStorage(t *testing.T) {
 		assert.Equal(t, want[0], set.All()[0], "a change to a returned row does not reach the set")
 	}
 }
+
+func TestOverrideWinsOverOverlayAfterRebuild(t *testing.T) {
+	t.Parallel()
+	cfg := providers.ModelConfig{Providers: []providers.ProviderConfig{{
+		ID:        providers.ProviderOpenAI,
+		Overrides: map[string]providers.ModelPatch{"gpt-5.4": {MaxTokens: ptr(4_096)}},
+	}}}
+	overlay := openAIRow("gpt-5.4")
+	overlay.MaxTokens = 32_768
+	set := providers.NewModelSet(nil, []providers.Model{overlay}, nil, cfg)
+	m, err := set.Find(refOf(overlay))
+	require.NoError(t, err)
+	assert.Equal(t, 4_096, m.MaxTokens)
+
+	// A refresh brings a new overlay; the next build applies the override again.
+	overlay.MaxTokens = 65_536
+	overlay.ContextWindow = 1_000_000
+	set = providers.NewModelSet(nil, []providers.Model{overlay}, nil, cfg)
+	m, err = set.Find(refOf(overlay))
+	require.NoError(t, err)
+	assert.Equal(t, 4_096, m.MaxTokens)
+	assert.Equal(t, 1_000_000, m.ContextWindow)
+	assert.Equal(t, providers.OriginUser, set.Origin(refOf(m)))
+}
+
+func TestCustomRowSurvivesKnownAccountList(t *testing.T) {
+	t.Parallel()
+	cfg := providers.ModelConfig{Providers: []providers.ProviderConfig{{
+		ID:     providers.ProviderOpenAI,
+		Models: []providers.ModelSpec{{ID: "my-tuned-model", API: providers.APIOpenAIResponses}},
+	}}}
+	base := []providers.Model{openAIRow("gpt-5.5"), openAIRow("gpt-5.4")}
+	set := providers.NewModelSet(base, nil, map[string]providers.AccountView{
+		providers.ProviderOpenAI: known("gpt-5.5", "no-rule-model"),
+	}, cfg)
+	assert.ElementsMatch(t, []string{"gpt-5.5", "my-tuned-model"}, idsOf(set.Models(providers.ProviderOpenAI)))
+}
+
+func TestUserBaseURLOnBuiltInProvider(t *testing.T) {
+	t.Parallel()
+	const proxy = "https://proxy.example/v1"
+	cfg := providers.ModelConfig{Providers: []providers.ProviderConfig{{ID: providers.ProviderOpenAI, BaseURL: proxy}}}
+	base := []providers.Model{providers.OpenAIGPT55(), anthropicRow("claude-opus-4-5")}
+	set := providers.NewModelSet(base, nil, nil, cfg)
+	m, err := set.Find(refOf(providers.OpenAIGPT55()))
+	require.NoError(t, err)
+	want := providers.OpenAIGPT55()
+	want.BaseURL = proxy
+	assert.Equal(t, want, m, "only the base URL changes; API, compat and words stay")
+	assert.Equal(t, providers.OriginUser, set.Origin(refOf(m)))
+	other, err := set.Find(refOf(anthropicRow("claude-opus-4-5")))
+	require.NoError(t, err)
+	assert.Equal(t, providers.AnthropicURL, other.BaseURL)
+	assert.Equal(t, providers.OriginBuiltin, set.Origin(refOf(other)))
+}
+
+func TestUserBaseURLIgnoresDefaultHostAccountList(t *testing.T) {
+	t.Parallel()
+	base := []providers.Model{openAIRow("gpt-5.5"), openAIRow("gpt-5.4"), openAIRow("gpt-5.2")}
+	accounts := map[string]providers.AccountView{providers.ProviderOpenAI: known("gpt-5.5", "gpt-5.1")}
+	filtered := providers.NewModelSet(base, nil, accounts)
+	assert.ElementsMatch(t, []string{"gpt-5.5", "gpt-5.1"}, idsOf(filtered.Models(providers.ProviderOpenAI)))
+
+	cfg := providers.ModelConfig{Providers: []providers.ProviderConfig{{ID: providers.ProviderOpenAI, BaseURL: "https://proxy.example/v1"}}}
+	set := providers.NewModelSet(base, nil, accounts, cfg)
+	assert.ElementsMatch(t, []string{"gpt-5.5", "gpt-5.4", "gpt-5.2"}, idsOf(set.Models(providers.ProviderOpenAI)),
+		"every row stays and the list adds no fallback row")
+
+	// The same base URL as the rows changes nothing, so the list still applies.
+	same := providers.ModelConfig{Providers: []providers.ProviderConfig{{ID: providers.ProviderOpenAI, BaseURL: providers.OpenAIURL}}}
+	set = providers.NewModelSet(base, nil, accounts, same)
+	assert.ElementsMatch(t, []string{"gpt-5.5", "gpt-5.1"}, idsOf(set.Models(providers.ProviderOpenAI)))
+	assert.Equal(t, providers.OriginBuiltin, set.Origin(refOf(openAIRow("gpt-5.5"))))
+}
+
+func TestModelSetWithoutConfigHasNoProblemsAndBuiltinOrigin(t *testing.T) {
+	t.Parallel()
+	set := providers.NewModelSet([]providers.Model{openAIRow("gpt-5.5")}, nil, nil)
+	assert.Empty(t, set.Problems())
+	assert.Equal(t, providers.OriginBuiltin, set.Origin(refOf(openAIRow("gpt-5.5"))))
+	var none *providers.ModelSet
+	assert.Empty(t, none.Problems())
+	assert.Equal(t, providers.OriginBuiltin, none.Origin(refOf(openAIRow("gpt-5.5"))))
+}
