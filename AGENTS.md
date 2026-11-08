@@ -25,7 +25,13 @@ Version authority is `go.mod`.
 - Dependency Injection: fx
 - ACP: `github.com/coder/acp-go-sdk` v0.13.5 (stable schema 0.13.5, wire v1); conformance evidence in `plans/reports/conformance-261007-h13a-sdk.md`
 - Native auth identity: `github.com/coreos/go-oidc/v3`; installed version authority is `go.mod`
-- Model wire layer: `charm.land/fantasy` (see `internal/providers/fantasykit`)
+- Model wire layer: `charm.land/fantasy` (see `internal/providers/fantasykit`). `go.mod` replaces it with the owner's fork `github.com/kevinle128/fantasy` (forked from `charmbracelet/fantasy`), pinned to commit `e894229ccae5`. The fork is upstream `v0.45.2` plus:
+  - Upstream fixes merged after `v0.45.2` (jsonrepair #391, #393, #397, #398; HTTP/2 retry #395).
+  - A revert of upstream #367, so that a failing tool reports back to the model and does not end the run.
+  - OpenAI Responses: replay of encrypted reasoning, message IDs, phase, and function-call item IDs; error and finish details; the echoed service tier; extra body fields; strict stream completion checks; explicit reasoning options for unknown model ids.
+  - Anthropic: tool argument numbers stay JSON numbers, also large ones.
+
+  To change the pin, review the fork commits after the current one. Remove the `replace` when upstream has all of these changes.
 - Local patched copies: `third_party/acp-go-sdk` and `third_party/bubbletea` (see the `replace` lines in `go.mod`)
 
 Some stack items are not composed in the running server yet (asynq, opentelemetry, validator, Redis cache, centrifuge). The package exists; `internal/app` does not wire it.
