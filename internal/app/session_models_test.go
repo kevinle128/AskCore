@@ -494,6 +494,17 @@ func TestNameOverrideOnBuiltInRowKeepsBuiltInKey(t *testing.T) {
 	require.NotContains(t, string(raw), "sk-env")
 }
 
+func TestKeySourcesWithNilServiceReportsNone(t *testing.T) {
+	view, err := LoadModelView(context.Background(), privateHome(t), nil)
+	require.NoError(t, err)
+	sources := view.KeySources(context.Background(), nil)
+	require.NotEmpty(t, sources)
+	for _, s := range sources {
+		require.Equal(t, "none", s.Source, s.Provider)
+		require.Empty(t, s.Problem, s.Provider)
+	}
+}
+
 func TestBuiltInProviderWithOnlyFileKeyIsUsable(t *testing.T) {
 	home := privateHome(t)
 	writeModelsFile(t, home, `{"providers": {"xai": {"apiKey": "file-key"}}}`)

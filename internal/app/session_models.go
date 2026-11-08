@@ -571,6 +571,8 @@ type ProviderKeySource struct {
 // KeySources names, for each provider of the model list, the source that a
 // request on its first row would use. It uses the same source selection as
 // the request, as a dry run: it never runs a command and never shows a value.
+// A nil service gives the source "none" for each provider, as LoadModelView
+// accepts a nil service.
 func (v *ModelView) KeySources(ctx context.Context, service *auth.Service) []ProviderKeySource {
 	s := v.snapshot()
 	if s == nil {
@@ -584,15 +586,17 @@ func (v *ModelView) KeySources(ctx context.Context, service *auth.Service) []Pro
 		}
 		seen[m.Provider] = true
 		e, _ := s.lookup(m)
-		row := ProviderKeySource{Provider: m.Provider}
+		row := ProviderKeySource{Provider: m.Provider, Source: "none"}
+		if service == nil {
+			out = append(out, row)
+			continue
+		}
 		src, err := service.KeySource(ctx, auth.ResolveRequest{Model: m, Config: e.configKey()})
 		switch {
 		case err == nil:
 			row.Source = src.Name
 		case errors.Is(err, auth.ErrValue):
 			row.Source, row.Problem = "problem", err.Error()
-		default:
-			row.Source = "none"
 		}
 		out = append(out, row)
 	}
