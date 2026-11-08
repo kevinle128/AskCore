@@ -52,6 +52,34 @@ func TestTranslateJobNoticeIsAJobLine(t *testing.T) {
 	}
 }
 
+func TestTranslateStallNoticeKeepsTheJobRunning(t *testing.T) {
+	x := newTx(t)
+	x.feed(toolStart("c1", "bash", `{"command":"npm run build","run_in_background":true}`, 0),
+		toolEndDetails("c1", "bash", protocol.ToolResultDetails{JobID: "bash-1", Status: "running"}, 100))
+	x.feed(reminderEvents(`Background command "npm run build" (job bash-1) printed no output for 5 minutes. It still runs. Read it with job_output, stop it with job_kill, or leave it running.`, 200)...)
+	rows := x.rows()
+	require.NotEmpty(t, rows)
+	last := rows[len(rows)-1]
+	require.True(t, strings.HasPrefix(last, "  ◆ job bash-1 npm run build"), last)
+	require.True(t, strings.HasSuffix(last, "still running · no output for 5 minutes"), last)
+	requireNoReminderText(t, rows[len(rows)-1:])
+	require.Len(t, x.trl.RunningJobs(), 1, "a stalled job runs on")
+}
+
+func TestTranslateLimitNoticeDropsTheJob(t *testing.T) {
+	x := newTx(t)
+	x.feed(toolStart("c1", "bash", `{"command":"npm run build","run_in_background":true}`, 0),
+		toolEndDetails("c1", "bash", protocol.ToolResultDetails{JobID: "bash-1", Status: "running"}, 100))
+	x.feed(reminderEvents(`Background command "npm run build" was stopped after reaching its background time limit. It was job bash-1. Read its output with job_output; start it again with a longer timeout if the work still needs it.`, 200)...)
+	rows := x.rows()
+	require.NotEmpty(t, rows)
+	last := rows[len(rows)-1]
+	require.True(t, strings.HasPrefix(last, "  ◆ job bash-1 npm run build"), last)
+	require.True(t, strings.HasSuffix(last, "✗ killed · background time limit"), last)
+	requireNoReminderText(t, rows[len(rows)-1:])
+	require.Empty(t, x.trl.RunningJobs())
+}
+
 func TestTranslateMonitorNoticeCountsEvents(t *testing.T) {
 	x := newTx(t)
 	x.feed(toolStart("c1", "monitor", `{"command":"tail -f server.log","description":"server log"}`, 0),

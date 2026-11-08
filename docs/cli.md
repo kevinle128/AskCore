@@ -107,7 +107,10 @@ A `bash` job or a `monitor` can still run when the last prompt ends. `ask -p` an
 - After 5 seconds, a terminal on stderr shows `Waiting for background work to finish: <job> (<label>), ...`. In `--mode json` it shows only when stdout is not a terminal.
 - `--max-turns <n>` counts every turn of the run, also the turns that a notice starts. A turn that the agent retries does not count. When the limit is reached, the run stops before turn `n+1` and exits with code 1. The line `Error: Reached max turns (n)` goes to stdout, or to stderr with `--mode json`, so the JSON event stream stays valid. The interactive TUI ignores the flag.
 
-The TUI, the leader, and `ask acp` set no time limit on background jobs. The variables `ASK_PRINT_BG_LIMIT_MS`, `ASK_PRINT_BG_WAIT_CEILING_MS`, and `ASK_DISABLE_BACKGROUND_TASKS` are in [Environment variables](#environment-variables). The owner of the rules is [internal/jobs/README.md](../internal/jobs/README.md#background-limit-and-quiescence). The tool texts are in [reference/tools.md](reference/tools.md).
+- A `bash` job that prints no output for 5 minutes sends the model one stall notice. The job runs on. The TUI shows `still running · no output for 5 minutes`. Each new output starts the 5 minutes again. `ASK_BG_STALL_MS` changes the time; `0` turns the notice off.
+- The TUI, the leader, and `ask acp` stop a `bash` background job after 2 hours. A `bash` call can set a shorter limit with `timeout`. The model and the TUI get a notice when the limit stops a job. `ASK_BG_LIMIT_MS` changes the limit; `0` turns it off. A `monitor` keeps its own timeout in these modes.
+
+The variables `ASK_BG_STALL_MS`, `ASK_BG_LIMIT_MS`, `ASK_PRINT_BG_LIMIT_MS`, `ASK_PRINT_BG_WAIT_CEILING_MS`, and `ASK_DISABLE_BACKGROUND_TASKS` are in [Environment variables](#environment-variables). The owner of the rules is [internal/jobs/README.md](../internal/jobs/README.md#background-limit-and-quiescence). The tool texts are in [reference/tools.md](reference/tools.md).
 
 ## Prompt, context files, skills, and tools
 
@@ -629,6 +632,8 @@ Trust is not a security boundary against the tools of the agent. A `bash` comman
 | `ASK_COMMAND_GUARD` | `ask -p`, leader, `ask acp` | `1` blocks a short list of destructive commands. It is off by default and is not a security boundary. |
 | `ASK_DISABLE_BACKGROUND_TASKS` | `ask -p`, leader, `ask acp`, in-process TUI | `1` turns background jobs off. A foreground `bash` command stops at its wait budget. A background start and `monitor` are refused. |
 | `ASK_DISABLE_MODEL_REFRESH` | leader, `ask acp`, in-process TUI, `ask auth login` | `1` turns the automatic network refresh of the model list off: no models.dev request and no account model list request. The list then comes from `<ASK_HOME>/model-cache.json` and the built-in catalog. `ask models refresh` still refreshes the list. `--offline` on `ask`, `ask acp`, and `ask leader` has the same effect. `ask auth login` has no `--offline` flag; use the variable. |
+| `ASK_BG_STALL_MS` | `ask -p`, leader, `ask acp`, in-process TUI | The time without output after which a background `bash` job sends a stall notice, in milliseconds (default 300000). `0` turns the notice off. An empty, negative, or invalid value gives the default. |
+| `ASK_BG_LIMIT_MS` | leader, `ask acp`, in-process TUI | The background time limit of `bash` jobs, in milliseconds (default 7200000). `0` turns the limit off. An empty, negative, or invalid value gives the default. A larger value also raises the 2 hour maximum. `ask -p` reads `ASK_PRINT_BG_LIMIT_MS` instead. |
 | `ASK_PRINT_BG_LIMIT_MS` | `ask -p` | The default background time limit, in milliseconds (default 600000). A value that is not a whole number above 0 is ignored. A larger value also raises the 2 hour maximum. |
 | `ASK_PRINT_BG_WAIT_CEILING_MS` | `ask -p` | The idle cap of the background wait, in milliseconds (default 600000). `0` means no cap. An empty, negative, or invalid value gives the default. |
 | `ASK_CAPTURE` | `ask -p` | A directory. The run records the provider HTTP traffic to a new cassette. Ignored for `faux`. |

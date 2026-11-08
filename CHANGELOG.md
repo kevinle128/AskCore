@@ -8,6 +8,7 @@ The format follows [Keep a Changelog 1.1.0](https://keepachangelog.com/en/1.1.0/
 
 ### Added
 
+- **Background jobs:** A background `bash` job that prints no output for 5 minutes sends the model a stall notice and the job runs on. The TUI draws `still running · no output for 5 minutes`. `ASK_BG_STALL_MS` changes the time; `0` turns the notice off.
 - **CLI:** `--system-prompt <text|file>` replaces the default system prompt, and `--append-system-prompt <text|file>` adds text after it. A value that names an existing file is read as a file. All prompt text of the flags is at most 256 KiB.
 - **CLI:** `-t` / `--tools <names>` keeps only the named built-in tools, and `-nt` / `--no-tools` keeps none. A name that is not a built-in tool, or `-t` together with `-nt`, exits 1.
 - **CLI:** The TUI and `ask acp` sessions take the same four flags: the TUI sends them to the leader or the in-process agent for each session it opens. `ask acp` has no flags, but a client can send `_meta["ask.dev/session"]` with `session/new`. A leader of an older build ignores the flags, and the TUI then shows a warning.
@@ -71,6 +72,7 @@ The format follows [Keep a Changelog 1.1.0](https://keepachangelog.com/en/1.1.0/
 
 ### Changed
 
+- **Background jobs:** The leader, `ask acp`, and the in-process TUI now stop a `bash` background job after 2 hours (`ASK_BG_LIMIT_MS`; `0` turns the limit off), and the TUI draws a line when a limit stops a job. Monitors keep their own timeouts.
 - **CLI:** `--model <id>` without `--provider` now resolves the id across all providers; before, it used the `faux` provider. `--provider P --model <id>` works as before.
 - **TUI:** `/model` does not save the default model when the trusted project settings set another `defaultModel`, or when the user settings file is not safe or has a known key with a bad value. The file keeps its bytes, and the model switch still applies.
 - **Settings:** A `defaultModel` that is not a valid model id is now a settings problem with the path of the file. The session starts as with no default model.
