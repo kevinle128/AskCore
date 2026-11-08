@@ -720,3 +720,46 @@ func TestEnsureHomeConcurrentCreate(t *testing.T) {
 		}
 	}
 }
+
+func TestAuthStoreReaderCreatesNothingAndRefusesWrites(t *testing.T) {
+	ctx := context.Background()
+	missing := filepath.Join(t.TempDir(), "absent")
+	r, err := NewAuthStoreReader(missing)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if c, _, err := r.Read(ctx, "openai"); err != nil || c.Method != "" {
+		t.Fatalf("missing home: %+v %v", c, err)
+	}
+	if _, err := os.Stat(missing); !errors.Is(err, os.ErrNotExist) {
+		t.Fatalf("the reader created the home: %v", err)
+	}
+
+	home := filepath.Join(t.TempDir(), "home")
+	if err := os.Mkdir(home, 0o700); err != nil {
+		t.Fatal(err)
+	}
+	w, err := NewAuthStore(home)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := w.Replace(ctx, "openai", 0, Credential{Method: "api-key", APIKey: "k"}); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Remove(filepath.Join(home, "auth.json.lock")); err != nil {
+		t.Fatal(err)
+	}
+	r, err = NewAuthStoreReader(home)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if c, _, err := r.Read(ctx, "openai"); err != nil || c.Method != "api-key" {
+		t.Fatalf("read: %+v %v", c.Method, err)
+	}
+	if _, err := r.Replace(ctx, "openai", 1, Credential{Method: "api-key", APIKey: "x"}); !errors.Is(err, ErrReadOnlyStore) {
+		t.Fatalf("write: %v", err)
+	}
+	if _, err := os.Stat(filepath.Join(home, "auth.json.lock")); !errors.Is(err, os.ErrNotExist) {
+		t.Fatalf("the reader took the lock: %v", err)
+	}
+}

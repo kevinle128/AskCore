@@ -41,7 +41,7 @@ var cassetteKeyEnv = map[string]bool{
 // when the cassette reports a mismatch or an unused recorded request.
 func useCassette(t *testing.T, provider, model string) (options, func(string) string) {
 	t.Helper()
-	path := filepath.Join("testdata", "cassettes", strings.ReplaceAll(t.Name(), "/", "_")+".yaml")
+	path := filepath.Join(packageDir, "testdata", "cassettes", strings.ReplaceAll(t.Name(), "/", "_")+".yaml")
 	mode, opts := cassette.Replay, []cassette.Option(nil)
 	getenv := func(k string) string {
 		if cassetteKeyEnv[k] {
@@ -187,7 +187,7 @@ var keyLike = regexp.MustCompile(`\bsk-[A-Za-z0-9_-]{16,}`)
 // TestCassettesHoldNoSecrets fails when a committed cassette has an auth
 // header, a key-like string or a provider key from the environment.
 func TestCassettesHoldNoSecrets(t *testing.T) {
-	files, err := filepath.Glob(filepath.Join("testdata", "cassettes", "*.yaml"))
+	files, err := filepath.Glob(filepath.Join(packageDir, "testdata", "cassettes", "*.yaml"))
 	require.NoError(t, err)
 	require.NotEmpty(t, files)
 	var keys []string

@@ -480,8 +480,8 @@ github.com/kaptinlin/jsonschema v0.9.9 h1:1N00sHfrZcBwcHgI646PuIf1VaODHPsqRnNi0O
 github.com/kaptinlin/jsonschema v0.9.9/go.mod h1:egi7QzDHFN/avPEqQgyGgXCcmC0cl/KxS2ePcHHRcOs=
 github.com/karamaru-alpha/copyloopvar v1.2.2 h1:yfNQvP9YaGQR7VaWLYcfZUlRP2eo2vhExWKxD/fP6q0=
 github.com/karamaru-alpha/copyloopvar v1.2.2/go.mod h1:oY4rGZqZ879JkJMtX3RRkcXRkmUvH0x35ykgaKgsgJY=
-github.com/kevinle128/fantasy v0.0.0-20261005094512-08976763bfea h1:ylG9AQc2bxCsv7YfLEvKc8qgSTfgJS5eXCZq+iHfwY4=
-github.com/kevinle128/fantasy v0.0.0-20261005094512-08976763bfea/go.mod h1:RzBPhtWeXtNstfw/VbCtOCXCxnmy9UNuTn7Jb+VS/P0=
+github.com/kevinle128/fantasy v0.0.0-20261101125124-e894229ccae5 h1:w7bZiKhWUTX15TKKgQICH3qZYIt+gQ2kwur4v49Evts=
+github.com/kevinle128/fantasy v0.0.0-20261101125124-e894229ccae5/go.mod h1:RzBPhtWeXtNstfw/VbCtOCXCxnmy9UNuTn7Jb+VS/P0=
 github.com/kisielk/errcheck v1.20.0 h1:9rwHBNKzd4wkDWcROy3DvFGNqEPlkxBg305rvk7HabI=
 github.com/kisielk/errcheck v1.20.0/go.mod h1:O+f80MKNwX8Oor2jwgpeQ9An7uJm+hRSgT+h22knRJU=
 github.com/kkHAIKE/contextcheck v1.1.6 h1:7HIyRcnyzxL9Lz06NGhiKvenXq7Zw6Q0UQu/ttjfJCE=

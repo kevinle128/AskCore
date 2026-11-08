@@ -444,8 +444,12 @@ func (c *Client) listLive(ctx context.Context, conn *rpc.Conn) ([]protocol.ACPLi
 	return out.Sessions, nil
 }
 
-// NewSession creates a session in cwd, makes it current and follows it.
-func (c *Client) NewSession(ctx context.Context, cwd string) (tui.SessionInfo, error) {
+// NewSession creates a session in cwd, makes it current and follows it. opts
+// apply to this session only. Empty options send no _meta, and the host then
+// decides with its saved decision and its settings. When opts hold flags and
+// the host does not acknowledge them, the info says so: an older host drops the
+// key without an error.
+func (c *Client) NewSession(ctx context.Context, cwd string, opts tui.NewSessionOptions) (tui.SessionInfo, error) {
 	conn, err := c.live()
 	if err != nil {
 		return tui.SessionInfo{}, err
@@ -455,20 +459,61 @@ func (c *Client) NewSession(ctx context.Context, cwd string) (tui.SessionInfo, e
 		return tui.SessionInfo{}, fmt.Errorf("tuiclient: working directory: %w", err)
 	}
 	var out struct {
-		SessionID string `json:"sessionId"`
+		SessionID string         `json:"sessionId"`
+		Meta      map[string]any `json:"_meta"`
 	}
-	if err := c.request(ctx, conn, "session/new", map[string]any{"cwd": abs, "mcpServers": []any{}}, &out); err != nil {
+	params := map[string]any{"cwd": abs, "mcpServers": []any{}}
+	meta := map[string]any{}
+	if opts.Trust != "" {
+		meta[protocol.ACPTrustMetaKey] = opts.Trust
+	}
+	if !opts.Flags.IsZero() {
+		meta[protocol.ACPSessionOptionsMetaKey] = opts.Flags
+	}
+	if len(meta) > 0 {
+		params["_meta"] = meta
+	}
+	if err := c.request(ctx, conn, "session/new", params, &out); err != nil {
 		return tui.SessionInfo{}, err
 	}
 	if out.SessionID == "" {
 		return tui.SessionInfo{}, errors.New("tuiclient: session/new gave no session id")
 	}
-	info := tui.SessionInfo{ID: out.SessionID, Role: protocol.ACPRoleDriver, Cwd: abs}
+	if missing := unappliedModelOption(opts.Flags, out.Meta[protocol.ACPAppliedOptionsMetaKey]); missing != "" {
+		// An older leader started the session on another model. The session
+		// is closed, so it does not stay on the leader, and the start fails:
+		// a silent start on the default model would hide the flag.
+		_ = c.request(ctx, conn, "session/close", map[string]any{"sessionId": out.SessionID}, nil)
+		return tui.SessionInfo{}, fmt.Errorf("the leader did not apply %s; restart it with this build", missing)
+	}
+	acked, _ := out.Meta[protocol.ACPSessionOptionsMetaKey].(bool)
+	info := tui.SessionInfo{ID: out.SessionID, Role: protocol.ACPRoleDriver, Cwd: abs, FlagsIgnored: !opts.Flags.IsZero() && !acked}
 	c.setSession(info)
 	if err := c.follow(ctx, conn, info.ID, nil, followFresh); err != nil {
 		return info, err
 	}
 	return info, nil
+}
+
+// unappliedModelOption names the first model flag that flags hold and that
+// the echo of the host does not, or "". A host that does not know the model
+// options sends no echo.
+func unappliedModelOption(flags protocol.ACPSessionOptions, echo any) string {
+	var applied protocol.ACPAppliedOptions
+	if echo != nil {
+		if data, err := json.Marshal(echo); err == nil {
+			_ = json.Unmarshal(data, &applied)
+		}
+	}
+	switch {
+	case flags.Model != "" && applied.Model == "":
+		return "--model"
+	case flags.Thinking != "" && applied.Thinking == "":
+		return "--thinking"
+	case len(flags.Models) > 0 && len(applied.Models) == 0:
+		return "--models"
+	}
+	return ""
 }
 
 // Attach joins a live session as an observer and follows it. When the call
@@ -626,15 +671,16 @@ func (c *Client) Models(ctx context.Context) (protocol.ACPModelsResult, error) {
 	return out, err
 }
 
-// SetModel changes the model of an idle session. With saveDefault the leader
-// also keeps the choice as the default of new sessions.
-func (c *Client) SetModel(ctx context.Context, modelID string, saveDefault bool) (protocol.ACPSetModelResult, error) {
+// SetModel changes the model of an idle session, and the thinking level when
+// level is not empty. With saveDefault the leader also keeps the choice as the
+// default of new sessions.
+func (c *Client) SetModel(ctx context.Context, modelID string, level protocol.ThinkingLevel, saveDefault bool) (protocol.ACPSetModelResult, error) {
 	var out protocol.ACPSetModelResult
 	conn, sid, err := c.withSession()
 	if err != nil {
 		return out, err
 	}
-	err = c.request(ctx, conn, protocol.ACPSetModel, protocol.ACPModelRequest{SessionID: sid, ModelID: modelID, SaveDefault: saveDefault}, &out)
+	err = c.request(ctx, conn, protocol.ACPSetModel, protocol.ACPModelRequest{SessionID: sid, ModelID: modelID, SaveDefault: saveDefault, ThinkingLevel: level}, &out)
 	return out, err
 }
 
@@ -657,6 +703,18 @@ func (c *Client) Usage(ctx context.Context) (protocol.ACPUsageResult, error) {
 		return out, err
 	}
 	err = c.request(ctx, conn, protocol.ACPUsage, protocol.ACPSessionRequest{SessionID: sid}, &out)
+	return out, err
+}
+
+// Skills lists the skills that the current session can load with
+// "/skill:<name>". A host that predates the method answers with a *tui.RequestError.
+func (c *Client) Skills(ctx context.Context) (protocol.ACPSkillsResult, error) {
+	var out protocol.ACPSkillsResult
+	conn, sid, err := c.withSession()
+	if err != nil {
+		return out, err
+	}
+	err = c.request(ctx, conn, protocol.ACPSkills, protocol.ACPSessionRequest{SessionID: sid}, &out)
 	return out, err
 }
 

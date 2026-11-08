@@ -38,10 +38,18 @@ type Config struct {
 	// Authenticate checks that the configured credentials for methodID work.
 	// An error is reported as "not signed in", never with its own text.
 	Authenticate func(ctx context.Context, methodID string) error
-	// Models lists the compiled catalog rows.
+	// Models lists the rows that a session can select, in display order.
 	Models func() []providers.Model
-	// FindModel resolves one catalog row.
+	// RefreshModels asks for a refresh of a stale model list before the model
+	// list answers. It must return at once: the answer uses the rows that
+	// Models gives now, and a later list shows the result. Nil means no refresh.
+	RefreshModels func()
+	// FindModel resolves one row of Models.
 	FindModel func(ref providers.Ref) (providers.Model, error)
+	// NotInConfig reports whether m is a row that the user model file made
+	// and that the current file no longer has, so a request on it fails until
+	// the user chooses the model again. Nil means no user file.
+	NotInConfig func(m providers.Model) bool
 	// ModelAuth checks that m is ready under the sign-in method that the
 	// client named. Nil means the client cannot name a method.
 	ModelAuth func(ctx context.Context, m providers.Model, methodID string) error
@@ -54,16 +62,38 @@ type Config struct {
 	// together with RequireRoute: a link without both answers every provider
 	// method with unsupported. It also lets the model list keep usable rows only.
 	ProviderSetup ProviderSetup
-	// DefaultModel reads the saved default model id. It reports "" when none is
-	// saved. Nil means the host has no default store.
-	DefaultModel func(ctx context.Context) (string, error)
-	// SaveDefault stores a model id as the default model for new sessions. Nil
-	// means the host has no default store.
-	SaveDefault func(ctx context.Context, modelID string) error
+	// DefaultModel reads the default model id that applies to a session: the
+	// project setting when the project layer of the session applies, else the
+	// user setting. It reports "" when none is set. Nil means the host has no
+	// default store.
+	DefaultModel func(ctx context.Context, scope SettingsScope) (string, error)
+	// SaveDefault stores a model id as the user default model for new
+	// sessions. It returns "" when the id is saved, else the reason. Nil means
+	// the host has no default store.
+	SaveDefault func(ctx context.Context, scope SettingsScope, modelID string) protocol.ACPDefaultNotSaved
 	// StartFallback returns the fallback of a session that the Factory just
 	// built, once: the saved default that the session could not start on. Nil
 	// means no session has one.
 	StartFallback func(sessionID string) *protocol.ACPModelFallback
+	// StartTrust returns the trust decision and the settings view of a
+	// session that the Factory just built, once. The session keeps them and
+	// _ask/session/state reports them. Nil, or a nil result, means none.
+	StartTrust func(sessionID string) *SessionTrust
+	// StartSkills returns the skills of a session that the Factory just built,
+	// once. The session keeps them and _ask/session/skills reports them. Nil,
+	// or a nil result, means none.
+	StartSkills func(sessionID string) []protocol.ACPSkill
+	// StartModel returns how the Factory applied the model options of a
+	// session that it just built, once. The session keeps the scope entries
+	// for the model list, and _ask/session/state reports the dropped level.
+	// Nil, or a nil result, means no scope and no dropped level.
+	StartModel func(sessionID string) *ModelStart
+	// ModelProblems returns the problems of the user model file in the model
+	// list that the last Models call read. Nil means no user file.
+	ModelProblems func() []protocol.ACPDiagnostic
+	// TrustSetup serves _ask/trust/state and _ask/trust/set. Nil means both
+	// answer unsupported, as on an editor link.
+	TrustSetup TrustSetup
 	// RequireRoute makes the adapter refuse a call that has no route context.
 	// The leader link sets it. The editor link leaves it off and has no
 	// driver generation to check.
@@ -284,15 +314,32 @@ func (a *Adapter) NewSession(ctx context.Context, req sdk.NewSessionRequest) (sd
 	if err == nil {
 		err = a.needRoute(route)
 	}
+	var trust protocol.ACPTrustOverride
+	if err == nil {
+		trust, err = trustFromMeta(req.Meta)
+	}
+	var flags protocol.ACPSessionOptions
+	if err == nil {
+		flags, err = flagsFromMeta(req.Meta)
+	}
 	if err != nil {
 		return sdk.NewSessionResponse{}, requestError(err)
 	}
-	s, err := a.host.NewSession(ctx, req.Cwd)
+	s, err := a.host.NewSessionWith(ctx, SessionRequest{Cwd: req.Cwd, Trust: trust, Flags: flags})
 	if err != nil {
 		return sdk.NewSessionResponse{}, requestError(err)
 	}
 	if a.cfg.StartFallback != nil {
 		s.setFallback(a.cfg.StartFallback(s.ID))
+	}
+	if a.cfg.StartTrust != nil {
+		s.setTrust(a.cfg.StartTrust(s.ID))
+	}
+	if a.cfg.StartSkills != nil {
+		s.setSkills(a.cfg.StartSkills(s.ID))
+	}
+	if a.cfg.StartModel != nil {
+		s.setModelStart(a.cfg.StartModel(s.ID))
 	}
 	if a.cfg.ProviderSetup != nil {
 		s.commit.Lock()
@@ -307,6 +354,18 @@ func (a *Adapter) NewSession(ctx context.Context, req sdk.NewSessionRequest) (sd
 		// The router needs the generation that the host committed. The editor link has no router.
 		s.setDriver(route)
 		res.Meta = map[string]any{protocol.ACPRouteMetaKey: protocol.ACPRouteMeta{DriverGen: s.Gen()}}
+	}
+	if !flags.IsZero() {
+		if res.Meta == nil {
+			res.Meta = map[string]any{}
+		}
+		res.Meta[protocol.ACPSessionOptionsMetaKey] = true
+		// The Factory applied the model options or failed the start, so the
+		// echo is the request. An older host sends no echo, which tells a
+		// client that it dropped them.
+		if applied := flags.ModelOptions(); !applied.IsZero() {
+			res.Meta[protocol.ACPAppliedOptionsMetaKey] = applied
+		}
 	}
 	return res, nil
 }

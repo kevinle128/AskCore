@@ -194,9 +194,9 @@ type ModelCall struct {
 
 // ExecuteToolInput is one tool body call as ExecuteTool handlers see it. The
 // tool itself stays with the loop; a handler can wrap, replace or skip the
-// body, never swap the tool. The arguments and Context.Cwd are frozen: the
-// terminal ignores what a handler passes on for them. A handler may wrap
-// Context.Update.
+// body, never swap the tool. The arguments, Context.CallID, Context.Cwd,
+// Context.Tasks and Context.Notices are frozen: the terminal ignores what a
+// handler passes on for them. A handler may wrap Context.Update.
 type ExecuteToolInput struct {
 	Call    protocol.ToolCall
 	Args    json.RawMessage

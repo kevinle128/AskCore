@@ -26,6 +26,10 @@ const (
 	CodeEmptyResponse  = "EMPTY_RESPONSE"
 	CodeStreamClosed   = "STREAM_CLOSED"
 	CodeMalformed      = "MALFORMED_RESPONSE"
+	// CodeModelConfig is for a request that Ask did not send, because the
+	// user model configuration of the session model changed. The user must
+	// choose the model again; a retry cannot help.
+	CodeModelConfig = "MODEL_CONFIG"
 	// CodeUnknown is for a Go error that holds no provider fact. A provider
 	// response never gets it: it would change what a retry policy accepts.
 	CodeUnknown = "UNKNOWN"

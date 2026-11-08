@@ -1,4 +1,4 @@
-◢◤ ask  ● leader 7c1e  ⌂ ~/src/askcore deepseek-v4.1-flash  ▰▱▱▱▱▱▱▱ 18%  $0.04
+ ◢◤ ask
 ────────────────────────────────────────────────────────────────────────────────
   ❯ why does TestLeaderStale fail on CI?                                 14:02
 
@@ -9,10 +9,9 @@
   ❯ show me the probe code                                               14:03
 
   ◇ echo  probe code request                                          running ⠋
+
   ◆ The probe lives in internal/leader/client.go. It dials the socket, then
     sends an initialize frame and waits
-
-
 
 
 
@@ -21,4 +20,5 @@
 ────────────────────────────────────────────────────────────────────────────────
  ❯ Ask anything  ·  / commands  ·  ctrl+l model
 ────────────────────────────────────────────────────────────────────────────────
+ ⌂ ~/src/askcore                      openai/gpt-5.4-mini ◐ medium  ▱▱▱▱▱▱▱▱ 4%
  Tab blocks · ctrl+t thinking · ctrl+l model · / commands

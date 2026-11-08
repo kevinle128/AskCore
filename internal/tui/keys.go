@@ -106,6 +106,9 @@ func (s *sessionView) onShortcut(k tea.KeyPressMsg) (cmd tea.Cmd, ok bool) {
 		s.m.pane.ScrollToBottom()
 		return nil, true
 	}
+	if back, ok := modelCycleKey(k); ok {
+		return s.cycleModel(back), true
+	}
 	return nil, false
 }
 

@@ -22,9 +22,12 @@ func TestPrintMonitorFractionalTimeoutDoesNotSelectDefault(t *testing.T) {
 	}
 }
 
-func TestPrintBackgroundBashReportsClampedTimeout(t *testing.T) {
+// A foreground timeout above the maximum wait budget is cut and reported. With
+// run_in_background, timeout is the background limit instead, which the job
+// table caps.
+func TestPrintForegroundBashReportsClampedTimeout(t *testing.T) {
 	m := scriptModel(t,
-		call(t, "bash", map[string]any{"command": "while :; do sleep 0.05; done", "timeout": 601, "run_in_background": true}),
+		call(t, "bash", map[string]any{"command": "true", "timeout": 601}),
 		say("done"),
 	)
 	r := runPrint(t, m, printSpec{})

@@ -1,4 +1,4 @@
-◢◤ ask ● 7c1e   deepseek-v4.1-flash 18%
+ ◢◤ ask
 ────────────────────────────────────────
   ❯ giải thích lỗi               14:05
     日本語のテスト
@@ -6,9 +6,9 @@
   ◆ The 日本語 test fails because each
     wide character uses two columns.
 
-
 ┊ ◌ Working… 3s · esc
 ────────────────────────────────────────
  ❯ Ask anything  ·  / commands  ·  ctr…
 ────────────────────────────────────────
+                 openai/gpt-5.4-mini 4%
  Tab blocks · / commands

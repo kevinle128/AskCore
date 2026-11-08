@@ -110,6 +110,7 @@ Each provider has one saved credential and account.
 Saving an API key replaces its OAuth record, and saving OAuth replaces its API key.
 Logout deletes the local record only; it does not revoke a remote grant.
 An environment key remains eligible after logout.
+A request takes its key in this order: `--api-key`, the saved credential, the `apiKey` of the user `models.json`, then the environment key. See [key order](docs/cli.md#key-order).
 A deleted ChatGPT record retains no issued client registration for later login.
 These choices do not establish compliance with all OpenAI account or session guidance.
 

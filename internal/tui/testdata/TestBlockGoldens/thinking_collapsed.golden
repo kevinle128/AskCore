@@ -1,4 +1,4 @@
-◢◤ ask  ● leader 7c1e  ⌂ ~/src/askcore deepseek-v4.1-flash  ▰▱▱▱▱▱▱▱ 18%  $0.04
+ ◢◤ ask
 ────────────────────────────────────────────────────────────────────────────────
   ❯ why does TestLeaderStale fail on CI?                                 14:02
 
@@ -8,11 +8,10 @@
 
   ◆ Thought
 
-  The probe lives in internal/leader/client.go. It dials the socket, then sends
-  an initialize frame and waits.
+  The probe lives in internal/leader/client.go. It dials the socket, then
+  sends an initialize frame and waits.
+
   claude-opus-5-5 · 7.9s · ↑14.1k ↓2.6k · $0.031
-
-
 
 
 
@@ -37,4 +36,5 @@
 ────────────────────────────────────────────────────────────────────────────────
  ❯ Ask anything  ·  / commands  ·  ctrl+l model
 ────────────────────────────────────────────────────────────────────────────────
+ ⌂ ~/src/askcore                      alibaba/deepseek-v4.1-flash  ▰▱▱▱▱▱▱▱ 18%
  Tab blocks · ctrl+t thinking · ctrl+l model · / commands

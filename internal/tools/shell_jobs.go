@@ -70,7 +70,7 @@ func (*JobOutput) PromptSnippet() string { return "Read the output and status of
 
 func (*JobOutput) PromptGuidelines() []string { return nil }
 
-func (t *JobOutput) Execute(ctx context.Context, _ Context, args json.RawMessage) (protocol.ToolExecutionResult, error) {
+func (t *JobOutput) Execute(ctx context.Context, tc Context, args json.RawMessage) (protocol.ToolExecutionResult, error) {
 	if err := ctx.Err(); err != nil {
 		return protocol.ToolExecutionResult{}, err
 	}
@@ -82,7 +82,11 @@ func (t *JobOutput) Execute(ctx context.Context, _ Context, args json.RawMessage
 	if in.TimeoutMs != nil && *in.TimeoutMs > 0 {
 		timeout = time.Duration(min(*in.TimeoutMs, float64(jobOutputWaitMax/time.Millisecond)) * float64(time.Millisecond))
 	}
-	res, err := t.table.Read(ctx, in.JobID, in.waits(), timeout)
+	owner, err := jobOwnerOf(tc)
+	if err != nil {
+		return protocol.ToolExecutionResult{}, err
+	}
+	res, err := t.table.Read(ctx, owner.Gen(), in.JobID, in.waits(), timeout)
 	if errors.Is(err, jobs.ErrUnknownJob) {
 		return protocol.ToolExecutionResult{}, unknownJob(in.JobID)
 	}
@@ -150,7 +154,7 @@ func (*JobKill) PromptSnippet() string { return "Stop a background job" }
 
 func (*JobKill) PromptGuidelines() []string { return nil }
 
-func (t *JobKill) Execute(ctx context.Context, _ Context, args json.RawMessage) (protocol.ToolExecutionResult, error) {
+func (t *JobKill) Execute(ctx context.Context, tc Context, args json.RawMessage) (protocol.ToolExecutionResult, error) {
 	if err := ctx.Err(); err != nil {
 		return protocol.ToolExecutionResult{}, err
 	}
@@ -158,7 +162,11 @@ func (t *JobKill) Execute(ctx context.Context, _ Context, args json.RawMessage) 
 	if err := json.Unmarshal(args, &in); err != nil {
 		return protocol.ToolExecutionResult{}, fmt.Errorf("job_kill: %w", err)
 	}
-	job, err := t.table.Kill(in.JobID, in.Reason)
+	owner, err := jobOwnerOf(tc)
+	if err != nil {
+		return protocol.ToolExecutionResult{}, err
+	}
+	job, err := t.table.Kill(owner.Gen(), in.JobID, in.Reason)
 	if errors.Is(err, jobs.ErrUnknownJob) {
 		return protocol.ToolExecutionResult{}, unknownJob(in.JobID)
 	}
@@ -210,11 +218,15 @@ func (*JobList) PromptSnippet() string { return "List the background jobs of thi
 
 func (*JobList) PromptGuidelines() []string { return nil }
 
-func (t *JobList) Execute(ctx context.Context, _ Context, _ json.RawMessage) (protocol.ToolExecutionResult, error) {
+func (t *JobList) Execute(ctx context.Context, tc Context, _ json.RawMessage) (protocol.ToolExecutionResult, error) {
 	if err := ctx.Err(); err != nil {
 		return protocol.ToolExecutionResult{}, err
 	}
-	list := t.table.List()
+	owner, err := jobOwnerOf(tc)
+	if err != nil {
+		return protocol.ToolExecutionResult{}, err
+	}
+	list := t.table.List(owner.Gen())
 	text := "No jobs."
 	if len(list) > 0 {
 		lines := make([]string, len(list))

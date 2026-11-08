@@ -206,7 +206,7 @@ func (o toolOutput) truncatedRows(rc RenderContext) []string {
 		word = "line"
 	}
 	hint := fmt.Sprintf("%s %d more %s · e to expand · Enter full screen", GlyphMore, hidden, word)
-	if rc.Width < hintShortWidth {
+	if width < hintShortWidth {
 		hint = fmt.Sprintf("%s %d more %s · e", GlyphMore, hidden, word)
 	}
 	out := append([]string(nil), rows[:truncatedEdge]...)

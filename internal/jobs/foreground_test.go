@@ -12,7 +12,7 @@ import (
 // by that wait, never by a notice: the model already gets the result.
 func TestForegroundJobThatEndsBeforeTheWaitSendsNoNotice(t *testing.T) {
 	r := newRig(t)
-	j, err := r.tb.Start(StartSpec{Command: "true", Cwd: r.dir, Foreground: true})
+	j, err := r.tb.Start(StartSpec{Owner: r.owner(), Command: "true", Cwd: r.dir, Foreground: true})
 	require.NoError(t, err)
 	r.track(j)
 	<-j.done // the end comes before the wait
@@ -26,7 +26,7 @@ func TestForegroundJobThatEndsBeforeTheWaitSendsNoNotice(t *testing.T) {
 func TestForegroundJobWithoutAWaitBudgetStillGetsANotice(t *testing.T) {
 	r := newRig(t)
 	command, open := r.gate("go")
-	j, err := r.tb.Start(StartSpec{Command: command, Cwd: r.dir, Foreground: true})
+	j, err := r.tb.Start(StartSpec{Owner: r.owner(), Command: command, Cwd: r.dir, Foreground: true})
 	require.NoError(t, err)
 	r.track(j)
 	require.Equal(t, Background, r.tb.Wait(context.Background(), j.ID(), 0))

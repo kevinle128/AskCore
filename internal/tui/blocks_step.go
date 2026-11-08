@@ -10,22 +10,27 @@ import (
 	"github.com/charmbracelet/x/ansi"
 )
 
-// Step blocks: tools and thinking.
+// Step blocks: tools, thinking and hooks.
 //
-// A step is one row by default: a glyph, a bold verb, what it did, and a right
+// A step is one row by default: a mark, a bold verb, what it did, and a right
 // column for the outcome. The same block opens in two more forms, chosen by
 // RenderContext.Fold. Truncated shows the first and the last rows of the
 // output. Expanded shows everything, with nothing cut.
+//
+// Every step kind draws through stepDraw, so all steps have the same mark and
+// the same open form: the header row, one blank row, then the body at the text
+// column. The header row and the body end textRightPad columns before the right
+// edge, as the text of every block does.
 
 const (
-	// stepRightPad is the number of spaces after the right column.
-	stepRightPad = 1
-	// stepNarrowWidth is the width under which the right column goes away.
+	// stepNarrowWidth is the text width of a header row under which the right
+	// column goes away.
 	stepNarrowWidth = 30
 	// minRightWidth is the least width that a cut right column keeps.
 	minRightWidth = 3
-	// hintShortWidth is the width under which the fold hint is the short form.
-	hintShortWidth = 60
+	// hintShortWidth is the body width under which the fold hint is the short
+	// form.
+	hintShortWidth = 54
 
 	// truncatedEdge is the number of output rows that Truncated shows before and
 	// after the hint.
@@ -40,12 +45,11 @@ const (
 type stepRow struct {
 	glyph     string
 	glyphRole Role
-	// indicator, when it is not empty, stands in the place of the glyph: the
-	// expand indicator of a step that is selected or under the pointer. It is
-	// padded to the width of the glyph.
-	indicator string
-	verb      string
-	what      string
+	// open puts GlyphStepOpen in the place of the glyph. The mark is padded to
+	// the width of the glyph, so the text of the row does not move.
+	open bool
+	verb string
+	what string
 	// added and removed are the line counts of a file change. showStat tells
 	// which of them show.
 	added, removed int
@@ -79,13 +83,14 @@ func (r stepRow) statText() string {
 	return ""
 }
 
-// render draws the row for a width. When the row is too narrow, the part that
-// the user needs least goes first: the description is cut with an ellipsis,
-// then the right column goes below stepNarrowWidth, then the line counts, then
-// the verb is cut. Rows hold no more than width columns. cut is true when the
+// render draws the row for a width. The text of the row ends textRightPad
+// columns before the right edge. When the row is too narrow, the part that the
+// user needs least goes first: the description is cut with an ellipsis, then
+// the right column goes below stepNarrowWidth, then the line counts, then the
+// verb is cut. Rows hold no more than width columns. cut is true when the
 // description did not show whole.
 func (r stepRow) render(rc RenderContext) (row string, cut bool) {
-	th, width := rc.Theme, rc.Width
+	th, width := rc.Theme, textWidth(rc, 0)
 	leadW := glyphIndent + displayWidth(r.glyph) + 1
 	verb := oneLine(r.verb)
 	right := r.right
@@ -96,7 +101,7 @@ func (r stepRow) render(rc RenderContext) (row string, cut bool) {
 		if right == "" {
 			return 0
 		}
-		return displayWidth(right) + stepRightPad + 1
+		return displayWidth(right) + 1
 	}
 	stat := r.statText()
 	statW := func() int {
@@ -109,7 +114,7 @@ func (r stepRow) render(rc RenderContext) (row string, cut bool) {
 	// beside the verb and the line counts. Without the line counts there may be
 	// room for it.
 	fitRight := func() {
-		room := width - leadW - displayWidth(verb) - statW() - 1 - stepRightPad
+		room := width - leadW - displayWidth(verb) - statW() - 1
 		if right != "" && displayWidth(right) > room {
 			if room >= minRightWidth {
 				right = truncateTo(right, room)
@@ -131,11 +136,11 @@ func (r stepRow) render(rc RenderContext) (row string, cut bool) {
 
 	used := leadW + displayWidth(verb)
 	var b strings.Builder
-	glyph, glyphStyle := r.glyph, th.Style(r.glyphRole)
-	if r.indicator != "" {
-		glyph, glyphStyle = indicatorGlyph(r.indicator, r.glyph), th.Style(RoleAccent).Bold(true)
+	mark := th.Render(r.glyphRole, r.glyph)
+	if r.open {
+		mark = th.Render(r.glyphRole, GlyphStepOpen) + strings.Repeat(" ", max(0, displayWidth(r.glyph)-displayWidth(GlyphStepOpen)))
 	}
-	b.WriteString(strings.Repeat(" ", glyphIndent) + glyphStyle.Render(glyph) + " ")
+	b.WriteString(strings.Repeat(" ", glyphIndent) + mark + " ")
 	b.WriteString(th.Style(RoleFg).Bold(true).Render(verb))
 	if what := oneLine(r.what); what != "" {
 		// One space before the description and one before the right column.
@@ -163,9 +168,60 @@ func (r stepRow) render(rc RenderContext) (row string, cut bool) {
 	}
 	if right != "" {
 		gap := max(1, width-used-rightPart()+1)
-		b.WriteString(strings.Repeat(" ", gap) + th.Render(r.rightRole, right) + strings.Repeat(" ", stepRightPad))
+		b.WriteString(strings.Repeat(" ", gap) + th.Render(r.rightRole, right))
 	}
 	return b.String(), cut
+}
+
+// stepDraw is one step as the block pane draws it. Every step kind draws
+// through it, so that the mark and the open form are the same for all steps.
+type stepDraw struct {
+	head stepRow
+	// fixed is true for a step that cannot fold, such as the line of a job
+	// event: its glyph never changes.
+	fixed bool
+	// open is true when the step shows its body. The step then shows
+	// GlyphStepOpen in the place of its glyph.
+	open bool
+	// lead, when it is set, returns rows that show right under the header row
+	// in every form, such as the description row of a hook.
+	lead func(body RenderContext) []string
+	// body returns the rows of the open form for the body context. cut is true
+	// when the header row did not show the whole description.
+	body func(body RenderContext, cut bool) []string
+}
+
+// lines draws the step. A step that is open, selected or under the pointer
+// shows GlyphStepOpen; a step that is folded to its header shows its own glyph.
+// An open step with body rows is its header, one blank row, and the body. An
+// open step without body rows is its header alone.
+func (s stepDraw) lines(rc RenderContext) []string {
+	head := s.head
+	head.open = !s.fixed && (s.open || rc.Pointed)
+	row, cut := head.render(rc)
+	rows := []string{row}
+	inner := stepBodyContext(rc)
+	if s.lead != nil {
+		rows = append(rows, s.lead(inner)...)
+	}
+	if !s.open || s.body == nil {
+		return rows
+	}
+	body := s.body(inner, cut)
+	if len(body) == 0 {
+		return rows
+	}
+	rows = append(rows, "")
+	return append(rows, body...)
+}
+
+// stepBodyContext is the context of the rows under a step header. Its width
+// leaves textRightPad columns at the right edge, so that the body rows keep
+// the same right margin as the header row. The viewer draws the same rows with
+// its own context and keeps the full width.
+func stepBodyContext(rc RenderContext) RenderContext {
+	rc.Width = max(1, rc.Width-textRightPad)
+	return rc
 }
 
 // runningText is the elapsed time of a running step: whole seconds, then
@@ -175,20 +231,6 @@ func runningText(secs int) string {
 		return fmt.Sprintf("%ds", secs)
 	}
 	return fmt.Sprintf("%dm%02ds", secs/60, secs%60)
-}
-
-// railRows draws text lines on the rail of a step body: two spaces, the rail
-// mark and the text, all in one role.
-func railRows(th *Theme, role Role, lines []string) []string {
-	out := make([]string, len(lines))
-	for i, l := range lines {
-		if l == "" {
-			out[i] = strings.Repeat(" ", glyphIndent) + th.Render(role, GlyphRail)
-			continue
-		}
-		out[i] = strings.Repeat(" ", glyphIndent) + th.Render(role, GlyphRail+" "+l)
-	}
-	return out
 }
 
 // --- thinking ---
@@ -228,9 +270,14 @@ func (b thinkingBlock) drawState() uint64 {
 func (b thinkingBlock) foldable(int) bool    { return true }
 func (b thinkingBlock) foldGroup() foldGroup { return groupThinking }
 
-// defaultFold shows the last lines while the thinking streams and one row
-// when it has ended.
-func (b thinkingBlock) defaultFold() FoldMode { return b.collapseFold() }
+// defaultFold shows the last lines while the thinking streams, for every
+// session mode. A thinking that has ended takes the session mode.
+func (b thinkingBlock) defaultFold(d foldDefaults) FoldMode {
+	if b.streaming {
+		return FoldTruncated
+	}
+	return d.endedThinking
+}
 
 func (b thinkingBlock) collapseFold() FoldMode {
 	if b.streaming {
@@ -239,8 +286,8 @@ func (b thinkingBlock) collapseFold() FoldMode {
 	return FoldCollapsed
 }
 
-func (b thinkingBlock) title(rc RenderContext) string {
-	r := stepRow{glyph: GlyphStep, glyphRole: RoleThinking, indicator: indicatorFor(rc, b.collapseFold())}
+func (b thinkingBlock) head() stepRow {
+	r := stepRow{glyph: GlyphStep, glyphRole: RoleThinking}
 	if b.streaming {
 		r.verb = "Thinking…"
 		if secs := b.view.elapsedSeconds(b.startMs); secs >= 0 {
@@ -253,8 +300,7 @@ func (b thinkingBlock) title(rc RenderContext) string {
 			r.what = "for " + formatDurationMs(b.durMs)
 		}
 	}
-	row, _ := r.render(rc)
-	return row
+	return r
 }
 
 // formatDurationMs writes a duration in milliseconds as formatDuration does.
@@ -262,17 +308,28 @@ func formatDurationMs(ms int64) string {
 	return formatDuration(time.Duration(ms) * time.Millisecond)
 }
 
+// Lines draws the thinking. A thinking that streams always shows its last
+// lines, so it is open in every fold mode.
 func (b thinkingBlock) Lines(rc RenderContext) []string {
-	th := rc.Theme
-	rows := []string{b.title(rc)}
+	return stepDraw{
+		head: b.head(),
+		open: rc.Fold != FoldCollapsed || b.streaming,
+		body: func(inner RenderContext, _ bool) []string { return b.bodyRows(inner, rc.Fold) },
+	}.lines(rc)
+}
+
+// bodyRows are the lines of the thinking at the text column: all of them,
+// wrapped, when the fold is Expanded; else the last lines, each cut to one
+// row, after an ellipsis row when lines are hidden.
+func (b thinkingBlock) bodyRows(rc RenderContext, fold FoldMode) []string {
 	text := strings.TrimSpace(cleanText(ansi.Strip(b.text)))
-	if text == "" || rc.Fold == FoldCollapsed && !b.streaming {
-		return rows
+	if text == "" {
+		return nil
 	}
-	if rc.Fold == FoldExpanded {
-		return append(rows, railRows(th, RoleThinking, wrapLines(text, max(1, rc.Width-textIndent)))...)
+	width := bodyWidth(rc)
+	if fold == FoldExpanded {
+		return styledPad(rc.Theme, RoleThinking, wrapLines(text, width), "")
 	}
-	// Truncated: the last lines, each cut to one row.
 	var lines []string
 	for _, l := range strings.Split(text, "\n") {
 		if l = strings.TrimSpace(l); l != "" {
@@ -289,9 +346,9 @@ func (b thinkingBlock) Lines(rc RenderContext) []string {
 		lines = lines[len(lines)-tail:]
 	}
 	for _, l := range lines {
-		body = append(body, truncateTo(l, max(1, rc.Width-textIndent)))
+		body = append(body, truncateTo(l, width))
 	}
-	return append(rows, railRows(th, RoleThinking, body)...)
+	return styledPad(rc.Theme, RoleThinking, body, "")
 }
 
 // --- tool step ---
@@ -363,10 +420,10 @@ func (b toolLineBlock) drawState() uint64 {
 	return b.view.runningState(b.call.startMs)
 }
 
-func (b toolLineBlock) foldable(int) bool      { return !b.notice }
-func (b toolLineBlock) defaultFold() FoldMode  { return FoldCollapsed }
-func (b toolLineBlock) collapseFold() FoldMode { return FoldCollapsed }
-func (b toolLineBlock) foldGroup() foldGroup   { return groupTool }
+func (b toolLineBlock) foldable(int) bool                 { return !b.notice }
+func (b toolLineBlock) defaultFold(foldDefaults) FoldMode { return FoldCollapsed }
+func (b toolLineBlock) collapseFold() FoldMode            { return FoldCollapsed }
+func (b toolLineBlock) foldGroup() foldGroup              { return groupTool }
 
 // diffStat tells which line counts the row shows: a written file shows the
 // added lines only.
@@ -565,29 +622,25 @@ func styledPad(th *Theme, role Role, rows []string, prefix string) []string {
 	return out
 }
 
+// Lines draws the tool step. The line of a job event is one row that never
+// opens.
 func (b toolLineBlock) Lines(rc RenderContext) []string {
-	fold := rc.Fold
-	if b.notice {
-		fold = FoldCollapsed
-	}
-	head := b.row()
-	if !b.notice {
-		head.indicator = indicatorFor(rc, FoldCollapsed)
-	}
-	row, cut := head.render(rc)
-	rows := []string{row}
-	switch fold {
-	case FoldCollapsed:
-		return rows
-	case FoldTruncated:
-		return append(rows, b.out.truncatedRows(rc)...)
-	}
-	rows = append(rows, b.commandRows(rc, cut)...)
-	rows = append(rows, b.out.fullRows(rc)...)
-	if b.state != ToolRunning {
-		rows = append(rows, b.out.truncationRows(rc)...)
-	}
-	return rows
+	return stepDraw{
+		head:  b.row(),
+		fixed: b.notice,
+		open:  !b.notice && rc.Fold != FoldCollapsed,
+		body: func(inner RenderContext, cut bool) []string {
+			if rc.Fold == FoldTruncated {
+				return b.out.truncatedRows(inner)
+			}
+			rows := b.commandRows(inner, cut)
+			rows = append(rows, b.out.fullRows(inner)...)
+			if b.state != ToolRunning {
+				rows = append(rows, b.out.truncationRows(inner)...)
+			}
+			return rows
+		},
+	}.lines(rc)
 }
 
 // --- viewer ---

@@ -46,6 +46,10 @@ type selItem struct {
 	role   Role   // role of the dot
 	right  string // right text, already padded to its column width
 	filter string // text that the filter matches
+	// note is a muted text after the label, shown only from shortWidth
+	// columns and only when it fits next to the whole label. noteRight is the
+	// right text that the row shows in its place.
+	note, noteRight string
 	// header marks a group header row: the cursor skips it, and it shows only
 	// while a row of its group matches the filter.
 	header bool
@@ -79,6 +83,10 @@ type selector struct {
 	// empty is true for a model list with no row: the box shows a hint and has
 	// no filter row.
 	empty bool
+	// problems is the number of problems of the user model file that the
+	// list answer holds. The box shows a summary row; the block pane has the
+	// list.
+	problems int
 }
 
 // visible returns the indexes of the rows that match the filter. Group headers
@@ -225,7 +233,14 @@ func (sl *selector) slot(width, height int, th *Theme) EditorSlot {
 			}
 		}
 	}
-	errRows := 0
+	if sl.problems > 0 {
+		text := "models.json has " + plural(sl.problems, "problem") + "; the list is in the transcript."
+		if width < shortWidth {
+			text = "models.json: " + plural(sl.problems, "problem")
+		}
+		errLines = append(errLines, errLine{text: truncateTo(text, max(1, inner-1)), role: RoleWarning, lead: " "})
+	}
+	errRows, gap := 0, true
 	if len(errLines) > 0 {
 		errRows = len(errLines) + 1
 	}
@@ -233,6 +248,12 @@ func (sl *selector) slot(width, height int, th *Theme) EditorSlot {
 	vis := sl.visible()
 	disp := sl.display(vis)
 	budget := sl.rowBudget(height, errRows)
+	if total := min(selectorRows, height); sl.problems > 0 && sl.err == "" && 4+errRows+budget > total {
+		// The summary row outranks the list: a short box drops the empty row
+		// above it, then list rows, down to one row and "… n more".
+		gap, errRows = false, len(errLines)
+		budget = max(2, min(selectorMaxRows, total-4-errRows))
+	}
 	sel := min(sl.sel, max(0, len(vis)-1))
 	selPos := 0
 	for i, d := range disp {
@@ -257,14 +278,16 @@ func (sl *selector) slot(width, height int, th *Theme) EditorSlot {
 	}
 	for i := sl.top; i < sl.top+shown && i < len(disp); i++ {
 		d := disp[i]
-		rows = append(rows, sl.itemRow(sl.items[d.item], d.pos == sel && d.pos >= 0, inner, bar, th))
+		rows = append(rows, sl.itemRow(sl.items[d.item], d.pos == sel && d.pos >= 0, width < shortWidth, inner, bar, th))
 	}
 	if hidden > 0 {
 		more := fmt.Sprintf("   … %d more", hidden)
 		rows = append(rows, styledBoxed(more, th.Render(RoleDim, more)))
 	}
 	if len(errLines) > 0 {
-		rows = append(rows, boxed(""))
+		if gap {
+			rows = append(rows, boxed(""))
+		}
 		for _, l := range errLines {
 			rows = append(rows, styledBoxed(l.lead+l.text, th.Render(l.role, l.lead+l.text)))
 		}
@@ -274,8 +297,9 @@ func (sl *selector) slot(width, height int, th *Theme) EditorSlot {
 	return EditorSlot{Rows: rows, Cursor: cursor, Modal: true}
 }
 
-// itemRow draws one row of the list.
-func (sl *selector) itemRow(it selItem, selected bool, inner int, bar string, th *Theme) string {
+// itemRow draws one row of the list. A short terminal has no room for the note
+// of a row.
+func (sl *selector) itemRow(it selItem, selected, short bool, inner int, bar string, th *Theme) string {
 	if it.header {
 		plain := "  " + it.dot + " " + it.label
 		styled := "  " + th.Render(it.role, it.dot) + " " + th.Style(RoleMuted).Bold(true).Render(it.label)
@@ -289,20 +313,30 @@ func (sl *selector) itemRow(it selItem, selected bool, inner int, bar string, th
 	if it.dot != "" {
 		dot = it.dot + " "
 	}
-	rightW := displayWidth(it.right)
+	right, note := it.right, ""
+	if it.note != "" {
+		// The note goes as a whole when it does not fit: the label is never cut
+		// to make room for it.
+		if !short && displayWidth(mark+dot+it.label+it.note)+1+displayWidth(right) <= inner {
+			note = it.note
+		} else {
+			right = it.noteRight
+		}
+	}
+	rightW := displayWidth(right)
 	leftRoom := max(1, inner-rightW-1)
 	label := truncateTo(it.label, max(1, leftRoom-displayWidth(mark)-displayWidth(dot)))
-	plainLeft := mark + dot + label
+	plainLeft := mark + dot + label + note
 	gap := max(1, inner-displayWidth(plainLeft)-rightW)
 	if selected {
-		plain := plainLeft + strings.Repeat(" ", gap) + it.right
+		plain := plainLeft + strings.Repeat(" ", gap) + right
 		return bar + " " + th.Render(RoleSelected, padTo(plain, inner)) + " " + bar
 	}
 	styled := mark + th.Render(it.role, it.dot)
 	if it.dot != "" {
 		styled += " "
 	}
-	styled += label + strings.Repeat(" ", gap) + th.Render(RoleMuted, it.right)
+	styled += label + th.Render(RoleMuted, note) + strings.Repeat(" ", gap) + th.Render(RoleMuted, right)
 	return bar + " " + styled + strings.Repeat(" ", max(0, inner-displayWidth(plainLeft)-gap-rightW)) + " " + bar
 }
 
@@ -317,11 +351,12 @@ func providerRole(order map[string]int, provider string) Role {
 	return Role(int(RoleProv1) + n%4)
 }
 
-// formatWindow writes a context window: "128k", "1M".
+// formatWindow writes a context window: "128k", "1M", or "?" when the catalog
+// has no window for the model.
 func formatWindow(n int) string {
 	switch {
 	case n <= 0:
-		return ""
+		return "?"
 	case n >= 1_000_000 && n%1_000_000 == 0:
 		return fmt.Sprintf("%dM", n/1_000_000)
 	case n >= 1_000_000:
@@ -348,7 +383,7 @@ func newModelSelector(models []protocol.ACPModel, current string) *selector {
 // current model starts selected; a saved default that is not current gets a
 // tag of its own.
 func newModelSelectorFor(res protocol.ACPModelsResult, current string) *selector {
-	sl := &selector{kind: selectModel, title: "Select model", hint: "enter select  ·  esc close  ·  your draft is kept"}
+	sl := &selector{kind: selectModel, title: "Select model", hint: "enter select  ·  esc close  ·  your draft is kept", problems: len(res.Diagnostics)}
 	grouped := res.UsableOnly
 	order := map[string]int{}
 	// One model can be listed on two wire formats. The label then names the
@@ -399,10 +434,23 @@ func newModelSelectorFor(res protocol.ACPModelsResult, current string) *selector
 		if shown[name] > 1 && m.API != "" {
 			label += " (" + m.API + ")"
 		}
+		window := padLeft(formatWindow(m.ContextWindow), windowColWidth) + "  "
 		it := selItem{
 			id: m.ModelID, label: label, dot: GlyphToolDone, role: role, group: group,
-			right:  padLeft(formatWindow(m.ContextWindow), windowColWidth) + "  " + padTo(tag, tagColWidth) + " ",
+			right:  window + padTo(tag, tagColWidth) + " ",
 			filter: name + " " + label,
+		}
+		switch {
+		case m.NotInConfig && m.ModelID == current:
+			// The user model file no longer has the endpoint of the running
+			// model; a request on it fails until the model is chosen again.
+			it.note = " · not in models.json"
+			it.noteRight = window + padTo("changed", tagColWidth) + " "
+		case m.NotInAccount && m.ModelID == current:
+			// The leader sends the row of the running model also when the
+			// account list no longer has it.
+			it.note = " · not in account list"
+			it.noteRight = window + padTo("unlisted", tagColWidth) + " "
 		}
 		if grouped {
 			it.dot = ""

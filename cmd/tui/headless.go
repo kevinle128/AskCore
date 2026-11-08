@@ -11,6 +11,7 @@ import (
 	"os"
 	"os/signal"
 	"slices"
+	"strings"
 	"syscall"
 	"time"
 
@@ -24,7 +25,9 @@ import (
 	"AskCore/internal/providers"
 	"AskCore/internal/providers/anthropic"
 	"AskCore/internal/sandbox"
+	"AskCore/internal/tasks"
 	"AskCore/internal/tools"
+	"AskCore/internal/workspace"
 	"AskCore/pkg/protocol"
 )
 
@@ -62,10 +65,17 @@ type runDependencies struct {
 	// TUI sets it, because its stderr is the terminal under a full-screen
 	// program.
 	onJobError func(error)
+	// modelRefresh turns on the network refresh of the model list (models.dev
+	// metadata and account lists). Only the product entry point sets it, so a
+	// test that builds its own dependencies stays offline.
+	// ASK_DISABLE_MODEL_REFRESH=1 turns it off again.
+	modelRefresh bool
+	// modelHTTP carries the models.dev request. Nil uses a default client.
+	modelHTTP *http.Client
 }
 
 func run(argv []string, stdin io.Reader, stdout, stderr io.Writer) int {
-	return runWithDependencies(argv, stdin, stdout, stderr, runDependencies{getenv: os.Getenv})
+	return runWithDependencies(argv, stdin, stdout, stderr, runDependencies{getenv: os.Getenv, modelRefresh: true})
 }
 
 func runWithDependencies(argv []string, stdin io.Reader, stdout, stderr io.Writer, deps runDependencies) int {
@@ -76,7 +86,6 @@ func runWithDependencies(argv []string, stdin io.Reader, stdout, stderr io.Write
 	signal.Notify(sigs, slices.Collect(maps.Keys(signalExitCodes))...)
 	defer signal.Stop(sigs)
 	env := func(k string) (string, bool) { v := deps.getenv(k); return v, v != "" }
-	var service *auth.Service
 	if len(argv) > 0 && argv[0] == "auth" {
 		o, err := parseAuthArgs(argv[1:])
 		if err != nil {
@@ -90,30 +99,21 @@ func runWithDependencies(argv []string, stdin io.Reader, stdout, stderr io.Write
 			}
 			return 0
 		}
-		service, err = app.NewNativeAuth(deps.getenv("ASK_HOME"), env, auth.NativeOptions{HTTPClient: deps.authHTTP, Now: deps.now, Wait: deps.wait})
+		service, err := app.NewNativeAuth(deps.getenv("ASK_HOME"), env, auth.NativeOptions{HTTPClient: deps.authHTTP, Now: deps.now, Wait: deps.wait})
 		if err != nil {
 			report(stderr, "Error:", err)
 			return 1
 		}
-		ctx, cancel := context.WithCancel(context.Background())
-		defer cancel()
-		done := make(chan int, 1)
-		go func() { done <- runAuth(ctx, argv[1:], stdin, stdout, stderr, service) }()
-		select {
-		case code := <-done:
-			return code
-		case sig := <-sigs:
-			service.StopRefresh()
-			cancel()
-			if err := app.AuthWait(service)(context.Background()); err != nil {
-				report(stderr, "Auth shutdown:", err)
-			}
-			select {
-			case <-done:
-			case <-time.After(abortGrace):
-			}
-			return signalExitCodes[sig]
-		}
+		models := authModelLists(deps)
+		return runWithAuthSignals(service, sigs, stderr, func(ctx context.Context) int {
+			return runAuth(ctx, argv[1:], stdin, stdout, stderr, service, models)
+		})
+	}
+	if len(argv) > 0 && argv[0] == "models" {
+		return runModelsCommand(argv[1:], stdout, stderr, deps, sigs)
+	}
+	if len(argv) > 0 && argv[0] == "settings" {
+		return runSettingsCommand(argv[1:], stdout, stderr, deps, sigs)
 	}
 	if len(argv) > 0 && argv[0] == "acp" {
 		return runACP(argv[1:], stdin, stdout, stderr, deps, sigs)
@@ -145,10 +145,14 @@ func runWithDependencies(argv []string, stdin io.Reader, stdout, stderr io.Write
 		return 0
 	}
 
+	if o.offline {
+		deps = offlineDeps(deps)
+	}
+
 	stdinTTY := isTerminal(stdin)
 	mode := selectMode(o, stdinTTY, isTerminal(stdout))
 	if mode == modeInteractive {
-		return runInteractive(stdin, stdout, stderr, deps, sigs)
+		return runInteractive(stdin, stdout, stderr, deps, sigs, o)
 	}
 	defer guardStdout(stderr)()
 
@@ -160,15 +164,36 @@ func runWithDependencies(argv []string, stdin io.Reader, stdout, stderr io.Write
 		report(stderr, "Error:", err)
 		return 1
 	}
-	if o.provider != defaultProvider {
-		var err error
-		service, err = app.NewNativeAuth(deps.getenv("ASK_HOME"), env, auth.NativeOptions{HTTPClient: deps.authHTTP, Now: deps.now, Wait: deps.wait})
-		if err != nil {
-			report(stderr, "Error:", err)
-			return 1
-		}
+	newAuth := func() (*auth.Service, error) {
+		return app.NewNativeAuth(deps.getenv("ASK_HOME"), env, auth.NativeOptions{HTTPClient: deps.authHTTP, Now: deps.now, Wait: deps.wait})
 	}
-	ag, jt, err := newHeadlessAgentWithAuth(o, deps.getenv, service)
+	cwd, err := os.Getwd()
+	if err != nil {
+		report(stderr, "Error:", err)
+		return 1
+	}
+	// Without a user home, every .agents/skills folder counts as a project
+	// resource, which fails closed.
+	userHome, _ := os.UserHomeDir()
+	session, err := app.PrepareSession(context.Background(), app.SessionInput{
+		Home: deps.getenv("ASK_HOME"), UserHome: userHome, Cwd: cwd,
+		Trust: workspace.Override(o.trust), Flags: o.session, Now: deps.now,
+	})
+	if err != nil {
+		report(stderr, "Error:", err)
+		return 1
+	}
+	start, service, view, err := printStartModel(&o, deps.getenv, newAuth, &session, stderr)
+	if err != nil {
+		report(stderr, "Error:", err)
+		return 1
+	}
+	o.bgLimit = printBackgroundLimit(deps.getenv)
+	ag, jt, err := newPrintAgent(o, deps.getenv, service, app.AgentSpec{
+		SessionID: newSessionID(), Cwd: cwd, Start: start, Session: session,
+		Warn:   func(line string) { report(stderr, line) },
+		Models: view,
+	})
 	if err != nil {
 		report(stderr, "Error:", err)
 		return 1
@@ -182,11 +207,111 @@ func runWithDependencies(argv []string, stdin io.Reader, stdout, stderr io.Write
 		return 1
 	}
 
-	code := runHeadless(ag, prompts, mode, stdout, stderr, sigs, service)
+	w := waitConfig{jobs: jt, maxTurns: o.maxTurns, ceiling: printWaitCeiling(deps.getenv)}
+	if isTerminal(stderr) && (mode != modeJSON || !isTerminal(stdout)) {
+		w.progress = stderr
+	}
+	code := runHeadlessWait(ag, prompts, mode, stdout, stderr, sigs, w, service)
 	// The signal path returns after abortGrace, which is shorter than the kill
 	// grace of a job, so a job that traps SIGTERM can still live here.
 	jt.KillRemaining()
 	return code
+}
+
+// printStartModel chooses the model of a print-mode run with the rules of a
+// new session: the --model pattern (with --provider as its provider part),
+// then the scope of --models or enabledModels, then the saved default, then
+// the demo model. It reads the user models.json once when the choice needs the
+// model list; a bad file gives warning lines and no custom rows. It writes the
+// warning lines of the session start, of the scope, of a saved default that
+// cannot be used, and of a dropped thinking level.
+//
+// It sets the provider, the model and the thinking level of o, so the run acts
+// as with --provider, --model and --thinking. The returned model is zero when
+// the demo model is chosen, so the run builds its agent as before. service is
+// nil when the run needs no credential.
+func printStartModel(o *options, getenv func(string) string, newAuth func() (*auth.Service, error), session *app.SessionStart, stderr io.Writer) (providers.Model, *auth.Service, *app.ModelView, error) {
+	pattern := o.modelPattern()
+	opts := app.ModelOptions{Pattern: pattern, Thinking: o.thinking, Scope: o.models}
+	eff := session.Settings
+	// --provider faux keeps the run on the demo model: it needs no credential
+	// and no model list, and a scope cannot change its start model.
+	demoOnly := o.providerGiven && o.provider == defaultProvider
+	if demoOnly {
+		opts.Scope, eff.EnabledModels = nil, nil
+	}
+	// Token Plan has each model on two wires; print mode uses the Messages
+	// wire when the pattern names no wire, as it always did.
+	if strings.HasPrefix(pattern, anthropic.ProviderID+"/") {
+		opts.PreferAPI = providers.APIAnthropicMessages
+	}
+	needList := !demoOnly && (pattern != "" || len(opts.Scope) > 0 || len(eff.EnabledModels) > 0 || eff.DefaultModel != "")
+	var service *auth.Service
+	var view *app.ModelView
+	if needList {
+		var err error
+		if service, err = newAuth(); err != nil {
+			return providers.Model{}, nil, nil, err
+		}
+		if view, err = app.LoadModelView(context.Background(), getenv("ASK_HOME"), service); err != nil {
+			return providers.Model{}, nil, nil, err
+		}
+		session.Settings.Diagnostics = slices.Concat(session.Settings.Diagnostics, view.Problems())
+		if o.providerGiven && !slices.Contains(providerNames(view.Set()), o.provider) {
+			return providers.Model{}, nil, nil, fmt.Errorf("provider %q is not available", o.provider)
+		}
+	}
+	_, demo, err := fauxStream(defaultModel, getenv)
+	if err != nil {
+		return providers.Model{}, nil, nil, err
+	}
+	choice, err := app.ChooseStartModel(context.Background(), view, service, demo, eff, opts)
+	if err != nil {
+		return providers.Model{}, nil, nil, err
+	}
+	session.Settings.Diagnostics = slices.Concat(session.Settings.Diagnostics, choice.Diagnostics)
+	for _, line := range session.Warnings() {
+		report(stderr, line)
+	}
+	if line := choice.FallbackWarning(); line != "" {
+		report(stderr, line)
+	}
+	if choice.Dropped != nil {
+		report(stderr, "Warning: "+choice.Dropped.Text())
+	}
+	if choice.Level != "" {
+		o.thinking = choice.Level
+	}
+	if choice.Model.ID == "" || choice.Model.Provider == demo.Provider {
+		o.provider, o.model = defaultProvider, demo.ID
+		if choice.Model.ID != "" {
+			o.model = choice.Model.ID
+		}
+		return providers.Model{}, service, view, nil
+	}
+	o.provider, o.model = choice.Model.Provider, choice.Model.ID
+	return choice.Model, service, view, nil
+}
+
+func offlineDeps(deps runDependencies) runDependencies {
+	getenv := deps.getenv
+	deps.getenv = func(k string) string {
+		if k == disableModelRefreshEnv {
+			return "1"
+		}
+		return getenv(k)
+	}
+	return deps
+}
+
+// newPrintAgent builds the agent of a print-mode run. A zero start model
+// opens the provider of the command line; another start model is a model of
+// the model list, which the native wires serve.
+func newPrintAgent(o options, getenv func(string) string, service *auth.Service, spec app.AgentSpec) (*agent.Agent, *jobs.Table, error) {
+	if spec.Start.ID == "" {
+		return newNativeAgent(o, getenv, service, spec)
+	}
+	return newNativeAgentOn(o, getenv, service, spec, nil)
 }
 
 // selectMode follows Pi's resolveAppMode. --mode text does not force print
@@ -204,6 +329,33 @@ func selectMode(o options, stdinTTY, stdoutTTY bool) runMode {
 
 // report writes one line to stderr. A failed write to stderr has nowhere to
 // be reported.
+// runWithAuthSignals runs a command that uses the native credentials and ends
+// it on a signal. A signal stops the token refreshes and waits for a rotating
+// refresh to save its grant, because a lost rotated grant signs the user out.
+// Then it gives the command abortGrace to end and exits with the code of the
+// signal.
+func runWithAuthSignals(service *auth.Service, sigs <-chan os.Signal, stderr io.Writer, fn func(context.Context) int) int {
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	done := make(chan int, 1)
+	go func() { done <- fn(ctx) }()
+	select {
+	case code := <-done:
+		return code
+	case sig := <-sigs:
+		service.StopRefresh()
+		cancel()
+		if err := app.AuthWait(service)(context.Background()); err != nil {
+			report(stderr, "Auth shutdown:", err)
+		}
+		select {
+		case <-done:
+		case <-time.After(abortGrace):
+		}
+		return signalExitCodes[sig]
+	}
+}
+
 func report(stderr io.Writer, a ...any) { _, _ = fmt.Fprintln(stderr, a...) }
 
 func isTerminal(v any) bool {
@@ -252,32 +404,48 @@ func newHeadlessAgentWithAuth(o options, getenv func(string) string, service *au
 	if err != nil {
 		return nil, nil, err
 	}
-	return newNativeAgent(o, getenv, service, newSessionID(), cwd, extra...)
+	return newNativeAgent(o, getenv, service, app.AgentSpec{SessionID: newSessionID(), Cwd: cwd}, extra...)
 }
 
 // newNativeAgent builds one independent agent for the session and directory.
 // The headless run and every ACP session use it, so both share one composition.
-func newNativeAgent(o options, getenv func(string) string, service *auth.Service, sessionID, cwd string, extra ...tools.Tool) (*agent.Agent, *jobs.Table, error) {
-	stream, model, err := openProvider(o, getenv)
+// The model of the command line replaces spec.Start. A run on a catalog model
+// without spec.Models reads the model list once here.
+func newNativeAgent(o options, getenv func(string) string, service *auth.Service, spec app.AgentSpec, extra ...tools.Tool) (*agent.Agent, *jobs.Table, error) {
+	if spec.Models == nil && o.provider != defaultProvider {
+		view, err := app.LoadModelView(context.Background(), getenv("ASK_HOME"), service)
+		if err != nil {
+			return nil, nil, err
+		}
+		spec.Models = view
+	}
+	stream, model, err := openProvider(o, getenv, spec.Models)
 	if err != nil {
 		return nil, nil, err
 	}
-	return newNativeAgentOn(o, getenv, service, sessionID, cwd, stream, model, extra...)
+	spec.Start = model
+	return newNativeAgentOn(o, getenv, service, spec, stream, extra...)
 }
 
 // commandGuardEnv enables the command-guard when its value is "1".
 const commandGuardEnv = "ASK_COMMAND_GUARD"
 
-// newNativeAgentOn builds the agent on a given model. stream serves the demo
-// model and may be nil when the model is a catalog model or when the agent has
-// no model.
+// newNativeAgentOn builds the agent on the model spec.Start. stream serves the
+// demo model and may be nil when the model is a catalog model or when the
+// agent has no model. The tool selection of spec.Session picks the built-in
+// tools before they are registered, and the prompt and the seed are rendered
+// over the registered tools.
 //
 // The agent owns a file state and a job table of its own. The table closes
 // when the Agent is disposed (Config.Release), which kills the background jobs
 // of the session. The caller gets the table too, for a last sweep at exit. A
 // failed constructor closes it before it returns.
-func newNativeAgentOn(o options, getenv func(string) string, service *auth.Service, sessionID, cwd string, stream providers.StreamFn, model providers.Model, extra ...tools.Tool) (*agent.Agent, *jobs.Table, error) {
+func newNativeAgentOn(o options, getenv func(string) string, service *auth.Service, spec app.AgentSpec, stream providers.StreamFn, extra ...tools.Tool) (*agent.Agent, *jobs.Table, error) {
+	sessionID, cwd, model := spec.SessionID, spec.Cwd, spec.Start
 	reasoning := o.thinking
+	if spec.Thinking != "" {
+		reasoning = spec.Thinking
+	}
 	if o.provider == anthropic.ProviderID && reasoning == "" {
 		reasoning = protocol.ThinkingMedium
 	}
@@ -294,6 +462,11 @@ func newNativeAgentOn(o options, getenv func(string) string, service *auth.Servi
 	var ag *agent.Agent
 	jt := jobs.New(jobs.Options{
 		Clock: sandbox.SystemClock,
+		// A notice of a reset conversation or a disposed Agent is dropped on
+		// purpose; the job is muted and nothing is reported.
+		IsExpectedDrop:    func(err error) bool { return errors.Is(err, tasks.ErrNotDelivered) },
+		BackgroundLimit:   o.bgLimit,
+		DisableBackground: getenv(disableBackgroundEnv) == "1",
 		Env: func() []string {
 			st := ag.State()
 			return sandbox.ChildEnv(environ(), map[string]string{
@@ -312,7 +485,11 @@ func newNativeAgentOn(o options, getenv func(string) string, service *auth.Servi
 	}
 	modelInput := func() []string { return ag.State().Model.Input }
 	reg := &tools.Registry{}
-	for _, t := range sessionTools(jt, tools.NewFileState(), modelInput) {
+	builtins, err := spec.Session.Tools.Resolve(sessionTools(jt, tools.NewFileState(), modelInput))
+	if err != nil {
+		return fail(err)
+	}
+	for _, t := range builtins {
 		if err := reg.Register(t, tools.SourceInfo{Kind: tools.SourceBuiltin}); err != nil {
 			return fail(err)
 		}
@@ -321,6 +498,12 @@ func newNativeAgentOn(o options, getenv func(string) string, service *auth.Servi
 	for _, t := range extra {
 		if err := reg.Register(t, tools.SourceInfo{Kind: tools.SourceExtension, Name: "injected"}); err != nil {
 			return fail(err)
+		}
+	}
+	rendered := spec.Session.Render(reg.Snapshot(), model.ContextWindow)
+	if spec.Warn != nil {
+		for _, line := range rendered.Warnings {
+			spec.Warn(line)
 		}
 	}
 	bound := providers.BoundKey{}
@@ -337,9 +520,12 @@ func newNativeAgentOn(o options, getenv func(string) string, service *auth.Servi
 			Wait:     o.wait,
 		},
 		Tools:        reg,
-		SystemPrompt: tools.PromptSection(reg.Snapshot()),
+		SystemPrompt: rendered.SystemPrompt,
+		Seed:         rendered.Seed,
 		SessionID:    sessionID,
+		RewriteInput: spec.Session.ExpandInput,
 		Release:      jt.Close,
+		Background:   jt,
 	}
 	if getenv(commandGuardEnv) == "1" {
 		pl := pipeline.NewRegistry()
@@ -347,7 +533,7 @@ func newNativeAgentOn(o options, getenv func(string) string, service *auth.Servi
 		cfg.Pipeline = pl
 	}
 	native := app.NativeAgentConfig{
-		Config: cfg, InitialStream: stream, Auth: service,
+		Config: cfg, InitialStream: stream, Auth: service, Models: spec.Models,
 		Env: func(k string) (string, bool) { v := getenv(k); return v, v != "" },
 	}
 	if o.provider == "faux" {
@@ -361,7 +547,6 @@ func newNativeAgentOn(o options, getenv func(string) string, service *auth.Servi
 		return fail(err)
 	}
 	ag = made
-	jt.SetNotifier(jobs.Notifier{FollowUp: ag.FollowUp, Steer: ag.Steer, Remove: ag.Remove})
 	return ag, jt, nil
 }
 
@@ -384,9 +569,31 @@ func newSessionID() string {
 // Registered auth work drains first with its separate bound; another signal
 // cannot shorten that drain.
 func runHeadless(ag *agent.Agent, prompts []string, mode runMode, stdout, stderr io.Writer, sigs <-chan os.Signal, services ...*auth.Service) int {
+	return runHeadlessWait(ag, prompts, mode, stdout, stderr, sigs, waitConfig{}, services...)
+}
+
+// runHeadlessWait is runHeadless with the background wait of print mode: after
+// the last prompt it waits for the background work of the run, answers each
+// notice in a run of its own, and ends at --max-turns. The wait runs on the
+// goroutine of the prompts, so a signal cancels it like a prompt.
+func runHeadlessWait(ag *agent.Agent, prompts []string, mode runMode, stdout, stderr io.Writer, sigs <-chan os.Signal, w waitConfig, services ...*auth.Service) int {
 	out := newProtocolOut(stdout)
 	ctx, cancel := context.WithCancelCause(context.Background())
 	defer cancel(nil)
+	printer := newReplyPrinter(ag, out, stderr, len(prompts))
+	limit := &turnLimit{max: w.maxTurns, stop: func() {
+		printer.disarm()
+		cancel(errMaxTurns)
+		ag.Abort()
+	}}
+	unsubscribe := ag.Subscribe(func(ev protocol.Event) error {
+		limit.observe(ev)
+		if _, ok := ev.(*protocol.AgentSettled); ok && mode == modePrint {
+			printer.settled(ev.Env().RunID)
+		}
+		return nil
+	})
+	defer unsubscribe()
 	if mode == modeJSON {
 		// A failed stdout write ends the run and the prompts that have not
 		// started: nobody reads the replies.
@@ -395,20 +602,64 @@ func runHeadless(ag *agent.Agent, prompts []string, mode runMode, stdout, stderr
 			ag.Abort()
 		})()
 	}
+	// The prompts and the background wait run on one goroutine. The wait
+	// starts only when this goroutine allows it, so a signal that comes first
+	// ends the run before the wait. The replies print at agent_settled.
+	prompted, waiting := make(chan error, 1), make(chan struct{})
 	done := make(chan error, 1)
-	go func() { done <- promptAll(ctx, ag, prompts) }()
+	go func() {
+		err := promptAll(agent.WithRunStart(ctx, printer.promptRun), ag, prompts)
+		prompted <- err
+		if err != nil {
+			return
+		}
+		select {
+		case <-waiting:
+		case <-ctx.Done():
+			done <- ctx.Err()
+			return
+		}
+		if w.jobs == nil {
+			done <- nil
+			return
+		}
+		done <- waitBackground(ctx, ag, w)
+	}()
+
+	select {
+	case err := <-prompted:
+		if err != nil {
+			done <- err
+			break
+		}
+		close(waiting)
+	case sig := <-sigs:
+		return runHeadlessSignal(ag, out, stderr, sigs, sig, printer, services...)
+	}
 
 	select {
 	case err := <-done:
 		code := 0
 		switch {
+		case errors.Is(context.Cause(ctx), errMaxTurns):
+			code, err = 1, nil
+			// JSON mode keeps stdout to event lines only.
+			var dst io.Writer = out
+			if mode == modeJSON {
+				dst = stderr
+			}
+			if _, werr := fmt.Fprintf(dst, "Error: Reached max turns (%d)\n", w.maxTurns); werr != nil {
+				report(stderr, werr)
+			}
 		case err != nil:
 			code = 1
 		case mode == modePrint:
-			code = printReply(ag.State().Messages, out, stderr)
+			code = printer.exitCode()
 		}
 		// The reply is read before Dispose, which ends the background jobs
-		// of the session. Dispose does not change the exit code.
+		// of the session. Dispose does not change the exit code, and a run
+		// that it aborts prints nothing.
+		printer.disarm()
 		if derr := ag.Dispose(); derr != nil {
 			report(stderr, "Dispose:", derr)
 		}
@@ -420,67 +671,72 @@ func runHeadless(ag *agent.Agent, prompts []string, mode runMode, stdout, stderr
 		}
 		return code
 	case sig := <-sigs:
-		var service *auth.Service
-		if len(services) > 0 {
-			service = services[0]
+		return runHeadlessSignal(ag, out, stderr, sigs, sig, printer, services...)
+	}
+}
+
+// runHeadlessSignal ends print mode on a signal: it disposes the Agent, which
+// cancels the active run and ends the background wait, and exits with the code
+// of the signal. Nothing more is printed.
+func runHeadlessSignal(ag *agent.Agent, out *protocolOut, stderr io.Writer, sigs <-chan os.Signal, sig os.Signal, printer *replyPrinter, services ...*auth.Service) int {
+	printer.disarm()
+	var service *auth.Service
+	if len(services) > 0 {
+		service = services[0]
+	}
+	if service != nil {
+		service.StopRefresh()
+	}
+	// Dispose closes admission first, so the prompts that have not started
+	// fail with ErrDisposed, and cancels the active run. It waits for the
+	// run to settle, which includes the tools that started, so it runs on
+	// its own goroutine and the grace below bounds the exit.
+	disposed := make(chan struct{})
+	go func() {
+		defer close(disposed)
+		if err := ag.Dispose(); err != nil {
+			report(stderr, "Dispose:", err)
 		}
-		if service != nil {
-			service.StopRefresh()
+	}()
+	if service != nil {
+		if err := app.AuthWait(service)(context.Background()); err != nil {
+			report(stderr, "Auth shutdown:", err)
 		}
-		// Dispose closes admission first, so the prompts that have not started
-		// fail with ErrDisposed, and cancels the active run. It waits for the
-		// run to settle, which includes the tools that started, so it runs on
-		// its own goroutine and the grace below bounds the exit.
-		disposed := make(chan struct{})
-		go func() {
-			defer close(disposed)
-			if err := ag.Dispose(); err != nil {
-				report(stderr, "Dispose:", err)
-			}
-		}()
-		if service != nil {
-			if err := app.AuthWait(service)(context.Background()); err != nil {
-				report(stderr, "Auth shutdown:", err)
-			}
-		}
-		grace := time.NewTimer(abortGrace)
-		defer grace.Stop()
-		expired := false
+	}
+	grace := time.NewTimer(abortGrace)
+	defer grace.Stop()
+	expired := false
+	select {
+	case <-disposed:
+	case <-sigs:
+	case <-grace.C:
+		expired = true
+	}
+	if !expired {
+		// The final lines wait for a reader that keeps up, but only within
+		// the same grace: a write blocked on a full pipe holds the output
+		// lock, and the exit never waits on that lock. A write error
+		// changes nothing; the signal sets the code.
 		select {
-		case <-disposed:
+		case <-out.flushAsync():
 		case <-sigs:
 		case <-grace.C:
-			expired = true
 		}
-		if !expired {
-			// The final lines wait for a reader that keeps up, but only within
-			// the same grace: a write blocked on a full pipe holds the output
-			// lock, and the exit never waits on that lock. A write error
-			// changes nothing; the signal sets the code.
-			select {
-			case <-out.flushAsync():
-			case <-sigs:
-			case <-grace.C:
-			}
-		}
-		return signalExitCodes[sig]
 	}
+	return signalExitCodes[sig]
 }
 
 // promptTarget is the part of the Agent that promptAll uses.
 type promptTarget interface {
 	Prompt(ctx context.Context, msgs ...protocol.Message) error
 	WaitForIdle(ctx context.Context) error
+	Idle() <-chan struct{}
 }
-
-// busyRetryDelay is the pause before a prompt retries after ErrBusy, so a
-// listener that is still being called is not met by a tight loop.
-const busyRetryDelay = 5 * time.Millisecond
 
 // promptAll sends the prompts in order. A job notice can start a run of its
 // own, so each prompt waits for the Agent to be idle first and, when a notice
-// run starts in between and Prompt returns ErrBusy, waits again and retries
-// the same prompt. After the last prompt it waits once more: a notice that
+// run starts in between and Prompt returns ErrBusy, waits for the idle signal
+// and retries the same prompt. It never sleeps or polls. After the last prompt it waits once more: a notice that
 // came during the last prompt gets its answer before the caller reads the
 // reply.
 func promptAll(ctx context.Context, ag promptTarget, prompts []string) error {
@@ -501,7 +757,7 @@ func promptAll(ctx context.Context, ag promptTarget, prompts []string) error {
 				return err
 			}
 			select {
-			case <-time.After(busyRetryDelay):
+			case <-ag.Idle():
 			case <-ctx.Done():
 				return ctx.Err()
 			}

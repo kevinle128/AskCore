@@ -36,19 +36,11 @@ func (n *native) checkChatGPTAccess(ctx context.Context, m providers.Model, c se
 	cached, ok := n.access[key]
 	n.accessMu.Unlock()
 	if !ok || !cached.expires.After(n.now()) {
-		req, e := http.NewRequestWithContext(ctx, http.MethodGet, providers.OpenAIURL+"/models", nil)
+		req, e := openAIListRoute.request(ctx, c.OAuth.AccessToken, nil)
 		if e != nil {
 			return e
 		}
-		req.Header.Set("Authorization", "Bearer "+c.OAuth.AccessToken)
-		req.Header.Set("Accept", "application/json")
-		var response struct {
-			Models *[]struct {
-				Slug       string `json:"slug"`
-				Visibility string `json:"visibility"`
-			} `json:"models"`
-		}
-		status, e := n.read(req, &response)
+		status, body, e := getListPage(n.openAIList, req)
 		if e != nil && status != http.StatusUnauthorized && status != http.StatusForbidden {
 			if ctx.Err() != nil {
 				return ctx.Err()
@@ -56,20 +48,20 @@ func (n *native) checkChatGPTAccess(ctx context.Context, m providers.Model, c se
 			return nil
 		}
 		cached = modelAccess{expires: n.now().Add(time.Minute)}
-		if status == http.StatusUnauthorized || status == http.StatusForbidden {
+		switch {
+		case status == http.StatusUnauthorized || status == http.StatusForbidden:
 			cached.known = true
 			cached.denied = true
-		} else if status >= 200 && status < 300 && response.Models != nil {
-			cached.known = true
-			for _, model := range *response.Models {
-				if model.Slug == "" {
-					return nil
-				}
-				if model.Visibility == "list" {
-					cached.slugs = append(cached.slugs, model.Slug)
-				}
+		case status >= 200 && status < 300:
+			models, parsed := parseChatGPTModels(body)
+			if !parsed {
+				return nil
 			}
-		} else {
+			cached.known = true
+			for _, model := range models {
+				cached.slugs = append(cached.slugs, model.ID)
+			}
+		default:
 			return nil
 		}
 		n.accessMu.Lock()

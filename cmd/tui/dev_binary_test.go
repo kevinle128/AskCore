@@ -47,7 +47,9 @@ func devBinaries(t *testing.T) (oldBin, newBin string) {
 		} {
 			args := append([]string{"build"}, b.args...)
 			args = append(args, "-o", b.out, ".")
-			if out, err := exec.Command("go", args...).CombinedOutput(); err != nil {
+			build := exec.Command("go", args...)
+			build.Dir = packageDir
+			if out, err := build.CombinedOutput(); err != nil {
 				devErr = &buildError{err: err, out: string(out)}
 				return
 			}

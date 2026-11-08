@@ -24,6 +24,7 @@ const (
 	labelMax = 80
 	// killByModelReason names the kill when the model gave no reason.
 	killByModelReason = "job_kill"
+	limitReason       = "background time limit"
 	closeReason       = "session closed"
 	cancelReason      = "cancelled"
 )
@@ -37,9 +38,12 @@ var (
 	// ErrUnknownJob is returned for an id that the table does not hold: it
 	// never existed, or the model already saw the end of the job.
 	ErrUnknownJob = errors.New("jobs: unknown job")
-	// ErrNoNotifier is reported through Options.OnError when a notice or an
-	// event is ready and no Notifier was set.
-	ErrNoNotifier = errors.New("jobs: no notifier set")
+	// ErrNoOwner is reported through Options.OnError when a notice or an
+	// event is ready and the job has no owner.
+	ErrNoOwner = errors.New("jobs: job has no owner")
+	// ErrBackgroundDisabled is returned by a start of background work when
+	// Options.DisableBackground is set.
+	ErrBackgroundDisabled = errors.New("background jobs are turned off in this session")
 )
 
 // Kind tells what a job is.
@@ -71,7 +75,8 @@ type WaitOutcome int
 const (
 	// Done: the job ended inside the budget. The table removed it.
 	Done WaitOutcome = iota + 1
-	// Background: the budget passed; the job keeps running.
+	// Background: the budget passed and the job keeps running, or the job
+	// ended before the wait and its completion notice already reports the end.
 	Background
 	// Cancelled: the context ended; the table killed the job and removed it.
 	Cancelled
@@ -106,9 +111,44 @@ type Options struct {
 	// KillGrace is the time that Close gives the jobs after SIGTERM before it
 	// sends SIGKILL to what is left. Zero means 3 s.
 	KillGrace time.Duration
-	// OnError gets the errors that have no caller: a refused notice, a notice
-	// before SetNotifier. Nil drops them.
+	// OnError gets the errors that have no caller: a refused notice, a job
+	// with no owner. Nil drops them.
 	OnError func(error)
+	// IsExpectedDrop tells a refusal that is part of the contract, such as a
+	// notice of a conversation that was reset. Such a refusal is not reported
+	// and mutes the job. Nil treats every refusal as an error.
+	IsExpectedDrop func(error) bool
+	// BackgroundLimit stops a job that runs in the background for too long.
+	// The zero value means no limit, as in an interactive session.
+	BackgroundLimit BackgroundLimit
+	// DisableBackground turns background work off: a foreground command stops
+	// at its wait budget, and a background start or a monitor is refused.
+	DisableBackground bool
+}
+
+// BackgroundLimit is the time a job may run in the background. It counts from
+// the start of a background job, or from the move of a foreground job.
+type BackgroundLimit struct {
+	// Default applies when the start asks for no limit and to a moved job.
+	// Zero turns limits off.
+	Default time.Duration
+	// Max caps a limit that a start asks for. Zero means no cap.
+	Max time.Duration
+}
+
+// of returns the limit for a request, zero when limits are off.
+func (l BackgroundLimit) of(requested time.Duration) time.Duration {
+	if l.Default <= 0 {
+		return 0
+	}
+	d := requested
+	if d <= 0 {
+		d = l.Default
+	}
+	if l.Max > 0 && d > l.Max {
+		d = l.Max
+	}
+	return d
 }
 
 // StartSpec describes a bash job.
@@ -124,6 +164,13 @@ type StartSpec struct {
 	// is reported by Wait and gets no notice. A wait that gives up turns the job
 	// into a background job with a notice.
 	Foreground bool
+	// BackgroundLimit asks for a limit for a background job; zero takes the
+	// default of Options.BackgroundLimit, and Max caps it. It is ignored for a
+	// foreground job, which gets the default when it moves.
+	BackgroundLimit time.Duration
+	// Owner is the conversation that starts the job. Its notices go there,
+	// and only that conversation sees the job.
+	Owner Owner
 }
 
 // JobInfo is a snapshot of one job for job_list.
@@ -165,6 +212,11 @@ type Job struct {
 	held          bool // Start registered the first Wait as a waiter
 	cursor        int64
 	stopTimeout   func() bool
+	muted         bool // the owner refused a notice as expected: no more events
+	stopLimit     func() bool
+
+	owner Owner  // set at start, never changed
+	gen   uint64 // generation of owner
 }
 
 // ID returns bash-N or monitor-N.
@@ -242,15 +294,20 @@ type Table struct {
 	maxActive int
 	killGrace time.Duration
 	onError   func(error)
+	expected  func(error) bool
+	limit     BackgroundLimit
+	noBg      bool
 
 	mu       sync.Mutex // guards the fields below and the state of every Job
 	jobs     map[string]*Job
 	counters map[Kind]int
 	seq      int
-	notifier Notifier
-	hasNote  bool
 	closing  bool
-	owners   sync.WaitGroup
+	// busy counts the jobs whose notice is not handed off yet; idle is open
+	// while it is above zero. See Idle.
+	busy   int
+	idle   chan struct{}
+	owners sync.WaitGroup
 
 	spillMu     sync.Mutex // never taken together with mu
 	spillDir    string
@@ -269,6 +326,9 @@ func New(o Options) *Table {
 		maxActive: o.MaxActive,
 		killGrace: o.KillGrace,
 		onError:   o.OnError,
+		expected:  o.IsExpectedDrop,
+		limit:     o.BackgroundLimit,
+		noBg:      o.DisableBackground,
 		jobs:      make(map[string]*Job),
 		counters:  make(map[Kind]int),
 	}
@@ -284,14 +344,6 @@ func New(o Options) *Table {
 	return t
 }
 
-// SetNotifier sets the way to the Agent. The composition root calls it once,
-// after the Agent exists; a notice that is ready earlier goes to OnError.
-func (t *Table) SetNotifier(n Notifier) {
-	t.mu.Lock()
-	defer t.mu.Unlock()
-	t.notifier, t.hasNote = n, true
-}
-
 func (t *Table) report(err error) {
 	if t.onError != nil && err != nil {
 		t.onError(err)
@@ -304,11 +356,51 @@ func (t *Table) Start(spec StartSpec) (*Job, error) {
 	if spec.Kind != "" && spec.Kind != KindBash {
 		return nil, fmt.Errorf("jobs: Start runs bash jobs, not %q; use StartMonitor", spec.Kind)
 	}
-	return t.launch(KindBash, spec.Command, spec.Cwd, nil, spec.Foreground)
+	if t.noBg && !spec.Foreground {
+		return nil, ErrBackgroundDisabled
+	}
+	j, err := t.launch(KindBash, spec.Command, spec.Cwd, nil, spec.Foreground, spec.Owner)
+	if err != nil {
+		return nil, err
+	}
+	if !spec.Foreground {
+		t.armLimit(j, t.limit.of(spec.BackgroundLimit))
+	}
+	return j, nil
 }
 
+// armLimit stops j after d unless it ends first. Zero arms nothing.
+func (t *Table) armLimit(j *Job, d time.Duration) {
+	if d <= 0 {
+		return
+	}
+	stop := t.clock.AfterFunc(d, func() { t.killJob(j, limitReason, false) })
+	t.mu.Lock()
+	defer t.mu.Unlock()
+	if j.finishedLocked() || j.stopLimit != nil {
+		stop()
+		return
+	}
+	j.stopLimit = stop
+}
+
+// Idle returns a channel that is closed while every job has handed off its
+// completion notice or has none to send. A job counts from its start until
+// then, so a quiescence check never sees the end of a job before its notice
+// reached the Agent.
+func (t *Table) Idle() <-chan struct{} {
+	t.mu.Lock()
+	defer t.mu.Unlock()
+	if t.idle == nil {
+		return closedChan
+	}
+	return t.idle
+}
+
+var closedChan = func() chan struct{} { ch := make(chan struct{}); close(ch); return ch }()
+
 // launch starts the process of a job and its owner goroutine.
-func (t *Table) launch(kind Kind, command, cwd string, mon *monitor, held bool) (*Job, error) {
+func (t *Table) launch(kind Kind, command, cwd string, mon *monitor, held bool, owner Owner) (*Job, error) {
 	if strings.TrimSpace(command) == "" {
 		return nil, errors.New("jobs: empty command")
 	}
@@ -319,7 +411,12 @@ func (t *Table) launch(kind Kind, command, cwd string, mon *monitor, held bool) 
 	if t.closing {
 		return nil, ErrClosed
 	}
-	if t.activeLocked() >= t.maxActive {
+	gen := genOf(owner)
+	t.pruneLocked(gen)
+	if active := t.activeLocked(); active >= t.maxActive {
+		if older := t.activeOtherLocked(gen); older > 0 {
+			return nil, fmt.Errorf("%w (%d): %d of them belong to an earlier conversation and end when the session closes.", ErrTooManyJobs, t.maxActive, older) //nolint:staticcheck // the text is shown to the model
+		}
 		return nil, fmt.Errorf("%w (%d). Stop one with job_kill or wait for one to finish.", ErrTooManyJobs, t.maxActive) //nolint:staticcheck // the text is shown to the model
 	}
 	id := fmt.Sprintf("%s-%d", kind, t.counters[kind]+1)
@@ -332,6 +429,8 @@ func (t *Table) launch(kind Kind, command, cwd string, mon *monitor, held bool) 
 		done:    make(chan struct{}),
 		status:  StatusRunning,
 		mon:     mon,
+		owner:   owner,
+		gen:     gen,
 	}
 	if held {
 		// The wait of the caller is registered before the process can end.
@@ -359,6 +458,10 @@ func (t *Table) launch(kind Kind, command, cwd string, mon *monitor, held bool) 
 	t.seq++
 	j.seq = t.seq
 	t.jobs[id] = j
+	t.busy++
+	if t.idle == nil {
+		t.idle = make(chan struct{})
+	}
 	t.owners.Add(1)
 	go t.own(j)
 	return j, nil
@@ -379,6 +482,48 @@ func (t *Table) activeLocked() int {
 		}
 	}
 	return n
+}
+
+// activeOtherLocked counts the active jobs of other generations.
+func (t *Table) activeOtherLocked(gen uint64) int {
+	n := 0
+	for _, j := range t.jobs {
+		if j.gen != gen && !j.finishedLocked() {
+			n++
+		}
+	}
+	return n
+}
+
+// pruneLocked removes the finished jobs of generations older than gen. Their
+// conversation was reset, so nobody can read them any more. Generations only
+// grow, so a newer caller is the proof.
+func (t *Table) pruneLocked(gen uint64) {
+	for id, j := range t.jobs {
+		if j.gen < gen && j.finishedLocked() && j.waiters == 0 {
+			j.awaited = true
+			delete(t.jobs, id)
+		}
+	}
+}
+
+// lookupLocked returns the job id of generation gen. A job of another
+// generation is unknown to the caller.
+func (t *Table) lookupLocked(gen uint64, id string) (*Job, bool) {
+	t.pruneLocked(gen)
+	j, ok := t.jobs[id]
+	if !ok || j.gen != gen {
+		return nil, false
+	}
+	return j, true
+}
+
+// genOf returns the generation of owner, 0 when there is none.
+func genOf(owner Owner) uint64 {
+	if owner == nil {
+		return 0
+	}
+	return owner.Gen()
 }
 
 // labelOf returns the first line of command, cut to labelMax characters.
@@ -420,14 +565,25 @@ func (t *Table) own(j *Job) {
 	if j.waiters > 0 {
 		j.awaited = true
 	}
-	stop := j.stopTimeout
+	stop, stopLimit := j.stopTimeout, j.stopLimit
 	close(j.done)
 	t.mu.Unlock()
 
 	if stop != nil {
 		stop()
 	}
+	if stopLimit != nil {
+		stopLimit()
+	}
 	t.sendNotice(j)
+	// The hand-off is done or was not needed: the job no longer counts.
+	t.mu.Lock()
+	t.busy--
+	if t.busy == 0 && t.idle != nil {
+		close(t.idle)
+		t.idle = nil
+	}
+	t.mu.Unlock()
 }
 
 // killJob stops a running job. It does not wait. byModel suppresses the
@@ -454,7 +610,9 @@ func (t *Table) killJob(j *Job, reason string, byModel bool) {
 
 // Wait waits for the end of the job for at most budget. A budget of zero or
 // less returns Background at once. When ctx ends first, the job is killed as
-// by the model and Wait returns after the process group is gone.
+// by the model and Wait returns after the process group is gone. A job whose
+// completion notice already started returns Background: the notice is the
+// one report of its end.
 func (t *Table) Wait(ctx context.Context, id string, budget time.Duration) WaitOutcome {
 	t.mu.Lock()
 	j, ok := t.jobs[id]
@@ -469,6 +627,12 @@ func (t *Table) Wait(ctx context.Context, id string, budget time.Duration) WaitO
 		if held {
 			j.waiters--
 		}
+		if j.noticeStarted {
+			// A background job ended before this wait and its notice already
+			// reports the end; a result would report it a second time.
+			t.mu.Unlock()
+			return Background
+		}
 		t.takeLocked(j)
 		t.mu.Unlock()
 		return Done
@@ -478,6 +642,7 @@ func (t *Table) Wait(ctx context.Context, id string, budget time.Duration) WaitO
 			j.waiters--
 		}
 		t.mu.Unlock()
+		t.armLimit(j, t.limit.of(0))
 		return Background
 	}
 	// A waiter that is registered when the job ends owns the report of the
@@ -495,15 +660,23 @@ func (t *Table) Wait(ctx context.Context, id string, budget time.Duration) WaitO
 	case <-j.done:
 		return t.leaveWait(j)
 	case <-expired:
+		if t.noBg {
+			// Background work is off: the command stops at its budget.
+			t.killJob(j, timeoutReason, false)
+			<-j.done
+			return t.leaveWait(j)
+		}
 		t.mu.Lock()
-		defer t.mu.Unlock()
 		j.waiters--
 		if j.finishedLocked() {
 			// The end came with the budget; the owner already skipped the
 			// notice, so this result is the only report.
 			t.takeLocked(j)
+			t.mu.Unlock()
 			return Done
 		}
+		t.mu.Unlock()
+		t.armLimit(j, t.limit.of(0))
 		return Background
 	case <-ctx.Done():
 		t.killJob(j, cancelReason, true)
@@ -529,12 +702,12 @@ func (t *Table) takeLocked(j *Job) {
 	delete(t.jobs, j.id)
 }
 
-// Kill stops the job as asked by the model, waits until the process group is
+// Kill stops the job of generation gen as asked by the model, waits until the process group is
 // gone and removes the job. No notice follows. The returned Job holds the
 // final output and status. Killing a job that already ended only removes it.
-func (t *Table) Kill(id, reason string) (*Job, error) {
+func (t *Table) Kill(gen uint64, id, reason string) (*Job, error) {
 	t.mu.Lock()
-	j, ok := t.jobs[id]
+	j, ok := t.lookupLocked(gen, id)
 	t.mu.Unlock()
 	if !ok {
 		return nil, fmt.Errorf("%w: %s", ErrUnknownJob, id)
@@ -550,14 +723,37 @@ func (t *Table) Kill(id, reason string) (*Job, error) {
 	return j, nil
 }
 
-// List returns the jobs that the table holds, in start order: the active jobs
+// List returns the jobs of generation gen, in start order: the active jobs
 // and the finished jobs that nobody has read.
-func (t *Table) List() []JobInfo {
+func (t *Table) List(gen uint64) []JobInfo {
+	t.mu.Lock()
+	defer t.mu.Unlock()
+	t.pruneLocked(gen)
+	jobs := make([]*Job, 0, len(t.jobs))
+	for _, j := range t.jobs {
+		if j.gen == gen {
+			jobs = append(jobs, j)
+		}
+	}
+	slices.SortFunc(jobs, func(a, b *Job) int { return a.seq - b.seq })
+	out := make([]JobInfo, len(jobs))
+	for i, j := range jobs {
+		out[i] = j.infoLocked()
+	}
+	return out
+}
+
+// Active returns the jobs that still run or stop, of every generation, in
+// start order. The composition root uses it to describe a wait; tools use
+// List.
+func (t *Table) Active() []JobInfo {
 	t.mu.Lock()
 	defer t.mu.Unlock()
 	jobs := make([]*Job, 0, len(t.jobs))
 	for _, j := range t.jobs {
-		jobs = append(jobs, j)
+		if !j.finishedLocked() {
+			jobs = append(jobs, j)
+		}
 	}
 	slices.SortFunc(jobs, func(a, b *Job) int { return a.seq - b.seq })
 	out := make([]JobInfo, len(jobs))

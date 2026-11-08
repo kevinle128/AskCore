@@ -176,6 +176,29 @@ func TestStreamingMarkdownOpenConstructsDoNotTouchThePrefix(t *testing.T) {
 	}
 }
 
+// A first chunk that starts with a table shows no time, so it is drawn once at
+// the full width, and a first chunk of text is drawn once at the narrow width.
+// Each change of the streaming text draws the changed chunk only once.
+func TestFirstChunkIsDrawnOnceForEachChange(t *testing.T) {
+	th := noColor()
+	for name, doc := range map[string]string{
+		"table first": "| Type | Job |\n|---|---|\n| toolSlot | State of one call |\n| toolDone | A worker is done |",
+		"text first":  "tool_coordinator.go runs one batch of tool calls and commits them in order.",
+	} {
+		t.Run(name, func(t *testing.T) {
+			s := newMarkdownStream()
+			for end := 1; end <= len(doc); end++ {
+				before := s.renders
+				_, _ = s.renderFirstRoom(doc[:end], 60, 50, th)
+				require.Equal(t, 1, s.renders-before, "one draw for the change at byte %d", end)
+			}
+			rows, _ := s.renderFirstRoom(doc, 60, 50, th)
+			fresh, _ := newMarkdownStream().renderFirstRoom(doc, 60, 50, th)
+			require.Equal(t, fresh, rows, "the streamed result equals a fresh render")
+		})
+	}
+}
+
 func TestStreamingMarkdownWidthChange(t *testing.T) {
 	th := noColor()
 	s := newMarkdownStream()
@@ -210,27 +233,26 @@ func TestStreamingMarkdownThemeChangeDropsTheCache(t *testing.T) {
 	require.Contains(t, plain[0].text, "\x1b[1m", "bold stays an attribute")
 }
 
-func TestMarkdownCodeBlockShowsLanguageAndCode(t *testing.T) {
+func TestMarkdownCodeBlockWithLanguageHasNoLabelRow(t *testing.T) {
 	rows, _ := newMarkdownStream().render("Intro text.\n\n```go\ndeadline := 5 * time.Second\n```\n", 40, noColor())
 	require.Equal(t, []string{
 		"Intro text.",
 		"",
-		"go",
-		"deadline := 5 * time.Second",
-	}, trimRight(mdPlain(rows)))
+		"  deadline := 5 * time.Second",
+	}, trimRight(mdPlain(rows)), "the language selects colors only; the code starts 2 columns into the panel")
 	require.False(t, rows[0].panel)
-	require.True(t, rows[2].panel && rows[3].panel, "language and code rows sit on the code panel")
+	require.True(t, rows[2].panel, "the code row sits on the code panel")
 }
 
 func TestMarkdownCodeBlockWithoutLanguageHasNoLabelRow(t *testing.T) {
 	rows, _ := newMarkdownStream().render("```\nplain\n```", 40, noColor())
-	require.Equal(t, []string{"plain"}, trimRight(mdPlain(rows)))
+	require.Equal(t, []string{"  plain"}, trimRight(mdPlain(rows)))
 }
 
 func TestMarkdownCodeBlockWrapsLongLines(t *testing.T) {
 	long := strings.Repeat("abcdefghij", 5)
 	rows, _ := newMarkdownStream().render("```\n"+long+"\n```", 20, noColor())
-	require.Equal(t, []string{long[:20], long[20:40], long[40:]}, trimRight(mdPlain(rows)))
+	require.Equal(t, []string{"  " + long[:18], "  " + long[18:36], "  " + long[36:]}, trimRight(mdPlain(rows)))
 	for _, r := range rows {
 		require.LessOrEqual(t, displayWidth(r.text), 20)
 	}
@@ -242,8 +264,9 @@ func TestMarkdownCodeBlockHighlightsInColor(t *testing.T) {
 		joined := rendered(rows)
 		require.Contains(t, joined, "\x1b[", "%v: code has style sequences", p)
 		require.Greater(t, len(regexp.MustCompile(`\x1b\[38;[0-9;]+m`).FindAllString(joined, -1)), 1, "%v: tokens have more than one color", p)
-		require.Equal(t, "go", strings.TrimSpace(ansi.Strip(rows[0].text)))
-		require.Equal(t, "func main() {}", strings.TrimSpace(ansi.Strip(rows[1].text)))
+		require.Len(t, rows, 1, "%v: no language row", p)
+		require.Equal(t, "  func main() {}", strings.TrimRight(ansi.Strip(rows[0].text), " "))
+		require.Contains(t, rows[0].text, bgSequence(NewTheme(p), RoleCodePanel), "%v: the row is on the code panel", p)
 		for _, r := range rows {
 			require.Equal(t, 40, displayWidth(r.text), "panel rows fill the width")
 		}
@@ -252,7 +275,7 @@ func TestMarkdownCodeBlockHighlightsInColor(t *testing.T) {
 
 func TestMarkdownUnknownLanguageStillRenders(t *testing.T) {
 	rows, _ := newMarkdownStream().render("```nosuchlang\nsome code\n```", 40, NewTheme(colorprofile.TrueColor))
-	require.Equal(t, []string{"nosuchlang", "some code"}, trimRight(mdPlain(rows)))
+	require.Equal(t, []string{"  some code"}, trimRight(mdPlain(rows)))
 }
 
 func TestMarkdownStripsTerminalControlSequences(t *testing.T) {
@@ -278,7 +301,7 @@ func TestMarkdownProseRowsFitTheWidth(t *testing.T) {
 
 func TestMarkdownChunksJoinWithOneBlankRow(t *testing.T) {
 	rows, _ := newMarkdownStream().render("one\n\ntwo\n\n- a\n- b\n\n# head\n\nend", 40, noColor())
-	require.Equal(t, []string{"one", "", "two", "", "• a", "• b", "", "# head", "", "end"}, trimRight(mdPlain(rows)))
+	require.Equal(t, []string{"one", "", "two", "", "• a", "• b", "", "head", "", "end"}, trimRight(mdPlain(rows)))
 }
 
 // A glamour render of the whole document is the reference for prose: chunked

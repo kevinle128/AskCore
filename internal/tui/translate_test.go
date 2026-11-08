@@ -195,8 +195,8 @@ func TestTranslateReplyStream(t *testing.T) {
 		promptRow("why does it fail?", promptClock),
 		"",
 		"  The test waits for the stale socket.",
-		"  claude-opus-5-5 · 4.2s · ↑12.4k ↓1.8k · $0.004",
 		"",
+		"  claude-opus-5-5 · 4.2s · ↑12.4k ↓1.8k · $0.004",
 	}, x.rows())
 	require.Equal(t, x.tr.Len(), x.tr.Frontier(), "every block is final after the run settles")
 }
@@ -235,8 +235,8 @@ func TestTranslateLongReplyLeavesTheTailParagraphByParagraph(t *testing.T) {
 func x0() *tx { return &tx{rc: RenderContext{Width: 80, Theme: NewTheme(0)}} }
 
 // A thinking text is one block however long it is, so that the user folds it
-// as a whole. It is final at its end event and then draws one row.
-func TestTranslateThinkingIsOneBlockAndFoldsWhenItEnds(t *testing.T) {
+// as a whole. It is final at its end event and then takes the session mode.
+func TestTranslateThinkingIsOneBlockAndTakesTheSessionModeWhenItEnds(t *testing.T) {
 	text := "First thought.\n\nSecond thought\nwith two lines.\n\nThird thought."
 	x := newTx(t)
 	x.feed(assistantStart("m", 0))
@@ -246,24 +246,24 @@ func TestTranslateThinkingIsOneBlockAndFoldsWhenItEnds(t *testing.T) {
 	}
 	require.Equal(t, 1, x.tr.Len(), "one block for the whole text")
 	require.Equal(t, 0, x.tr.Frontier(), "the block is open while it streams")
-	require.Equal(t, FoldTruncated, blockDefaultFold(x.tr.entries[0].block), "a streaming thinking is truncated")
+	require.Equal(t, FoldTruncated, blockDefaultFold(x.tr.entries[0].block, ThinkingCollapsed.defaults()), "a streaming thinking is truncated")
 
 	x.feed(updateAt(3500, protocol.ThinkingEndEvent{ContentIndex: 0, Content: text}))
 	require.Equal(t, 1, x.tr.Len())
 	require.Equal(t, 1, x.tr.Frontier())
-	require.Equal(t, FoldCollapsed, blockDefaultFold(x.tr.entries[0].block), "it folds when it ends")
-	require.Equal(t, []string{"  ◆ Thought for 2.5s"}, x.rows())
+	require.Equal(t, FoldCollapsed, blockDefaultFold(x.tr.entries[0].block, ThinkingCollapsed.defaults()), "it takes the session mode when it ends")
+	require.Equal(t, FoldExpanded, blockDefaultFold(x.tr.entries[0].block, ThinkingExpanded.defaults()))
 
-	x.rc.Fold = FoldExpanded
 	require.Equal(t, []string{
-		"  ◆ Thought for 2.5s",
-		"  ┃ First thought.",
-		"  ┃",
-		"  ┃ Second thought",
-		"  ┃ with two lines.",
-		"  ┃",
-		"  ┃ Third thought.",
-	}, x.rows(), "paragraphs keep one empty row between them")
+		"  › Thought for 2.5s",
+		"",
+		"    First thought.",
+		"",
+		"    Second thought",
+		"    with two lines.",
+		"",
+		"    Third thought.",
+	}, x.rows(), "the default session mode shows all lines; paragraphs keep one empty row between them")
 }
 
 func TestTranslateSnapshotSplitsLongReplyIntoBlocks(t *testing.T) {
@@ -279,7 +279,7 @@ func TestTranslateReplyWithoutMessageStartOrUpdates(t *testing.T) {
 	// A follower that joins late sees only the end of a message.
 	x := newTx(t)
 	x.feed(assistantEnd("m", protocol.StopStop, 0, protocol.Text{Text: "Only the end."}))
-	require.Equal(t, []string{"  Only the end.", "  m · ↑12.4k ↓1.8k · $0.004", ""}, x.rows())
+	require.Equal(t, []string{"  Only the end.", "", "  m · ↑12.4k ↓1.8k · $0.004"}, x.rows())
 }
 
 func TestTranslateUpdatesWithoutStartKeepWorking(t *testing.T) {
@@ -298,11 +298,13 @@ func TestTranslateThinkingThenReply(t *testing.T) {
 	x.feed(assistantEnd("m", protocol.StopStop, 1000,
 		protocol.Thinking{Thinking: "The stale check runs first."}, protocol.Text{Text: "Look at the probe."}))
 	require.Equal(t, []string{
-		"  ◆ Thought",
+		"  › Thought",
+		"",
+		"    The stale check runs first.",
 		"",
 		"  Look at the probe.",
-		"  m · 1.0s · ↑12.4k ↓1.8k · $0.004",
 		"",
+		"  m · 1.0s · ↑12.4k ↓1.8k · $0.004",
 	}, x.rows(), "an empty row separates the step from the reply")
 }
 
@@ -318,7 +320,7 @@ func TestTranslateReplyAfterToolStartsWithAnEmptyRow(t *testing.T) {
 	x.feed(assistantStart("m", 400))
 	x.feed(textParts(0, "Second.")...)
 	rows = x.rows()
-	require.Equal(t, []string{"  Done.", promptRow("again", promptClock), "", "  Second."}, rows[len(rows)-4:], "a reply right after a prompt has no extra empty row")
+	require.Equal(t, []string{"  Done.", "", promptRow("again", promptClock), "", "  Second."}, rows[len(rows)-5:], "one empty row between any two blocks")
 }
 
 func TestTranslateToolLineRunningThenDone(t *testing.T) {
@@ -328,14 +330,14 @@ func TestTranslateToolLineRunningThenDone(t *testing.T) {
 	require.Len(t, running, 1)
 	require.True(t, strings.HasPrefix(running[0], "  ◆ echo probe code request"), running[0])
 	require.True(t, strings.HasSuffix(running[0], "⠋"), running[0])
-	require.Equal(t, 80, displayWidth(ansi.Strip(liveRows(x.tr, x.rc)[0])), "the spinner sits at the right edge, one column in")
+	require.Equal(t, 80-textRightPad, displayWidth(ansi.Strip(liveRows(x.tr, x.rc)[0])), "the spinner ends textRightPad columns before the edge")
 
 	x.feed(toolEnd("c1", "echo", false, "ok", 100))
 	require.Equal(t, []string{"  ◆ echo probe code request"}, x.rows(), "a finished step is one row with nothing at the right")
 	require.Equal(t, 1, x.tr.Frontier(), "a finished tool line is final")
 
 	x.rc.Fold = FoldTruncated
-	require.Equal(t, []string{"  ◆ echo probe code request", "    ok"}, x.rows(), "the truncated form shows the output")
+	require.Equal(t, []string{"  › echo probe code request", "", "    ok"}, x.rows(), "the truncated form shows the output after a blank row")
 }
 
 func TestTranslateToolLineFailure(t *testing.T) {
@@ -351,7 +353,7 @@ func TestTranslateToolEndWithoutStart(t *testing.T) {
 	x.feed(toolEnd("c9", "read", false, "x", 0))
 	require.Equal(t, []string{"  ◆ Read"}, x.rows(), "the call is unknown, so the row has the verb only")
 	x.rc.Fold = FoldTruncated
-	require.Equal(t, []string{"  ◆ Read", "    x"}, x.rows())
+	require.Equal(t, []string{"  › Read", "", "    x"}, x.rows())
 }
 
 func TestTranslateParallelToolsFinishInAnyOrder(t *testing.T) {
@@ -362,13 +364,13 @@ func TestTranslateParallelToolsFinishInAnyOrder(t *testing.T) {
 	x.feed(toolEnd("a", "one", false, "", 200))
 	require.Equal(t, 2, x.tr.Frontier())
 	rows := x.rows()
-	require.True(t, strings.Contains(rows[0], "one") && strings.Contains(rows[1], "two"), "%q", rows)
+	require.True(t, strings.Contains(rows[0], "one") && strings.Contains(rows[2], "two"), "%q", rows)
 }
 
 func TestTranslateRetryNote(t *testing.T) {
 	x := newTx(t)
 	x.feed(&protocol.AutoRetryStart{Attempt: 1, MaxAttempts: 3, DelayMs: 4000, ErrorMessage: "rate limit (HTTP 429)"})
-	require.Equal(t, []string{"  ↻ Attempt 1 failed: rate limit (HTTP 429). Retry 1 of 3 scheduled.", ""}, x.rows())
+	require.Equal(t, []string{"  ↻ Attempt 1 failed: rate limit (HTTP 429). Retry 1 of 3 scheduled."}, x.rows())
 }
 
 func TestTranslateErrorBlockFromCycleEnd(t *testing.T) {
@@ -383,9 +385,8 @@ func TestTranslateErrorBlockFromCycleEnd(t *testing.T) {
 	require.Equal(t, []string{
 		"  ✗ Error (auth): anthropic token expired and refresh failed.",
 		"    Run in a shell: ask auth login --provider anthropic. Then send again.",
-		"",
-	}, rows[len(rows)-3:])
-	require.Equal(t, "", rows[len(rows)-4], "a blank row separates the partial reply from the error")
+	}, rows[len(rows)-2:])
+	require.Equal(t, "", rows[len(rows)-3], "a blank row separates the partial reply from the error")
 	require.Equal(t, 1, strings.Count(strings.Join(rows, "\n"), "Error ("), "one error block")
 }
 
@@ -442,8 +443,8 @@ func TestTranslateCancelMarkerAtSettleOnly(t *testing.T) {
 	rows := x.rows()
 	require.Equal(t, []string{
 		"  The probe lives in client.go. It dials the socket, then",
-		"  ⊘ Cancelled by you. Partial reply kept above.",
 		"",
+		"  ⊘ Cancelled by you. Partial reply kept above.",
 	}, rows[len(rows)-3:])
 	require.Equal(t, x.tr.Len(), x.tr.Frontier())
 
@@ -455,7 +456,7 @@ func TestTranslateCancelMarkerAtSettleOnly(t *testing.T) {
 func TestTranslateCancelWithoutPartialReply(t *testing.T) {
 	x := newTx(t)
 	x.feed(&protocol.CycleEnd{Reason: "aborted", Cause: "user"}, &protocol.AgentSettled{})
-	require.Equal(t, []string{"  ⊘ Cancelled by you.", ""}, x.rows())
+	require.Equal(t, []string{"  ⊘ Cancelled by you."}, x.rows())
 }
 
 func TestTranslateAbortCauses(t *testing.T) {
@@ -489,7 +490,7 @@ func TestTranslateUserMessagesShowAsPromptBands(t *testing.T) {
 	x := newTx(t)
 	m := protocol.UserMessage{Content: []protocol.UserBlock{protocol.Text{Text: "line one"}, protocol.Image{Data: "x", MimeType: "image/png"}, protocol.Text{Text: "line two"}}, Timestamp: 0}
 	x.feed(&protocol.MessageStart{Message: m}, &protocol.MessageEnd{Message: &m})
-	require.Equal(t, []string{"  ❯ line one", "    [image]", "    line two", ""}, x.rows(), "a pointer message works; no time shows without a timestamp")
+	require.Equal(t, []string{"  ❯ line one", "    [image]", "    line two"}, x.rows(), "a pointer message works; no time shows without a timestamp")
 }
 
 func TestTranslateIgnoresEventsWithoutBlocks(t *testing.T) {
@@ -515,15 +516,15 @@ func TestTranslateMidMessageSnapshotThenLiveEvents(t *testing.T) {
 		StopReason: protocol.StopPending,
 	}
 	x.apply(x.trl.Snapshot(SnapshotMsg{Stream: &protocol.ACPStreamBaseline{Message: partial, Open: map[int][]byte{1: []byte("partial rep")}}}))
-	require.Equal(t, []string{"  ◆ Thought", "", "  partial rep"}, x.rows())
+	require.Equal(t, []string{"  › Thought", "", "    done thinking", "", "  partial rep"}, x.rows())
 	require.Equal(t, 1, x.tr.Frontier(), "the closed thinking block is final; the open reply is live")
 
 	x.feed(update(protocol.TextDeltaEvent{ContentIndex: 1, Delta: "ly"}))
-	require.Equal(t, "  partial reply", x.rows()[2])
+	require.Equal(t, "  partial reply", x.rows()[4])
 	x.feed(update(protocol.TextEndEvent{ContentIndex: 1, Content: "partial reply"}), assistantEnd("m", protocol.StopStop, 0, protocol.Thinking{Thinking: "done thinking"}, protocol.Text{Text: "partial reply"}))
-	require.Equal(t, "  partial reply", x.rows()[2])
+	require.Equal(t, "  partial reply", x.rows()[4])
 	require.Equal(t, x.tr.Len(), x.tr.Frontier())
-	require.Equal(t, 1, strings.Count(strings.Join(x.rows(), "\n"), "◆"))
+	require.Equal(t, 1, strings.Count(strings.Join(x.rows(), "\n"), "Thought"), "one thinking step")
 }
 
 func TestTranslateSnapshotHistory(t *testing.T) {
@@ -549,7 +550,7 @@ func TestTranslateSnapshotHistory(t *testing.T) {
 	rows := x.rows()
 	require.Equal(t, promptRow("run echo", promptClock), rows[0])
 	joined := strings.Join(rows, "\n")
-	for _, want := range []string{"◆ Thought", "  Running it.", "m · ↑1.0k ↓50 · $0.002", "◆ echo hi", "  Done."} {
+	for _, want := range []string{"› Thought", "    plan", "  Running it.", "m · ↑1.0k ↓50 · $0.002", "◆ echo hi", "  Done."} {
 		require.Contains(t, joined, want)
 	}
 	require.Equal(t, x.tr.Len(), x.tr.Frontier(), "history is final")
@@ -600,8 +601,8 @@ func TestTranslateEmptyThinkingMakesNoBlock(t *testing.T) {
 	x.feed(assistantEnd("m", protocol.StopStop, 1000, protocol.Thinking{Thinking: ""}, protocol.Text{Text: "ok"}))
 	require.Equal(t, []string{
 		"  ok",
-		"  m · 1.0s · ↑12.4k ↓1.8k · $0.004",
 		"",
+		"  m · 1.0s · ↑12.4k ↓1.8k · $0.004",
 	}, x.rows())
 	require.NotContains(t, strings.Join(plain(finalRows(x.tr, x.rc)), "\n"), "Thought", "no thinking row for an empty summary")
 }
@@ -610,11 +611,10 @@ func TestTranslateEmptyThinkingOnlyInEndEvent(t *testing.T) {
 	x := newTx(t)
 	x.feed(assistantStart("m", 0))
 	x.feed(assistantEnd("m", protocol.StopStop, 1000, protocol.Thinking{Thinking: " \n"}, protocol.Text{Text: "ok"}))
-	require.Equal(t, []string{"  ok", "  m · 1.0s · ↑12.4k ↓1.8k · $0.004", ""}, x.rows())
+	require.Equal(t, []string{"  ok", "", "  m · 1.0s · ↑12.4k ↓1.8k · $0.004"}, x.rows())
 }
 
-// A block that ends with an empty row already separates the reply from the
-// step before it, so the reply adds no second empty row.
+// The pane puts one empty row between the note and the reply, never two.
 func TestTranslateReplyAfterANoteHasOneEmptyRow(t *testing.T) {
 	x := newTx(t)
 	x.feed(toolStart("c1", "bash", `{"command":"ls"}`, 0), toolEnd("c1", "bash", false, "", 100))

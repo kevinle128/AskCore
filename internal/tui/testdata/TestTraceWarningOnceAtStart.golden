@@ -1,6 +1,5 @@
-◢◤ ask  ● leader 7c1e  ⌂ ~/src/askcore  deepseek-v4.1-flash  ▱▱▱▱▱▱▱▱ 0%  $0.04
+ ◢◤ ask
 ────────────────────────────────────────────────────────────────────────────────
-  model  alibaba-token-plan/deepseek-v4.1-flash
   TEA_TRACE is on: typed and pasted text, keys included, is written to
   /tmp/ask-trace.log.
 
@@ -21,4 +20,5 @@
 ────────────────────────────────────────────────────────────────────────────────
  ❯ Ask anything  ·  / commands  ·  ctrl+l model
 ────────────────────────────────────────────────────────────────────────────────
+ ⌂ ~/src/askcore            alibaba-token-plan/deepseek-v4.1-flash  ▱▱▱▱▱▱▱▱ 0%
  Tab blocks · ctrl+t thinking · ctrl+l model · / commands

@@ -31,7 +31,7 @@ type RenderContext struct {
 	// FoldExpanded.
 	Fold FoldMode
 	// Pointed is true while the block is selected or under the mouse pointer. A
-	// foldable step then shows its expand indicator in place of its glyph.
+	// foldable step then shows GlyphStepOpen in place of its own glyph.
 	Pointed bool
 }
 

@@ -31,6 +31,10 @@ type fakeClient struct {
 	models    protocol.ACPModelsResult
 	state     protocol.ACPStateResult
 	usage     protocol.ACPUsageResult
+	// skills is the answer of Skills. skillsErr fails it, as a leader that
+	// predates the call does.
+	skills    protocol.ACPSkillsResult
+	skillsErr error
 	live      []protocol.ACPLiveSession
 	listErr   error
 
@@ -63,9 +67,29 @@ type fakeClient struct {
 	logout         protocol.ACPLogoutResult
 	logoutErr      error
 	savedDefault   map[string]bool // model id -> saveDefault of the last SetModel
-	// modelsErrAfter makes every Models call after that many calls fail.
+	// askedLevels are the thinking levels of the SetModel calls in order.
+	askedLevels []protocol.ThinkingLevel
+	// defaultNotSaved is the reason that SetModel gives for a refused default
+	// save. Empty means that a requested save happens.
+	defaultNotSaved protocol.ACPDefaultNotSaved
+	// modelsErrAfter makes every Models call after that many calls fail, and
+	// modelsErrUntil makes the first calls up to that count fail.
 	modelsErrAfter int
+	modelsErrUntil int
 	modelsCalls    int
+
+	// Project trust. trust is the answer of TrustState; nil answers a folder
+	// with no gated files. trustGate holds the TrustState answer until it
+	// closes. newSessionErrs fail the next NewSession calls in order.
+	trust          *protocol.ACPTrustStateResult
+	trustErr       error
+	trustGate      chan struct{}
+	setTrustErr    error
+	setTrustRes    *protocol.ACPTrustStateResult
+	trustSets      []protocol.ACPTrustSetRequest
+	newOptions     []NewSessionOptions
+	dropFlags      bool
+	newSessionErrs []error
 }
 
 const (
@@ -156,14 +180,22 @@ func (f *fakeClient) setInfo(info ConnInfo) {
 	f.mu.Unlock()
 }
 
-func (f *fakeClient) NewSession(_ context.Context, cwd string) (SessionInfo, error) {
+func (f *fakeClient) NewSession(_ context.Context, cwd string, opts NewSessionOptions) (SessionInfo, error) {
 	f.record("new_session")
 	f.mu.Lock()
+	f.newOptions = append(f.newOptions, opts)
+	if len(f.newSessionErrs) > 0 {
+		err := f.newSessionErrs[0]
+		f.newSessionErrs = f.newSessionErrs[1:]
+		f.mu.Unlock()
+		return SessionInfo{}, err
+	}
 	id := f.sessionID
 	f.cwd = cwd
+	ignored := f.dropFlags && !opts.Flags.IsZero()
 	f.mu.Unlock()
 	f.push(SnapshotMsg{SessionID: id})
-	return SessionInfo{ID: id, Role: protocol.ACPRoleDriver, Cwd: cwd}, nil
+	return SessionInfo{ID: id, Role: protocol.ACPRoleDriver, Cwd: cwd, FlagsIgnored: ignored}, nil
 }
 
 func (f *fakeClient) Attach(_ context.Context, id string) (SessionInfo, error) {
@@ -246,19 +278,20 @@ func (f *fakeClient) Models(context.Context) (protocol.ACPModelsResult, error) {
 	f.mu.Lock()
 	defer f.mu.Unlock()
 	f.modelsCalls++
-	if f.modelsErrAfter > 0 && f.modelsCalls > f.modelsErrAfter {
+	if (f.modelsErrAfter > 0 && f.modelsCalls > f.modelsErrAfter) || f.modelsCalls <= f.modelsErrUntil {
 		return protocol.ACPModelsResult{}, errors.New("models are not available")
 	}
 	return f.models, nil
 }
 
-func (f *fakeClient) SetModel(_ context.Context, id string, saveDefault bool) (protocol.ACPSetModelResult, error) {
+func (f *fakeClient) SetModel(_ context.Context, id string, asked protocol.ThinkingLevel, saveDefault bool) (protocol.ACPSetModelResult, error) {
 	f.record("set_model:" + id)
 	f.mu.Lock()
 	if f.savedDefault == nil {
 		f.savedDefault = map[string]bool{}
 	}
 	f.savedDefault[id] = saveDefault
+	f.askedLevels = append(f.askedLevels, asked)
 	gate, err := f.setModelGate[id], f.setModelErr[id]
 	f.mu.Unlock()
 	if err != nil {
@@ -273,7 +306,12 @@ func (f *fakeClient) SetModel(_ context.Context, id string, saveDefault bool) (p
 	for _, m := range f.models.Models {
 		if m.ModelID == id {
 			row = m
-			if m.Reasoning {
+			// The host keeps an asked level on a reasoning model and drops it to
+			// off on a model without thinking.
+			switch {
+			case m.Reasoning && asked != "":
+				level = asked
+			case m.Reasoning:
 				level = protocol.ThinkingMedium
 			}
 		}
@@ -281,7 +319,7 @@ func (f *fakeClient) SetModel(_ context.Context, id string, saveDefault bool) (p
 	f.state.ModelID, f.state.ThinkingLevel = id, level
 	f.state.ModelFallback = nil
 	f.models.Current = id
-	sid := f.sessionID
+	sid, notSaved := f.sessionID, f.defaultNotSaved
 	f.mu.Unlock()
 	// The leader applies the change and announces it as an event, as the agent
 	// does. A gate holds only the answer.
@@ -289,7 +327,11 @@ func (f *fakeClient) SetModel(_ context.Context, id string, saveDefault bool) (p
 	if gate != nil {
 		<-gate
 	}
-	return protocol.ACPSetModelResult{ModelID: id, ThinkingLevel: level, DefaultSaved: saveDefault}, nil
+	res := protocol.ACPSetModelResult{ModelID: id, ThinkingLevel: level, DefaultSaved: saveDefault}
+	if saveDefault && notSaved != "" {
+		res.DefaultSaved, res.DefaultNotSaved = false, notSaved
+	}
+	return res, nil
 }
 
 func (f *fakeClient) SetThinking(_ context.Context, level protocol.ThinkingLevel) (protocol.ThinkingLevel, error) {
@@ -317,6 +359,13 @@ func (f *fakeClient) Usage(context.Context) (protocol.ACPUsageResult, error) {
 	f.mu.Lock()
 	defer f.mu.Unlock()
 	return f.usage, nil
+}
+
+func (f *fakeClient) Skills(context.Context) (protocol.ACPSkillsResult, error) {
+	f.record("skills")
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	return f.skills, f.skillsErr
 }
 
 // leaderCall records a provider call. It returns ErrNeedsLeader without a
@@ -415,6 +464,62 @@ func (f *fakeClient) Logout(_ context.Context, provider, method string) (protoco
 	return f.logout, f.logoutErr
 }
 
+func (f *fakeClient) TrustState(_ context.Context, cwd string) (protocol.ACPTrustStateResult, error) {
+	f.record("trust_state")
+	f.mu.Lock()
+	gate, res, err := f.trustGate, f.trust, f.trustErr
+	f.mu.Unlock()
+	if gate != nil {
+		<-gate
+	}
+	if err != nil {
+		return protocol.ACPTrustStateResult{}, err
+	}
+	if res == nil {
+		return protocol.ACPTrustStateResult{Root: cwd, Trusted: true, Source: "no_gated_files"}, nil
+	}
+	return *res, nil
+}
+
+func (f *fakeClient) SetTrust(_ context.Context, req protocol.ACPTrustSetRequest) (protocol.ACPTrustStateResult, error) {
+	f.record("set_trust:" + string(req.Target) + ":" + string(req.Decision))
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	f.trustSets = append(f.trustSets, req)
+	if f.setTrustErr != nil {
+		return protocol.ACPTrustStateResult{}, f.setTrustErr
+	}
+	if f.setTrustRes != nil {
+		return *f.setTrustRes, nil
+	}
+	return protocol.ACPTrustStateResult{Root: req.Cwd, Trusted: req.Decision == protocol.ACPTrustDecisionTrust, Source: "saved"}, nil
+}
+
+// sentOverrides returns the trust override of each NewSession call in order.
+func (f *fakeClient) sentOverrides() []protocol.ACPTrustOverride {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	out := make([]protocol.ACPTrustOverride, len(f.newOptions))
+	for i, o := range f.newOptions {
+		out[i] = o.Trust
+	}
+	return out
+}
+
+// sentOptions returns the options of each NewSession call in order.
+func (f *fakeClient) sentOptions() []NewSessionOptions {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	return append([]NewSessionOptions(nil), f.newOptions...)
+}
+
+// sentTrust returns the SetTrust requests in order.
+func (f *fakeClient) sentTrust() []protocol.ACPTrustSetRequest {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	return append([]protocol.ACPTrustSetRequest(nil), f.trustSets...)
+}
+
 func (f *fakeClient) Close() error { return nil }
 
 var _ Client = (*fakeClient)(nil)
@@ -484,9 +589,9 @@ func startView(t *testing.T, width, height int, ro ...rigOption) *viewRig {
 	t.Cleanup(func() { close(cfg.fc.events) })
 	if opts.Client != nil {
 		r.h.waitText("Ask anything")
-		r.h.waitText("◢◤ ask")
-		// The start line at the top of the pane comes with the first state answer.
-		r.waitCall("usage")
+		r.h.waitText("Tab blocks")
+		// The footer row and the start notices take the first state answer.
+		r.waitCall("state")
 		r.h.settle()
 	}
 	return r

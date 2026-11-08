@@ -8,7 +8,6 @@ import (
 	"io"
 	"net/http"
 	"regexp"
-	"strings"
 
 	"AskCore/internal/providers"
 )
@@ -51,31 +50,21 @@ func KeyCheckable(provider string) bool {
 // *KeyRefusal. Any other answer or a transport failure gives
 // ErrKeyCheckUnavailable, and a cancelled context gives its own error.
 func NativeKeyCheck(o NativeOptions) func(ctx context.Context, provider, key string) error {
-	client := boundedClient(o)
+	clients := map[string]*http.Client{}
+	for _, provider := range []string{providers.ProviderOpenAI, providers.ProviderXAI, providers.ProviderAnthropic} {
+		route, _ := keyListRoute(provider)
+		clients[provider] = listClient(o, route)
+	}
 	return func(ctx context.Context, provider, key string) error {
-		var endpoint string
-		switch provider {
-		case providers.ProviderOpenAI:
-			endpoint = providers.OpenAIURL + "/models"
-		case providers.ProviderXAI:
-			endpoint = providers.XAIURL + "/models"
-		case providers.ProviderAnthropic:
-			endpoint = providers.AnthropicURL + "/v1/models"
-		default:
+		route, ok := keyListRoute(provider)
+		if !ok {
 			return ErrKeyCheckUnavailable
 		}
-		req, err := http.NewRequestWithContext(ctx, http.MethodGet, endpoint, nil)
+		req, err := route.request(ctx, key, nil)
 		if err != nil {
 			return ErrKeyCheckUnavailable
 		}
-		req.Header.Set("Accept", "application/json")
-		if provider == providers.ProviderAnthropic {
-			req.Header.Set("x-api-key", key)
-			req.Header.Set("anthropic-version", anthropicVersion)
-		} else {
-			req.Header.Set("Authorization", "Bearer "+key)
-		}
-		resp, err := client.Do(req)
+		resp, err := clients[provider].Do(req)
 		if err != nil {
 			if ctx.Err() != nil {
 				return ctx.Err()
@@ -88,11 +77,7 @@ func NativeKeyCheck(o NativeOptions) func(ctx context.Context, provider, key str
 			return nil
 		case resp.StatusCode == http.StatusUnauthorized || resp.StatusCode == http.StatusForbidden:
 			body, _ := io.ReadAll(io.LimitReader(resp.Body, keyCheckBodyLimit))
-			code := refusalCode(body)
-			if strings.Contains(code, key) {
-				code = ""
-			}
-			return &KeyRefusal{HTTPStatus: resp.StatusCode, Code: code}
+			return &KeyRefusal{HTTPStatus: resp.StatusCode, Code: refusalFrom(body, key)}
 		default:
 			return ErrKeyCheckUnavailable
 		}

@@ -158,7 +158,7 @@ func TestFullRowsShowTheDiffInsteadOfTheText(t *testing.T) {
 	d := protocol.ToolDiff{OldText: "a\n\tb\nc\n", NewText: "a\n\tB\nc\n"}
 	b := newToolBlock("edit", "x.go", ToolSucceeded, "0.1s", "", newToolOutput("Edited x.go.", protocol.ToolResultDetails{Diff: &d}), nil)
 	var rows []string
-	for _, r := range b.Lines(rc)[1:] {
+	for _, r := range b.Lines(rc)[2:] {
 		rows = append(rows, ansi.Strip(r))
 	}
 	require.Equal(t, []string{
@@ -173,18 +173,20 @@ func TestFullRowsWrapALongDiffLineUnderItsTextColumn(t *testing.T) {
 	rc := RenderContext{Width: 30, Theme: NewTheme(0), Fold: FoldExpanded}
 	d := protocol.ToolDiff{NewText: strings.Repeat("x", 40) + "\n"}
 	b := newToolBlock("write", "x.go", ToolSucceeded, "0.1s", "", newToolOutput("", protocol.ToolResultDetails{Diff: &d}), nil)
-	rows := b.Lines(rc)[1:]
+	// The pane body ends textRightPad columns before the edge: 17 columns of
+	// text after the 11 columns of the prefix.
+	rows := b.Lines(rc)[2:]
 	require.Len(t, rows, 3)
 	first := ansi.Strip(rows[0])
-	require.Equal(t, "       1 + "+strings.Repeat("x", 19), first)
-	require.Equal(t, strings.Repeat(" ", 11)+strings.Repeat("x", 19), ansi.Strip(rows[1]))
-	require.Equal(t, strings.Repeat(" ", 11)+strings.Repeat("x", 2), ansi.Strip(rows[2]))
+	require.Equal(t, "       1 + "+strings.Repeat("x", 17), first)
+	require.Equal(t, strings.Repeat(" ", 11)+strings.Repeat("x", 17), ansi.Strip(rows[1]))
+	require.Equal(t, strings.Repeat(" ", 11)+strings.Repeat("x", 6), ansi.Strip(rows[2]))
 }
 
 func TestFullRowsOfAFailedEditShowTheErrorText(t *testing.T) {
 	rc := RenderContext{Width: 80, Theme: NewTheme(0), Fold: FoldExpanded}
 	b := newToolBlock("edit", "x.go", ToolFailed, "", "no match", newToolOutput("no match for old text\nsecond line", protocol.ToolResultDetails{}), nil)
-	rows := b.Lines(rc)[1:]
+	rows := b.Lines(rc)[2:]
 	require.Equal(t, "    no match for old text", ansi.Strip(rows[0]))
 	require.Equal(t, "    second line", ansi.Strip(rows[1]))
 }
@@ -194,9 +196,9 @@ func TestFullRowsKeepTheTruncationLineAndShowEveryLine(t *testing.T) {
 	d := protocol.ToolResultDetails{Truncation: &protocol.ToolTruncation{TruncatedBy: "lines", TotalLines: 9, OutputLines: 3}}
 	b := newToolBlock("read", "x", ToolSucceeded, "0.1s", "", newToolOutput("1\n2\n3\n4\n5\n6\n7\n8\n9\n10\n11\n12", d), nil)
 	rows := b.Lines(rc)
-	require.Len(t, rows, 1+12+1)
+	require.Len(t, rows, 1+1+12+1, "the header, the blank row, 12 lines and the truncation row")
 	for _, r := range rows {
 		require.NotContains(t, r, "more lines")
 	}
-	require.Equal(t, "    model saw 3 of 9 lines", ansi.Strip(rows[13]))
+	require.Equal(t, "    model saw 3 of 9 lines", ansi.Strip(rows[14]))
 }

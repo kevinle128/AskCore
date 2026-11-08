@@ -78,13 +78,13 @@ func feedResult(x *tx, name, text, details string, failed bool) {
 func TestProducerBashOKShowsOutputWithoutExitHeader(t *testing.T) {
 	x := newTx(t)
 	feedResult(x, "bash", "exit: 0\none\ntwo\nthree", realBashOKDetails, false)
-	require.Equal(t, []string{"    one", "    two", "    three"}, x.rows()[1:])
+	require.Equal(t, []string{"    one", "    two", "    three"}, openBody(t, x.rows()))
 }
 
 func TestProducerBashWithoutOutputKeepsTheNote(t *testing.T) {
 	x := newTx(t)
 	feedResult(x, "bash", "exit: 0\n(no output)", realBashOKDetails, false)
-	require.Equal(t, []string{"    (no output)"}, x.rows()[1:])
+	require.Equal(t, []string{"    (no output)"}, openBody(t, x.rows()))
 }
 
 func TestProducerBashFailureShowsExitOnceOnTheToolLine(t *testing.T) {
@@ -92,7 +92,7 @@ func TestProducerBashFailureShowsExitOnceOnTheToolLine(t *testing.T) {
 	feedResult(x, "bash", "exit: 1\nboom", realBashFailDetails, true)
 	rows := x.rows()
 	require.True(t, strings.HasSuffix(rows[0], "✗ exit 1"), rows[0])
-	require.Equal(t, []string{"    boom"}, rows[1:])
+	require.Equal(t, []string{"    boom"}, openBody(t, rows))
 	require.Equal(t, 1, strings.Count(strings.Join(rows, "\n"), "exit 1"))
 }
 
@@ -100,17 +100,17 @@ func TestProducerBashTwelveLinesShowThreeSixMoreAndThree(t *testing.T) {
 	x := newTx(t)
 	feedResult(x, "bash", "exit: 0\n"+fixtureLines("out", 12), realBashOKDetails, false)
 	rows := x.rows()
-	require.Equal(t, numberedRows("out", 1, 3), rows[1:4])
-	require.Equal(t, "    ⋮ 6 more lines · e to expand · Enter full screen", rows[4])
-	require.Equal(t, numberedRows("out", 10, 12), rows[5:8])
+	require.Equal(t, numberedRows("out", 1, 3), rows[2:5])
+	require.Equal(t, "    ⋮ 6 more lines · e to expand · Enter full screen", rows[5])
+	require.Equal(t, numberedRows("out", 10, 12), rows[6:9])
 }
 
 func TestProducerBashSpilledOutputShowsNoSpillLineInTheTruncatedForm(t *testing.T) {
 	x := newTx(t)
 	feedResult(x, "bash", realBashSpillText(), realBashSpillInfo, false)
 	rows := x.rows()
-	require.Equal(t, "    1", rows[1], "the first output line is the first body row")
-	require.Equal(t, "    ⋮ 1996 more lines · e to expand · Enter full screen", rows[4], "the output holds 800 + 1 + 1 + 1200 lines; the spill line is not one")
+	require.Equal(t, "    1", rows[2], "the first output line is the first body row")
+	require.Equal(t, "    ⋮ 1996 more lines · e to expand · Enter full screen", rows[5], "the output holds 800 + 1 + 1 + 1200 lines; the spill line is not one")
 	require.Equal(t, "    60000", rows[len(rows)-1], "the last output line is the last row")
 	require.NotContains(t, strings.Join(rows, "\n"), "model saw", "the truncation line shows only in the expanded form")
 	require.Equal(t, 0, strings.Count(strings.Join(rows, ""), realBashSpillPath))
@@ -139,24 +139,24 @@ func TestProducerBashFullViewHasNoModelDecoration(t *testing.T) {
 	all := strings.Join(rows, "\n")
 	require.NotContains(t, all, "exit: 0")
 	require.NotContains(t, all, "[full output:")
-	require.Equal(t, "    1", rows[1])
+	require.Equal(t, "    1", rows[2])
 	require.Contains(t, all, "[... 338602 bytes elided ...]", "the cut of the model view stays")
 }
 
 func TestProducerReadShowsTextWithoutLineNumbers(t *testing.T) {
 	x := newTx(t)
 	feedResult(x, "read", "1|package tui\n2|import x\n3|\n4|func a() {}", realReadFullDetails, false)
-	require.Equal(t, []string{"    package tui", "    import x", "", "    func a() {}"}, x.rows()[1:])
+	require.Equal(t, []string{"    package tui", "    import x", "", "    func a() {}"}, openBody(t, x.rows()))
 }
 
 func TestProducerReadOf172LinesShowsThreeHintAndThree(t *testing.T) {
 	x := newTx(t)
 	feedResult(x, "read", realReadNumbered(172), realReadFullDetails, false)
 	rows := x.rows()
-	require.Equal(t, "    package tui", rows[1])
-	require.Equal(t, "    line 3", rows[3])
-	require.Equal(t, "    ⋮ 166 more lines · e to expand · Enter full screen", rows[4])
-	require.Equal(t, "    line 172", rows[7])
+	require.Equal(t, "    package tui", rows[2])
+	require.Equal(t, "    line 3", rows[4])
+	require.Equal(t, "    ⋮ 166 more lines · e to expand · Enter full screen", rows[5])
+	require.Equal(t, "    line 172", rows[8])
 }
 
 func TestProducerReadWithLimitDropsTheContinueNotice(t *testing.T) {
@@ -164,10 +164,10 @@ func TestProducerReadWithLimitDropsTheContinueNotice(t *testing.T) {
 	text := "1|line 1\n2|line 2\n3|line 3\n4|line 4\n5|line 5\n\n[167 more lines in file. Use offset=6 to continue.]"
 	feedResult(x, "read", text, realReadLimitDetails, false)
 	rows := x.rows()
-	require.Equal(t, "    line 1", rows[1])
-	require.Equal(t, "    line 5", rows[5])
+	require.Equal(t, "    line 1", rows[2])
+	require.Equal(t, "    line 5", rows[6])
 	require.NotContains(t, strings.Join(rows, "\n"), "more lines in file")
-	require.Len(t, rows, 6)
+	require.Len(t, rows, 7, "the header, the blank row and five lines")
 }
 
 func TestProducerReadTruncatedDropsTheNoticeAndShowsNextOffset(t *testing.T) {
@@ -179,8 +179,8 @@ func TestProducerReadTruncatedDropsTheNoticeAndShowsNextOffset(t *testing.T) {
 	text := b.String() + "\n[Showing lines 1-2000 of 3000. Use offset=2001 to continue.]"
 	feedResult(x, "read", text, realReadTruncDetails, false)
 	rows := x.rows()
-	require.Equal(t, "    line 1", rows[1])
-	require.Equal(t, "    ⋮ 1994 more lines · e to expand · Enter full screen", rows[4])
+	require.Equal(t, "    line 1", rows[2])
+	require.Equal(t, "    ⋮ 1994 more lines · e to expand · Enter full screen", rows[5])
 	x.rc.Fold = FoldExpanded
 	rows = x.rows()
 	require.Equal(t, "    model saw 2000 of 3000 lines · next offset 2001", rows[len(rows)-1])
@@ -192,7 +192,7 @@ func TestProducerReadFullViewHasNoNumbersAndNoNotice(t *testing.T) {
 	x.rc.Fold = FoldExpanded
 	feedResult(x, "read", "1|a\n2|b\n\n[Showing lines 1-2 of 9. Use offset=3 to continue.]",
 		`{"kind":"read","truncation":{"truncatedBy":"lines","totalLines":9,"outputLines":2},"nextOffset":3}`, false)
-	require.Equal(t, []string{"    a", "    b", "    model saw 2 of 9 lines · next offset 3"}, x.rows()[1:])
+	require.Equal(t, []string{"    a", "    b", "    model saw 2 of 9 lines · next offset 3"}, openBody(t, x.rows()))
 }
 
 // --- text that only looks like model decoration stays ---
@@ -218,7 +218,7 @@ func TestProducerKeepsTextWhenTheDetailsDoNotConfirmIt(t *testing.T) {
 		x := newTx(t)
 		feedResult(x, tc.tool, tc.text, tc.details, false)
 		rows := x.rows()
-		got := rows[1 : 1+len(tc.want)]
+		got := rows[2 : 2+len(tc.want)]
 		require.Equal(t, tc.want, got, tc.name)
 	}
 }
@@ -227,7 +227,7 @@ func TestProducerStripsOnlyTheFirstLineNumberOfEachLine(t *testing.T) {
 	// A file whose own lines read "1|x": the producer numbers them again.
 	x := newTx(t)
 	feedResult(x, "read", "1|1|x\n2|2|y", realReadFullDetails, false)
-	require.Equal(t, []string{"    1|x", "    2|y"}, x.rows()[1:])
+	require.Equal(t, []string{"    1|x", "    2|y"}, openBody(t, x.rows()))
 }
 
 func TestProducerStreamingBashShowsNoSpillLine(t *testing.T) {
@@ -240,7 +240,7 @@ func TestProducerStreamingBashShowsNoSpillLine(t *testing.T) {
 			Details: json.RawMessage(`{"kind":"execute","spillPath":"/tmp/b.log"}`),
 		},
 	})
-	require.Equal(t, []string{"    one", "    two"}, x.rows()[1:])
+	require.Equal(t, []string{"    one", "    two"}, openBody(t, x.rows()))
 }
 
 func TestToolTruncationCleansTheSpillPathWhenHeadAndPathShareARow(t *testing.T) {

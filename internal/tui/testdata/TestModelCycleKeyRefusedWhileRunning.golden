@@ -1,0 +1,24 @@
+ ◢◤ ask
+────────────────────────────────────────────────────────────────────────────────
+  ❯ why does TestLeaderStale fail on CI?                                 14:02
+
+  The test waits for the stale socket check, but CI runs it with a 1 s
+  deadline. The leader removes the stale socket after the lock probe, and the
+  probe can take 1.2 s.
+
+  claude-sonnet-4-6 · 4.2s · ↑12.4k ↓1.8k · $0.040
+
+  ❯ show me the probe code                                               14:03
+
+  ◆ Reading internal/leader/client.go                                        ⠋
+
+
+
+
+
+┊ Model can change when the run ends.
+────────────────────────────────────────────────────────────────────────────────
+ ❯ Ask anything  ·  / commands  ·  ctrl+l model
+────────────────────────────────────────────────────────────────────────────────
+ ⌂ ~/src/askcore             anthropic/claude-sonnet-4-6 ◐ medium  ▰▱▱▱▱▱▱▱ 12%
+ Tab blocks · ctrl+t thinking · ctrl+l model · / commands

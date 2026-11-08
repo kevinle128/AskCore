@@ -16,21 +16,33 @@ func testContext(width int) RenderContext {
 	return RenderContext{Width: width, Theme: NewTheme(colorprofile.NoTTY)}
 }
 
-// entryContext returns the context for one block. The context fold mode wins
-// when it is set above FoldCollapsed; otherwise the block shows in its default
-// mode, as it does in the block pane before the user changes it.
-func entryContext(rc RenderContext, b Block) RenderContext {
-	if rc.Fold == FoldCollapsed {
-		rc.Fold = blockDefaultFold(b)
-	}
-	return rc
-}
-
-// rowsFrom draws the blocks from index first on, as the block pane does.
+// rowsFrom draws the blocks from index first on, as the block pane does: each
+// block in its rows, and one gap row between two units. The gap row after the
+// last block is not part of the result. The context fold mode wins when it is
+// set above FoldCollapsed; otherwise each block shows in its default mode with
+// the default session mode, as it does in the block pane before the user
+// changes it.
 func rowsFrom(tr *Transcript, rc RenderContext, first int) []string {
+	p := NewPane(tr)
+	p.SetTheme(rc.Theme)
+	p.SetSize(rc.Width, 1)
+	p.sync()
+	if rc.Fold != FoldCollapsed {
+		for _, it := range p.items {
+			it.fold = rc.Fold
+		}
+	}
 	var rows []string
-	for _, e := range tr.entries[first:] {
-		rows = append(rows, renderRows(e.block, entryContext(rc, e.block))...)
+	endsInGap := false
+	for i := first; i < len(p.items); i++ {
+		it := p.items[i]
+		for r := range p.measure(i) {
+			rows = append(rows, it.row(r))
+			endsInGap = r >= len(it.body)
+		}
+	}
+	if endsInGap {
+		rows = rows[:len(rows)-1]
 	}
 	return rows
 }
@@ -44,11 +56,8 @@ func liveRows(tr *Transcript, rc RenderContext) []string { return rowsFrom(tr, r
 
 // finalRows draws the blocks before the frontier.
 func finalRows(tr *Transcript, rc RenderContext) []string {
-	var rows []string
-	for _, e := range tr.entries[:tr.Frontier()] {
-		rows = append(rows, renderRows(e.block, entryContext(rc, e.block))...)
-	}
-	return rows
+	all := allRows(tr, rc)
+	return all[:len(all)-len(liveRows(tr, rc))]
 }
 
 func TestFrontierStopsAtTheFirstMutableBlock(t *testing.T) {
@@ -60,13 +69,13 @@ func TestFrontierStopsAtTheFirstMutableBlock(t *testing.T) {
 	require.NoError(t, tr.Append("c", textBlock{"gamma"}, true))
 
 	require.Equal(t, 0, tr.Frontier(), "a stable block does not pass an earlier mutable block")
-	require.Equal(t, []string{"alpha", "beta", "gamma"}, liveRows(tr, rc))
+	require.Equal(t, []string{"alpha", "", "beta", "", "gamma"}, liveRows(tr, rc), "one gap row between two blocks")
 	require.Empty(t, finalRows(tr, rc))
 
 	require.NoError(t, tr.Replace("a", textBlock{"alpha two"}))
 	require.NoError(t, tr.Finish("a"))
 	require.Equal(t, 3, tr.Frontier())
-	require.Equal(t, []string{"alpha two", "beta", "gamma"}, finalRows(tr, rc))
+	require.Equal(t, []string{"alpha two", "", "beta", "", "gamma"}, finalRows(tr, rc))
 	require.Empty(t, liveRows(tr, rc))
 
 	require.NoError(t, tr.Append("d", textBlock{"delta"}, false))

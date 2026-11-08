@@ -47,7 +47,7 @@ func TestWatchedSessionShowsRunThatStartedBeforeAttach(t *testing.T) {
 	r.h.waitText("Live sessions")
 	r.key("down", "enter")
 	r.waitCall("attach:sess_8d07aa11bb22cc33")
-	r.h.waitText("◉ observer 8d07")
+	r.h.waitText("Watching. Type /take")
 	r.h.waitText("Working…") // the state read after the attach
 	fc.push(SnapshotMsg{SessionID: "sess_8d07aa11bb22cc33"})
 	r.h.settle()

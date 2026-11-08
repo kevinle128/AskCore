@@ -105,7 +105,7 @@ type takeMsg struct {
 	err error
 }
 
-// refreshMsg is the result of the state, usage and catalog calls.
+// refreshMsg is the result of the state and catalog calls.
 type refreshMsg struct {
 	gen         uint64
 	runSeq      uint64
@@ -113,8 +113,14 @@ type refreshMsg struct {
 	modelSeq    uint64
 	modelsToken uint64
 	state       *protocol.ACPStateResult
-	usage       *protocol.ACPUsageResult
 	models      *protocol.ACPModelsResult
+}
+
+// skillsMsg is the result of the skills call for the session of generation
+// gen. A failed call carries no rows.
+type skillsMsg struct {
+	gen  uint64
+	rows []protocol.ACPSkill
 }
 
 // tickMsg is the animation clock.
@@ -140,7 +146,7 @@ func (s *sessionView) init() tea.Cmd {
 			return openedMsg{client: c, err: err}
 		}
 	}
-	return tea.Batch(waitClient(s.events), s.newSessionCmd(false))
+	return tea.Batch(waitClient(s.events), s.startSessionCmd(false))
 }
 
 // update handles one message. It runs after the model's own handling.
@@ -149,7 +155,7 @@ func (s *sessionView) update(msg tea.Msg) tea.Cmd {
 	switch msg := msg.(type) {
 	case tea.WindowSizeMsg:
 		s.editor.SetWidth(msg.Width)
-		s.maybeStartLine()
+		s.maybeStartNotices()
 	case tea.KeyPressMsg:
 		cmd = s.onKey(msg)
 	case tea.PasteMsg:
@@ -174,6 +180,10 @@ func (s *sessionView) update(msg tea.Msg) tea.Cmd {
 		s.onModels(msg)
 	case setModelMsg:
 		cmd = s.onSetModel(msg)
+	case cycleModelsMsg:
+		cmd = s.onCycleModels(msg)
+	case cycleSetMsg:
+		s.onCycleSet(msg)
 	case thinkingMsg:
 		s.onThinking(msg)
 	case sessionsMsg:
@@ -184,6 +194,8 @@ func (s *sessionView) update(msg tea.Msg) tea.Cmd {
 		cmd = s.onTake(msg)
 	case refreshMsg:
 		s.onRefresh(msg)
+	case skillsMsg:
+		s.onSkills(msg)
 	case provListedMsg:
 		s.onProvListed(msg)
 	case loginStartedMsg:
@@ -204,6 +216,10 @@ func (s *sessionView) update(msg tea.Msg) tea.Cmd {
 		s.onCancelFailed(msg)
 	case clipboardDoneMsg:
 		cmd = s.onCopied(msg)
+	case trustStateMsg:
+		cmd = s.onTrustState(msg)
+	case trustSetMsg:
+		cmd = s.onTrustSet(msg)
 	case tickMsg:
 		s.onTick()
 	}
@@ -223,15 +239,17 @@ func (s *sessionView) onOpened(msg openedMsg) tea.Cmd {
 		return tea.Quit
 	}
 	s.adoptClient(msg.client)
-	s.maybeStartLine()
-	return tea.Batch(waitClient(s.events), s.newSessionCmd(false))
+	s.maybeStartNotices()
+	return tea.Batch(waitClient(s.events), s.startSessionCmd(false))
 }
 
-// newSessionCmd creates a session. With detach set it leaves the current one
-// first; the in-process client and a client without a session answer with an
-// error that does not matter here.
-func (s *sessionView) newSessionCmd(detach bool) tea.Cmd {
+// newSessionCmd creates a session with a trust override and the flags of the
+// command line. With detach set it leaves the current one first; the
+// in-process client and a client without a session answer with an error that
+// does not matter here.
+func (s *sessionView) newSessionCmd(detach bool, trust protocol.ACPTrustOverride) tea.Cmd {
 	c, cwd, gen := s.client, s.cwd, s.gen
+	opts := NewSessionOptions{Trust: trust, Flags: s.session.Flags}
 	return func() tea.Msg {
 		ctx, cancel := callContext()
 		defer cancel()
@@ -240,7 +258,7 @@ func (s *sessionView) newSessionCmd(detach bool) tea.Cmd {
 				return newSessionMsg{gen: gen, err: fmt.Errorf("leave the session: %w", err)}
 			}
 		}
-		info, err := c.NewSession(ctx, cwd)
+		info, err := c.NewSession(ctx, cwd, opts)
 		return newSessionMsg{gen: gen, info: info, err: err}
 	}
 }
@@ -250,8 +268,15 @@ func ignorableDetach(err error) bool {
 }
 
 func (s *sessionView) onNewSession(msg newSessionMsg) tea.Cmd {
+	// The start ends with any answer, also one of an older generation, so that
+	// the view never waits for ever.
+	s.starting = false
+	s.endTrustPre()
 	if msg.gen != s.gen {
 		return nil
+	}
+	if msg.err == nil {
+		s.start.session = msg.info.ID
 	}
 	if msg.err != nil {
 		s.needNew = true
@@ -261,7 +286,18 @@ func (s *sessionView) onNewSession(msg newSessionMsg) tea.Cmd {
 		return nil
 	}
 	s.useSession(msg.info)
-	return s.refreshCmd(true)
+	s.warnFlagsIgnored(msg.info)
+	return tea.Batch(s.refreshCmd(true), s.skillsCmd())
+}
+
+const flagsIgnoredText = "Warning: the leader ignored the prompt and tool flags of this command line (it is older than this build). They are not applied in this session."
+
+// warnFlagsIgnored tells that the host did not apply the flags of the command
+// line: an older leader drops them without an error.
+func (s *sessionView) warnFlagsIgnored(info SessionInfo) {
+	if info.FlagsIgnored {
+		s.appendBlock(noticeBlock{text: flagsIgnoredText, role: RoleWarning})
+	}
 }
 
 // useSession makes a session the current one.
@@ -293,7 +329,7 @@ func (s *sessionView) onClient(msg Message) tea.Cmd {
 		s.info = v.Info
 		s.conn = connUp
 		s.reconnect = reconnectView{}
-		s.maybeStartLine()
+		s.maybeStartNotices()
 		return s.onBoxReconnected()
 	case ProvidersChangedMsg:
 		return s.onProvidersChanged(v)
@@ -332,28 +368,34 @@ func (s *sessionView) onClientError(v ClientErrorMsg) tea.Cmd {
 	return nil
 }
 
-// maybeStartLine adds the placeholder of the first start line once the size
-// and the link are known. The state answer replaces it with the model line.
-func (s *sessionView) maybeStartLine() {
+// maybeStartNotices adds the start notices of the transcript once the size and
+// the link are known: the placeholder of the fallback notice, which the state
+// answer fills, and the TEA_TRACE warning.
+func (s *sessionView) maybeStartNotices() {
 	if s.startShown || !s.m.sized || s.opening {
 		return
 	}
 	s.startShown = true
-	id := s.nextBlockID()
-	s.m.applyBlock(AppendBlockMsg{ID: id, Block: noRows{}, Stable: false})
-	s.starts = append(s.starts, startSlot{id: id, kind: startFirst})
+	if s.starting {
+		s.reserveTrustPre()
+	}
+	s.addTrustSlots()
+	s.addFallbackSlot()
+	if s.trace != "" {
+		s.appendBlock(noticeBlock{text: traceWarningText(s.trace), role: RoleWarning})
+	}
 	s.settleStartsIfKnown()
 }
 
 // ---- snapshot and events ----
 
-// resetSessionState forgets the run, the queue and the usage of the session
+// resetSessionState forgets the run, the queue and the context use of the session
 // that the view followed before.
 func (s *sessionView) resetSessionState() {
 	s.run = runView{seq: s.run.seq + 1}
 	s.queue = queueView{seq: s.queue.seq + 1}
 	s.failure = nil
-	s.ctxTokens, s.costMicro = 0, 0
+	s.ctxTokens = 0
 }
 
 // replaceTranscript drops the blocks. The pane draws the history again as the
@@ -362,7 +404,9 @@ func (s *sessionView) replaceTranscript() {
 	s.m.resetTranscript()
 	s.startShown = false
 	s.starts = nil
-	s.maybeStartLine()
+	s.trustSlots = nil
+	s.preWarn, s.preExplain = "", ""
+	s.maybeStartNotices()
 }
 
 func (s *sessionView) onSnapshot(v SnapshotMsg) tea.Cmd {
@@ -370,7 +414,7 @@ func (s *sessionView) onSnapshot(v SnapshotMsg) tea.Cmd {
 	s.baseline = v.Cursor
 	if v.Head.Epoch == v.Cursor.Epoch && v.Head.Seq > v.Cursor.Seq {
 		// A resumed follow replays what the client missed. Those events are in
-		// the state that the view reads next, so they draw no change line.
+		// the state that the view reads next, so they do not change the model.
 		s.baseline = v.Head
 	}
 	switch {
@@ -386,7 +430,8 @@ func (s *sessionView) onSnapshot(v SnapshotMsg) tea.Cmd {
 				s.promptID, s.promptSession = 0, ""
 			}
 			s.appendBlock(NewDividerBlock("session " + ShortID(v.SessionID)))
-			s.addStartSlot(startDivider, "")
+			s.addTrustSlots()
+			s.addFallbackSlot()
 		}
 		s.trl.Reset()
 		s.trl.ForgetJobs()
@@ -552,8 +597,11 @@ func (s *sessionView) onPromptCalled(msg promptCalledMsg) tea.Cmd {
 	}
 	var cmd tea.Cmd
 	if msg.session != nil && msg.gen == s.gen {
+		// The session came from the trust record of the last start.
+		s.start.session = msg.session.ID
 		s.useSession(*msg.session)
-		cmd = s.refreshCmd(true)
+		s.warnFlagsIgnored(*msg.session)
+		cmd = tea.Batch(s.refreshCmd(true), s.skillsCmd())
 	}
 	s.send.calling = false
 	if msg.err != nil {
@@ -627,13 +675,15 @@ func errText(err error) string {
 
 // visibleQueue returns the queue texts that the user can see. A system
 // reminder is for the model only: it has no queue row, and alt+up never puts
-// it into the draft.
+// it into the draft. A skill command that the agent expanded shows as the user
+// typed it.
 func visibleQueue(texts []string) []string {
 	out := make([]string, 0, len(texts))
 	for _, t := range texts {
-		if !protocol.IsSystemReminderText(t) {
-			out = append(out, t)
+		if protocol.IsSystemReminderText(t) {
+			continue
 		}
+		out = append(out, typedText(t))
 	}
 	return out
 }
@@ -757,7 +807,8 @@ func (s *sessionView) onDequeued(msg dequeuedMsg) {
 
 // ---- state refresh ----
 
-// refreshCmd reads the state, the usage and, when asked, the model catalog.
+// refreshCmd reads the state and, when asked, the model catalog. The screen
+// shows no session cost, so it does not read the usage totals.
 func (s *sessionView) refreshCmd(withModels bool) tea.Cmd {
 	c, gen := s.client, s.gen
 	runSeq, queueSeq, modelSeq := s.run.seq, s.queue.seq, s.modelSeq
@@ -778,9 +829,6 @@ func (s *sessionView) refreshCmd(withModels bool) tea.Cmd {
 		if res, err := c.State(ctx); err == nil {
 			out.state = &res
 		}
-		if res, err := c.Usage(ctx); err == nil {
-			out.usage = &res
-		}
 		return out
 	}
 }
@@ -799,8 +847,10 @@ func (s *sessionView) onRefresh(msg refreshMsg) {
 			s.modelID = st.ModelID
 		}
 		s.thinking = st.ThinkingLevel
-		s.fallback = st.ModelFallback
+		s.fallback, s.levelDropped = st.ModelFallback, st.LevelDropped
 		s.haveState, s.stateGen = true, s.gen
+		s.sessTrust, s.diagnostics, s.stateSession = st.Trust, st.Diagnostics, s.sess.ID
+		s.applySessionFold(st.ThinkingFold)
 		if msg.runSeq == s.run.seq && st.Running != s.run.running {
 			s.run.running = st.Running
 			if st.Running {
@@ -814,15 +864,52 @@ func (s *sessionView) onRefresh(msg refreshMsg) {
 			s.queue.follow = visibleQueue(st.FollowUp)
 		}
 	}
-	if msg.usage != nil {
-		s.costMicro = msg.usage.Total.Cost.Total
-	}
 	if s.modelID != "" {
 		s.hadModel = true
 	}
-	// The state of the session is known now, or the read failed; a start line
-	// must not wait for ever.
+	// The state of the session is known now, or the read failed; a fallback
+	// notice must not wait for ever.
 	s.settleStarts()
+}
+
+// skillsCmd reads the skills of the current session for the command list. A
+// leader that predates the call, or a read that fails, gives no rows and no
+// notice: the list is a help for typing, and the built-in commands stay.
+func (s *sessionView) skillsCmd() tea.Cmd {
+	c, gen := s.client, s.gen
+	return func() tea.Msg {
+		ctx, cancel := callContext()
+		defer cancel()
+		res, err := c.Skills(ctx)
+		if err != nil {
+			res = protocol.ACPSkillsResult{}
+		}
+		return skillsMsg{gen: gen, rows: res.Skills}
+	}
+}
+
+func (s *sessionView) onSkills(msg skillsMsg) {
+	if msg.gen != s.gen {
+		return
+	}
+	s.editor.SetSkills(skillCommands(msg.rows))
+}
+
+// skillCommands makes the list rows of the skills. The first skill of a name
+// is the one that "/skill:<name>" loads, so a later one of the same name is
+// left out. Names and descriptions come from files, so control characters are
+// made safe.
+func skillCommands(skills []protocol.ACPSkill) []CommandSpec {
+	var out []CommandSpec
+	seen := map[string]bool{}
+	for _, k := range skills {
+		if k.Name == "" || seen[k.Name] {
+			continue
+		}
+		seen[k.Name] = true
+		out = append(out, CommandSpec{Name: protocol.SkillCommandPrefix + safeText(k.Name), Description: safeText(k.Description)})
+	}
+	return out
 }
 
 // ---- notices and the animation clock ----
@@ -840,7 +927,7 @@ func (s *sessionView) setNoticeFor(text string, d time.Duration, isErr bool) {
 }
 
 func (s *sessionView) noticeActive() bool {
-	return s.notice.text != "" && s.now().Before(s.notice.until)
+	return s.notice.shown() && s.now().Before(s.notice.until)
 }
 
 // needsTick tells whether something on screen changes with time.
@@ -862,7 +949,7 @@ func (s *sessionView) onTick() {
 	s.tickPending = false
 	s.trl.View().SetSpinnerFrame(int(s.now().UnixMilli() / int64(defaultTick/time.Millisecond)))
 	s.trl.View().SetClock(s.now().UnixMilli())
-	if s.notice.text != "" && !s.now().Before(s.notice.until) {
+	if s.notice.shown() && !s.now().Before(s.notice.until) {
 		s.notice = noticeView{}
 	}
 }

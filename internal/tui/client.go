@@ -36,6 +36,10 @@ var (
 	ErrPromptPending = errors.New("a prompt is already in flight")
 	// ErrClosed means the client was closed.
 	ErrClosed = errors.New("the client is closed")
+	// ErrTrustNotAvailable means that the agent host does not serve the project
+	// trust methods, for example an older leader. The UI then shows no trust
+	// prompt and no trust note; it is not an error to show.
+	ErrTrustNotAvailable = errors.New("project trust is not available on this host")
 )
 
 // RequestError is an error answer of the agent or of the leader. Kind is the
@@ -79,6 +83,19 @@ type SessionInfo struct {
 	// Role is protocol.ACPRoleDriver or protocol.ACPRoleObserver.
 	Role string
 	Cwd  string
+	// FlagsIgnored is true when NewSession sent flags and the host did not
+	// acknowledge them: an older leader drops what it does not know.
+	FlagsIgnored bool
+}
+
+// NewSessionOptions are the per-session options that NewSession sends.
+type NewSessionOptions struct {
+	// Trust is the trust override: empty, or protocol.ACPTrustApprove or
+	// protocol.ACPTrustDeny.
+	Trust protocol.ACPTrustOverride
+	// Flags are the prompt and tool flags of the command line. The zero value
+	// sends none.
+	Flags protocol.ACPSessionOptions
 }
 
 // Client is what the UI needs from an agent. Calls block until they are
@@ -95,7 +112,9 @@ type Client interface {
 	// Info describes the current link.
 	Info() ConnInfo
 
-	NewSession(ctx context.Context, cwd string) (SessionInfo, error)
+	// NewSession creates a session in cwd, makes it current and follows it.
+	// opts apply to this session only. The host saves nothing for them.
+	NewSession(ctx context.Context, cwd string, opts NewSessionOptions) (SessionInfo, error)
 	// Attach joins a live session of the leader as an observer and follows it.
 	Attach(ctx context.Context, sessionID string) (SessionInfo, error)
 	// Detach leaves the current session. Its run goes on.
@@ -123,12 +142,18 @@ type Client interface {
 	// the flag sends every row and leaves it false. Default is the saved default.
 	Models(ctx context.Context) (protocol.ACPModelsResult, error)
 	// SetModel changes the model of an idle session. A readiness failure comes
-	// back as a *RequestError and the model stays as it was. With saveDefault the
-	// leader also keeps the choice as the default of new sessions; the result's
-	// DefaultSaved tells whether it did.
-	SetModel(ctx context.Context, modelID string, saveDefault bool) (protocol.ACPSetModelResult, error)
+	// back as a *RequestError and the model stays as it was. A level that is not
+	// empty changes the thinking level in the same call; the result echoes the
+	// level that the model allows. With saveDefault the leader also keeps the
+	// choice as the default of new sessions; the result's DefaultSaved tells
+	// whether it did.
+	SetModel(ctx context.Context, modelID string, level protocol.ThinkingLevel, saveDefault bool) (protocol.ACPSetModelResult, error)
 	SetThinking(ctx context.Context, level protocol.ThinkingLevel) (protocol.ThinkingLevel, error)
 	Usage(ctx context.Context) (protocol.ACPUsageResult, error)
+	// Skills lists the skills of the current session, which the command list
+	// offers as "/skill:<name>". A leader that predates the call answers with a
+	// *RequestError.
+	Skills(ctx context.Context) (protocol.ACPSkillsResult, error)
 
 	// The provider calls need the shared leader. In process each of them returns
 	// ErrNeedsLeader and sends nothing. A secret (key, code or address) goes out
@@ -167,6 +192,16 @@ type Client interface {
 	// has a current session, the result names that session's model if the
 	// removal made it unusable.
 	Logout(ctx context.Context, provider, method string) (protocol.ACPLogoutResult, error)
+
+	// TrustState asks the host for the project trust decision of cwd, as a
+	// session that starts now would get it from a client that can ask the
+	// user. A host without the trust methods gives ErrTrustNotAvailable.
+	TrustState(ctx context.Context, cwd string) (protocol.ACPTrustStateResult, error)
+	// SetTrust saves a trust decision on the host and returns the new state of
+	// the cwd. A trust store that cannot be changed gives a *RequestError of
+	// Kind "invalid_state" whose Message is the warning of the host. A host
+	// without the trust methods gives ErrTrustNotAvailable.
+	SetTrust(ctx context.Context, req protocol.ACPTrustSetRequest) (protocol.ACPTrustStateResult, error)
 
 	// Close leaves the leader without stopping its runs, or stops the in-process
 	// agent and its run. It ends the reconnect loop and closes Events.

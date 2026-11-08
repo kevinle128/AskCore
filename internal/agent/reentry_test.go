@@ -143,8 +143,8 @@ func TestResetPublishesOneQueueUpdateWhenQueuesCleared(t *testing.T) {
 	keepOneQueued(t, a)
 	before := len(queueStates(rec))
 
-	require.NoError(t, a.Reset())
-	require.NoError(t, a.Reset(), "an empty reset publishes nothing")
+	retryBusy(t, a, a.Reset)
+	retryBusy(t, a, a.Reset) // an empty reset publishes nothing
 	waitFor(t, func() bool { return len(queueStates(rec)) > before })
 
 	states := queueStates(rec)

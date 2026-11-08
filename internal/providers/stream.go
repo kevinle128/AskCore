@@ -130,3 +130,47 @@ func (s *Stream) deliver(ctx context.Context, item StreamItem) {
 	default:
 	}
 }
+
+// Relay returns a stream that forwards every item of inner unchanged and ends
+// with the result of inner. Before the terminal item of inner reaches the
+// relay channel, and before the relay settles, it calls beforeEnd with the
+// result error of inner (nil on success). So a consumer that sees the end of
+// the relay also sees the effect of beforeEnd.
+//
+// The relay producer is the only new goroutine. It reads inner until inner
+// closes, which every stream does, so it ends with inner. A send to the relay
+// channel stops at ctx cancellation, as the producer of inner does.
+func Relay(ctx context.Context, inner *Stream, beforeEnd func(err error)) *Stream {
+	if ctx == nil {
+		ctx = context.Background()
+	}
+	s := &Stream{
+		events:  make(chan StreamItem, cap(inner.events)),
+		done:    make(chan struct{}),
+		binding: inner.binding,
+	}
+	go func() {
+		defer close(s.events)
+		var terminal *StreamItem
+		for item := range inner.events {
+			switch item.Event.(type) {
+			case protocol.DoneEvent, protocol.ErrorEvent:
+				terminal = &item
+				continue
+			}
+			s.deliver(ctx, item)
+		}
+		// inner settles before it sends its terminal item and before it
+		// closes its channel.
+		<-inner.done
+		msg, err := inner.result()
+		if beforeEnd != nil {
+			beforeEnd(err)
+		}
+		s.settle(msg, err)
+		if terminal != nil {
+			s.deliver(ctx, *terminal)
+		}
+	}()
+	return s
+}

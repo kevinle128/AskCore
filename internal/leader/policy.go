@@ -7,7 +7,7 @@ type callKind int
 const (
 	callSession      callKind = iota // forward a call that names a session
 	callInitialize                   // answered by the router from the cached link result
-	callAuthenticate                 // forward without a session
+	callAuthenticate                 // forward with the client id and no session
 	callAccount                      // provider account call: forward with the client id, no session
 	callNewSession
 	callFollow
@@ -46,6 +46,11 @@ var policies = map[string]policy{
 	protocol.ACPLoginCancel:     {kind: callAccount},
 	protocol.ACPProvidersLogout: {kind: callAccount},
 
+	// Project trust calls name no session, so they take the authenticate kind:
+	// forward with the client id and no session.
+	protocol.ACPTrustState: {kind: callAuthenticate},
+	protocol.ACPTrustSet:   {kind: callAuthenticate},
+
 	"session/prompt": {kind: callSession, driverOnly: true},
 	"session/cancel": {kind: callSession, driverOnly: true},
 	"session/close":  {kind: callClose, driverOnly: true},
@@ -53,6 +58,7 @@ var policies = map[string]policy{
 	protocol.ACPState:       {kind: callSession, subscribe: true},
 	protocol.ACPModels:      {kind: callSession, subscribe: true},
 	protocol.ACPUsage:       {kind: callSession, subscribe: true},
+	protocol.ACPSkills:      {kind: callSession, subscribe: true},
 	protocol.ACPSetModel:    {kind: callSession, driverOnly: true},
 	protocol.ACPSetThinking: {kind: callSession, driverOnly: true},
 	protocol.ACPContinue:    {kind: callSession, driverOnly: true},

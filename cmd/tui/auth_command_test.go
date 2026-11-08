@@ -2,6 +2,7 @@ package main
 
 import (
 	"bytes"
+	"context"
 	"fmt"
 	"io"
 	"net/http"
@@ -10,6 +11,10 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+
+	"github.com/stretchr/testify/require"
+
+	"AskCore/internal/settings"
 )
 
 type authCommandRT func(*http.Request) (*http.Response, error)
@@ -63,14 +68,32 @@ func TestAuthCommandSubprocessHelper(t *testing.T) {
 		body = strings.ReplaceAll(body, "\n ", "\n")
 		return &http.Response{StatusCode: 200, Header: http.Header{"Content-Type": []string{"text/event-stream"}}, Body: io.NopCloser(strings.NewReader(body)), Request: r}, nil
 	})
-	private := authCommandRT(func(*http.Request) (*http.Response, error) {
+	lists := os.Getenv(authCommandListsEnv) == "1"
+	private := authCommandRT(func(r *http.Request) (*http.Response, error) {
+		// With the model refresh on, a sign-in reads the account list; that
+		// GET is the only auth HTTP that a key command may send.
+		if lists && r.Method == http.MethodGet && r.URL.Host == "api.anthropic.com" && r.URL.Path == "/v1/models" && r.Header.Get("X-Api-Key") == "test-private-key" {
+			body := `{"data":[{"id":"claude-opus-4-7","display_name":"Claude Opus 4.7"}],"has_more":false,"last_id":"claude-opus-4-7"}`
+			return &http.Response{StatusCode: 200, Header: http.Header{"Content-Type": []string{"application/json"}}, Body: io.NopCloser(strings.NewReader(body)), Request: r}, nil
+		}
 		return nil, fmt.Errorf("key command must not use auth HTTP")
 	})
-	code := runWithDependencies(os.Args[index:], os.Stdin, os.Stdout, os.Stderr, runDependencies{getenv: os.Getenv, authHTTP: &http.Client{Transport: private}, inferenceHTTP: &http.Client{Transport: external}})
+	code := runWithDependencies(os.Args[index:], os.Stdin, os.Stdout, os.Stderr, runDependencies{getenv: os.Getenv, authHTTP: &http.Client{Transport: private}, inferenceHTTP: &http.Client{Transport: external}, modelRefresh: lists})
 	os.Exit(code)
 }
 
+// authCommandListsEnv turns the model refresh on in the helper process, with a
+// fake Anthropic model list on the auth HTTP.
+const authCommandListsEnv = "ASK_AUTH_COMMAND_LISTS"
+
 func authCommand(t *testing.T, home, input string, args ...string) (string, string, error) {
+	t.Helper()
+	return authCommandEnv(t, home, input, nil, args...)
+}
+
+// authCommandEnv runs the helper with extra environment. A model refresh test
+// passes ASK_DISABLE_MODEL_REFRESH= to undo the switch of TestMain.
+func authCommandEnv(t *testing.T, home, input string, extra []string, args ...string) (string, string, error) {
 	t.Helper()
 	cmd := exec.Command(os.Args[0], append([]string{"-test.run=^TestAuthCommandSubprocessHelper$", "--"}, args...)...)
 	env := []string{}
@@ -79,6 +102,7 @@ func authCommand(t *testing.T, home, input string, args ...string) (string, stri
 			env = append(env, v)
 		}
 	}
+	env = append(env, extra...)
 	cmd.Env = append(env, "ASK_AUTH_COMMAND_HELPER=1", "ASK_HOME="+home, "ANTHROPIC_API_KEY=")
 	cmd.Stdin = strings.NewReader(input)
 	var stdout, stderr bytes.Buffer
@@ -109,6 +133,59 @@ func TestAuthKeyCommandNextPromptAndLogout(t *testing.T) {
 	if err == nil {
 		t.Fatal("logged-out prompt used old credential")
 	}
+}
+
+// A catalog model that only the generated catalog has resolves offline in
+// print mode: the run sends the model request and nothing else.
+func TestPrintResolvesGeneratedModelOffline(t *testing.T) {
+	home := filepath.Join(t.TempDir(), "ask")
+	_, errout, err := authCommand(t, home, "test-private-key\n", "auth", "login", "--provider", "anthropic", "--method", "api-key")
+	require.NoError(t, err, errout)
+	_, statErr := os.Stat(filepath.Join(home, "model-cache.json"))
+	require.ErrorIs(t, statErr, os.ErrNotExist, "with the refresh off a sign-in creates no cache")
+	out, errout, err := authCommand(t, home, "", "--provider", "anthropic", "--model", "claude-opus-4-7", "-p", "hello")
+	require.NoError(t, err, errout)
+	require.Contains(t, out, "connected")
+}
+
+// ask auth login reads the account list in its own process, and ask -p then
+// selects from it; ask auth logout deletes it.
+func TestAuthLoginRefreshesAccountListAndLogoutDeletesIt(t *testing.T) {
+	home := filepath.Join(t.TempDir(), "ask")
+	on := []string{disableModelRefreshEnv + "=", authCommandListsEnv + "=1"}
+	_, errout, err := authCommandEnv(t, home, "test-private-key\n", on, "auth", "login", "--provider", "anthropic", "--method", "api-key")
+	require.NoError(t, err, errout)
+	require.NotContains(t, errout, "Warning")
+
+	cache, err := settings.NewModelCache(home)
+	require.NoError(t, err)
+	data, _, err := cache.Read(context.Background())
+	require.NoError(t, err)
+	var ids []string
+	for _, entry := range data.Accounts {
+		require.Equal(t, "anthropic", entry.Provider)
+		require.Equal(t, settings.AccountModelsKnown, entry.State)
+		for _, item := range entry.Items {
+			ids = append(ids, item.ID)
+		}
+	}
+	require.Equal(t, []string{"claude-opus-4-7"}, ids)
+	raw, err := os.ReadFile(cache.Path())
+	require.NoError(t, err)
+	require.NotContains(t, string(raw), "test-private-key", "the cache holds no key")
+
+	out, errout, err := authCommand(t, home, "", "--provider", "anthropic", "--model", "claude-opus-4-7", "-p", "hello")
+	require.NoError(t, err, errout)
+	require.Contains(t, out, "connected")
+	_, errout, err = authCommand(t, home, "", "--provider", "anthropic", "--model", "claude-sonnet-4-6", "-p", "hello")
+	require.Error(t, err, "the account list does not have the model")
+	require.Contains(t, errout, "unknown model")
+
+	_, errout, err = authCommandEnv(t, home, "", on, "auth", "logout", "--provider", "anthropic")
+	require.NoError(t, err, errout)
+	data, _, err = cache.Read(context.Background())
+	require.NoError(t, err)
+	require.Empty(t, data.Accounts, "sign-out deletes the lists of the provider")
 }
 
 func TestAuthCommandMissingMethodAndOversizeRetainRecord(t *testing.T) {

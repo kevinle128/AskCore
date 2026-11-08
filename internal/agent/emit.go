@@ -137,10 +137,12 @@ func (a *Agent) dispatch(ev protocol.Event) {
 	a.mu.Lock()
 	ls := a.listeners
 	a.dispatching++
+	a.syncIdleLocked()
 	a.mu.Unlock()
 	defer func() {
 		a.mu.Lock()
 		a.dispatching--
+		a.syncIdleLocked()
 		a.mu.Unlock()
 	}()
 	for _, l := range ls {

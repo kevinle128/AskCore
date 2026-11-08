@@ -1,14 +1,14 @@
-◢◤ ask ● 7c1e            0%
+ ◢◤ ask
 ────────────────────────────
-  ◆ Edited parser.go  +3 -1
-  ◆ Ran go test ./...
 
   Count now skips empty
   fields. TestCount still
   fails because it expects
-  the old value; shall I fix
+  the old value; shall I
+  fix it?
          ▼ 7 · End
 ────────────────────────────
  ❯ Ask anything
 ────────────────────────────
+                         0%
  Tab blocks · / commands

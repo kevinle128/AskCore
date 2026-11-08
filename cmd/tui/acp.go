@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"io"
+	"net/http"
 	"os"
 
 	"go.uber.org/fx"
@@ -13,6 +14,7 @@ import (
 	"AskCore/internal/app"
 	"AskCore/internal/auth"
 	"AskCore/internal/providers"
+	"AskCore/pkg/protocol"
 
 	sdk "github.com/coder/acp-go-sdk"
 )
@@ -24,8 +26,13 @@ const fauxEnv = "ASK_FAUX"
 const acpUsage = `ask acp - serve ACP v1 (Agent Client Protocol) over stdin and stdout
 
 Usage:
-  ask acp
+  ask acp [--approve | --no-approve] [--offline]
   ask acp --help
+
+Options:
+  --approve, -a         Trust the project settings of every session of this process
+  --no-approve, -na     Do not trust the project settings of any session of this process
+  --offline             Do not refresh the model list from the network (as ASK_DISABLE_MODEL_REFRESH=1)
 
 Reads one JSON-RPC frame per line from stdin and writes one per line to stdout.
 Diagnostics go to stderr. The command opens no network listener and no database.
@@ -35,27 +42,49 @@ Exit codes: 0 input ended, 1 error or lost output, 130 SIGINT, 143 SIGTERM, 129 
 A second signal ends the process before the cleanup finishes.
 `
 
-// parseACPArgs reads the arguments after "acp". The command takes none, because
-// a prompt, a mode or a provider belongs to the protocol, not to the command line.
-func parseACPArgs(argv []string) (help bool, err error) {
-	switch {
-	case len(argv) == 0:
-		return false, nil
-	case len(argv) == 1 && (argv[0] == "--help" || argv[0] == "-h"):
-		return true, nil
+type acpArgs struct {
+	help    bool
+	trust   protocol.ACPTrustOverride
+	offline bool
+}
+
+// parseACPArgs reads the arguments after "acp". The command takes only the
+// trust flags and --offline, because a prompt, a mode, a provider or a model
+// belongs to the protocol, not to the command line.
+func parseACPArgs(argv []string) (acpArgs, error) {
+	if len(argv) == 1 && (argv[0] == "--help" || argv[0] == "-h") {
+		return acpArgs{help: true}, nil
 	}
-	return false, errors.New("acp does not accept arguments; use ask acp --help")
+	var out acpArgs
+	var flags []protocol.ACPTrustOverride
+	for _, arg := range argv {
+		if arg == "--offline" {
+			out.offline = true
+			continue
+		}
+		f, ok := trustFlags[arg]
+		if !ok {
+			return acpArgs{}, errors.New("acp does not accept arguments other than --approve, --no-approve and --offline; use ask acp --help")
+		}
+		flags = append(flags, f)
+	}
+	trust, err := trustOverride(flags)
+	if err != nil {
+		return acpArgs{}, err
+	}
+	out.trust = trust
+	return out, nil
 }
 
 // runACP serves the protocol on stdin and stdout until the input ends, the
 // output fails or a signal comes.
 func runACP(argv []string, stdin io.Reader, stdout, stderr io.Writer, deps runDependencies, sigs <-chan os.Signal) int {
-	help, err := parseACPArgs(argv)
+	args, err := parseACPArgs(argv)
 	if err != nil {
 		report(stderr, "Error:", err)
 		return 1
 	}
-	if help {
+	if args.help {
 		if _, err := io.WriteString(stdout, acpUsage); err != nil {
 			report(stderr, err)
 			return 1
@@ -67,11 +96,16 @@ func runACP(argv []string, stdin io.Reader, stdout, stderr io.Writer, deps runDe
 	// ordinary stdout of the process goes to stderr for the whole run.
 	defer guardStdout(stderr)()
 
-	params, err := acpParams(deps)
+	if args.offline {
+		deps = offlineDeps(deps)
+	}
+	params, err := acpParams(deps, args.trust)
 	if err != nil {
 		report(stderr, "Error:", err)
 		return 1
 	}
+	// An editor shows the stderr of the agent as its log.
+	params.Warn = func(line string) { report(stderr, line) }
 	var rt *app.ACPRuntime
 	graph := fx.New(app.ACPModule, fx.Supply(params), fx.NopLogger, fx.Populate(&rt))
 	if err := graph.Err(); err != nil {
@@ -102,10 +136,27 @@ func runACP(argv []string, stdin io.Reader, stdout, stderr io.Writer, deps runDe
 	return 0
 }
 
+// disableModelRefreshEnv turns off the network refresh of the model list when
+// its value is "1". The list then comes from the cache and the built-in
+// catalog only.
+const disableModelRefreshEnv = "ASK_DISABLE_MODEL_REFRESH"
+
+func modelRefreshOn(deps runDependencies) bool {
+	return deps.modelRefresh && deps.getenv(disableModelRefreshEnv) != "1"
+}
+
+func modelHTTP(deps runDependencies) *http.Client {
+	if deps.modelHTTP != nil {
+		return deps.modelHTTP
+	}
+	return &http.Client{}
+}
+
 // acpParams builds the facts of the shared agent host from the process
 // dependencies. ask acp and ask leader use the same ones, so both run the same
-// agent with the same native credentials.
-func acpParams(deps runDependencies) (app.ACPParams, error) {
+// agent with the same native credentials. trust is the process-wide trust
+// override; only ask acp passes one.
+func acpParams(deps runDependencies, trust protocol.ACPTrustOverride) (app.ACPParams, error) {
 	o := options{provider: defaultProvider, model: defaultModel}
 	if deps.inferenceHTTP != nil {
 		o.transport = deps.inferenceHTTP.Transport
@@ -119,22 +170,26 @@ func acpParams(deps runDependencies) (app.ACPParams, error) {
 	var initial providers.Model
 	if deps.getenv(fauxEnv) == "1" {
 		var err error
-		demoStream, initial, err = openProvider(o, deps.getenv)
+		demoStream, initial, err = openProvider(o, deps.getenv, nil)
 		if err != nil {
 			return app.ACPParams{}, err
 		}
 	}
 	return app.ACPParams{
-		Home:     deps.getenv("ASK_HOME"),
-		Env:      func(k string) (string, bool) { v := deps.getenv(k); return v, v != "" },
-		AuthHTTP: deps.authHTTP,
-		Now:      deps.now,
-		Wait:     deps.wait,
-		Initial:  initial,
-		Info:     sdk.Implementation{Name: "ask", Version: buildIdentity()},
-		NewAgent: func(service *auth.Service, sessionID, cwd string, start providers.Model) (*agent.Agent, error) {
+		Home:          deps.getenv("ASK_HOME"),
+		Env:           func(k string) (string, bool) { v := deps.getenv(k); return v, v != "" },
+		AuthHTTP:      deps.authHTTP,
+		Now:           deps.now,
+		Wait:          deps.wait,
+		Initial:       initial,
+		Info:          sdk.Implementation{Name: "ask", Version: buildIdentity()},
+		TrustOverride: trust,
+		// The leader, ask acp and the in-process TUI all compose here, so
+		// all three refresh the model list.
+		ModelRefresh: app.ModelRefresh{Enabled: modelRefreshOn(deps), HTTP: modelHTTP(deps), Now: deps.now},
+		NewAgent: func(service *auth.Service, spec app.AgentSpec) (*agent.Agent, error) {
 			// The job table closes through the Config.Release of the Agent.
-			ag, _, err := newNativeAgentOn(o, deps.getenv, service, sessionID, cwd, demoStream, start)
+			ag, _, err := newNativeAgentOn(o, deps.getenv, service, spec, demoStream)
 			return ag, err
 		},
 	}, nil

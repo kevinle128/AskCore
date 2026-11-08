@@ -17,9 +17,10 @@ func withTrace() rigOption {
 	return withOptions(func(o *Options) { o.TraceFile = traceFile })
 }
 
-// headerOf returns the header row of the screen.
-func (r *viewRig) headerOf() string {
-	return r.content()[0]
+// footerOf returns the footer row of the screen: the row above the bar.
+func (r *viewRig) footerOf() string {
+	rows := r.content()
+	return rows[len(rows)-2]
 }
 
 func TestFirstRunGoldens(t *testing.T) {
@@ -27,7 +28,7 @@ func TestFirstRunGoldens(t *testing.T) {
 		r := startView(t, 80, 24, withFake(noModelFake()))
 		requireContentGolden(t, r.h)
 		require.Equal(t, []string{"┊ Add a provider with /providers · then choose a model with /model"}, r.railRows(1))
-		header := r.headerOf()
+		header := r.footerOf()
 		require.True(t, strings.HasSuffix(header, "no model"), header)
 		require.NotContains(t, header, "▱")
 	})
@@ -35,7 +36,7 @@ func TestFirstRunGoldens(t *testing.T) {
 		r := startView(t, 40, 14, withFake(noModelFake()))
 		requireContentGolden(t, r.h)
 		require.Equal(t, []string{"┊ Add a provider with /providers"}, r.railRows(1))
-		require.True(t, strings.HasSuffix(r.headerOf(), "no model"))
+		require.True(t, strings.HasSuffix(r.footerOf(), "no model"))
 	})
 }
 
@@ -74,7 +75,7 @@ func TestNoModelRefusalPointsToModelWhenProviderUsable(t *testing.T) {
 	fc := noModelFake()
 	fc.setModels(protocol.ACPModelsResult{Models: singleFormatModels(), UsableOnly: true})
 	r := startView(t, 80, 24, withFake(fc))
-	r.waitCall("usage")
+	r.waitCall("state")
 	r.typeText("hello")
 	r.key("enter")
 	r.h.waitText("✗ Not sent: no model · draft kept · Choose one with /model")
@@ -108,7 +109,7 @@ func TestProvidersNeedsLeaderInProcess(t *testing.T) {
 	fc := noModelFake()
 	fc.setInfo(ConnInfo{Mode: ModeInProcess})
 	r := startView(t, 80, 24, withFake(fc))
-	r.waitCall("usage")
+	r.waitCall("state")
 	r.typeText("/providers")
 	r.key("enter")
 	r.h.waitText("Sign in from a shell: ask auth login --provider <id> --method <id>")
@@ -118,7 +119,7 @@ func TestProvidersNeedsLeaderInProcess(t *testing.T) {
 	}, r.railRows(2))
 	require.Empty(t, fc.callsWith("providers"), "nothing is sent in process")
 	r.requireNotOnScreen("Type to search")
-	require.True(t, strings.HasSuffix(r.headerOf(), "no model"))
+	require.True(t, strings.HasSuffix(r.footerOf(), "no model"))
 }
 
 func TestCurrentModelRemovedShowsNoModel(t *testing.T) {
@@ -139,7 +140,7 @@ func TestCurrentModelRemovedShowsNoModel(t *testing.T) {
 	r.h.waitText("✓ Removed the saved credential for openai.")
 	r.h.waitText("The current model gpt-5.5 is no longer available. Choose one with /model.")
 	r.h.waitText("┊ No model. Choose one with /model")
-	require.True(t, strings.HasSuffix(r.headerOf(), "no model"))
+	require.True(t, strings.HasSuffix(r.footerOf(), "no model"))
 	r.typeText("hello")
 	r.key("enter")
 	r.h.waitText("✗ Not sent: no model · draft kept · Choose one with /model")
@@ -183,9 +184,10 @@ func TestTraceWarningOnceAtStart(t *testing.T) {
 	r := startView(t, 80, 24, withFake(providerFake()), withTrace())
 	requireContentGolden(t, r.h)
 	rows := r.content()
-	require.Equal(t, "  model  alibaba-token-plan/deepseek-v4.1-flash", rows[1])
-	require.Equal(t, "  TEA_TRACE is on: typed and pasted text, keys included, is written to", rows[2])
-	require.Equal(t, "  /tmp/ask-trace.log.", rows[3])
+	require.Equal(t, "  TEA_TRACE is on: typed and pasted text, keys included, is written to", rows[0], "the warning is the first row of the pane")
+	require.Equal(t, "  /tmp/ask-trace.log.", rows[1])
+	require.Equal(t, "", rows[2])
+	requireNoModelLine(t, rows)
 	require.Equal(t, 1, r.h.count("TEA_TRACE is on"))
 	r.h.resize(60, 20)
 	r.h.settle()
@@ -196,9 +198,8 @@ func TestTraceWarningOnceAtStart(t *testing.T) {
 func TestTraceWarningOnceAtStartWithNoModel(t *testing.T) {
 	r := startView(t, 80, 24, withFake(noModelFake()), withTrace())
 	rows := r.content()
-	require.True(t, strings.HasPrefix(rows[0], "◢◤ ask"))
-	require.Equal(t, "  TEA_TRACE is on: typed and pasted text, keys included, is written to", rows[1])
-	require.Equal(t, "  /tmp/ask-trace.log.", rows[2])
+	require.Equal(t, "  TEA_TRACE is on: typed and pasted text, keys included, is written to", rows[0])
+	require.Equal(t, "  /tmp/ask-trace.log.", rows[1])
 }
 
 func TestTraceWarningOnKeyBox(t *testing.T) {
@@ -263,16 +264,69 @@ func TestFallbackNoticeNamesModelInUse(t *testing.T) {
 		r := startView(t, 80, 24, withFake(build()))
 		requireContentGolden(t, r.h)
 		rows := r.content()
-		require.Equal(t, "  model  alibaba-token-plan/deepseek-v4.1-flash", rows[1])
-		require.Equal(t, "         Default model openai/gpt-5.5 is not usable (no credential).", rows[2])
+		require.Equal(t, "  Default model openai/gpt-5.5 is not usable (no credential).", rows[0])
+		require.Equal(t, "", rows[1])
+		requireNoModelLine(t, rows)
+		require.Contains(t, r.footerOf(), "alibaba-token-plan/deepseek-v4.1-flash", "the footer row names the model in use")
 	})
 	t.Run("40x14", func(t *testing.T) {
 		r := startView(t, 40, 14, withFake(build()))
 		requireContentGolden(t, r.h)
 		rows := r.content()
-		require.Equal(t, "  alibaba-token-plan/deepseek-v4.1-flash", rows[1])
-		require.Equal(t, "  Default model openai/gpt-5.5 is not", rows[2])
-		require.Equal(t, "  usable (no credential).", rows[3])
+		require.Equal(t, "  Default model openai/gpt-5.5 is not", rows[0])
+		require.Equal(t, "  usable (no credential).", rows[1])
+	})
+}
+
+// requireNoModelLine checks that the pane names no model: the footer row does.
+func requireNoModelLine(t *testing.T, rows []string) {
+	t.Helper()
+	for _, row := range rows {
+		require.False(t, strings.HasPrefix(row, "  model  "), "a model line: %q", row)
+		require.NotContains(t, row, "· was ", "a change line: %q", row)
+	}
+}
+
+// accountFallbackFake starts the session on openai/gpt-5.5 because the saved
+// default openai/gpt-5.4-mini is not in the account list.
+func accountFallbackFake() *fakeClient {
+	fc := providerFake()
+	fc.setModels(protocol.ACPModelsResult{Current: openaiGPT55, Models: singleFormatModels(), UsableOnly: true})
+	fc.setState(protocol.ACPStateResult{SessionID: testSessionID, ModelID: openaiGPT55, ThinkingLevel: protocol.ThinkingMedium,
+		ModelFallback: &protocol.ACPModelFallback{SavedDefault: "openai/gpt-5.4-mini@responses", Reason: protocol.ACPFallbackNotInAccount}})
+	return fc
+}
+
+func TestFallbackNoticeNotInAccount(t *testing.T) {
+	t.Run("80x24", func(t *testing.T) {
+		r := startView(t, 80, 24, withFake(accountFallbackFake()))
+		r.h.waitText("account list).")
+		requireContentGolden(t, r.h)
+		rows := r.content()
+		require.Equal(t, "  Default model openai/gpt-5.4-mini is not usable (not in account list).", rows[0])
+		requireNoModelLine(t, rows)
+		require.Equal(t, strings.TrimRight(footerRow(80, leftFooter, "openai/gpt-5.5 ◐ medium  ▱▱▱▱▱▱▱▱ 0% "), " "), r.footerOf())
+	})
+	t.Run("40x14", func(t *testing.T) {
+		r := startView(t, 40, 14, withFake(accountFallbackFake()))
+		r.h.waitText("account list).")
+		requireContentGolden(t, r.h)
+		rows := r.content()
+		require.Equal(t, "  Default model openai/gpt-5.4-mini is", rows[0])
+		require.Equal(t, "  not usable (not in account list).", rows[1])
+		require.Equal(t, "                      openai/gpt-5.5 0%", r.footerOf())
+	})
+	t.Run("the notice stays after a model change", func(t *testing.T) {
+		r := startView(t, 80, 24, withFake(accountFallbackFake()))
+		r.h.waitText("account list).")
+		r.key("ctrl+l")
+		r.h.waitText("Select model")
+		r.typeText("gpt-5.6")
+		r.key("enter")
+		r.waitCall("set_model:" + openaiGPT56)
+		r.waitGone("Select model")
+		r.h.waitFor("the new model in the footer row", func(*screenHarness) bool { return strings.Contains(r.footerOf(), "openai/gpt-5.6-sol") })
+		require.Equal(t, "  Default model openai/gpt-5.4-mini is not usable (not in account list).", r.content()[0])
 	})
 }
 
@@ -356,7 +410,7 @@ func TestProvidersSignInDoesNotChangeDefault(t *testing.T) {
 	r.h.waitText("✓ openai: API key saved.")
 	r.requireNotOnScreen("Default model")
 	require.Empty(t, fc.callsWith("set_model:"), "a sign-in does not choose a model")
-	require.Contains(t, r.content()[1], "alibaba-token-plan/deepseek-v4.1-flash")
+	require.Contains(t, r.footerOf(), "alibaba-token-plan/deepseek-v4.1-flash")
 }
 
 func TestUncheckedKeyRefusedAtFirstPrompt(t *testing.T) {

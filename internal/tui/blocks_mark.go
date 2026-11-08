@@ -6,106 +6,70 @@ import (
 	"github.com/charmbracelet/x/ansi"
 )
 
-// Selection marks.
+// Selection box.
 //
 // The user's selection never changes the row count of a block, so nothing
-// reflows when the selection moves. A selected block that is a step at its
-// lowest mode is shaded: the `selected` background covers every column of its
-// rows. Any other selected block keeps its colors, because a background would
-// clobber styles such as diff colors and the prompt band. It gets a rail in
-// the gutter instead: column 0, which every block leaves blank.
+// reflows when the selection moves. The pane draws a thin box around the rows
+// of the selected unit, the same for every kind of block: a side mark in
+// column 0 and in the last column of each row, the top corners on the row
+// above the unit and the bottom corners on its gap row. Column 0 and the last
+// column are blank in every block, so the box covers no text. When the window
+// clips the box, its edge row in the window shows the clip mark.
 
-// Expand indicators. They stand in the place of the first-row glyph of a step
-// that is selected or under the pointer.
+// Box glyphs. They draw in the `border` role.
 const (
-	// IndicatorExpand shows that the block can open to more rows.
-	IndicatorExpand = "›"
-	// IndicatorOpen shows that the block is open and can close.
-	IndicatorOpen = "⌄"
+	boxSide        = "│"
+	boxTopLeft     = "┌"
+	boxTopRight    = "┐"
+	boxBottomLeft  = "└"
+	boxBottomRight = "┘"
+	boxClipped     = "┆"
+)
 
+// ANSI sequences that reset all styles and that turn on reverse video.
+const (
 	ansiReset = "\x1b[m"
-	ansiSGR0  = "\x1b[0m"
 	ansiRev   = "\x1b[7m"
 )
 
-// indicatorFor returns the glyph that replaces the step glyph of a block that
-// is drawn in a mode, or "" when the glyph stays. low is the lowest mode of the
-// block. A block that is Truncated above its lowest mode keeps its glyph.
-func indicatorFor(rc RenderContext, low FoldMode) string {
-	if !rc.Pointed {
-		return ""
+// paintBox draws the selection box on the content rows of a window. top and
+// bottom are the rows of the top and the bottom edge; an edge outside the
+// rows is clipped. The rows keep their count and their width.
+func paintBox(th *Theme, rows []string, top, bottom, width int) {
+	if width < 2 || len(rows) == 0 {
+		return
 	}
-	switch rc.Fold {
-	case low:
-		return IndicatorExpand
-	case FoldExpanded:
-		return IndicatorOpen
+	edge := func(g string) string {
+		if th == nil {
+			return g
+		}
+		return th.Render(RoleBorder, g)
 	}
-	return ""
+	last := len(rows) - 1
+	for r := max(top, 0); r <= min(bottom, last); r++ {
+		left, right := boxSide, boxSide
+		switch r {
+		case top:
+			left, right = boxTopLeft, boxTopRight
+		case bottom:
+			left, right = boxBottomLeft, boxBottomRight
+		}
+		if (r == 0 && top < 0) || (r == last && bottom > last) {
+			left, right = boxClipped, boxClipped
+		}
+		rows[r] = boxEdgeRow(rows[r], edge(left), edge(right), width)
+	}
 }
 
-// indicatorGlyph pads an indicator to the width of the glyph it replaces, so
-// that a two-column glyph does not move the text of its row.
-func indicatorGlyph(indicator, glyph string) string {
-	if pad := displayWidth(glyph) - displayWidth(indicator); pad > 0 {
-		return indicator + strings.Repeat(" ", pad)
+// boxEdgeRow puts a mark in column 0 and another in the last column of a row
+// that is width columns wide. The style of the row ends before the right mark,
+// so that a band does not go on behind it.
+func boxEdgeRow(row, left, right string, width int) string {
+	row = withGutterMark(row, left)
+	if displayWidth(row) > width-1 {
+		row = ansi.Truncate(row, width-1, "")
 	}
-	return indicator
-}
-
-// paintSelection applies the selection mark to the rows of a block. Rows of a
-// block that is not selected are returned as they are.
-func paintSelection(rc RenderContext, b Block, m itemMark, rows []string) []string {
-	if !m.selected || len(rows) == 0 || rc.Theme == nil {
-		return rows
-	}
-	if fb, ok := b.(foldBlock); ok && fb.foldGroup().isStep() && fb.foldable(rc.Width) && rc.Fold == FoldCollapsed {
-		out := make([]string, len(rows))
-		for i, r := range rows {
-			out[i] = shadeRow(rc.Theme, r, rc.Width)
-		}
-		return out
-	}
-	// The prompt band has its own background; the rail keeps it.
-	_, band := b.(userPromptBlock)
-	mark := rc.Theme.Style(RoleAccent).Bold(true)
-	if band {
-		mark = rc.Theme.onBackground(RoleAccent, RolePanel).Bold(true)
-	}
-	rail := mark.Render(GlyphRail)
-
-	first, last := 0, len(rows)
-	if m.skipHead {
-		for first < last && rows[first] == "" {
-			first++
-		}
-	}
-	if m.skipTail {
-		for last > first && rows[last-1] == "" {
-			last--
-		}
-	}
-	out := make([]string, len(rows))
-	copy(out, rows)
-	for i := first; i < last; i++ {
-		out[i] = withGutterMark(rows[i], rail)
-	}
-	return out
-}
-
-// shadeRow draws a row on the `selected` background over the whole width. The
-// style sequences inside the row end with a reset, which would end the
-// background too, so the background starts again after each reset. Without
-// color the row is reversed.
-func shadeRow(th *Theme, row string, width int) string {
-	on := bgSequence(th, RoleSelected)
-	if on == "" {
-		on = ansiRev
-	}
-	row = strings.ReplaceAll(row, ansiReset, ansiReset+on)
-	row = strings.ReplaceAll(row, ansiSGR0, ansiSGR0+on)
-	pad := max(0, width-displayWidth(row))
-	return on + row + strings.Repeat(" ", pad) + ansiReset
+	return row + ansiReset + strings.Repeat(" ", max(0, width-1-displayWidth(row))) + right
 }
 
 // withGutterMark puts a mark in column 0 of a row in place of its first cell.

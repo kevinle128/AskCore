@@ -57,6 +57,12 @@ type Config struct {
 	// once and Reset again. Nil means an in-memory sessions.MemoryLog. The
 	// Agent driver is the only caller of its Append.
 	NewContext func() sessions.Writer
+	// Seed is committed first in every fresh log, before any input: in New
+	// and in Reset. Each item needs a distinct, non-empty CustomType. An item
+	// whose CustomType the log already holds is skipped, so a prefilled log
+	// is never seeded twice. A log with only seed items counts as empty for
+	// Continue.
+	Seed []protocol.CustomMessage
 	// ListenerError receives the error or the panic of a listener. The failure
 	// is contained: the listener stays subscribed, the later listeners still get
 	// the event, and the run goes on. Nil drops the failure. It runs on the
@@ -65,9 +71,9 @@ type Config struct {
 	// FollowLimits bound the replay ring and the followers of Follow. Zero
 	// fields take the defaults of bus.Limits.
 	FollowLimits bus.Limits
-	// MaxQueuedInputs bounds the steering and follow-up messages together. A
-	// send beyond it fails with ErrQueueFull. Zero means
-	// DefaultMaxQueuedInputs.
+	// MaxQueuedInputs bounds the steering and follow-up messages of the human
+	// together. A send beyond it fails with ErrQueueFull. Notices of tasks do
+	// not count and are never refused. Zero means DefaultMaxQueuedInputs.
 	MaxQueuedInputs int
 	// Clock stamps the event envelope and the run-failure message. Nil
 	// means time.Now.
@@ -77,6 +83,24 @@ type Config struct {
 	// and its started tools have drained and before the session log closes, and
 	// joins its error into the result of Dispose. It may block. Nil means none.
 	Release func() error
+	// Background is work outside the task registry that WaitForQuiescence must
+	// wait for, such as the job table of the shell tools. Its Idle channel is
+	// closed while that work has handed off every notice. Nil means none.
+	Background interface{ Idle() <-chan struct{} }
+	// TaskDir is the directory for the output files of background tasks.
+	// Empty means that tasks with an output file cannot start; timers still
+	// work.
+	TaskDir string
+	// PrepareTaskDir creates and checks TaskDir. The registry calls it once,
+	// at the first output of any task, so a session without output leaves no
+	// directory. Nil means that TaskDir already exists.
+	PrepareTaskDir func(dir string) error
+	// RewriteInput, when set, may replace the text that starts a human prompt,
+	// steer or follow-up before it is queued or run. It gets the text of the
+	// first block of a user message and reports the new text, or false to keep
+	// the message. It is called without a lock and must not block for long.
+	// Notices and other inputs of the harness never pass through it.
+	RewriteInput func(text string) (string, bool)
 }
 
 // State is a snapshot of an Agent.

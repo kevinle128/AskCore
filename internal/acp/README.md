@@ -9,8 +9,9 @@ The Agent Client Protocol adapter over the agent's Go API. It is the server side
 - The mapping from internal events to `session/update` notifications and the follow subscriptions (`updates.go`)
 - `_meta` fields for Ask-only data such as `seq`, `epoch` and `runId` (`meta.go`)
 - `session/close` disposes one session through `Session.Close`: the run stops, background jobs end and the host forgets the session. `initialize` advertises `sessionCapabilities.close`. A routed close needs the current driver generation (`agent.go`).
-- The `_ask/*` method handlers: state, models, controls, steer and follow-up, usage; compact, fork and tree answer "unsupported" (`ask_methods.go`)
+- The `_ask/*` method handlers: state, models, controls, steer and follow-up, usage, skills; compact, fork and tree answer "unsupported" (`ask_methods.go`)
 - The leader-only provider method handlers and the `ProviderSetup` interface (`provider_methods.go`)
+- The project trust method handlers, the `TrustSetup` interface and the per-session trust override (`trust_methods.go`) and the per-session flags of `session/new` (`session_options.go`)
 - The one error mapper (`errors.go`)
 - The stdio server for `ask acp` (`stdio.go`)
 - The route context of the shared leader link: parsing, the driver generation guard, `take` and the quiesce check (`route.go`, `host.go`)
@@ -31,7 +32,7 @@ The Agent Client Protocol adapter over the agent's Go API. It is the server side
 
 ## File names
 
-`agent.go`, `host.go`, `updates.go`, `meta.go`, `ask_methods.go`, `provider_methods.go`, `errors.go`, `stdio.go`, `wire.go`, `route.go`
+`agent.go`, `host.go`, `updates.go`, `meta.go`, `ask_methods.go`, `provider_methods.go`, `trust_methods.go`, `session_options.go`, `errors.go`, `stdio.go`, `wire.go`, `route.go`
 
 ## Imports
 
@@ -54,16 +55,17 @@ The conformance tests in `conformance_test.go` pin the SDK and its schema, and r
 
 ## Adapter contract
 
-- Dependencies from the application come as function fields of `Config` (`Authenticate`, `Models`, `FindModel`, `ModelAuth`). The package never imports `auth`, `app` or `config`. A callback error is shown as "not signed in"; its text never leaves.
+- Dependencies from the application come as function fields of `Config` (`Authenticate`, `Models`, `FindModel`, `ModelAuth`, `NotInConfig`). The package never imports `auth`, `app` or `config`. A callback error is shown as "not signed in"; its text never leaves.
 - `Bind(conn, checkedWriter, out)` connects the SDK connection. The adapter learns from the checked writer when a follow result is on the wire, and it closes `out` when the output fails. The owner of the writer calls `Fail` from the failure hook of the writer and `CloseOutput` on a signal path.
 - Every error goes through `requestError`: a fixed text for each kind from `pkg/protocol` and the kind in the error data. Only a short failure code of a model request is added to the text.
 - `session/prompt` and `_ask/session/continue` return after the run settled and every update of the run was written. A request that the Agent refuses (busy, disposed, empty log) returns at once and never waits for the events of another run.
 - `session/cancel` calls `Agent.Abort`. A cancelled request (`$/cancel_request`, or a second prompt on the same session) does not stop a run and does not release the write barrier. The run ends by `session/cancel` only, and a started tool body drains without a time limit.
 - While a reset runs, steer and follow-up answer busy and admission stays closed until the held events are queued, so every event carries the epoch it belongs to and leaves in Agent order.
-- A `session/cancel` that comes after admission but before the run exists is kept and stops the run when it binds. A prompt waits up to 250 ms for an Agent that is busy with work it does not own (a queue_update delivery or a run that a queued input started); a longer run still gives busy.
+- A call binds only its own run: the Agent reports the run ID of the call through `agent.WithRunStart` before any event of that run, so a run that a notice or a queued input started is never taken for the call. A `session/cancel` that comes after admission but before the run exists is kept and stops the call's run when it starts. A prompt waits up to 250 ms for an Agent that is busy with work it does not own (a queue_update delivery, a notice run, or a run that a queued input started), on the idle signal and without polling; a longer run still gives busy.
 - Repeating `_ask/session/unfollow` succeeds after the subscription has ended. A subscription of another session gives `unknown_subscription`.
-- A model request that fails gives a failure frame after its updates: `no_api_key` for an AUTH failure, `internal` with the failure code for any other.
-- Model names are `provider/id@api`. Two catalog rows can share provider and id, so a name without `@api` that matches both is refused.
+- A model request that fails gives a failure frame after its updates: `no_api_key` for an AUTH failure, `config` (text `model configuration changed; choose the model again`) for a `MODEL_CONFIG` failure, `internal` with the failure code for any other.
+- `Config.NotInConfig` reports a session row that the user models.json made and no longer has. `_ask/session/models` marks that row `notInConfig` (and not `notInAccount`); when the list has a row with the same id, that row carries the mark, and choosing it again with `setModel` takes the new row.
+- Model names are `provider/id@api`, split by `providers.ParseRef`. Two catalog rows can share provider and id, so a name without `@api` that matches both is refused.
 - An explicit follow keeps its own follower. The result holds the cut (snapshot, open stream baseline, cursor) and `head`, the last event that was published when the follow was answered. A resumed follow keeps the cursor of the client, so the events above the cursor up to `head` are a replay of what the client missed. Events above the cut leave only after the result is on the wire. A follower that falls behind, or meets an event over the ring size limit, ends with `_ask/session/resync`; the client follows again and nothing is sent twice.
 - Standard `session/update` frames are written by the session writer, so an explicit follow does not duplicate them.
 The writer waits for each active subscription to write through the same event sequence, or to end with detach/resync, before it advances the prompt barrier.
@@ -82,8 +84,21 @@ The writer waits for each active subscription to write through the same event se
 
 - A session can have no model. `_ask/session/state` has an empty `modelId` and `get_available_models` an empty `current`. A prompt, continue, steer or follow-up answers `no_model` before any run starts.
 - `get_available_models` takes `usableOnly`. A host with provider setup keeps rows of usable providers and echoes the flag; a host without provider setup gives the full list and no echo. It names the saved default in `default`.
-- `set_model` with `saveDefault` stores the choice through `Config.SaveDefault` and answers `defaultSaved`. A failed save never undoes the switch. A call without the flag saves nothing.
+- `set_model` with `saveDefault` stores the choice through `Config.SaveDefault` with the settings scope of the session (its cwd and its trust) and answers `defaultSaved`. A refused save gives the reason in `defaultNotSaved`: `shadowed` (the trusted project settings set another `defaultModel`), `unsafe_file` (the user file is not safe or not valid), or `failed`. A failed save never undoes the switch. A call without the flag saves nothing.
 - `_ask/session/state` carries `modelFallback` while a session still runs on the model that replaced an unusable saved default (`Config.StartFallback`).
+- `Config.StartModel` gives the model start of a new session once (`ModelStart`): the raw scope entries (`--models`, else the `enabledModels` setting) and the requested thinking level that the start model dropped because it has no thinking. `_ask/session/state` reports the dropped level in `levelDropped` (its own field, never in `diagnostics`) until the model changes, as `modelFallback`.
+- `get_available_models` fills `scope`: the adapter expands the scope entries of the session with `providers.ExpandScope` against the rows of the same call, in entry order, each row once, with the level of its entry. A host with provider setup keeps only the rows of usable providers. An empty `scope` means no scope; the client then cycles the rows of `models`. `diagnostics` holds the problems of the user models.json of that list (`Config.ModelProblems`).
+- `set_model` takes an optional `thinkingLevel`. The adapter sets the model and then the level in the same call, under the one session guard, and answers the level that the new model allows. A level that is not a level word answers `invalid_params` and changes nothing. The model id stays the exact `provider/id@api` name.
+
+## Project trust
+
+- `session/new` takes the override `_meta["ask.dev/trust"]` (`protocol.ACPTrustMetaKey`): `"approve"` or `"deny"` for this session only. Another value answers `invalid_params`. The host saves nothing for it. It passes the override to the `Factory` in `SessionRequest.Trust`. The composition decides the trust of the cwd, loads the settings layers and builds the agent.
+- `session/new` also takes `_meta["ask.dev/session"]` (`protocol.ACPSessionOptionsMetaKey`), one object of per-session flags (`protocol.ACPSessionOptions`: `systemPrompt`, `appendSystemPrompt`, `tools`, `noTools`, `model`, `thinking`, `models`). Unknown fields are ignored. A value that is not an object, a field of the wrong type, prompt text over `protocol.ACPSessionPromptMaxBytes` in total, a tool name outside `^[a-z][a-z0-9_]*$`, a `model` or a `models` entry over `protocol.ACPSessionModelMaxBytes` (256), more than `protocol.ACPSessionModelsMax` (64) `models` entries, or a `thinking` that is not a level word answers `invalid_params` with a fixed text. The adapter does not resolve the model patterns: the `Factory` does, against its model list, and a pattern that does not resolve fails the start with `invalid_params` and the resolver text. The adapter passes the value to the `Factory` in `SessionRequest.Flags`. When the flags are not the zero value and the `Factory` succeeded, the result `_meta` carries `ask.dev/session: true`, and when the request had a model option it also carries `ask.dev/appliedOptions` (`protocol.ACPAppliedOptions`: the `model`, `thinking` and `models` of the request). An older host sends neither; a client that sent a model option fails the start without the echo. A `Factory` rejects a failure that the client caused (for example an unknown tool name) with `acp.InvalidParams(detail)`; any other error text is never sent.
+- `Config.StartTrust` gives the trust decision (`trusted`, `source`), the settings diagnostics and the effective `thinkingFold` of a new session once. `_ask/session/state` reports them in the optional fields `trust`, `diagnostics` and `thinkingFold`.
+- `Config.StartSkills` gives the skills of a new session once (name, description, path, scope, whether the model can invoke it). `_ask/session/skills` reports them, so a client can offer `/skill:<name>`. The skills are fixed at the start of the session; a host without `StartSkills` answers an empty list. The adapter never reads a skill file and never expands `/skill:<name>`: the Agent does that through `Config.RewriteInput` (see `internal/app`), so the prompt, steer and follow-up calls carry the text as the user typed it.
+- `_ask/trust/state` and `_ask/trust/set` name no session. They need `Config.TrustSetup`; without it both answer `unsupported`. The leader and the in-process TUI link set it (`app.ACPParams.TrustRequests`); `ask acp` does not, because an editor link has no trust question. A route is not needed on a link without routes, and the leader link needs one.
+- Both methods need an absolute `cwd`. `_ask/trust/set` takes `target` (`folder` or `parent`) and `decision` (`trust`, `distrust` or `clear`) and returns the new state. A trust store that cannot be changed answers `invalid_state` with the fixed warning text and the path of the store. A change applies to the next session.
+- `ask acp --approve` or `--no-approve` sets a process-wide override (`app.ACPParams.TrustOverride`). The override of one session wins over it.
 
 ## Leader link
 
@@ -103,7 +118,7 @@ The router calls the provider host to release that client's pending sign-ins; se
 
 ## Stdio server
 
-`ServeStdio` ([stdio.go](stdio.go)) serves one connection over a reader and a writer. `cmd/tui/acp.go` registers it as `ask acp`, before prompt and mode parsing, with the composition of `internal/app.ACPModule`. The command takes no other argument. There is no TCP or Unix listener.
+`ServeStdio` ([stdio.go](stdio.go)) serves one connection over a reader and a writer. `cmd/tui/acp.go` registers it as `ask acp`, before prompt and mode parsing, with the composition of `internal/app.ACPModule`. The command takes only `--approve` (`-a`) or `--no-approve` (`-na`); see [Project trust](#project-trust). There is no TCP or Unix listener.
 
 - One framed reader owns stdin and one checked writer owns stdout. Diagnostics go to stderr only, with no raw input and no attribute (`NewQuietLogger`). An inbound frame over 8 MiB ends the connection.
 - Authentication uses the credentials that `ask auth login` saved on the host, or the environment key. `authenticate` and `_ask/session/set_model` with `authMethodId` check readiness and refresh an expired native credential through the normal resolver. They never read stdin, never start a sign-in and never change a credential. A mismatch answers `no_api_key` with the text that names `ask auth`.

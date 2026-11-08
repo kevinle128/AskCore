@@ -94,7 +94,8 @@ type factoryOption struct {
 // nativeFactory builds the Agent of a session the way the application does:
 // through app.NewNativeAgent, with one scripted faux model for each session.
 func nativeFactory(steps func() []faux.Step, o factoryOption) acp.Factory {
-	return func(_ context.Context, id, cwd string) (*agent.Agent, error) {
+	return func(_ context.Context, req acp.SessionRequest) (*agent.Agent, error) {
+		id, cwd := req.ID, req.Cwd
 		p, err := faux.New(faux.WithChunk(1000, 1000))
 		if err != nil {
 			return nil, err

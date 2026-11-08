@@ -61,8 +61,10 @@ func TestWheelFreeScrollUpShowsTheEndMarkerCentered(t *testing.T) {
 }
 
 func TestMarkerShowsTheNewLineCountAndTheTopRowDoesNotMove(t *testing.T) {
-	m := listModelAt(t, colorprofile.NoTTY, 80, 24, longSession(40)...)
-	m.pane.ScrollBy(-5)
+	// The height puts a step row, not a gap row, at the top of the end window.
+	m := listModelAt(t, colorprofile.NoTTY, 80, 25, longSession(40)...)
+	// Each step is one row and its gap row; the window top lands on a step.
+	m.pane.ScrollBy(-6)
 	top := paneScreen(m)[0]
 	require.NotEmpty(t, top)
 

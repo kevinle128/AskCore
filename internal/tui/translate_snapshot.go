@@ -45,18 +45,18 @@ func (t *Translator) Snapshot(s SnapshotMsg) []tea.Msg {
 
 func (t *Translator) historyAssistant(am protocol.AssistantMessage, results map[string]protocol.ToolResultMessage, out *[]tea.Msg) {
 	t.noteReply(am)
-	visible, lastIsText := false, false
+	visible := false
 	for _, blk := range am.Content {
 		switch b := blk.(type) {
 		case protocol.Text:
 			if oneLine(b.Text) == "" {
 				continue
 			}
-			t.historyText(b.Text, out)
-			visible, lastIsText = true, true
+			t.historyText(b.Text, am.Timestamp, out)
+			visible = true
 		case protocol.Thinking:
 			t.historyThinking(b.Thinking, out)
-			visible, lastIsText = true, false
+			visible = true
 		case protocol.ToolCall:
 			res, ok := results[b.ID]
 			call := toolCall{name: b.Name, args: shortArgs(b.Arguments), raw: b.Arguments}
@@ -67,9 +67,7 @@ func (t *Translator) historyAssistant(am protocol.AssistantMessage, results map[
 			default:
 				block = toolOutcome(call, res.IsError, "", firstLine(blocksText(res.Content)), toolOutputOf(res.Content, res.Details), t.view)
 			}
-			t.afterStep = true
 			emitAppend(out, t.nextID("h"), block, true)
-			lastIsText = false
 		}
 	}
 	switch am.StopReason {
@@ -78,19 +76,12 @@ func (t *Translator) historyAssistant(am protocol.AssistantMessage, results map[
 		if am.ErrorMessage != nil && oneLine(*am.ErrorMessage) != "" {
 			msg = *am.ErrorMessage
 		}
-		if lastIsText {
-			t.afterStep = false
-			emitAppend(out, t.nextID("h"), NewSpacerBlock(), true)
-		}
-		t.afterStep = false
 		emitAppend(out, t.nextID("h"), NewErrorBlock(ErrorHeadline("", sentence(msg)), ""), true)
 	case protocol.StopAborted:
-		t.afterStep = false
 		emitAppend(out, t.nextID("h"), NewCancelMarker(cancelText("", visible)), true)
 	default:
 		if visible {
 			if text := metaText(am, 0, 0); text != "" {
-				t.afterStep = false
 				emitAppend(out, t.nextID("h"), NewMetaLineBlock(text), true)
 			}
 		}
@@ -98,13 +89,16 @@ func (t *Translator) historyAssistant(am protocol.AssistantMessage, results map[
 }
 
 // historyText adds a final reply text as one block for each chunk of the
-// markdown, so that a long reply does not become one tall block.
-func (t *Translator) historyText(text string, out *[]tea.Msg) {
+// markdown, so that a long reply does not become one tall block. The first
+// block shows the time of the message.
+func (t *Translator) historyText(text string, ts int64, out *[]tea.Msg) {
 	clean := sanitizeMarkdown(text)
-	lead := t.afterStep
-	t.afterStep = false
 	for i, c := range splitMarkdown(clean) {
-		emitAppend(out, t.nextID("h"), newAssistantTextBlock(clean[c.start:c.end], newMarkdownStream(), i == 0, lead), true)
+		block := newAssistantTextBlock(clean[c.start:c.end], newMarkdownStream(), false)
+		if i == 0 {
+			block = newTimedReplyBlock(clean[c.start:c.end], newMarkdownStream(), clockTime(ts, t.loc))
+		}
+		emitAppend(out, t.nextID("h"), block, true)
 	}
 }
 
@@ -115,7 +109,6 @@ func (t *Translator) historyThinking(text string, out *[]tea.Msg) {
 	if strings.TrimSpace(text) == "" {
 		text = ""
 	}
-	t.afterStep = true
 	emitAppend(out, t.nextID("h"), newThinkingBlock(text, t.view, false, 0, 0, false), true)
 }
 

@@ -45,6 +45,11 @@ const (
 	RoleProv3
 	RoleProv4
 	RoleLogo
+	// RoleH1, RoleH2 and RoleH3 are the markdown heading levels of a reply.
+	// RoleH2 also styles inline code. They are always bold.
+	RoleH1
+	RoleH2
+	RoleH3
 	roleCount
 )
 
@@ -52,6 +57,7 @@ var roleNames = [roleCount]string{
 	"fg", "muted", "dim", "border", "panel", "code-panel", "selected",
 	"accent", "assistant", "tool", "hook", "thinking", "code",
 	"success", "warning", "error", "prov-1", "prov-2", "prov-3", "prov-4", "logo",
+	"h1", "h2", "h3",
 }
 
 func (r Role) String() string {
@@ -103,7 +109,7 @@ var palette = [roleCount]roleSpec{
 	RoleAssistant: {fg: "#a78bfa", fg256: "141", plain: attrBold},
 	RoleTool:      {fg: "#2dd4bf", fg256: "43", plain: attrBold},
 	RoleHook:      {fg: "#14b8a6", fg256: "37", plain: attrBold},
-	RoleThinking:  {fg: "#8f95b3", fg256: "103", all: attrItalic},
+	RoleThinking:  {fg: "#8f95b3", fg256: "103", plain: attrItalic},
 	RoleCode:      {fg: "#fb923c", fg256: "209"},
 	RoleSuccess:   {fg: "#4ade80", fg256: "78", plain: attrBold},
 	RoleWarning:   {fg: "#facc15", fg256: "220", plain: attrBold},
@@ -113,6 +119,9 @@ var palette = [roleCount]roleSpec{
 	RoleProv3:     {fg: "#2dd4bf", fg256: "43"},
 	RoleProv4:     {fg: "#7aa2f7", fg256: "111"},
 	RoleLogo:      {fg: "#f472b6", fg256: "205", plain: attrBold, all: attrBold},
+	RoleH1:        {fg: "#2dd4bf", fg256: "43", plain: attrBold, all: attrBold},
+	RoleH2:        {fg: "#7aa2f7", fg256: "111", plain: attrBold, all: attrBold},
+	RoleH3:        {fg: "#a78bfa", fg256: "141", plain: attrBold, all: attrBold},
 }
 
 // logoStops are the gradient colors of the logo: assistant, accent, code.
@@ -265,10 +274,12 @@ const (
 	GlyphUser      = "❯"
 	GlyphAssistant = "◆"
 	GlyphStep      = "◆"
+	// GlyphStepOpen stands in the place of the glyph of a step that is open,
+	// selected or under the pointer. It keeps the role color of the glyph.
+	GlyphStepOpen = "›"
 	// GlyphHook is U+2693 without a variation selector. It is two columns
 	// wide: rows that start with it reserve both columns.
 	GlyphHook       = "⚓"
-	GlyphRail       = "┃"
 	GlyphMore       = "⋮"
 	GlyphThinking   = "∴"
 	GlyphToolRun    = "◇"
@@ -283,7 +294,6 @@ const (
 	GlyphRailStatus = "┊"
 	GlyphRailQueue  = "┆"
 	GlyphObserver   = "◉"
-	GlyphInProcess  = "○"
 	GlyphCwd        = "⌂"
 	GlyphLevel      = "◐"
 	GlyphBarFull    = "▰"

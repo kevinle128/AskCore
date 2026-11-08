@@ -166,6 +166,7 @@ func TestStateCarriesModelFallback(t *testing.T) {
 	assert.Equal(t, ACPModelFallback{SavedDefault: "old", Reason: "no_credential"}, *got.ModelFallback)
 	assert.Contains(t, raw, `"modelFallback":{"savedDefault":"old","reason":"no_credential"}`)
 	assert.Equal(t, ACPFallbackReason("not_in_catalog"), ACPFallbackNotInCatalog)
+	assert.Equal(t, ACPFallbackReason("not_in_account"), ACPFallbackNotInAccount)
 
 	var old ACPStateResult
 	require.NoError(t, json.Unmarshal([]byte(`{"sessionId":"s","epoch":"e","running":false,"modelId":"m","thinkingLevel":"off","messageCount":0,"steering":[],"followUp":[]}`), &old))
@@ -201,4 +202,18 @@ func TestOutcomeNotCheckedFlag(t *testing.T) {
 	var old ACPLoginOutcome
 	require.NoError(t, json.Unmarshal([]byte(`{"loginId":"l","status":"signed_in","generation":"2"}`), &old))
 	assert.False(t, old.NotChecked, "an outcome without the flag decodes as checked")
+}
+
+// The two model flags are omitted when false, so an older peer reads a known
+// cost and a row of the account list.
+func TestModelFlagsOmitEmpty(t *testing.T) {
+	b, err := json.Marshal(ACPModel{ModelID: "p/m@a"})
+	require.NoError(t, err)
+	assert.NotContains(t, string(b), "costUnknown")
+	assert.NotContains(t, string(b), "notInAccount")
+	got, raw := wireRoundTrip(t, ACPModel{ModelID: "p/m@a", CostUnknown: true, NotInAccount: true})
+	assert.True(t, got.CostUnknown)
+	assert.True(t, got.NotInAccount)
+	assert.Contains(t, raw, `"costUnknown":true`)
+	assert.Contains(t, raw, `"notInAccount":true`)
 }

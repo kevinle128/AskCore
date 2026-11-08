@@ -131,7 +131,7 @@ func TestKeySavedOnFirstRunPointsToModel(t *testing.T) {
 	fc := noModelFake()
 	fc.keyOutcome = protocol.ACPLoginOutcome{Status: protocol.ACPLoginStatusSaved, Generation: 2}
 	k := newKeyFlow(t, fc)
-	k.r.waitCall("usage")
+	k.r.waitCall("state")
 	k.open()
 	fc.setModels(protocol.ACPModelsResult{Models: singleFormatModels()[1:], UsableOnly: true})
 	k.r.paste(fakeKey)
@@ -140,7 +140,7 @@ func TestKeySavedOnFirstRunPointsToModel(t *testing.T) {
 	k.r.h.waitText("Choose a model with /model.")
 	k.r.h.waitText("┊ ✓ openai key saved · 2 models · choose one with /model")
 	requireContentGolden(t, k.r.h)
-	require.True(t, strings.HasSuffix(k.r.headerOf(), "no model"), "the footer keeps no model")
+	require.True(t, strings.HasSuffix(k.r.footerOf(), "no model"), "the footer keeps no model")
 }
 
 func TestKeyBoxIgnoresHistoryKeepsDraft(t *testing.T) {

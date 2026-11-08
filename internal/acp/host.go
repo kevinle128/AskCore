@@ -26,10 +26,7 @@ const (
 // busyWindow bounds how long a call waits for an Agent that is busy with
 // work the call does not own, such as the delivery of a queue_update or a run
 // that a queued input started. A longer run still gives busy.
-const (
-	busyWindow = 250 * time.Millisecond
-	busyPoll   = 2 * time.Millisecond
-)
+const busyWindow = 250 * time.Millisecond
 
 // ErrQueueOverflow means a session held more unwritten events than its bound.
 var ErrQueueOverflow = errors.New("acp: outbound queue overflow")
@@ -40,8 +37,20 @@ var ErrHostClosed = errors.New("acp: host closed")
 // errStaleDriver is returned for a call that names an old driver generation.
 var errStaleDriver = newKindError(protocol.ACPErrNotDriver, "the driver generation is not current")
 
+// SessionRequest holds what the Factory gets for one new session.
+type SessionRequest struct {
+	// ID is the session ID that the host made.
+	ID string
+	// Cwd is the absolute working directory that the client sent.
+	Cwd string
+	// Trust is the trust override of this session, or empty.
+	Trust protocol.ACPTrustOverride
+	// Flags are the per-session flags of this session, or the zero value.
+	Flags protocol.ACPSessionOptions
+}
+
 // Factory builds one independent Agent for a new session.
-type Factory func(ctx context.Context, sessionID, cwd string) (*agent.Agent, error)
+type Factory func(ctx context.Context, req SessionRequest) (*agent.Agent, error)
 
 // WriteEvent sends one Agent event to the client. epoch names the conversation
 // epoch that the event belongs to. One session calls it from one goroutine, in
@@ -257,8 +266,14 @@ func (h *Host) Sessions() []*Session {
 	return list
 }
 
-// NewSession builds an Agent and publishes the session only when it is whole.
+// NewSession builds an Agent in cwd with no trust override. See NewSessionWith.
 func (h *Host) NewSession(ctx context.Context, cwd string) (*Session, error) {
+	return h.NewSessionWith(ctx, SessionRequest{Cwd: cwd})
+}
+
+// NewSessionWith builds an Agent and publishes the session only when it is
+// whole. The host makes the session ID; the ID of req is not used.
+func (h *Host) NewSessionWith(ctx context.Context, req SessionRequest) (*Session, error) {
 	if err := h.beginOperation(); err != nil {
 		return nil, err
 	}
@@ -267,10 +282,12 @@ func (h *Host) NewSession(ctx context.Context, cwd string) (*Session, error) {
 	if err != nil {
 		return nil, err
 	}
-	a, err := h.factory(ctx, id, cwd)
+	req.ID = id
+	a, err := h.factory(ctx, req)
 	if err != nil {
 		return nil, err
 	}
+	cwd := req.Cwd
 	s := &Session{ID: id, CWD: cwd, host: h, agent: a, gen: 1}
 	s.cond = sync.NewCond(&s.qmu)
 	// The first Follow starts the replay ring and gives the first epoch. The
@@ -392,6 +409,17 @@ type Session struct {
 	// fallback is the saved default that the session could not start on. It
 	// holds until the model of the session changes.
 	fallback *protocol.ACPModelFallback
+	// trust is the trust decision and the settings view that the session
+	// started with. It does not change.
+	trust *SessionTrust
+	// skills are the skills that the session started with. They do not change.
+	skills []protocol.ACPSkill
+	// scope are the raw scope entries of the session. They do not change; the
+	// model list expands them against its own rows.
+	scope []string
+	// dropped is the thinking level that the start model did not use. It holds
+	// until the model of the session changes.
+	dropped *protocol.ACPLevelDropped
 
 	// qmu guards the outbound queue. The Agent listener only appends to it.
 	qmu     sync.Mutex
@@ -535,14 +563,11 @@ func (s *Session) idle() bool {
 func (s *Session) observe(ev protocol.Event) error {
 	env := ev.Env()
 	s.mu.Lock()
-	lateAbort := false
 	if b := s.binding; b != nil {
-		if b.runID == "" && env.RunID != "" {
-			b.runID = env.RunID
-			lateAbort = b.abortPending
-			b.abortPending = false
-		}
-		if b.runID == env.RunID {
+		// The call names its run when the Agent starts it (bindRun), so an
+		// event of another run, such as a run that a notice started, never
+		// binds here.
+		if b.runID != "" && b.runID == env.RunID {
 			switch e := ev.(type) {
 			case *protocol.AgentSettled:
 				b.seq = env.Seq
@@ -560,17 +585,15 @@ func (s *Session) observe(ev protocol.Event) error {
 	epoch := s.epoch
 	s.mu.Unlock()
 	s.enqueue(ev, epoch)
-	if lateAbort {
-		// Abort never waits for a listener, so it is safe to call from here.
-		s.agent.Abort()
-	}
 	return nil
 }
 
-// noteModelLocked drops the start fallback when the model changes. mu must be held.
+// noteModelLocked drops the start fallback and the dropped level when the
+// model changes. mu must be held.
 func (s *Session) noteModelLocked(ev protocol.Event) {
 	if _, ok := ev.(*protocol.ModelUpdate); ok {
 		s.fallback = nil
+		s.dropped = nil
 	}
 }
 
@@ -583,6 +606,75 @@ func (s *Session) setFallback(f *protocol.ACPModelFallback) {
 	s.mu.Lock()
 	s.fallback = &cp
 	s.mu.Unlock()
+}
+
+// setTrust records the trust decision and the settings view of the session start.
+func (s *Session) setTrust(t *SessionTrust) {
+	if t == nil {
+		return
+	}
+	cp := *t
+	cp.Diagnostics = append([]protocol.ACPDiagnostic(nil), t.Diagnostics...)
+	s.mu.Lock()
+	s.trust = &cp
+	s.mu.Unlock()
+}
+
+func (s *Session) setModelStart(m *ModelStart) {
+	if m == nil {
+		return
+	}
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.scope = slices.Clone(m.Scope)
+	if m.LevelDropped != nil {
+		cp := *m.LevelDropped
+		s.dropped = &cp
+	}
+}
+
+func (s *Session) scopeNow() []string {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	return slices.Clone(s.scope)
+}
+
+func (s *Session) droppedNow() *protocol.ACPLevelDropped {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if s.dropped == nil {
+		return nil
+	}
+	cp := *s.dropped
+	return &cp
+}
+
+// setSkills records the skills of the session start.
+func (s *Session) setSkills(rows []protocol.ACPSkill) {
+	s.mu.Lock()
+	s.skills = slices.Clone(rows)
+	s.mu.Unlock()
+}
+
+// skillsNow returns a copy of the skills of the session. It is never nil.
+func (s *Session) skillsNow() []protocol.ACPSkill {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	return append([]protocol.ACPSkill{}, s.skills...)
+}
+
+// trustNow returns the start trust of the session, or nil.
+func (s *Session) trustNow() *SessionTrust {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	return s.trust
+}
+
+// settingsScope returns the settings scope of the session: its cwd and
+// whether its project layer applies.
+func (s *Session) settingsScope() SettingsScope {
+	t := s.trustNow()
+	return SettingsScope{Cwd: s.CWD, Trusted: t != nil && t.Trust.Trusted}
 }
 
 // fallbackNow returns a copy of the start fallback while it still holds.
@@ -770,17 +862,10 @@ func (s *Session) execute(ctx context.Context, call func(runCtx context.Context)
 	s.mu.Lock()
 	b.cancel = cancel
 	s.mu.Unlock()
-	callErr := call(runCtx)
-	for until := time.Now().Add(busyWindow); errors.Is(callErr, agent.ErrBusy) && time.Now().Before(until) && s.host.usable() == nil; {
-		s.mu.Lock()
-		bound := b.runID != ""
-		s.mu.Unlock()
-		if bound {
-			// The busy Agent runs work that a sibling input started.
-			break
-		}
-		time.Sleep(busyPoll)
-		callErr = call(runCtx)
+	callCtx := agent.WithRunStart(runCtx, func(runID string) { s.bindRun(b, runID) })
+	callErr := call(callCtx)
+	if errors.Is(callErr, agent.ErrBusy) {
+		callErr = s.retryWhenIdle(callCtx, call, callErr)
 	}
 	if refused(callErr) {
 		// The Agent refused the call. Events that follow belong to other work.
@@ -919,4 +1004,56 @@ func (s *Session) Close() error {
 		<-s.wdone
 	})
 	return s.cerr
+}
+
+// bindRun names the run of an admitted call. The Agent calls it when it starts
+// the run, before any event of the run. A cancel that came before the run
+// existed stops it now.
+func (s *Session) bindRun(b *binding, runID string) {
+	s.mu.Lock()
+	b.runID = runID
+	late := b.abortPending
+	b.abortPending = false
+	s.mu.Unlock()
+	if late {
+		s.agent.Abort()
+	}
+}
+
+// retryWhenIdle retries a call that the Agent refused as busy, once each time
+// the Agent turns idle, for at most busyWindow. It waits on the idle signal and
+// never polls. A refusal while the Agent is already idle is not retried again,
+// so a call that keeps refusing cannot spin.
+func (s *Session) retryWhenIdle(ctx context.Context, call func(context.Context) error, callErr error) error {
+	window := time.NewTimer(busyWindow)
+	defer window.Stop()
+	for errors.Is(callErr, agent.ErrBusy) && s.host.usable() == nil {
+		idle := s.agent.Idle()
+		select {
+		case <-idle:
+		default:
+			select {
+			case <-idle:
+			case <-window.C:
+				return callErr
+			case <-s.host.ctx.Done():
+				return callErr
+			}
+		}
+		prev := callErr
+		callErr = call(ctx)
+		if errors.Is(callErr, agent.ErrBusy) && isClosedChan(s.agent.Idle()) {
+			return prev
+		}
+	}
+	return callErr
+}
+
+func isClosedChan(ch <-chan struct{}) bool {
+	select {
+	case <-ch:
+		return true
+	default:
+		return false
+	}
 }

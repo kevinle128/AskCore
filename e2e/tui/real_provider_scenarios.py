@@ -22,12 +22,13 @@ import json
 import os
 import re
 import shutil
+import subprocess
 import sys
 import tempfile
 import time
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
-from real_provider import Session, KEYS, leader_stop, OUT, ensure_ask, runner  # noqa: E402
+from real_provider import ASK, Session, KEYS, child_env, leader_stop, OUT, ensure_ask, runner  # noqa: E402
 
 RUN_HOME = tempfile.mkdtemp(prefix="ask-provider-run-", dir="/private/tmp")
 KEY_HOME = os.path.join(RUN_HOME, "key")
@@ -78,14 +79,40 @@ def shot(name, s, note=""):
     return t
 
 
-def pick_model(s, flt):
+def selected_tokens(view):
+    """Words of the selected selector row: the box line that has the ❯ mark.
+
+    The border bar is required, because user blocks in the history use the
+    same mark.
+    """
+    for line in view.splitlines():
+        m = re.search(r"│\s*❯\s(.*)", line)
+        if m:
+            return m.group(1).replace("│", " ").split()
+    return []
+
+
+def pick_model(s, model_id, max_steps=80):
+    """Select the row whose id is exactly model_id.
+
+    The text filter narrows the list, but a filter also matches longer ids
+    (gpt-5.5 matches gpt-5.5-pro), so the selected row is checked and the
+    selection moves down until the id matches. It fails when no row matches.
+    """
     s.send(KEYS["ctrl+l"])
     s.wait("Select model", 5)
     time.sleep(0.3)
-    s.type(flt)
+    s.type(model_id)
     time.sleep(0.5)
-    s.send("\r")
-    time.sleep(1.5)
+    for _ in range(max_steps):
+        words = selected_tokens(s.view())
+        if any(w == model_id or w.endswith("/" + model_id) for w in words):
+            s.send("\r")
+            time.sleep(1.5)
+            return
+        s.send(KEYS["down"])
+        time.sleep(0.15)
+    raise AssertionError(f"no model row with the exact id {model_id!r}")
 
 
 def prompt(s, text, bucket, timeout=90, wait_done=r"· \d+(\.\d+)?s · ↑"):
@@ -103,9 +130,23 @@ def start(home, cols, rows, env=None):
     s = Session(home, cols, rows, env=dict(env or {}))
     SESSIONS.append(s)
     STARTED_HOMES.add(home)
-    if not s.wait("leader [0-9a-f]+", 15):
-        log("WARN: no leader id in the header after 15 s")
+    # The screen shows no link state, so the leader of the home is asked for it.
+    if not s.wait(r"⌂ .*\d+%|⌂ .*no model", 15):
+        log("WARN: no footer row after 15 s")
+    if not leader_running(home, 15):
+        log("WARN: no leader answers in this home after 15 s")
     return s
+
+
+def leader_running(home, timeout):
+    """True once `ask leader status` reports a leader that holds a session of the run."""
+    end = time.time() + timeout
+    while time.time() < end:
+        r = subprocess.run([ASK, "leader", "status", "--json"], env=child_env(home), capture_output=True, text=True, timeout=20)
+        if r.returncode == 0 and json.loads(r.stdout).get("sessions", 0) >= 1:
+            return True
+        time.sleep(0.3)
+    return False
 
 
 def oauth_home():
@@ -309,7 +350,7 @@ def oauth_switch(cols, rows):
     shot("switch-1-select-openai", s)
     ok1 = prompt(s, OK, "openai-oauth")
     shot("switch-2-openai-prompt", s, f"done={ok1}")
-    pick_model(s, "claude-sonnet")
+    pick_model(s, "claude-sonnet-4-6")
     shot("switch-3-select-anthropic", s)
     ok2 = prompt(s, OK, "anthropic-oauth")
     shot("switch-4-anthropic-prompt", s, f"done={ok2}")
@@ -324,7 +365,7 @@ def oauth_switch(cols, rows):
 def thinking():
     oauth_home()
     s = start(OAUTH_HOME, 80, 24)
-    pick_model(s, "claude-sonnet")
+    pick_model(s, "claude-sonnet-4-6")
     for _ in range(2):
         s.send("\x1b[Z")  # shift+tab cycles the thinking level
         time.sleep(0.5)
@@ -377,8 +418,8 @@ def detach():
     finish(o, KEY_HOME)
 
 
-def no_model_header(s):
-    return has_line(s, r"leader [0-9a-f]+.*no model")
+def no_model_footer(s):
+    return has_line(s, r"⌂ .*no model")
 
 
 def providers(cols=80, rows=24):
@@ -395,9 +436,9 @@ def providers(cols=80, rows=24):
     s.wait("no model", 15)
     s.settle(1.0, 10)
     shot("p1-first-run", s)
-    check("providers_first_run.header_no_model", no_model_header(s))
+    check("providers_first_run.footer_no_model", no_model_footer(s))
     check("providers_first_run.rail_notice", has_line(s, "Add a provider with /providers"))
-    check("providers_first_run.no_model_line", not has_line(s, r"^  model  \S+/\S+"))
+    check("providers_first_run.no_model_line", not has_line(s, r"^  model  "))
     s.send(KEYS["ctrl+l"])
     ok = s.wait("Use /providers to add providers.", 10)
     shot("p1-model-empty-hint", s)
@@ -436,7 +477,7 @@ def providers(cols=80, rows=24):
     check("key_saved_then_model.saved", ok)
     check("key_saved_then_model.choose_hint", s.wait(r"Choose a model with /model\.", 5, view=False))
     s.wait(r"Ask anything", 5)
-    check("key_saved_then_model.still_no_model", no_model_header(s))
+    check("key_saved_then_model.still_no_model", no_model_footer(s))
     s.send(KEYS["ctrl+l"])
     check("key_saved_then_model.model_selector", s.wait("Select model", 10))
     check("key_saved_then_model.openai_group", s.wait(r"● openai", 5))
@@ -445,11 +486,12 @@ def providers(cols=80, rows=24):
     time.sleep(0.5)
     shot("p3-model-list", s)
     s.send("\r")
-    ok = s.wait(r"leader [0-9a-f]+.*gpt-5\.5", 15)
+    ok = s.wait(r"⌂ .*gpt-5\.5", 15)
     s.settle(1.0, 10)
     shot("p3-model-chosen", s)
-    check("key_saved_then_model.header_model", ok)
-    check("key_saved_then_model.change_line", has_line(s, r"model\s+openai/gpt-5\.5", view=False))
+    check("key_saved_then_model.footer_model", ok)
+    check("key_saved_then_model.footer_pair", has_line(s, r"⌂ .*openai/gpt-5\.5"))
+    check("key_saved_then_model.no_change_line", not has_line(s, r"^  model  |· was ", view=False))
     check("key_saved_then_model.default_saved", s.wait(r"Default model: openai/gpt-5\.5", 5, view=False))
     ok = prompt(s, OK, "openai-key")
     shot("p3-prompt", s, f"done={ok}")
@@ -458,11 +500,11 @@ def providers(cols=80, rows=24):
 
     # default_model_persists (saved): a new leader and session in the same home.
     s = start(KEY_HOME, cols, rows)
-    ok = s.wait(r"model  openai/gpt-5\.5", 20, view=False)
+    ok = s.wait(r"⌂ .*openai/gpt-5\.5", 20)
     s.settle(1.0, 10)
     shot("p5-restart-saved-default", s)
-    check("default_model_persists.start_line", ok)
-    check("default_model_persists.header", has_line(s, r"leader [0-9a-f]+.*gpt-5\.5"))
+    check("default_model_persists.footer_saved_default", ok)
+    check("default_model_persists.no_model_line", not has_line(s, r"^  model  ", view=False))
 
     # remove_then_no_model: remove the only provider; prompt refused, no call.
     check("remove_then_no_model.opened", open_providers(s))
@@ -474,7 +516,7 @@ def providers(cols=80, rows=24):
     check("remove_then_no_model.removed", s.wait(r"Removed the saved credential for openai\.", 20, view=False))
     s.send(KEYS["esc"])
     s.settle(1.0, 10)
-    check("remove_then_no_model.header_no_model", s.wait(r"leader [0-9a-f]+.*no model", 15))
+    check("remove_then_no_model.footer_no_model", s.wait(r"⌂ .*no model", 15))
     s.type("hello after removal")
     s.send("\r")
     ok = s.wait(r"Not sent: no model", 10, view=False)
@@ -489,7 +531,7 @@ def providers(cols=80, rows=24):
     s.wait("no model", 15)
     s.settle(1.0, 10)
     shot("p5-restart-after-removal", s)
-    check("default_model_persists.no_model_after_removal", no_model_header(s))
+    check("default_model_persists.no_model_after_removal", no_model_footer(s))
     finish(s, KEY_HOME)
 
 
@@ -499,8 +541,8 @@ def oauth(cols=80, rows=24):
     s = start(OAUTH_HOME, cols, rows)
     s.settle(1.5, 15)
     shot("o1-start", s)
-    check("oauth_rows_and_switch.start_line", has_line(s, r"^  model  \S+/\S+", view=False))
-    check("oauth_rows_and_switch.header_model", not no_model_header(s))
+    check("oauth_rows_and_switch.no_model_line", not has_line(s, r"^  model  ", view=False))
+    check("oauth_rows_and_switch.footer_model", has_line(s, r"⌂ \S+\s+\S+/\S+") and not no_model_footer(s))
     check("oauth_rows_and_switch.providers_open", open_providers(s))
     s.settle(0.8, 5)
     shot("o2-providers", s)
@@ -526,12 +568,11 @@ def oauth(cols=80, rows=24):
         time.sleep(0.6)
         shot(f"o4-{n}-filter-{prov}", s)
         s.send("\r")
-        ok = s.wait(rf"leader [0-9a-f]+\s+.*{re.escape(model)}", 15)
+        ok = s.wait(rf"⌂ .*{re.escape(model)}", 15)
         s.settle(1.0, 10)
         shot(f"o4-{n}-switched-{prov}", s)
-        check(f"oauth_rows_and_switch.header_{n}_{prov}", ok)
-        pat = rf"model\s+{prov}/{re.escape(model)} · was {re.escape(prev)}"
-        check(f"oauth_rows_and_switch.change_line_{n}_{prov}", has_line(s, pat, view=False), f"was={prev}")
+        check(f"oauth_rows_and_switch.footer_{n}_{prov}", ok)
+        check(f"oauth_rows_and_switch.no_change_line_{n}_{prov}", not has_line(s, r"· was ", view=False), f"was={prev}")
     finish(s, OAUTH_HOME)
 
 

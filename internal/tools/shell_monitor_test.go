@@ -29,13 +29,13 @@ func TestMonitorRejectsTimeoutAboveMax(t *testing.T) {
 
 	require.Error(t, err)
 	assert.Equal(t, "persistent must be true when timeout_ms exceeds 36000000 ms", err.Error())
-	assert.Empty(t, h.table.List(), "no job starts")
+	assert.Empty(t, h.table.List(h.notices.Gen()), "no job starts")
 
 	res := h.mustRun("monitor", map[string]any{"command": quietWatch, "description": "tail", "timeout_ms": 36_000_001, "persistent": true})
 
 	assert.False(t, isError(res))
 	assert.Equal(t, "monitor-1", monitorDetails(t, res.Details)["jobId"])
-	require.Len(t, h.table.List(), 1)
+	require.Len(t, h.table.List(h.notices.Gen()), 1)
 }
 
 func TestMonitorRejectsNonPositiveTimeout(t *testing.T) {
@@ -45,7 +45,7 @@ func TestMonitorRejectsNonPositiveTimeout(t *testing.T) {
 		require.Error(t, err)
 		assert.Contains(t, err.Error(), "timeout_ms")
 	}
-	assert.Empty(t, h.table.List())
+	assert.Empty(t, h.table.List(h.notices.Gen()))
 }
 
 func TestMonitorFractionalTimeoutUsesOneMillisecond(t *testing.T) {
@@ -54,7 +54,7 @@ func TestMonitorFractionalTimeoutUsesOneMillisecond(t *testing.T) {
 	assert.EqualValues(t, 1, monitorDetails(t, res.Details)["timeoutMs"])
 	h.clock.Advance(time.Millisecond)
 	require.Eventually(t, func() bool {
-		list := h.table.List()
+		list := h.table.List(h.notices.Gen())
 		return len(list) == 1 && list[0].KillReason == "timeout"
 	}, 5*time.Second, 10*time.Millisecond)
 }
@@ -98,7 +98,7 @@ func TestMonitorStartsJobCountedByCap(t *testing.T) {
 	_, err := h.run("monitor", map[string]any{"command": quietWatch, "description": "third"})
 	require.Error(t, err)
 	assert.ErrorContains(t, err, "Too many active jobs")
-	assert.Equal(t, jobs.KindMonitor, h.table.List()[0].Kind)
+	assert.Equal(t, jobs.KindMonitor, h.table.List(h.notices.Gen())[0].Kind)
 }
 
 func TestMonitorDeliversStdoutLinesAsNotices(t *testing.T) {

@@ -19,7 +19,8 @@ import (
 // heldFixture builds a host whose first model call waits for release.
 func heldFixture(t *testing.T, release <-chan struct{}, write WriteEvent, opts ...HostOption) *Host {
 	t.Helper()
-	h := NewHost(context.Background(), func(_ context.Context, id, cwd string) (*agent.Agent, error) {
+	h := NewHost(context.Background(), func(_ context.Context, req SessionRequest) (*agent.Agent, error) {
+		id, cwd := req.ID, req.Cwd
 		p, err := faux.New(faux.WithChunk(1000, 1000))
 		if err != nil {
 			return nil, err
@@ -42,19 +43,15 @@ func TestHostBusyCallDoesNotBindSiblingRun(t *testing.T) {
 	h := hostFixture(t, nil, nil)
 	s, err := h.NewSession(hostDeadline(t), t.TempDir())
 	require.NoError(t, err)
+	steered := false
 	result, err := s.execute(hostDeadline(t), func(context.Context) error {
-		if _, err := s.agent.Steer(hostUser("steered")); err != nil {
-			return err
-		}
-		deadline := time.Now().Add(5 * time.Second)
-		for time.Now().Before(deadline) {
-			s.mu.Lock()
-			bound := s.binding != nil && s.binding.runID != ""
-			s.mu.Unlock()
-			if bound {
-				break
+		// The first attempt meets a run that a sibling input started; every
+		// attempt refuses, as a call that never gets its turn.
+		if !steered {
+			steered = true
+			if _, err := s.agent.Steer(hostUser("steered")); err != nil {
+				return err
 			}
-			time.Sleep(time.Millisecond)
 		}
 		return agent.ErrBusy
 	})
@@ -210,19 +207,11 @@ func TestHostContinueStateErrorDoesNotBindSiblingRun(t *testing.T) {
 		s, err := h.NewSession(hostDeadline(t), t.TempDir())
 		require.NoError(t, err)
 		result, err := s.execute(hostDeadline(t), func(context.Context) error {
+			// A sibling input runs while the call fails on its own state.
 			if _, err := s.agent.Steer(hostUser("steered")); err != nil {
 				return err
 			}
-			deadline := time.Now().Add(5 * time.Second)
-			for time.Now().Before(deadline) {
-				s.mu.Lock()
-				bound := s.binding != nil && s.binding.runID != ""
-				s.mu.Unlock()
-				if bound {
-					break
-				}
-				time.Sleep(time.Millisecond)
-			}
+			require.NoError(t, s.agent.WaitForIdle(hostDeadline(t)))
 			return stateErr
 		})
 		require.ErrorIs(t, err, stateErr)

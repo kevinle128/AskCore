@@ -5,6 +5,7 @@ import (
 
 	"AskCore/internal/pipeline"
 	"AskCore/internal/sessions"
+	"AskCore/internal/tasks"
 	"AskCore/pkg/protocol"
 )
 
@@ -14,6 +15,25 @@ type LoggedRequest = loggedRequest
 
 // RebuildRequest is rebuildRequest for tests.
 var RebuildRequest = rebuildRequest
+
+// SectionRow is one row of the section table.
+type SectionRow struct {
+	Name     SectionName
+	Order    int
+	Baseline bool
+}
+
+// SectionTable returns the rows of the section table in table order.
+func SectionTable() []SectionRow {
+	rows := make([]SectionRow, len(sections))
+	for i, s := range sections {
+		rows[i] = SectionRow{s.name, s.order, s.baseline}
+	}
+	return rows
+}
+
+// TextOf is textOf for tests.
+var TextOf = textOf
 
 // Run runs the loop on its own, with a log in memory and no Agent around it.
 // The loop-level tests use it to look at the loop without the run wrapper. The
@@ -34,4 +54,17 @@ func Continue(ctx context.Context, ac pipeline.AgentContext, cfg LoopConfig, emi
 		return nil, err
 	}
 	return continueLoop(ctx, ac, cfg, d, emit)
+}
+
+// SetQuiescenceProbe sets the function that WaitForQuiescence calls between
+// its checks and its second read of the work counter. A test uses it to force
+// work into that window.
+func (a *Agent) SetQuiescenceProbe(f func()) { a.quiescenceProbe = f }
+
+// NoticesForTest returns the notice port of the current generation. Production
+// code gets a port only from the run it belongs to.
+func NoticesForTest(a *Agent) tasks.Port {
+	a.mu.Lock()
+	defer a.mu.Unlock()
+	return noticePort{a: a, gen: a.taskGen}
 }

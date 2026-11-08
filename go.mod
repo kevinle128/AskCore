@@ -48,6 +48,7 @@ require (
 	golang.org/x/text v0.42.0
 	google.golang.org/grpc v1.83.2
 	gopkg.in/dnaeon/go-vcr.v4 v4.0.7
+	gopkg.in/yaml.v3 v3.0.1
 	gorm.io/driver/sqlite v1.6.0
 	gorm.io/gorm v1.31.1
 )
@@ -404,7 +405,6 @@ require (
 	google.golang.org/genproto/googleapis/api v0.0.0-20260825221802-da73d73af1c5 // indirect
 	google.golang.org/genproto/googleapis/rpc v0.0.0-20260825221802-da73d73af1c5 // indirect
 	google.golang.org/protobuf v1.36.12 // indirect
-	gopkg.in/yaml.v3 v3.0.1 // indirect
 	honnef.co/go/tools v0.8.1 // indirect
 	mvdan.cc/gofumpt v0.12.0 // indirect
 	mvdan.cc/unparam v0.0.0-20260823230713-2fa3d841b0c8 // indirect
@@ -412,7 +412,7 @@ require (
 	pluginrpc.com/pluginrpc v0.5.0 // indirect
 )
 
-replace charm.land/fantasy => github.com/kevinle128/fantasy v0.0.0-20261005094512-08976763bfea
+replace charm.land/fantasy => github.com/kevinle128/fantasy v0.0.0-20261101125124-e894229ccae5
 
 // The Ask copy raises one scanner limit. See third_party/acp-go-sdk/PATCH.txt.
 replace github.com/coder/acp-go-sdk => ./third_party/acp-go-sdk

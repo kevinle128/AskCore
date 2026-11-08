@@ -31,10 +31,10 @@ This applies to `internal/tui`, `internal/tuiext`, `cmd/tui` interactive mode, a
 
 Ask is a full-screen TUI on the alternate screen.
 It has no terminal scrollback of its own: the application transcript is the only history, and the block pane draws it.
-Top to bottom the screen is the header row, a rule, the block pane, queue rows, the status row, a rule, the prompt pane, a rule and the shortcut bar.
+Top to bottom the screen is the header row (the logo only), a rule, the block pane, queue rows, the status row, a rule, the prompt pane, a rule, the footer row (the status data: directory, model, context use; no link state and no cost) and the shortcut bar.
 A block pane block is one row by default and has three fold modes (Collapsed, Truncated, Expanded). The viewer shows one block on the whole screen.
 A selector or dialog takes the prompt pane slot (up to half of the screen) and keeps the draft.
-Empty parts use no rows. The header, the bar and one prompt row always stay.
+Empty parts use no rows. The footer row, the bar and one prompt row always stay, and the header row shows from 5 rows.
 Your sketches must show this model: every sketch is a whole screen with the exact width and height.
 Do not draw a box around the whole screen; the rules are the only frame.
 
@@ -58,7 +58,7 @@ Sections, in this order:
 
 1. **Outcome**: what the user can see and do after this change, in two to four sentences.
 2. **Non-goals**: what this design does not cover.
-3. **Placement**: which screen part (header row, block pane, status row, queue rows, prompt pane slot, shortcut bar or viewer) or which block the feature uses, what it replaces, and what moves.
+3. **Placement**: which screen part (header row, footer row, block pane, status row, queue rows, prompt pane slot, shortcut bar or viewer) or which block the feature uses, what it replaces, and what moves.
 4. **Sketches**: one sketch for each state at 80×24.
    Add 120×40 for a state only when its layout changes at that width; state the width rules for the other states in section 7.
    Add a narrow case (for example 40 columns) when truncation or wrapping matters.
@@ -82,22 +82,21 @@ Sections, in this order:
   Pad with spaces.
   Count columns, not characters: CJK and most emoji use two columns.
 - Draw the rules (`─`) and the shortcut bar as they are on the screen. Do not add comment lines inside the sketch.
-- Label each region outside the sketch with its owner name from `internal/tui/README.md` (header, block pane, status, queue, prompt pane, bar, viewer, dialog, selector, completion, widget).
+- Label each region outside the sketch with its owner name from `internal/tui/README.md` (header, footer, block pane, status, queue, prompt pane, bar, viewer, dialog, selector, completion, widget).
 - Show the selection state of a block when it matters: the shaded row or the `┃` rail, and the `›` or `⌄` indicator.
 - Show the cursor with `▌` and say in text where it is.
 - Show real example text, not `lorem ipsum`.
 - If you use box-drawing characters, they are part of the design.
   The implementation must match them.
 
-Example, a permission dialog in the prompt pane slot at 60 columns and 15 rows (header row, block pane, status row, dialog, bar):
+Example, a permission dialog in the prompt pane slot at 60 columns and 15 rows (header row, rule, block pane, status row, dialog, footer row, bar):
 
 ```text
-◢◤ ask  ● leader 7c1e  ⌂ ~/src/askcore     faux ▰▱▱▱▱▱▱▱ 9% 
+ ◢◤ ask                                                     
 ────────────────────────────────────────────────────────────
   ❯ run the build                                           
                                                             
   ◆ Running go vet ./...                               ⠋ 3s 
-                                                            
                                                             
 ┊ ◌ Waiting for approval                                    
 ────────────────────────────────────────────────────────────
@@ -106,6 +105,7 @@ Example, a permission dialog in the prompt pane slot at 60 columns and 15 rows (
 │ [y] Allow   [n] Deny   [a] Always for this session       │
 ╰──────────────────────────────────────────────────────────╯
 ────────────────────────────────────────────────────────────
+ ⌂ ~/src/askcore                      faux/faux-1  ▰▱▱▱▱▱▱▱ 9% 
  y allow · n deny · a always                                
 ```
 
@@ -121,7 +121,7 @@ Check the page with a headless browser screenshot before you send it.
 
 - [ ] Every state in the table has an 80×24 sketch; 120×40 exists where the layout changes.
 - [ ] Every sketch has the stated width and height (check with a script if unsure).
-- [ ] The sketches follow the alternate screen model: header row, rules, block pane, prompt pane, bar; the state of the selection and the fold mode of each block is clear.
+- [ ] The sketches follow the alternate screen model: header row, rules, block pane, prompt pane, footer row, bar; the state of the selection and the fold mode of each block is clear.
 - [ ] Each key has one receiver, and the order agrees with the architecture doc.
 - [ ] Limited-space behaviour is explicit; no region is assumed to always fit.
 - [ ] Each acceptance criterion is observable on screen at a stated size.
@@ -156,7 +156,7 @@ The provider setup design (`plans/261010-1424-t1c-provider-setup-design/`) has i
 | Key box: hidden paste, checking, refused, saved, not checked | `TestKeyBoxCheckingLocksInput`, `TestKeyBoxRefusedClearsInput`, `TestKeyBoxSavedNoteAndRail`, `TestAlibabaKeyBoxSaysNotChecked`, `TestKeySavedNotCheckedNote` |
 | Login boxes: browser URL, address and code, device code, failed, busy, lost, cancelled | `TestBrowserBoxGoldens`, `TestAnthropicAddressAndCodeBoxes`, `TestDeviceBoxGoldens`, `TestLoginFailedTryAgain`, `TestLoginCannotStartBusy`, `TestLoginBoxLeaderLost`, `TestLoginCancelledByRemovalShowsReason`, `TestLoginSuccessNamesAccount` |
 | First run, no model | `TestFirstRunGoldens`, `TestNoModelSendRefusedKeepsDraft` |
-| Model line (start, change, two formats, fallback) and `/model` | `TestModelLineGoldens`, `TestModelChangeLine`, `TestFallbackNoticeNamesModelInUse`, `TestModelSelectorGroupsUsableProviders`, `TestModelSelectorEmptyHint`, `TestModelSelectorTagsDefault` |
+| Footer row, fallback notice and `/model` | `TestFooterRowGoldens`, `TestFallbackNoticeNamesModelInUse`, `TestFallbackNoticeNotInAccount`, `TestModelSelectorGroupsUsableProviders`, `TestModelSelectorEmptyHint`, `TestModelSelectorTagsDefault`, `TestModelSelectorUnknownWindow`, `TestModelSelectorNotInAccount` |
 | `TEA_TRACE` warning | `TestTraceWarningOnceAtStart`, `TestTraceWarningOnKeyBox`, `TestNoTraceWarningWhenUnset` |
 
 ### Golden checks: component screens

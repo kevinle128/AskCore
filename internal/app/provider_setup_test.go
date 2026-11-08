@@ -25,7 +25,7 @@ func providerSetupFixture(t *testing.T, env map[string]string, rt http.RoundTrip
 	t.Helper()
 	p := testACPParams(t)
 	p.Initial = providers.Model{}
-	p.NewAgent = func(*auth.Service, string, string, providers.Model) (*agent.Agent, error) {
+	p.NewAgent = func(*auth.Service, AgentSpec) (*agent.Agent, error) {
 		return nil, errors.New("not used")
 	}
 	p.Env = func(k string) (string, bool) { v, ok := env[k]; return v, ok }
@@ -40,7 +40,7 @@ func providerSetupFixture(t *testing.T, env map[string]string, rt http.RoundTrip
 }
 
 func TestProviderSetupListRowsAndModelCounts(t *testing.T) {
-	acc, _ := providerSetupFixture(t, map[string]string{"OPENAI_API_KEY": "sk-fake-env"}, nil)
+	acc, runtime := providerSetupFixture(t, map[string]string{"OPENAI_API_KEY": "sk-fake-env"}, nil)
 	res, err := acc.List(context.Background())
 	require.NoError(t, err)
 
@@ -61,10 +61,11 @@ func TestProviderSetupListRowsAndModelCounts(t *testing.T) {
 		counts[p.ProviderID], usable[p.ProviderID] = p.ModelCount, p.Usable
 	}
 	want := map[string]int{}
-	for _, m := range providers.AvailableModels() {
+	for _, m := range runtime.models.Current().set.All() {
 		want[m.Provider]++
 	}
-	require.Equal(t, want, counts, "model counts come from the catalog")
+	require.Equal(t, want, counts, "model counts come from the model list")
+	require.Greater(t, counts["openai"], 2, "the generated rows are in the list")
 	require.Equal(t, map[string]bool{"alibaba-token-plan": false, "openai": true, "anthropic": false, "xai": false}, usable)
 	require.NotContains(t, counts, "faux", "no demo provider without the opt-in")
 }

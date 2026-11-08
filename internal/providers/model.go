@@ -46,6 +46,8 @@ const (
 
 // Model is one catalog row and the only policy object a request carries.
 // SamplingParams is stored for H7. H4 adapters do not read it.
+// A ContextWindow or MaxTokens of 0 means that no source gave the value: a
+// display shows it as unknown, and a request uses RequestLimits.
 type Model struct {
 	ID               string
 	Name             string
@@ -59,8 +61,11 @@ type Model struct {
 	Headers          map[string]string
 	ThinkingLevelMap ThinkingLevelMap
 	Cost             Cost
-	Compat           Compat
-	SamplingParams   map[string]any
+	// CostUnknown is true when no source gave a price for the model. Cost is
+	// then empty, and a session total that includes this model is incomplete.
+	CostUnknown    bool
+	Compat         Compat
+	SamplingParams map[string]any
 }
 
 func (m Model) Anthropic() (AnthropicCompat, bool) {

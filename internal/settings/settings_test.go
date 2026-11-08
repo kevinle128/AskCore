@@ -7,7 +7,9 @@ import (
 	"path/filepath"
 	"strings"
 	"sync"
+	"syscall"
 	"testing"
+	"time"
 )
 
 func TestDefaultModelStoreMissingFileMeansNoDefault(t *testing.T) {
@@ -126,5 +128,54 @@ func TestDefaultModelStoreRefusesUnsafeFileAndBadIDs(t *testing.T) {
 		if err = s.SetDefaultModel(context.Background(), id); err == nil {
 			t.Fatalf("model id %q accepted", id)
 		}
+	}
+}
+
+func TestReadSettingsFIFOIsRefusedWithoutBlocking(t *testing.T) {
+	f := newLayeredFixture(t)
+	if err := syscall.Mkfifo(f.userPath(), 0600); err != nil {
+		t.Skipf("mkfifo: %v", err)
+	}
+	l, err := NewLayered(f.home, Project{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	eff := loadWithin(t, l, 5*time.Second)
+	diags := diagnosticsFor(eff, LayerUser)
+	if len(diags) != 1 || diags[0].Path != f.userPath() || diags[0].Text != "unsafe or invalid file: file owner, type or mode" {
+		t.Fatalf("diagnostics %+v", diags)
+	}
+	// The open that follows the entry check must not block on a FIFO either.
+	done := make(chan error, 1)
+	go func() {
+		_, _, err := readPrivateFile(f.userPath())
+		done <- err
+	}()
+	select {
+	case err := <-done:
+		if !errors.Is(err, ErrUnsafeStore) {
+			t.Fatalf("opened FIFO: %v", err)
+		}
+	case <-time.After(5 * time.Second):
+		t.Fatal("the open blocked on a FIFO")
+	}
+}
+
+func TestReadSettingsSymlinkIsRefused(t *testing.T) {
+	f := newLayeredFixture(t)
+	linked := filepath.Join(f.home, "real.json")
+	if err := os.WriteFile(linked, []byte(`{"thinkingFold":"collapsed"}`), 0600); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Symlink(linked, f.userPath()); err != nil {
+		t.Fatal(err)
+	}
+	eff := f.load(t, false)
+	diags := diagnosticsFor(eff, LayerUser)
+	if len(diags) != 1 || diags[0].Path != f.userPath() || eff.ThinkingFold != ThinkingFoldExpanded {
+		t.Fatalf("diagnostics %+v fold %q", diags, eff.ThinkingFold)
+	}
+	if _, _, err := readPrivateFile(f.userPath()); err == nil {
+		t.Fatal("the open must not follow a link")
 	}
 }

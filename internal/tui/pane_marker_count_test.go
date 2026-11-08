@@ -34,17 +34,17 @@ func settledMarker(t *testing.T, p *Pane) PaneMarker {
 }
 
 func TestPaneMarkerCountMeasuresTheBlockBelowAFullWindow(t *testing.T) {
-	r := newPaneRig(t, 20, 5, 2, 2, 2, 2, 2)
+	r := newPaneRig(t, 20, 5, 1, 1, 1, 1, 1)
 	r.pane.ScrollBy(-1000)
-	require.Equal(t, []string{"b0.0", "b0.1", "b1.0", "b1.1", ""}, r.pane.Frame().Rows)
+	require.Equal(t, []string{"b0.0", "", "b1.0", "", ""}, r.pane.Frame().Rows)
 
-	// The window is full at the end of block b1: block b2 sits below it and
-	// has not drawn at its new size.
+	// The window is full at the end of the gap row of block b1: block b2 sits
+	// below it and has not drawn at its new size.
 	r.grow("b2", labelRows("b2", 10))
 	m := settledMarker(t, r.pane)
 	require.True(t, m.New)
-	require.Equal(t, 10+2+2, m.N)
-	require.Equal(t, "▼ 14 · End", m.Text)
+	require.Equal(t, (10+1)+(1+1)+(1+1), m.N)
+	require.Equal(t, "▼ 15 · End", m.Text)
 }
 
 func TestPaneMarkerCountMeasuresTheBlockBelowAFullWindowAfterAResize(t *testing.T) {
@@ -64,7 +64,8 @@ func TestPaneMarkerCountMeasuresTheBlockBelowAFullWindowAfterAResize(t *testing.
 	p.SetSize(10, 5)
 	m := settledMarker(t, p)
 	require.True(t, m.New)
-	// Seven blocks of 31 bytes make four rows each at width 10; the window
-	// shows the first four rows, which is the whole first block.
-	require.Equal(t, 7*4-4, m.N)
+	// Seven blocks of 31 bytes make four rows and a gap row each at width 10;
+	// the window shows the first four rows, which are the rows of the first
+	// block.
+	require.Equal(t, 7*(4+1)-4, m.N)
 }

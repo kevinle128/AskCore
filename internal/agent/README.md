@@ -20,6 +20,9 @@ Control handlers and observers must not become a second loop or writer.
 | Ordered local listeners and posted events | [emit.go](emit.go) |
 | Consistent follow snapshot, stream baseline, cursor, and epoch | [follow.go](follow.go) |
 | System prompt and tool declaration changes | [systemprompt.go](systemprompt.go), [loop_tool_changes.go](loop_tool_changes.go) |
+| Named system prompt sections and `SystemPrompt(PromptParts)` | [systemprompt_sections.go](systemprompt_sections.go) |
+| `Config.Seed`: tagged items committed first in every fresh log, also after Reset | [seed.go](seed.go) |
+| `Config.RewriteInput`: replaces the text of the first block of a human prompt, steer or follow-up before it is queued or run, for example to expand a command. The agent does not know what the rewrite means | [input_rewrite.go](input_rewrite.go) |
 
 ## Lifecycle decisions
 
@@ -35,10 +38,16 @@ Failed attempts record safe outcome, failure, usage, and binding facts.
 Their assistant content stays outside model history; visible streamed output remains visible through the Pi retry sequence.
 Retry must preserve the selected credential's method, profile, and billing class.
 
+Seed items are `protocol.CustomMessage` values that the owner supplies (context files, skill list).
+They are committed first in every fresh log, in `New` and in Reset, without an input ID and without events; the first Follow snapshot holds them and the request record rebuilds them like any other message.
+A seed item is skipped when the log already holds its `CustomType`, so a prefilled log is not seeded twice.
+A log that holds only seed items is empty for `Continue`.
+
 Input uses claims rather than delivery modes.
 Steering is claimed at a turn boundary; a cycle claim also takes one follow-up.
 AfterTool context uses the same staged admission path without waking an idle Agent.
 Abort and disposal are separate operations because stopping current work must not always end the session.
+The Agent owns one task registry ([tasks.go](tasks.go)) on a lifetime context that only disposal cancels. `Notify` is the only entry for task notices. Abort keeps tasks running and moves queued notices to the context queue. Reset stops the old tasks and refuses their late notices and events. Disposal stops and waits for every task, including the old tasks that a concurrent Reset is still closing. A wake notice sets the wake latch, so a run that ends without claiming it (failed turn, End decision, rejected admission) is followed by exactly one run; a run that claims it starts no extra run. A context notice never starts a request on its own. A wake notice that arrives after Abort of an active run, until the next human input, or on an idle Agent with no model, waits in the context queue instead of starting a run. `Config.Background` is outside work that `WaitForQuiescence` also waits for (the job table). `WithRunStart` lets a caller of `Prompt` or `Continue` learn the ID of the run it starts before any event of that run; ACP binds a call to its own run with it. A source outside the registry (the job table) uses `tasks.Port`: each run gets the port of its generation together with the registry, the tool coordinator pins both against ExecuteTool handlers, and the port's `Remove` deletes only notices. `Idle` and `WaitForQuiescence` ([idle.go](idle.go)) wait by signal and never poll. See [async task runtime](../../docs/async-task-runtime.md).
 
 A tool body that started must finish before the run settles or disposal completes.
 Drain has no time bound; a tool must cooperate with cancellation.

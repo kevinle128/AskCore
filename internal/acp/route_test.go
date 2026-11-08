@@ -259,9 +259,9 @@ func TestQuiesceWaitsForSessionCreation(t *testing.T) {
 	cfg.RequireRoute = true
 	inner := cfg.Factory
 	var once sync.Once
-	cfg.Factory = func(ctx context.Context, id, cwd string) (*agent.Agent, error) {
+	cfg.Factory = func(ctx context.Context, req SessionRequest) (*agent.Agent, error) {
 		once.Do(func() { close(entered); <-release })
-		return inner(ctx, id, cwd)
+		return inner(ctx, req)
 	}
 	p := newAdapterPeer(t, cfg, nil)
 	p.ok("initialize", map[string]any{"protocolVersion": 1}, nil)

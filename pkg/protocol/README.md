@@ -10,12 +10,18 @@ JSON compatibility is deliberate: the public headless event projection remains P
 |---|---|
 | Planned UI extension wire contracts | [TUI architecture](../../docs/tui-architecture.md); public author API belongs in [askui](../askui/README.md) |
 | Provider account methods (`_ask/providers/*`), login shapes, fixed reason tokens | [acp_providers.go](acp_providers.go), tests in [acp_providers_test.go](acp_providers_test.go) |
+| Project trust methods (`_ask/trust/state`, `_ask/trust/set`), the `session/new` override key `_meta["ask.dev/trust"]`, the session trust and settings diagnostic of `_ask/session/state`, and the `defaultNotSaved` reasons of `set_model` | [acp_trust.go](acp_trust.go), tests in [acp_trust_test.go](acp_trust_test.go); behavior in [internal/acp](../../internal/acp/README.md#project-trust) |
+| Per-session flags of `session/new`: the `_meta["ask.dev/session"]` key, `ACPSessionOptions` (prompt, tool and model options) and their bounds, and the `_meta["ask.dev/appliedOptions"]` echo (`ACPAppliedOptions`); additive, no leader protocol bump | [acp_session.go](acp_session.go), tests in [acp_session_test.go](acp_session_test.go) |
+| Model fields of the session methods: `scope` and `diagnostics` of `get_available_models` (`ACPScopedModel`), `thinkingLevel` of `set_model`, `levelDropped` of `_ask/session/state` (`ACPLevelDropped` and its notice text); all optional | [acp.go](acp.go), tests in [acp_session_test.go](acp_session_test.go) |
+| `ReminderText` (trusted `Frame` and escaped `Quote` text in a system reminder), and the seed item types `context-file` and `skill-list` | [reminder.go](reminder.go), tests in [reminder_test.go](reminder_test.go) |
+| The skill list method `_ask/session/skills` (`ACPSkillsResult`) and the text of a `/skill:<name>` prompt after expansion (`SkillInput`, and `SkillInputCommand` that reads it back for display) | [acp_skills.go](acp_skills.go), [skill_input.go](skill_input.go), tests in [acp_skills_test.go](acp_skills_test.go) |
 | ACP method names, `_ask/*` DTOs, error kinds and codes, event identity | [acp.go](acp.go), tests in [acp_test.go](acp_test.go); SDK and schema pins in [conformance report](../../plans/reports/conformance-261007-h13a-sdk.md); roadmap: [H13](../../plans/260930-2254-pi-feature-inventory-go-roadmap/roadmap.md) |
 | Leader socket frames, control and status payloads, protocol and frame limits (the optional `commitTime` and `devStamp` build stamps in register, registered, status and `ask version --json`), the `ask version --json` payload | [leader.go](leader.go), tests in [leader_test.go](leader_test.go); behavior in [internal/leader](../../internal/leader/README.md) |
 | Messages, content, usage, and tool declarations | [message.go](message.go), [content.go](content.go), [usage.go](usage.go), [tool.go](tool.go) |
 | Agent event types and sequencing envelope (`model_update` carries the model of an Agent; all fields empty means no model) | [events.go](events.go) |
 | Provider stream events and message reconstruction | [stream_events.go](stream_events.go), [builder.go](builder.go) |
 | Exact JSON and JSONL projection | [codec.go](codec.go) |
+| `CustomMessage` (`role: "custom"`) for task notices, and the `task_start`, `task_update`, `task_end` events | [message.go](message.go), [events.go](events.go), [codec.go](codec.go); design in [async task runtime](../../docs/async-task-runtime.md) sections 7.4 and 13 |
 
 ## ACP wire rules
 
@@ -51,6 +57,12 @@ The headless JSON stream ends with agent_settled.
 Disposal then reaches Go observers as agent_disposed, which is omitted from that JSON stream.
 See [headless JSON writer](../../cmd/tui/headless_json.go) and [disposal fixture](../../cmd/tui/headless_lifecycle_test.go).
 Preparation failure is the deliberate compatibility exception: no user input is committed or published before the failure wrapper.
+
+## Custom message role
+
+`custom` is a built-in role, as in Pi: `CustomMessage` holds `customType`, `content`, `display`, optional `details` (a JSON object), and `timestamp`.
+`RegisterRole("custom", ...)` is rejected, and an object with `"role":"custom"` no longer decodes to `RawMessage`: it decodes to `CustomMessage`, and a missing `customType` or non-object `details` is a decode error.
+A custom message is not human input. The model sees it as a user message with the same content (`providers.ConvertToLLM`), so a custom `LoopConfig.ConvertToLLM` must map it too.
 
 ## Copy and safety boundaries
 

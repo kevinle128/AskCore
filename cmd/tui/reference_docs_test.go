@@ -42,7 +42,7 @@ func TestReferenceDocs(t *testing.T) {
 
 	update := os.Getenv(updateDocsEnv) == "1"
 	for _, name := range names {
-		path := filepath.Join("..", "..", "docs", "reference", name)
+		path := filepath.Join(packageDir, "..", "..", "docs", "reference", name)
 		want := docs[name]
 		if update {
 			require.NoError(t, os.MkdirAll(filepath.Dir(path), 0o755))
@@ -263,5 +263,44 @@ func renderProvidersDoc() string {
 	b.WriteString("The faux provider is a scripted demo. It is not in the catalog above.\n")
 	b.WriteString("The leader, `ask acp` and the in-process TUI list it only when `ASK_FAUX=1` is set.\n")
 	b.WriteString("`ask -p` uses it as the default provider.\n")
+	renderGeneratedRows(&b)
 	return b.String()
+}
+
+// renderGeneratedRows writes the table of GeneratedCatalog. A value that no
+// source gives shows as `?`.
+func renderGeneratedRows(b *strings.Builder) {
+	b.WriteString("\n## Generated rows\n\n")
+	b.WriteString("These rows come from the embedded models.dev snapshot and the family rules in `internal/providers/catalog_rules.go`, merged with the rows above.\n")
+	b.WriteString("`/model`, `ask -p` and the leader show these rows. The model list of a signed-in account can narrow them, and a refreshed models.dev cache can change the numbers; the table shows the embedded snapshot.\n")
+	b.WriteString("A family that has no rule, or a rule that hides it, is not in the table.\n")
+	b.WriteString("The price is the base price in USD for each 1000000 tokens; some rows have a higher price above a context size.\n\n")
+	b.WriteString("| Provider | Model | API | Context window | Maximum output | Thinking levels | Price (input / output) |\n")
+	b.WriteString("|---|---|---|---|---|---|---|\n")
+	levels := []protocol.ThinkingLevel{
+		protocol.ThinkingOff, protocol.ThinkingMinimal, protocol.ThinkingLow, protocol.ThinkingMedium,
+		protocol.ThinkingHigh, protocol.ThinkingXHigh, protocol.ThinkingMax,
+	}
+	unknownZero := func(v int) string {
+		if v <= 0 {
+			return "?"
+		}
+		return strconv.Itoa(v)
+	}
+	usd := func(micro int64) string { return "$" + strconv.FormatFloat(float64(micro)/1_000_000, 'f', -1, 64) }
+	for _, m := range providers.GeneratedCatalog() {
+		var kept []string
+		for _, l := range levels {
+			if providers.ClampThinkingLevel(m, l) == l {
+				kept = append(kept, string(l))
+			}
+		}
+		price := "?"
+		if !m.CostUnknown && len(m.Cost.Tiers) > 0 {
+			base := m.Cost.Tiers[0].Price
+			price = usd(base.Input) + " / " + usd(base.Output)
+		}
+		fmt.Fprintf(b, "| `%s` | `%s` | `%s` | %s | %s | %s | %s |\n",
+			m.Provider, m.ID, m.API, unknownZero(m.ContextWindow), unknownZero(m.MaxTokens), strings.Join(kept, ", "), price)
+	}
 }

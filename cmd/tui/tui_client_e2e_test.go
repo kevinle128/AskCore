@@ -128,7 +128,7 @@ func newSessionOf(t *testing.T, c *tuiclient.Client) tui.SessionInfo {
 	t.Helper()
 	ctx, cancel := context.WithTimeout(context.Background(), clientWait)
 	defer cancel()
-	info, err := c.NewSession(ctx, t.TempDir())
+	info, err := c.NewSession(ctx, t.TempDir(), tui.NewSessionOptions{})
 	require.NoError(t, err)
 	require.Equal(t, protocol.ACPRoleDriver, info.Role)
 	return info
@@ -298,7 +298,7 @@ func TestClientSetModelReadinessFailure(t *testing.T) {
 	for _, m := range models.Models {
 		require.NotEqual(t, "openai", m.Provider, "the list has usable providers only")
 	}
-	_, err = c.SetModel(ctx, other, false)
+	_, err = c.SetModel(ctx, other, "", false)
 	var re *tui.RequestError
 	require.ErrorAs(t, err, &re, "the readiness failure comes back as a request error")
 	st, err := c.State(ctx)
@@ -306,7 +306,7 @@ func TestClientSetModelReadinessFailure(t *testing.T) {
 	require.Equal(t, models.Current, st.ModelID, "the model did not change")
 
 	// A ready model changes.
-	res, err := c.SetModel(ctx, models.Current, false)
+	res, err := c.SetModel(ctx, models.Current, "", false)
 	require.NoError(t, err)
 	require.Equal(t, models.Current, res.ModelID)
 }
@@ -597,7 +597,7 @@ func TestClientInProcessAgent(t *testing.T) {
 	models, err := c.Models(ctx)
 	require.NoError(t, err)
 	require.NotEmpty(t, models.Models)
-	res, err := c.SetModel(ctx, models.Current, false)
+	res, err := c.SetModel(ctx, models.Current, "", false)
 	require.NoError(t, err)
 	require.Equal(t, models.Current, res.ModelID)
 	_, err = c.Usage(ctx)
@@ -636,6 +636,17 @@ func TestInProcessExitKeepsCleanupFailure(t *testing.T) {
 func makeHomeUnsafe(t *testing.T, home string) {
 	t.Helper()
 	require.NoError(t, os.Symlink(t.TempDir(), home))
+}
+
+// --no-leader runs the agent in process on a healthy home, and no leader starts.
+func TestClientNoLeaderRunsInProcess(t *testing.T) {
+	bin, home := newE2EHome(t)
+	c, err := openTUIClient(context.Background(), inProcessDeps(home, nil), tuiClientOptions{callerExe: bin, env: leaderEnv(home), noLeader: true})
+	require.NoError(t, err)
+	require.Equal(t, tui.ModeInProcess, c.Info().Mode)
+	require.ErrorIs(t, c.FallbackReason, errLeaderDisabled)
+	require.Empty(t, leaderProcesses(bin), "no leader process is started")
+	require.NoError(t, c.Close())
 }
 
 func TestClientStartupFallbackOnlyAtStartup(t *testing.T) {

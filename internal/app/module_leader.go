@@ -75,6 +75,9 @@ func (l *linkEnd) Close() error {
 // A client that leaves never reaches Adapter.Fail, Adapter.Close or the host.
 // Only the end of the link, or a stop, does.
 func NewLeaderRuntime(p LeaderParams) (*LeaderRuntime, error) {
+	if p.ModelRefresh.Logger == nil {
+		p.ModelRefresh.Logger = p.Logger
+	}
 	acpRT, err := NewACPRuntime(p.ACPParams)
 	if err != nil {
 		return nil, err
