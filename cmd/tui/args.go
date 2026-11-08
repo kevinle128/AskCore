@@ -55,8 +55,9 @@ type options struct {
 	// maxTurns ends a print-mode run after that many turns, turns that a
 	// notice wakes included. Zero means no limit.
 	maxTurns int
-	// bgLimit is the background limit of the job table. Only print mode sets
-	// it; the TUI, the leader and ask acp have none.
+	// bgLimit is the background limit of the job table. Print mode sets it from
+	// its own env; the leader, ask acp and the in-process TUI get theirs from
+	// sessionOptions.
 	bgLimit jobs.BackgroundLimit
 	// noLeader makes the TUI run its agent in this process. It never connects
 	// to a leader and never starts one, so a debugger on this process sees the

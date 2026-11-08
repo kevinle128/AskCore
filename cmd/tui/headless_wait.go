@@ -25,10 +25,19 @@ const (
 	printBgCeilingEnv = "ASK_PRINT_BG_WAIT_CEILING_MS"
 	// disableBackgroundEnv turns background work off in every mode.
 	disableBackgroundEnv = "ASK_DISABLE_BACKGROUND_TASKS"
+	// bgStallEnv is the silence of a background command after which a notice
+	// says so, in milliseconds, in every mode; 0 turns the notice off.
+	bgStallEnv = "ASK_BG_STALL_MS"
+	// bgLimitEnv is the background limit of the leader, ask acp and the
+	// in-process TUI, in milliseconds; 0 turns the limit off. ask -p reads
+	// printBgLimitEnv instead.
+	bgLimitEnv = "ASK_BG_LIMIT_MS"
 
-	printBgDefault = 10 * time.Minute
-	printBgMax     = 2 * time.Hour
-	printCeiling   = 10 * time.Minute
+	bgStallDefault     = 5 * time.Minute
+	interactiveBgLimit = 2 * time.Hour
+	printBgDefault     = 10 * time.Minute
+	printBgMax         = 2 * time.Hour
+	printCeiling       = 10 * time.Minute
 	// progressAfter is the wait after which print mode names the background
 	// work it waits for.
 	progressAfter = 5 * time.Second
@@ -51,15 +60,28 @@ func printBackgroundLimit(getenv func(string) string) jobs.BackgroundLimit {
 	return l
 }
 
-// printWaitCeiling is the idle-wait cap of print mode.
-func printWaitCeiling(getenv func(string) string) time.Duration {
-	v := getenv(printBgCeilingEnv)
+// interactiveBackgroundLimit is the background limit of the leader, ask acp
+// and the in-process TUI: 2 h for bash jobs. A monitor keeps its own deadline.
+// A larger value of the env override raises the maximum; 0 turns the limit off.
+func interactiveBackgroundLimit(getenv func(string) string) jobs.BackgroundLimit {
+	d := envMillis(getenv, bgLimitEnv, interactiveBgLimit)
+	if d == 0 {
+		return jobs.BackgroundLimit{}
+	}
+	return jobs.BackgroundLimit{Default: d, Max: max(interactiveBgLimit, d), BashOnly: true}
+}
+
+// envMillis reads a duration in milliseconds from the environment. An empty,
+// negative or invalid value gives def; 0 gives zero, which each caller reads as
+// "off".
+func envMillis(getenv func(string) string, name string, def time.Duration) time.Duration {
+	v := getenv(name)
 	if v == "" {
-		return printCeiling
+		return def
 	}
 	ms, err := strconv.ParseInt(v, 10, 64)
 	if err != nil || ms < 0 {
-		return printCeiling
+		return def
 	}
 	return time.Duration(ms) * time.Millisecond
 }

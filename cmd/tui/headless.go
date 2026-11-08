@@ -207,7 +207,7 @@ func runWithDependencies(argv []string, stdin io.Reader, stdout, stderr io.Write
 		return 1
 	}
 
-	w := waitConfig{jobs: jt, maxTurns: o.maxTurns, ceiling: printWaitCeiling(deps.getenv)}
+	w := waitConfig{jobs: jt, maxTurns: o.maxTurns, ceiling: envMillis(deps.getenv, printBgCeilingEnv, printCeiling)}
 	if isTerminal(stderr) && (mode != modeJSON || !isTerminal(stdout)) {
 		w.progress = stderr
 	}
@@ -466,6 +466,7 @@ func newNativeAgentOn(o options, getenv func(string) string, service *auth.Servi
 		// purpose; the job is muted and nothing is reported.
 		IsExpectedDrop:    func(err error) bool { return errors.Is(err, tasks.ErrNotDelivered) },
 		BackgroundLimit:   o.bgLimit,
+		StallAfter:        envMillis(getenv, bgStallEnv, bgStallDefault),
 		DisableBackground: getenv(disableBackgroundEnv) == "1",
 		Env: func() []string {
 			st := ag.State()

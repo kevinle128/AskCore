@@ -152,11 +152,10 @@ func modelHTTP(deps runDependencies) *http.Client {
 	return &http.Client{}
 }
 
-// acpParams builds the facts of the shared agent host from the process
-// dependencies. ask acp and ask leader use the same ones, so both run the same
-// agent with the same native credentials. trust is the process-wide trust
-// override; only ask acp passes one.
-func acpParams(deps runDependencies, trust protocol.ACPTrustOverride) (app.ACPParams, error) {
+// sessionOptions are the agent options of a session that the leader, ask acp
+// or the in-process TUI hosts. These sessions run long, so a background bash
+// job gets a time limit that a runaway server cannot outlive.
+func sessionOptions(deps runDependencies) options {
 	o := options{provider: defaultProvider, model: defaultModel}
 	if deps.inferenceHTTP != nil {
 		o.transport = deps.inferenceHTTP.Transport
@@ -164,6 +163,16 @@ func acpParams(deps runDependencies, trust protocol.ACPTrustOverride) (app.ACPPa
 	o.wait = deps.wait
 	o.environ = deps.environ
 	o.onJobError = deps.onJobError
+	o.bgLimit = interactiveBackgroundLimit(deps.getenv)
+	return o
+}
+
+// acpParams builds the facts of the shared agent host from the process
+// dependencies. ask acp and ask leader use the same ones, so both run the same
+// agent with the same native credentials. trust is the process-wide trust
+// override; only ask acp passes one.
+func acpParams(deps runDependencies, trust protocol.ACPTrustOverride) (app.ACPParams, error) {
+	o := sessionOptions(deps)
 	// The faux demo provider is listed, usable and the first choice only with
 	// ASK_FAUX=1. Without it a session starts on a catalog model, or on none.
 	var demoStream providers.StreamFn
