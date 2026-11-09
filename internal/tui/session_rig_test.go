@@ -44,6 +44,9 @@ type fakeClient struct {
 	removeFails  map[string]bool
 	attachEvents []Message // pushed by Attach before it returns
 	thinkingCap  protocol.ThinkingLevel
+	// refuseDefault makes SetThinking refuse the level default as a leader
+	// of an older build does.
+	refuseDefault bool
 
 	nextPrompt uint64
 	nextInput  int
@@ -311,6 +314,9 @@ func (f *fakeClient) SetModel(_ context.Context, id string, asked protocol.Think
 			switch {
 			case m.Reasoning && asked != "":
 				level = asked
+			case m.Reasoning && f.state.ThinkingLevel == protocol.ThinkingDefault:
+				// The agent keeps no chosen level on a model change.
+				level = protocol.ThinkingDefault
 			case m.Reasoning:
 				level = protocol.ThinkingMedium
 			}
@@ -338,6 +344,9 @@ func (f *fakeClient) SetThinking(_ context.Context, level protocol.ThinkingLevel
 	f.record("set_thinking:" + string(level))
 	f.mu.Lock()
 	defer f.mu.Unlock()
+	if f.refuseDefault && level == protocol.ThinkingDefault {
+		return "", &RequestError{Code: -32602, Kind: string(protocol.ACPErrInvalidParams), Message: "unknown thinking level"}
+	}
 	if f.thinkingCap != "" && thinkingRank(level) > thinkingRank(f.thinkingCap) {
 		level = f.thinkingCap
 	}
