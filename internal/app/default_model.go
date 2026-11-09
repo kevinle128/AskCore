@@ -183,7 +183,7 @@ func (c startChoice) choose(ctx context.Context, opts ModelOptions, eff settings
 	if opts.Thinking != "" {
 		level = opts.Thinking
 	}
-	if out.Model.ID != "" && level != "" && level != protocol.ThinkingOff && !out.Model.Reasoning {
+	if out.Model.ID != "" && level != "" && level != protocol.ThinkingDefault && level != protocol.ThinkingOff && !out.Model.Reasoning {
 		out.Dropped = &protocol.ACPLevelDropped{ModelID: acp.ModelID(out.Model), Level: level}
 		level = protocol.ThinkingOff
 	}
@@ -248,8 +248,8 @@ func resolveStartPattern(rows []providers.Model, pattern string, prefer provider
 
 func validLevel(l protocol.ThinkingLevel) bool {
 	switch l {
-	case protocol.ThinkingOff, protocol.ThinkingMinimal, protocol.ThinkingLow, protocol.ThinkingMedium,
-		protocol.ThinkingHigh, protocol.ThinkingXHigh, protocol.ThinkingMax:
+	case protocol.ThinkingDefault, protocol.ThinkingOff, protocol.ThinkingMinimal, protocol.ThinkingLow,
+		protocol.ThinkingMedium, protocol.ThinkingHigh, protocol.ThinkingXHigh, protocol.ThinkingMax:
 		return true
 	}
 	return false

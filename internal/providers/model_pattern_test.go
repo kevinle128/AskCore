@@ -94,6 +94,7 @@ func TestResolveModelPattern(t *testing.T) {
 		{pattern: "local/qwen3-coder:30b", want: "local/qwen3-coder:30b@openai-completions"},
 		{pattern: "router/x:max", want: "router/x:max@openai-completions"},
 		{pattern: "kimi:high", want: "moon/kimi@openai-completions", level: protocol.ThinkingHigh},
+		{pattern: "kimi:default", want: "moon/kimi@openai-completions", level: protocol.ThinkingDefault},
 		{pattern: "anthropic/claude-opus-4-5:high", want: "anthropic/claude-opus-4-5@anthropic-messages", level: protocol.ThinkingHigh},
 		{pattern: "gpt-5.5:hgih", err: providers.ErrUnknownModel},
 		{pattern: "gpt-5.5:hgih", allow: true, want: "openai/gpt-5.5@openai-responses", warning: true},
@@ -150,7 +151,7 @@ func TestResolveModelPatternInvalidLevelErrorListsLevels(t *testing.T) {
 	_, err := providers.ResolvePattern(patternRows(t), "gpt-5.5:hgih", providers.PatternOptions{})
 	require.ErrorIs(t, err, providers.ErrUnknownModel)
 	assert.Contains(t, err.Error(), `"hgih" is not a thinking level`)
-	assert.Contains(t, err.Error(), "xhigh")
+	assert.Contains(t, err.Error(), "(default, off, minimal, low, medium, high, xhigh, max)")
 }
 
 func TestResolveModelPatternCaseTwinsAreAmbiguous(t *testing.T) {
@@ -235,4 +236,13 @@ func TestExpandModelScopeGlobCarriesLevel(t *testing.T) {
 	assert.Equal(t, protocol.ThinkingLow, got[0].Level)
 	assert.Equal(t, "x:max", got[1].Model.ID)
 	assert.Equal(t, protocol.ThinkingLevel(""), got[1].Level)
+}
+
+func TestExpandModelScopeGlobCarriesDefault(t *testing.T) {
+	t.Parallel()
+	rows := patternRows(t, anthropicRow("claude-sonnet-4-6"))
+	got, problems := providers.ExpandScope(rows, []string{"*sonnet*:default"})
+	require.Empty(t, problems)
+	require.Len(t, got, 1)
+	assert.Equal(t, protocol.ThinkingDefault, got[0].Level)
 }
