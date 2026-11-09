@@ -68,10 +68,13 @@ The format follows [Keep a Changelog 1.1.0](https://keepachangelog.com/en/1.1.0/
 - **TUI:** `ctrl+p` changes the session model to the next model of the scope (or of `/model` when no scope is set), and `ctrl+shift+p` to the previous one. Terminal.app sends `ctrl+shift+p` as `ctrl+p`, so it has no back key.
 - **TUI:** `/model` shows the problems of `models.json` that it read, and marks the session model `not in models.json` or `changed` after an edit of the file. A prompt on such a model fails with `model configuration changed; choose the model again` and sends nothing.
 - **TUI:** The TUI sends `--model`, `--thinking`, and `--models` to its leader. A leader that does not apply them fails the session start with `the leader did not apply --model; restart it with this build`.
+- **TUI:** When you chose no thinking level, the footer row shows `◐ default`. `shift+tab` cycles `default`, `off`, ..., `max`, and then `default` again, so you can go back to no chosen level. When a leader of an older build refuses `default`, the status row tells you to restart it with `ask leader stop`.
+- **CLI:** `--thinking default`, the model pattern suffix `:default`, and the session option `thinking: "default"` choose no thinking level. They remove a level that a pattern or a scope entry chose.
 - **Protocol:** `session/new` takes `model`, `thinking`, and `models` in `_meta["ask.dev/session"]` and echoes the applied options in `_meta["ask.dev/appliedOptions"]`. `_ask/session/get_available_models` returns `scope` and `diagnostics`, `ACPModel` has `notInConfig`, and `_ask/session/set_model` takes `thinkingLevel`.
 
 ### Changed
 
+- **Protocol:** `_ask/session/state`, `_ask/session/set_model`, and `_ask/session/set_thinking` answer `default`, not `off`, when no thinking level is chosen, and `set_thinking` takes `default`. `ASK_REASONING_LEVEL`, the `thinkingLevel` of an assistant message (also in `ask -p --mode json`), and the `PrepareRequest` hook view say `default` too.
 - **Background jobs:** The leader, `ask acp`, and the in-process TUI now stop a `bash` background job after 2 hours (`ASK_BG_LIMIT_MS`; `0` turns the limit off), and the TUI draws a line when a limit stops a job. Monitors keep their own timeouts.
 - **CLI:** `--model <id>` without `--provider` now resolves the id across all providers; before, it used the `faux` provider. `--provider P --model <id>` works as before.
 - **TUI:** `/model` does not save the default model when the trusted project settings set another `defaultModel`, or when the user settings file is not safe or has a known key with a bad value. The file keeps its bytes, and the model switch still applies.
@@ -93,7 +96,7 @@ The format follows [Keep a Changelog 1.1.0](https://keepachangelog.com/en/1.1.0/
 - **Providers:** `gpt-5.5` gets the thinking level `xhigh` and now sends the reasoning effort. `claude-sonnet-4-6` gets the thinking level `max`. On both models a saved `minimal` level becomes `off`.
 - **Providers:** On `grok-4.7`, thinking `off` now sends the lowest reasoning effort.
 - **Providers:** An Anthropic model without reasoning support always sends thinking as disabled.
-- **Providers:** A model change no longer turns thinking off when you chose no level: the request still has no reasoning effort and the vendor default applies. A chosen level still fits the new model. A level that a `PrepareRequest` hook sets now fits the model too, so its off sends the lowest effort on `grok-4.7` and `none` on `gpt-5.5`, not the vendor default.
+- **Providers:** A model change no longer turns thinking off when you chose no level: Ask still sends no level, and the provider path picks one. A chosen level still fits the new model. A level that a `PrepareRequest` hook sets now fits the model too, so its off sends the lowest effort on `grok-4.7` and `none` on `gpt-5.5`, not the vendor default.
 - **Providers:** A `PrepareRequest` hook that changes the model and sets no level now fits a chosen thinking level to the new model, like a model change. A chosen `off` sends the lowest effort on `grok-4.7`, not the vendor default. An empty level stays empty.
 - **CLI:** A requested start thinking level now fits the levels of the model in every mode, with the rule of the `/model` selector and the thinking key of the TUI. On a model that cannot turn thinking off (`grok-4.7`, `gpt-6-astra`, `gpt-6.1-sol`), `ask -p --thinking off` now sends the lowest reasoning effort, not the vendor default.
 - **Providers:** The ids `gpt-6-terra` and `gpt-6.1-luna` no longer show in `/model`, because the model metadata has no row for them.
@@ -102,6 +105,7 @@ The format follows [Keep a Changelog 1.1.0](https://keepachangelog.com/en/1.1.0/
 
 ### Fixed
 
+- **Agent:** A `PrepareRequest` hook that sets `off` on a session with no chosen thinking level now forces the lowest level of the model for its run. Before, the hook saw `off` for no chosen level, so its change was lost.
 - **Providers:** Anthropic models now show their thinking. Ask asks for a summary of the thinking (`display: "summarized"`). From Claude Opus 4.7 on, the thinking text was empty without it.
 - **Providers:** The `gpt-6` models (astra, luna, sol, terra) now send their thinking level and show it in the `/model` selector. `gpt-6-astra` and `gpt-6.1-sol` refuse "none", so thinking off in the selector uses their lowest effort.
 - **Providers:** `grok-4.7` now sends its thinking level (`low`, `medium`, `high`, `xhigh`). It cannot turn thinking off, so the selector uses `low` for off.
