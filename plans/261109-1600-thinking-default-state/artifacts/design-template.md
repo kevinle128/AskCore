@@ -219,3 +219,5 @@ The owner approved this design on 2026-11-09:
 ### Post-approval correction
 
 2026-11-09: the hook rows of section 5 and criterion 11 said that a hook level changes the stored level of the session, `State()` and the footer row. The code does not do this: a `PrepareRequest` hook changes the level (and the model) for the requests of its run only (verified in `Agent.execute`, `internal/agent/agent.go`, and by commit `b3f0b8d`). The text now states the behavior of the code. This corrects a fact; it does not change an approved decision. The owner confirmed it.
+
+2026-11-09: the design calls the start level rule of `cmd/tui/headless.go` (`medium` when no level is given) the rule of `ask -p --provider anthropic`. The rule is for `alibaba-token-plan`: `anthropic.ProviderID` in that file is `alibaba-token-plan`. Criterion 12 is checked for that provider (`cmd/tui` `TestThinkingFlagDefault`). For `--provider anthropic`, `--thinking default` also sends no level, and the Anthropic adapter uses `medium`. This corrects a fact; it does not change a decision.
