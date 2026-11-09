@@ -138,3 +138,44 @@ func TestPrepareRequestLevelIsClamped(t *testing.T) {
 		})
 	}
 }
+
+// TestPrepareRequestModelChangeClampsTheStoredLevel changes the model from a
+// PrepareRequest hook and sets no level. A chosen level is clamped to the new
+// model, like SetModel does. An empty level stays empty, so the request has no
+// effort.
+func TestPrepareRequestModelChangeClampsTheStoredLevel(t *testing.T) {
+	grok := providers.XAIGrok47()
+	gpt := catalogGPT55(t)
+	cases := []struct {
+		name  string
+		start providers.Model
+		level protocol.ThinkingLevel
+		to    providers.Model
+		want  string
+	}{
+		{"empty stays empty", gpt, "", grok, ""},
+		{"off to grok-4.7 gives the lowest level", gpt, protocol.ThinkingOff, grok, "low"},
+		{"low that grok-4.7 has stays low", gpt, protocol.ThinkingLow, grok, "low"},
+		{"xhigh that gpt-5.5 has stays xhigh", grok, protocol.ThinkingMax, gpt, "xhigh"},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			r := newRealRun(t, tc.start, func(c *agent.Config) {
+				c.Options.Reasoning = tc.level
+				registryOf(c).OnPrepareRequest(func(context.Context, pipeline.Request, pipeline.Next[pipeline.Request, *pipeline.RequestUpdate]) (*pipeline.RequestUpdate, error) {
+					return &pipeline.RequestUpdate{Model: &tc.to}, nil
+				})
+			})
+			r.prompt("hello")
+			calls := r.wire.taken()
+			require.Len(t, calls, 1)
+			effort, has := responsesEffort(t, calls[0].Body)
+			if tc.want == "" {
+				assert.False(t, has, "the request has no reasoning object")
+				return
+			}
+			require.True(t, has, "the request has a reasoning object")
+			assert.Equal(t, tc.want, effort)
+		})
+	}
+}
