@@ -25,11 +25,12 @@ Version authority is `go.mod`.
 - Dependency Injection: fx
 - ACP: `github.com/coder/acp-go-sdk` v0.13.5 (stable schema 0.13.5, wire v1); conformance evidence in `plans/reports/conformance-261007-h13a-sdk.md`
 - Native auth identity: `github.com/coreos/go-oidc/v3`; installed version authority is `go.mod`
-- Model wire layer: `charm.land/fantasy` (see `internal/providers/fantasykit`). `go.mod` replaces it with the owner's fork `github.com/kevinle128/fantasy` (forked from `charmbracelet/fantasy`), pinned to commit `e894229ccae5`. The fork is upstream `v0.45.2` plus:
-  - Upstream fixes merged after `v0.45.2` (jsonrepair #391, #393, #397, #398; HTTP/2 retry #395).
-  - A revert of upstream #367, so that a failing tool reports back to the model and does not end the run.
-  - OpenAI Responses: replay of encrypted reasoning, message IDs, phase, and function-call item IDs; error and finish details; the echoed service tier; extra body fields; strict stream completion checks; explicit reasoning options for unknown model ids.
+- Model wire layer: `charm.land/fantasy` (see `internal/providers/fantasykit`). `go.mod` replaces it with the owner's fork `github.com/kevinle128/fantasy` (forked from `charmbracelet/fantasy`), pinned to commit `f9c19ad3b1c6`. The fork is upstream `main` at commit `ef61b44` (`v0.46.0` plus the GPT-6 reasoning fix #386) plus:
+  - OpenAI Responses: replay of encrypted reasoning, message IDs, phase, and function-call item IDs; error and finish details; the echoed service tier; extra body fields; strict stream completion checks (upstream pull request #412).
+  - OpenAI Responses model rules (upstream pull request #443): OpenAI reasoning families (o-series, `gpt-oss`, `codex`, `computer-use`, `gpt-5` and later) use the `developer` role and drop `temperature` and `top_p`. The ids `gpt-3*`, `gpt-4*`, `chatgpt-*`, and `*-chat` send no reasoning options. Every other id (for example `grok-*` and unknown ids) sends the reasoning effort of the caller, keeps the `system` role, and keeps `temperature` and `top_p`. A live xAI test showed that `grok-4.7` accepts `temperature` and `top_p` together with `reasoning.effort`.
   - Anthropic: tool argument numbers stay JSON numbers, also large ones.
+
+  The upstream fixes after `v0.45.2` (jsonrepair #391, #393, #397, #398; HTTP/2 retry #395) and the revert of #367 (a failing tool reports back to the model) are now in upstream, so the fork does not carry them.
 
   To change the pin, review the fork commits after the current one. Remove the `replace` when upstream has all of these changes.
 - Local patched copies: `third_party/acp-go-sdk` and `third_party/bubbletea` (see the `replace` lines in `go.mod`)
