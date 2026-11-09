@@ -91,7 +91,7 @@ The format follows [Keep a Changelog 1.1.0](https://keepachangelog.com/en/1.1.0/
 - **CLI:** `ask -p --model` accepts the model ids of the generated catalog with no network request.
 - **CLI:** `ask auth login` reads the model list of that provider in its own process, and `ask auth logout` deletes the cached list of that provider.
 - **Providers:** `gpt-5.5` gets the thinking level `xhigh` and now sends the reasoning effort. `claude-sonnet-4-6` gets the thinking level `max`. On both models a saved `minimal` level becomes `off`.
-- **Providers:** On `grok-4.7`, thinking `off` now sends the lowest reasoning effort.
+- **Providers:** On `grok-4.7`, thinking `off` in the TUI now sends the lowest reasoning effort.
 - **Providers:** An Anthropic model without reasoning support always sends thinking as disabled.
 - **Providers:** In `ask -p`, `--thinking off` on a model that cannot turn thinking off (`grok-4.7`, `gpt-6-astra`, `gpt-6.1-sol`) sends no reasoning effort, so the vendor default applies. The `/model` selector and the thinking key of the TUI use the lowest effort instead.
 - **Providers:** The ids `gpt-6-terra` and `gpt-6.1-luna` no longer show in `/model`, because the model metadata has no row for them.

@@ -75,6 +75,8 @@ When the saved default is not in the model list, or its provider has no credenti
 
 The level is `--thinking`, else the `:level` of the pattern or of the scope entry. When the start model has no thinking, a requested level is dropped. `ask -p` then writes `Warning: <provider>/<id> has no thinking; level <level> is not used.`, and the TUI shows the same text as a session notice. The run continues with thinking off.
 
+Some models cannot turn thinking off (`grok-4.7`, `gpt-6-astra`, `gpt-6.1-sol`). For these models, `ask -p --thinking off` sends no reasoning effort, so the vendor default applies. The `/model` selector and the thinking key of the TUI use the lowest effort of the model instead.
+
 ### Model patterns
 
 `--model`, `--models`, `enabledModels`, and the session options of a client take a model pattern: `[provider/]id[@api][:level]`.
