@@ -1,8 +1,8 @@
 ---
 title: "Thinking level with no choice (default) TUI design"
-design-status: draft        # draft | approved
-design-approved-by: ""      # filled only at approval
-design-approved-on: ""      # YYYY-MM-DD, filled only at approval
+design-status: approved     # draft | approved
+design-approved-by: "dale (owner, decisions relayed by the orchestrating agent)"
+design-approved-on: "2026-11-09"
 ---
 
 # Thinking level with no choice (default) TUI design
@@ -476,3 +476,10 @@ The TUI checks use `startView` (`internal/tui/session_rig_test.go`) with goldens
 3. **Message stamp.** Should `AssistantMessage.ThinkingLevel` record `default` (recommended: it records what Ask asked, as it does for a level), or stay absent for no choice?
 4. **The word.** `default` reads correctly in the footer row, in the cycle, in `--thinking default` and in `:default`, and it does not collide with `auto` (adaptive effort in Oh My Pi). It does not say that the vendor decides, which is correct for the Anthropic and OpenAI Completions adapters (they use `medium`). Keep `default`?
 5. **D7 text.** Keep the two rows `Could not change the thinking level: the leader does not know default.` and `Restart it with this build: ask leader stop`?
+
+### Decisions
+
+The owner approved this design on 2026-11-09:
+
+- Question 1: A1 (the word `default` in the state, `setModel`, `setThinking`, the hooks, the message stamp and `ASK_REASONING_LEVEL`; the agent still stores the empty string) and B1 (`default` is the first entry of the `shift+tab` cycle).
+- Questions 2 to 5: yes. `default` is valid in `--thinking`, `_meta["ask.dev/session"].thinking` and the `:default` suffix; the message stamp records `default`; the word stays `default`; the two-row D7 text stays.
