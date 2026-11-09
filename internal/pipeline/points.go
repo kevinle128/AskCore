@@ -65,7 +65,9 @@ type RequestUpdate struct {
 	Model           *providers.Model
 	// ThinkingLevel is clamped to the model of the request, like a level that
 	// the user sets: "off" gives the lowest level of a model that cannot turn
-	// reasoning off. Empty keeps the current level.
+	// reasoning off. Empty keeps the current level; when Model changes, a
+	// chosen current level is clamped to the new model and an empty one
+	// stays empty.
 	ThinkingLevel protocol.ThinkingLevel
 }
 

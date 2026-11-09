@@ -77,7 +77,7 @@ The level is `--thinking`, else the `:level` of the pattern or of the scope entr
 
 A requested start level then fits the levels of the model, with the same rule as `/model` and the thinking key of the TUI. A level that the model does not have becomes the nearest lower level that it has. Some models cannot turn thinking off (`grok-4.7`, `gpt-6-astra`, `gpt-6.1-sol`). For these models, off becomes the lowest effort of the model, in `ask -p`, the TUI, the leader, and `ask acp`. With no level, the request has no reasoning effort and the vendor default applies.
 
-A model change (`/model`, `ctrl+p`, or the `setModel` method of a client) keeps the level that you chose. A level, off included, fits the new model with the same rule. With no level, the level stays empty after a model change, so the request still has no reasoning effort. A `PrepareRequest` hook that sets a level uses the same rule with the model of the request: off stays off, and on a model that cannot turn thinking off it becomes the lowest effort.
+A model change (`/model`, `ctrl+p`, or the `setModel` method of a client) keeps the level that you chose. A level, off included, fits the new model with the same rule. With no level, the level stays empty after a model change, so the request still has no reasoning effort. A `PrepareRequest` hook that sets a level uses the same rule with the model of the request: off stays off, and on a model that cannot turn thinking off it becomes the lowest effort. A `PrepareRequest` hook that changes the model and sets no level uses the rule of a model change: a chosen level fits the new model for the rest of that run, and an empty level stays empty.
 
 ### Model patterns
 

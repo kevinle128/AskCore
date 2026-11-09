@@ -388,9 +388,13 @@ func (l *loop) prepareRequest() error {
 	}
 	// A hook level goes through the same clamp as SetThinkingLevel, with the
 	// model of this request: off stays off, so a model that cannot turn
-	// thinking off gets its lowest level.
-	if upd.ThinkingLevel != "" {
+	// thinking off gets its lowest level. A model change with no hook level
+	// clamps the current level like SetModel: an empty level stays empty.
+	switch {
+	case upd.ThinkingLevel != "":
 		l.cfg.Options.Reasoning = providers.ClampThinkingLevel(l.cfg.Model, upd.ThinkingLevel)
+	case upd.Model != nil && l.cfg.Options.Reasoning != "":
+		l.cfg.Options.Reasoning = providers.ClampThinkingLevel(l.cfg.Model, l.cfg.Options.Reasoning)
 	}
 	return nil
 }
