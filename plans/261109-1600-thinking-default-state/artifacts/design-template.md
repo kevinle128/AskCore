@@ -90,7 +90,7 @@ Nothing moves. The header row, the block pane, the queue rows, the prompt pane a
 
 **Standard ACP.** `ask acp` exposes the level only through the `_ask/session/*` methods; `session/set_config_option` answers `unsupported` (`internal/acp/agent.go:533`). An ACP client such as Zed sees no change. A client of the `_ask` methods sees `default` where it saw `off`.
 
-**Hooks.** Problem 2 is fixed because the hook now sees `default`, so `off` is a change and `Registry.PrepareRequest` keeps it. A hook that sets `default` gives the choice back to the provider for this request and the later ones. The doc comments change:
+**Hooks.** Problem 2 is fixed because the hook now sees `default`, so `off` is a change and `Registry.PrepareRequest` keeps it. A hook that sets `default` gives the choice back to the provider for this request and the later requests of the same run. A hook level is a change of the run only: the agent runs each run on a copy of its loop settings, so the stored level of the session, `State()` and the footer row do not change (this is true for a hook model change too). The doc comments change:
 
 - `pipeline.Request.ThinkingLevel` (`points.go:53`): "`default` when no level is chosen and the provider path picks; `off` when the request asks for the lowest level of the model."
 - `pipeline.RequestUpdate.ThinkingLevel` (`points.go:66`): "Empty keeps the current level. `default` removes the chosen level with no clamp. Any other word is clamped to the model of the request, like a level that the user sets."
@@ -148,8 +148,8 @@ The cycle order is `default`, `off`, `minimal`, `low`, `medium`, `high`, `xhigh`
 | `default` | `/model` choice | Footer row keeps `◐ default` (no notice, as `TestModelChangeShowsInFooterOnly`) |
 | `max` (older leader) | `shift+tab` asks `default`, answer `invalid_params` | Level stays `max`; error notice D7; `thinkTry` becomes `default`, so the next press asks `off` |
 | Any | Other `SetThinking` error | `Could not change the thinking level: <reason>` (no change) |
-| Any | A hook sets `off` | The request uses the lowest level of the model; the stored level becomes `off`; the footer row shows `◐ off` after the next state read (`refreshCmd`, for example at `agent_settled`) |
-| Any | A hook sets `default` | The stored level becomes empty; the footer row shows `◐ default` after the next state read (`refreshCmd`) |
+| Any | A hook sets `off` | The requests of that run use the lowest level of the model. The stored level of the session does not change, so the footer row and `State()` keep it (`default` when no level is chosen) |
+| Any | A hook sets `default` | The requests of that run send no level of Ask. The stored level of the session does not change, so the footer row and `State()` keep it |
 | Any | A stale answer (`msg.gen != s.gen`) | Ignored (no change) |
 
 ## 6. Keys and focus
@@ -196,7 +196,7 @@ The TUI checks use `startView` (`internal/tui/session_rig_test.go`) with goldens
 8. At 80×24, after `shift+tab` from `max` when the client answers `invalid_params` for `default`, the status row shows `Could not change the thinking level: the leader does not know default.` and `Restart it with this build: ask leader stop` in the error role, the footer row keeps `◐ max`, and the next `shift+tab` sends `SetThinking(off)`. Golden: `TestThinkingDefaultRefusedByOlderLeader` (new).
 9. At 40×14, after `ctrl+p` to `openai/gpt-5.5` with no level, the status row shows `✓ openai/gpt-5.5 · default` and the footer row shows `openai/gpt-5.5 4%` with no level. Golden: `TestModelCycleKeyKeepsDefault/40x14` (new).
 10. `_ask/session/get_state` of a session with no level answers `"thinkingLevel":"default"`; `_ask/session/set_thinking` with `default` answers `{"level":"default"}`; `_ask/session/set_model` with no `thinkingLevel` on a session with no level answers `"thinkingLevel":"default"`. Tests: `internal/acp` `TestAdapterThinkingDefault` (new); `ask_methods_test.go:49` and `driver_commit_test.go:171` change from `off` to `default`.
-11. A `PrepareRequest` hook on a session with no level sees `default`; when it sets `off`, the request of `grok-4.7` sends the lowest effort of the model and `State()` reports `off`; when it sets `default` on a session at `high`, the request sends no effort and `State()` reports `default`. Tests: `internal/agent` `TestPrepareRequestHookForcesOff`, `TestPrepareRequestHookRestoresDefault` (new).
+11. A `PrepareRequest` hook on a session with no level sees `default`; when it sets `off`, the request of `grok-4.7` sends the lowest effort of the model; when it sets `default` on a session at `high`, the request sends no effort. The hook level applies to the requests of that run only; `State()` keeps the stored level of the session. Tests: `internal/agent` `TestPrepareRequestHookForcesOff`, `TestPrepareRequestHookRestoresDefault` (new).
 12. `ask -p --thinking default --provider anthropic` sends no thinking level from the command line, and the adapter rule applies. `ask -p --thinking ultra` still prints `Invalid thinking level "ultra". Valid values: default, off, minimal, low, medium, high, xhigh, max`. Test: `cmd/tui` `TestThinkingFlagDefault` (new). (Depends on open question 2.)
 13. End-to-end, case `ask-thinking-default` (new; `ASK_HOME` with a `models.json` that has a provider `local` and a model `gamma` with `"reasoning": true`; args `--model local/gamma`; environment `ASK_DISABLE_MODEL_REFRESH=1`, as `ask-model-cycle` has, so the model list comes from the file with no network): at 80×24 the footer row shows `local/gamma ◐ default`; after one `shift+tab` it shows `◐ off`; after seven more presses it shows `◐ default` again. The case captures `start`, `off` and `back`.
 14. End-to-end, the existing cases `ask-idle` and `ask-model-cycle` pass with no change (`faux-1`, `local/alpha` and `local/beta` have no thinking, so their footer rows show no level).
@@ -215,3 +215,7 @@ The owner approved this design on 2026-11-09:
 
 - Question 1: A1 (the word `default` in the state, `setModel`, `setThinking`, the hooks, the message stamp and `ASK_REASONING_LEVEL`; the agent still stores the empty string) and B1 (`default` is the first entry of the `shift+tab` cycle).
 - Questions 2 to 5: yes. `default` is valid in `--thinking`, `_meta["ask.dev/session"].thinking` and the `:default` suffix; the message stamp records `default`; the word stays `default`; the two-row D7 text stays.
+
+### Post-approval correction
+
+2026-11-09: the hook rows of section 5 and criterion 11 said that a hook level changes the stored level of the session, `State()` and the footer row. The code does not do this: a `PrepareRequest` hook changes the level (and the model) for the requests of its run only (verified in `Agent.execute`, `internal/agent/agent.go`, and by commit `b3f0b8d`). The text now states the behavior of the code. This corrects a fact; it does not change an approved decision. The owner confirmed it.
