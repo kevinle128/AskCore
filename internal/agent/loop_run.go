@@ -386,12 +386,11 @@ func (l *loop) prepareRequest() error {
 	if upd.Model != nil {
 		l.cfg.Model = *upd.Model
 	}
-	switch upd.ThinkingLevel {
-	case "":
-	case protocol.ThinkingOff:
-		l.cfg.Options.Reasoning = ""
-	default:
-		l.cfg.Options.Reasoning = upd.ThinkingLevel
+	// A hook level goes through the same clamp as SetThinkingLevel, with the
+	// model of this request: off stays off, so a model that cannot turn
+	// thinking off gets its lowest level.
+	if upd.ThinkingLevel != "" {
+		l.cfg.Options.Reasoning = providers.ClampThinkingLevel(l.cfg.Model, upd.ThinkingLevel)
 	}
 	return nil
 }

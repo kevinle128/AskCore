@@ -63,7 +63,9 @@ type RequestUpdate struct {
 	// messages.
 	RequestMessages []protocol.Message
 	Model           *providers.Model
-	// ThinkingLevel "off" turns reasoning off.
+	// ThinkingLevel is clamped to the model of the request, like a level that
+	// the user sets: "off" gives the lowest level of a model that cannot turn
+	// reasoning off. Empty keeps the current level.
 	ThinkingLevel protocol.ThinkingLevel
 }
 

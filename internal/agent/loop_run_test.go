@@ -309,7 +309,8 @@ func TestEmitErrorEndsRun(t *testing.T) {
 }
 
 func TestPrepareRequestReplacesContext(t *testing.T) {
-	p, m := newFaux(t)
+	// The hook level is clamped to the model, so the model must reason.
+	p, m := newFaux(t, faux.WithModels(faux.ModelDef{ID: "faux-1", Reasoning: true}))
 	p.Set(faux.Reply(faux.ToolCall("echo", map[string]any{"text": "hi"}, faux.ID("c1"))), faux.Say("done"))
 	other := m
 	other.ID = "faux-2"

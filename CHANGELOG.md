@@ -93,6 +93,7 @@ The format follows [Keep a Changelog 1.1.0](https://keepachangelog.com/en/1.1.0/
 - **Providers:** `gpt-5.5` gets the thinking level `xhigh` and now sends the reasoning effort. `claude-sonnet-4-6` gets the thinking level `max`. On both models a saved `minimal` level becomes `off`.
 - **Providers:** On `grok-4.7`, thinking `off` now sends the lowest reasoning effort.
 - **Providers:** An Anthropic model without reasoning support always sends thinking as disabled.
+- **Providers:** A model change no longer turns thinking off when you chose no level: the request still has no reasoning effort and the vendor default applies. A chosen level still fits the new model. A level that a `PrepareRequest` hook sets now fits the model too, so its off sends the lowest effort on `grok-4.7` and `none` on `gpt-5.5`, not the vendor default.
 - **CLI:** A requested start thinking level now fits the levels of the model in every mode, with the rule of the `/model` selector and the thinking key of the TUI. On a model that cannot turn thinking off (`grok-4.7`, `gpt-6-astra`, `gpt-6.1-sol`), `ask -p --thinking off` now sends the lowest reasoning effort, not the vendor default.
 - **Providers:** The ids `gpt-6-terra` and `gpt-6.1-luna` no longer show in `/model`, because the model metadata has no row for them.
 - **TUI:** The header row and its rule take one row from a box in the prompt pane slot. On a terminal of 14 rows, the browser sign-in box shows two rows of the address and not three.

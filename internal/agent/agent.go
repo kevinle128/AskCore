@@ -369,8 +369,9 @@ func (a *Agent) dispose() error {
 	return err
 }
 
-// SetModel stores model for the next run. It is idle-only: a busy agent
-// returns ErrBusy and does not change the model or thinking level.
+// SetModel stores model for the next run and clamps a chosen thinking level to
+// it. An empty level stays empty. It is idle-only: a busy agent returns
+// ErrBusy and does not change the model or thinking level.
 func (a *Agent) SetModel(ctx context.Context, model providers.Model) error {
 	if err := providers.Validate(model); err != nil {
 		return err
@@ -417,7 +418,12 @@ func (a *Agent) SetModel(ctx context.Context, model providers.Model) error {
 	}
 	a.cfg.Model = model
 	a.clearPending = false
-	a.cfg.Options.Reasoning = providers.ClampThinkingLevel(model, thinkingLevel(a.cfg.Options.Reasoning))
+	// An empty level stays empty, so the adapter sends no effort and the
+	// vendor default applies. A chosen level, off included, is clamped to the
+	// new model.
+	if a.cfg.Options.Reasoning != "" {
+		a.cfg.Options.Reasoning = providers.ClampThinkingLevel(model, a.cfg.Options.Reasoning)
+	}
 	a.postLocked(&protocol.ModelUpdate{Provider: model.Provider, ID: model.ID, API: string(model.API)})
 	return nil
 }
