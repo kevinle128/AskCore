@@ -190,6 +190,13 @@ func New(cfg Config) (*Agent, error) {
 	if err := validateSeed(cfg.Seed); err != nil {
 		return nil, err
 	}
+	// A requested start level follows the same rule as SetModel and
+	// SetThinkingLevel. An empty level stays empty, so the adapter sends no
+	// effort and the vendor default applies. An Agent with no model keeps the
+	// requested level, so the first SetModel clamps it to that model.
+	if cfg.Model.ID != "" && cfg.Options.Reasoning != "" {
+		a.cfg.Options.Reasoning = providers.ClampThinkingLevel(cfg.Model, cfg.Options.Reasoning)
+	}
 	src, err := a.openSource()
 	if err != nil {
 		_ = src.Close()

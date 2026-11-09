@@ -91,9 +91,9 @@ The format follows [Keep a Changelog 1.1.0](https://keepachangelog.com/en/1.1.0/
 - **CLI:** `ask -p --model` accepts the model ids of the generated catalog with no network request.
 - **CLI:** `ask auth login` reads the model list of that provider in its own process, and `ask auth logout` deletes the cached list of that provider.
 - **Providers:** `gpt-5.5` gets the thinking level `xhigh` and now sends the reasoning effort. `claude-sonnet-4-6` gets the thinking level `max`. On both models a saved `minimal` level becomes `off`.
-- **Providers:** On `grok-4.7`, thinking `off` in the TUI now sends the lowest reasoning effort.
+- **Providers:** On `grok-4.7`, thinking `off` now sends the lowest reasoning effort.
 - **Providers:** An Anthropic model without reasoning support always sends thinking as disabled.
-- **Providers:** In `ask -p`, `--thinking off` on a model that cannot turn thinking off (`grok-4.7`, `gpt-6-astra`, `gpt-6.1-sol`) sends no reasoning effort, so the vendor default applies. The `/model` selector and the thinking key of the TUI use the lowest effort instead.
+- **CLI:** A requested start thinking level now fits the levels of the model in every mode, with the rule of the `/model` selector and the thinking key of the TUI. On a model that cannot turn thinking off (`grok-4.7`, `gpt-6-astra`, `gpt-6.1-sol`), `ask -p --thinking off` now sends the lowest reasoning effort, not the vendor default.
 - **Providers:** The ids `gpt-6-terra` and `gpt-6.1-luna` no longer show in `/model`, because the model metadata has no row for them.
 - **TUI:** The header row and its rule take one row from a box in the prompt pane slot. On a terminal of 14 rows, the browser sign-in box shows two rows of the address and not three.
 - **Dependencies:** `charm.land/fantasy` uses the fork commit `f9c19ad` (upstream `v0.46.0` and later). A reasoning effort that the caller sets now reaches the request for model ids that the library does not know, such as `gpt-6` and `grok-4.7`. On ids that are not OpenAI reasoning models, such as `grok-4.7`, the system prompt keeps the `system` role and a set temperature or top_p is sent, not dropped ([upstream pull request](https://github.com/charmbracelet/fantasy/pull/443)).
