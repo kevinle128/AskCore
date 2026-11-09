@@ -132,8 +132,11 @@ var familyRules = []familyRule{
 	// The grok families are hidden for lack of live evidence: no xAI
 	// credential was available when the rows were reviewed. The hand-written
 	// grok-4.7 row stays.
-	family(ProviderXAI, `grok-4\.20-0309-non-reasoning`).hide(noXAIEvidence),
-	family(ProviderXAI, `grok-4\.20-0309-reasoning`).hide(noXAIEvidence),
+	// xAI answers HTTP 400 "does not support parameter reasoningEffort" for
+	// both grok-4.20 ids (live, 2026-11-09), so these rows never get an
+	// effort level, also when a later change shows them.
+	family(ProviderXAI, `grok-4\.20-0309-non-reasoning`).hide(noXAIEvidence).offOnly(),
+	family(ProviderXAI, `grok-4\.20-0309-reasoning`).hide(noXAIEvidence).offOnly(),
 	family(ProviderXAI, `grok-4\.3`).hide(noXAIEvidence),
 	family(ProviderXAI, `grok-4\.[5-7]`).hide(noXAIEvidence),
 	family(ProviderXAI, `grok-build-0\.1`).hide(noXAIEvidence),
