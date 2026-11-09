@@ -194,6 +194,52 @@ func TestKeySourceDoesNotRefreshSavedOAuth(t *testing.T) {
 	}
 }
 
+// A saved record that waits for recovery blocks the environment key. The dry
+// run names the record with ErrRecovery, and the local check tells that the
+// record waits, with no refresh and no change to the record.
+func TestKeySourceNamesSavedRecordThatWaitsForRecovery(t *testing.T) {
+	ctx := context.Background()
+	s := newOrderService(t, map[string]string{"OPENAI_API_KEY": "env-key"})
+	m := providers.OpenAIGPT55()
+	var refreshes atomic.Int32
+	s.Methods = []Method{{Provider: m.Provider, ID: "oauth", API: m.API, Endpoint: m.BaseURL, Profile: "subscription", Lead: time.Hour,
+		Refresh: func(context.Context, settings.Credential) (settings.Credential, error) {
+			refreshes.Add(1)
+			return settings.Credential{}, errors.New("no refresh in this test")
+		}}}
+	if s.WaitsForRecovery(ctx, m.Provider) {
+		t.Fatal("no record: nothing waits")
+	}
+	saveCredential(t, s, m.Provider, settings.Credential{Method: "oauth", OAuth: &settings.OAuthCredential{AccessToken: "saved", RefreshToken: "refresh", ExpiresAt: time.Now().Add(time.Hour)}})
+	if s.WaitsForRecovery(ctx, m.Provider) {
+		t.Fatal("a record with no fence does not wait")
+	}
+	saved, _, err := s.Store.Read(ctx, m.Provider)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := s.Store.FenceRefresh(ctx, m.Provider, saved.Generation, "attempt"); err != nil {
+		t.Fatal(err)
+	}
+	if !s.WaitsForRecovery(ctx, m.Provider) {
+		t.Fatal("a fenced record waits for recovery")
+	}
+	src, err := s.KeySource(ctx, ResolveRequest{Model: m})
+	if !errors.Is(err, ErrRecovery) || src.Name != "saved:oauth" || src.Kind != SourceSaved {
+		t.Fatalf("dry run: %+v, %v", src, err)
+	}
+	if _, err := s.ResolveWith(ctx, ResolveRequest{Model: m}); !errors.Is(err, ErrRecovery) {
+		t.Fatalf("resolve: %v", err)
+	}
+	if refreshes.Load() != 0 {
+		t.Fatalf("refreshes %d", refreshes.Load())
+	}
+	after, _, err := s.Store.Read(ctx, m.Provider)
+	if err != nil || after.RefreshState == nil {
+		t.Fatalf("the fence stays: %+v, %v", after.RefreshState, err)
+	}
+}
+
 func TestResolveConfigKeyForFileDefinedProvider(t *testing.T) {
 	s := newOrderService(t, nil)
 	got, err := s.ResolveWith(context.Background(), ResolveRequest{Model: localModel(), Config: &ConfigKey{Value: "ollama", Endpoint: localURL}})

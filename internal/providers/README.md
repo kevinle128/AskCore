@@ -46,6 +46,7 @@ Add a rule only after a live request proves the shape for that family.
 
 A known account list keeps only the rows that it names, directly or through an alias or a dated snapshot.
 An unknown list (not read, or refused) keeps all rows of the provider, because inference can still work.
+The list of a saved record that waits for recovery also counts as unknown, because it does not tell the current access; a request then gives the recovery error instead of an unknown model.
 [auth](../auth/README.md) reads the lists, and the [cache](../settings/README.md) keeps them; this package imports neither.
 
 The user model configuration is the last layer (`model_config.go`).

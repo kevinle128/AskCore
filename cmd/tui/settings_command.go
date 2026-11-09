@@ -152,8 +152,9 @@ type settingsKeySource struct {
 	// "config:command", "config:literal", "env:<NAME>", "none", or "problem"
 	// when a models.json value cannot give a key.
 	Source string `json:"source"`
-	// Problem is the text of a models.json value problem. It names a variable
-	// or a label, never a value.
+	// Problem is the text of a models.json value problem, or the recovery
+	// text of a saved record that waits for recovery. It names a variable, a
+	// label or a command, never a value.
 	Problem string `json:"problem,omitempty"`
 }
 

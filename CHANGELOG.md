@@ -104,6 +104,7 @@ The format follows [Keep a Changelog 1.1.0](https://keepachangelog.com/en/1.1.0/
 - **Providers:** The `gpt-6` models (astra, luna, sol, terra) now send their thinking level and show it in the `/model` selector. `gpt-6-astra` and `gpt-6.1-sol` refuse "none", so thinking off in the selector uses their lowest effort.
 - **Providers:** `grok-4.7` now sends its thinking level (`low`, `medium`, `high`, `xhigh`). It cannot turn thinking off, so the selector uses `low` for off.
 - **Settings:** Two `ask` processes that use a new `ASK_HOME` at the same time no longer fail with `file exists`.
+- **Auth:** A saved sign-in whose last refresh has no known result no longer shows `none` in `ask settings show` and no longer gives `unknown model`. Ask shows `saved:<method>` with the recovery commands (`ask auth login` or `ask auth logout`), and a request fails with `refresh result uncertain; sign in again`. Such a sign-in still blocks the environment key.
 - **Editors:** A prompt over ACP binds only to its own run. A run that a background notice started is no longer taken for the prompt.
 - **Tools:** Output lines of a `monitor` are escaped, so command output cannot close the `monitor-event` element or the `<system-reminder>` around it.
 

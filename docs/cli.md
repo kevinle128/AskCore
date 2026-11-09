@@ -640,7 +640,7 @@ Trust is not a security boundary against the tools of the agent. A `bash` comman
 | `ASK_PRINT_BG_WAIT_CEILING_MS` | `ask -p` | The idle cap of the background wait, in milliseconds (default 600000). `0` means no cap. An empty, negative, or invalid value gives the default. |
 | `ASK_CAPTURE` | `ask -p` | A directory. The run records the provider HTTP traffic to a new cassette. Ignored for `faux`. |
 | `TEA_TRACE` | interactive TUI | A file. It receives raw keyboard input, pasted keys included. The TUI warns on screen. Do not set it when you sign in. |
-| `ANTHROPIC_API_KEY`, `OPENAI_API_KEY`, `XAI_API_KEY`, `ASK_ALIBABA_TOKEN_PLAN_API_KEY` (or `ALIBABA_TOKEN_PLAN_API_KEY`) | providers | API key when no saved sign-in applies. |
+| `ANTHROPIC_API_KEY`, `OPENAI_API_KEY`, `XAI_API_KEY`, `ASK_ALIBABA_TOKEN_PLAN_API_KEY` (or `ALIBABA_TOKEN_PLAN_API_KEY`) | providers | API key when no saved sign-in applies. A saved sign-in whose last refresh has no known result also blocks the key: `ask settings show` shows `saved:<method>` with the problem `refresh result uncertain`, and a request fails with `refresh result uncertain; sign in again`. Run `ask auth login --provider <id> --method <method>` to sign in again, or `ask auth logout --provider <id>` to use the key. |
 
 Ask sets `ASK_SESSION_ID`, `ASK_PROVIDER`, `ASK_MODEL`, and `ASK_REASONING_LEVEL` in the environment of the processes that tools start. Do not set them.
 

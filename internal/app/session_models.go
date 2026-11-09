@@ -561,7 +561,8 @@ func fileExists(path string) bool {
 type ProviderKeySource struct {
 	Provider string
 	// Source is the safe source name of auth.Source, or "none" when no source
-	// has a key, or "problem" when a value of the user file cannot give one.
+	// has a key, or "problem" when a value of the user file cannot give one. A
+	// saved record that waits for recovery keeps its name and has a Problem.
 	Source string
 	// Problem is the safe text of a value problem. It names a variable or a
 	// label, never a value.
@@ -597,10 +598,23 @@ func (v *ModelView) KeySources(ctx context.Context, service *auth.Service) []Pro
 			row.Source = src.Name
 		case errors.Is(err, auth.ErrValue):
 			row.Source, row.Problem = "problem", err.Error()
+		case errors.Is(err, auth.ErrRecovery):
+			row.Source, row.Problem = src.Name, recoveryProblem(m.Provider, src.Name)
 		}
 		out = append(out, row)
 	}
 	return out
+}
+
+// recoveryProblem is the safe text for a saved record that waits for
+// recovery. It names the two commands that end the wait: a new sign-in with
+// the same method, or a sign-out, after which the next source applies.
+func recoveryProblem(provider, source string) string {
+	login := "ask auth login --provider " + provider
+	if method, ok := strings.CutPrefix(source, "saved:"); ok && method != "" {
+		login += " --method " + method
+	}
+	return "refresh result uncertain; sign in again with `" + login + "`, or sign out with `ask auth logout --provider " + provider + "`"
 }
 
 // LoadModelView reads the user models.json once and builds the model list from
