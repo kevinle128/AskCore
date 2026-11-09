@@ -252,7 +252,7 @@ func TestPrint(t *testing.T) {
 		{"slash stays literal", "", []string{"-p", "/help"}, result{"/help\n", "", 0}},
 		{"no prompt prints nothing", "", []string{"-p"}, result{"", "", 0}},
 		{"bad thinking warns and runs", "", []string{"--thinking", "huge", "-p", "hi"},
-			result{"hi\n", "Warning: Invalid thinking level \"huge\". Valid values: off, minimal, low, medium, high, xhigh, max\n", 0}},
+			result{"hi\n", "Warning: Invalid thinking level \"huge\". Valid values: default, off, minimal, low, medium, high, xhigh, max\n", 0}},
 		{"bad mode", "", []string{"--mode", "x", "-p", "hi"}, result{"", "Error: Invalid mode \"x\". Valid values: text, json\n", 1}},
 		{"unknown flag", "", []string{"--nope", "-p", "hi"}, result{"", "Error: Unknown option: --nope\n", 1}},
 		{"help", "", []string{"--help"}, result{usage, "", 0}},

@@ -103,8 +103,10 @@ const (
 	defaultModel    = "faux-1"
 )
 
+// thinkingLevels are the words of --thinking. default removes a level that a
+// pattern or a scope entry chose.
 var thinkingLevels = []protocol.ThinkingLevel{
-	protocol.ThinkingOff, protocol.ThinkingMinimal, protocol.ThinkingLow, protocol.ThinkingMedium,
+	protocol.ThinkingDefault, protocol.ThinkingOff, protocol.ThinkingMinimal, protocol.ThinkingLow, protocol.ThinkingMedium,
 	protocol.ThinkingHigh, protocol.ThinkingXHigh, protocol.ThinkingMax,
 }
 
@@ -362,7 +364,7 @@ Options:
                         * does not match /, so openai/* matches openai/gpt-5.5 but not
                         openrouter/qwen/qwen3; use openrouter/*/* for that. Replaces enabledModels
   --api-key <key>       API key for the provider (requires --model)
-  --thinking <level>    Thinking level: off, minimal, low, medium, high, xhigh, max; wins over :level
+  --thinking <level>    Thinking level: default, off, minimal, low, medium, high, xhigh, max; wins over :level
   --offline             Do not refresh the model list from the network (as ASK_DISABLE_MODEL_REFRESH=1);
                         a leader that this command starts gets it too, a running leader keeps its setting
   --max-turns <n>       Print mode: end the run after n turns, turns of background notices included
