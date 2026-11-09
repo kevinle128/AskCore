@@ -41,7 +41,8 @@ type LoopConfig struct {
 	Prepare func(m providers.Model, req providers.TranscriptRequest, opts providers.StreamOptions) (*providers.Prepared, error)
 	// Ready checks the same binding rules as Stream before an idle model switch.
 	Ready func(context.Context, providers.Model, string) error
-	// Options go to every request. An empty Reasoning means "off". APIKey
+	// Options go to every request. An empty Reasoning means that no level is
+	// chosen: Ask sends no level and the provider path picks one. APIKey
 	// is the fallback when BoundKey is empty and GetAPIKey is nil or returns
 	// an empty key.
 	Options providers.StreamOptions
@@ -388,11 +389,12 @@ func (l *loop) prepareRequest() error {
 	}
 	// A hook level goes through the same clamp as SetThinkingLevel, with the
 	// model of this request: off stays off, so a model that cannot turn
-	// thinking off gets its lowest level. A model change with no hook level
-	// clamps the current level like SetModel: an empty level stays empty.
+	// thinking off gets its lowest level, and default removes the chosen
+	// level. A model change with no hook level clamps the current level like
+	// SetModel: an empty level stays empty.
 	switch {
 	case upd.ThinkingLevel != "":
-		l.cfg.Options.Reasoning = providers.ClampThinkingLevel(l.cfg.Model, upd.ThinkingLevel)
+		l.cfg.Options.Reasoning = clampedLevel(l.cfg.Model, upd.ThinkingLevel)
 	case upd.Model != nil && l.cfg.Options.Reasoning != "":
 		l.cfg.Options.Reasoning = providers.ClampThinkingLevel(l.cfg.Model, l.cfg.Options.Reasoning)
 	}
@@ -423,11 +425,10 @@ func (l *loop) context() pipeline.AgentContext {
 	return pipeline.AgentContext{Messages: slices.Clip(l.ac.Messages), Tools: l.ac.Tools}
 }
 
+// thinkingLevel is the level that hooks and the message stamp see: default
+// when no level is chosen.
 func (l *loop) thinkingLevel() protocol.ThinkingLevel {
-	if l.cfg.Options.Reasoning == "" {
-		return protocol.ThinkingOff
-	}
-	return l.cfg.Options.Reasoning
+	return thinkingLevel(l.cfg.Options.Reasoning)
 }
 
 // emitMessage publishes a whole message: message_start, then the commit of the

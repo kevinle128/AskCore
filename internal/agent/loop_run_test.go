@@ -321,7 +321,7 @@ func TestPrepareRequestReplacesContext(t *testing.T) {
 		if calls > 1 {
 			return nil, nil
 		}
-		assert.Equal(t, protocol.ThinkingOff, r.ThinkingLevel)
+		assert.Equal(t, protocol.ThinkingDefault, r.ThinkingLevel)
 		replaced := r.Context
 		replaced.Messages = []protocol.Message{user("projected")}
 		return &pipeline.RequestUpdate{Context: &replaced, ThinkingLevel: protocol.ThinkingHigh}, nil

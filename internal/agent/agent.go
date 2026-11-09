@@ -191,11 +191,13 @@ func New(cfg Config) (*Agent, error) {
 		return nil, err
 	}
 	// A requested start level follows the same rule as SetModel and
-	// SetThinkingLevel. An empty level stays empty, so the adapter sends no
-	// effort and the vendor default applies. An Agent with no model keeps the
-	// requested level, so the first SetModel clamps it to that model.
-	if cfg.Model.ID != "" && cfg.Options.Reasoning != "" {
-		a.cfg.Options.Reasoning = providers.ClampThinkingLevel(cfg.Model, cfg.Options.Reasoning)
+	// SetThinkingLevel. The word default is stored as the empty level, which
+	// stays empty: Ask sends no level and the provider path picks one. An
+	// Agent with no model keeps the requested level, so the first SetModel
+	// clamps it to that model.
+	a.cfg.Options.Reasoning = storedLevel(cfg.Options.Reasoning)
+	if cfg.Model.ID != "" && a.cfg.Options.Reasoning != "" {
+		a.cfg.Options.Reasoning = providers.ClampThinkingLevel(cfg.Model, a.cfg.Options.Reasoning)
 	}
 	src, err := a.openSource()
 	if err != nil {
@@ -418,9 +420,8 @@ func (a *Agent) SetModel(ctx context.Context, model providers.Model) error {
 	}
 	a.cfg.Model = model
 	a.clearPending = false
-	// An empty level stays empty, so the adapter sends no effort and the
-	// vendor default applies. A chosen level, off included, is clamped to the
-	// new model.
+	// An empty level stays empty, so Ask sends no level and the provider path
+	// picks one. A chosen level, off included, is clamped to the new model.
 	if a.cfg.Options.Reasoning != "" {
 		a.cfg.Options.Reasoning = providers.ClampThinkingLevel(model, a.cfg.Options.Reasoning)
 	}
@@ -454,15 +455,16 @@ func (a *Agent) clearModelLocked() {
 	a.postLocked(&protocol.ModelUpdate{})
 }
 
-// SetThinkingLevel stores ClampThinkingLevel of the current model. It does
-// not look up a key. ErrBusy leaves the stored level alone.
+// SetThinkingLevel stores ClampThinkingLevel of the current model. The word
+// default removes the chosen level with no clamp. It does not look up a key.
+// ErrBusy leaves the stored level alone.
 func (a *Agent) SetThinkingLevel(level protocol.ThinkingLevel) error {
 	a.mu.Lock()
 	defer a.mu.Unlock()
 	if a.active != nil {
 		return ErrBusy
 	}
-	a.cfg.Options.Reasoning = providers.ClampThinkingLevel(a.cfg.Model, level)
+	a.cfg.Options.Reasoning = clampedLevel(a.cfg.Model, level)
 	return nil
 }
 
@@ -570,11 +572,31 @@ func (a *Agent) State() State {
 	return State{Status: st, Messages: src.Messages(), Model: model, ThinkingLevel: level, Steering: steering, FollowUp: followUp}
 }
 
+// thinkingLevel is the word that readers of the stored level get: the empty
+// level is default, for every model.
 func thinkingLevel(level protocol.ThinkingLevel) protocol.ThinkingLevel {
 	if level == "" {
-		return protocol.ThinkingOff
+		return protocol.ThinkingDefault
 	}
 	return level
+}
+
+// storedLevel is the form of level in Options.Reasoning: the word default is
+// the empty level, so the provider adapters never get it.
+func storedLevel(level protocol.ThinkingLevel) protocol.ThinkingLevel {
+	if level == protocol.ThinkingDefault {
+		return ""
+	}
+	return level
+}
+
+// clampedLevel stores a level that a user or a hook sets: default gives the
+// empty level with no clamp, and any other word is clamped to m.
+func clampedLevel(m providers.Model, level protocol.ThinkingLevel) protocol.ThinkingLevel {
+	if level = storedLevel(level); level == "" {
+		return ""
+	}
+	return providers.ClampThinkingLevel(m, level)
 }
 
 func (a *Agent) begin(ctx context.Context) (*run, error) {

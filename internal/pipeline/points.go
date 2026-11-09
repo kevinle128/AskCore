@@ -50,7 +50,8 @@ type Request struct {
 	// StagedMessages are admitted input not yet committed to history.
 	StagedMessages []protocol.Message
 	Model          providers.Model
-	// ThinkingLevel is "off" when the request asks for no reasoning.
+	// ThinkingLevel is "default" when no level is chosen and the provider path
+	// picks; "off" when the request asks for the lowest level of the model.
 	ThinkingLevel protocol.ThinkingLevel
 }
 
@@ -63,11 +64,12 @@ type RequestUpdate struct {
 	// messages.
 	RequestMessages []protocol.Message
 	Model           *providers.Model
-	// ThinkingLevel is clamped to the model of the request, like a level that
+	// ThinkingLevel: empty keeps the current level; when Model changes, a
+	// chosen current level is clamped to the new model and no chosen level
+	// stays default. "default" removes the chosen level with no clamp. Any
+	// other word is clamped to the model of the request, like a level that
 	// the user sets: "off" gives the lowest level of a model that cannot turn
-	// reasoning off. Empty keeps the current level; when Model changes, a
-	// chosen current level is clamped to the new model and an empty one
-	// stays empty.
+	// reasoning off.
 	ThinkingLevel protocol.ThinkingLevel
 }
 

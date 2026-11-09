@@ -491,10 +491,11 @@ func TestNewClampsTheStartLevel(t *testing.T) {
 	grok := providers.XAIGrok47()
 	bound := providers.BoundKey{Provider: grok.Provider, Secret: anthKey}
 	for level, want := range map[protocol.ThinkingLevel]protocol.ThinkingLevel{
-		"":                    protocol.ThinkingOff,
-		protocol.ThinkingOff:  protocol.ThinkingLow,
-		protocol.ThinkingMax:  protocol.ThinkingXHigh,
-		protocol.ThinkingHigh: protocol.ThinkingHigh,
+		"":                       protocol.ThinkingDefault,
+		protocol.ThinkingDefault: protocol.ThinkingDefault,
+		protocol.ThinkingOff:     protocol.ThinkingLow,
+		protocol.ThinkingMax:     protocol.ThinkingXHigh,
+		protocol.ThinkingHigh:    protocol.ThinkingHigh,
 	} {
 		a, err := agent.New(agent.Config{LoopConfig: agent.LoopConfig{
 			Model: grok, Stream: p.Stream, BoundKey: bound,
