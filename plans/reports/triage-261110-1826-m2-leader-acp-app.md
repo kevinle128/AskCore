@@ -1,0 +1,38 @@
+# Triage: ocr m2 findings (leader, acp, app)
+
+Input: `/tmp/ocr2/m2-leader-acp-app.md`. Branch `develop`, 2026-11-10. Read-only; no code was edited, built, or tested.
+
+| # | location | claim (short) | verdict | severity | evidence | fix |
+|---|----------|---------------|---------|----------|----------|-----|
+| F1 | internal/acp/provider_methods.go:97-101 | Provider callbacks are not counted as host operations; cleanup can tear down the broker under them. | FALSE | - | `Host.operations` counts only auth checks and sessions being built (host.go:95-97). `Host.Close` never waits on it (host.go:319-345), so the proposed fix would not join the callbacks. The leader already ends sign-ins first: `providerSetup.Close` calls `broker.Close`, which "cancels every sign-in and waits until each has ended" (app/provider_setup.go:48-50, module_leader.go:126-129). | none |
+| F2 | internal/acp/trust_methods.go:105-109 | Trust callbacks run during cleanup and are not counted. | FALSE | - | `Cleanup` stops models, refresh and auth wait only (app/module_acp.go:279-284). Trust handlers use none of these; they read and write the trust file. Nothing is torn down under them. | none |
+| F3 | internal/acp/agent.go:195-200 | `CloseOutput` can leave the gated output open. | DESIGN | Low | `gatedOutput.Close` is a deliberate no-op until `force` or a failure (stdio.go:223-250), so responses of active handlers leave first. `ServeStdio` always calls `out.force()` (stdio.go:148). The leader binds a plain pipe, not a gated output (module_leader.go:109). | none |
+| F4 | internal/acp/stdio.go:278-279 | Pending-response set is keyed by ID; duplicate IDs release the barrier early. | REAL | Low | `ids map[string]struct{}`: `request` overwrites the entry, `written` deletes it (stdio.go:278-335). The SDK accepts duplicate IDs (conformance_test.go:633-646). Only the shutdown wait of a client that breaks JSON-RPC ID uniqueness is affected. | Change `ids` to `map[string]int`; increment in `request`, decrement and delete at zero in `written`. |
+| F5 | internal/acp/host.go:500-507 | `mutationCommit` ignores the failure latch. | REAL | Low | `mutationCommit` and `guard` test `closed`/`quiesced`/gen only (host.go:470-512). Run starts are gated: `admit` (host.go:809-811) and `Reset` (host.go:914) call `usable()`. So a new run cannot start; only model/thinking/queue state of a dying host can change. | Add `case s.host.Failure() != nil` (use `s.host.usable()` result) in `mutationCommit` and `guard`. |
+| F6 | internal/app/trust.go:196-199 | `Set` ignores `hasLayer`. | FALSE | - | The entry is an explicit client request, and the same kind of entry as a `parent` target (trust.go:219-223) that names `~`. Rejecting it would block "trust the home folder as parent". `hasLayer` only stops project-layer loading (trust.go:36-44). | none |
+| F7 | internal/app/trust.go:219-222 | Parent `clear` leaves the root entry. | FALSE | - | The doc says the root entry is removed "so that the parent entry applies" (trust.go:176-178). With `clear` no parent entry exists. Removing the root entry would delete a separate explicit user decision on a clear of the parent. | none |
+| F8 | internal/app/agent_native.go:134 | Process-global `sync.Once` is consumed by the first home. | DESIGN | Low | Documented "runs once, so no timer or poll is needed" (agent_native.go:105-107, 111-114). A process has one `ASK_HOME`. A missing `tasks` dir means no stale output yet; an unsafe dir would fail again. | none |
+| F9 | internal/app/module_leader.go:154 | `Stop(WithoutCancel(ctx))` has no shutdown deadline. | DESIGN | Low | Comment at module_leader.go:148: "The stop runs even when ctx ended: started tool bodies drain without a bound." Unbounded drain is the intended contract; a second signal and `ask leader stop` escalate (cmd/tui/leader.go:319-324, 55-56). | none |
+| F10 | internal/app/module_leader.go:96-101 | Adapter-creation error path does not call `acpRT.Cleanup`. | REAL | Low | `NewACPRuntime` starts `models.RefreshIfStale()` (module_acp.go:285). The error path only calls `setup.Close()` (module_leader.go:96-99). The leader process exits on the error, so the leak is short-lived. | Add `_ = acpRT.Cleanup(context.Background())` on the error path. |
+| F11 | internal/app/module_leader.go:121-125 | `NewServer` error path does not call `acpRT.Cleanup`. | REAL | Low | Same as F10: path calls `a.Close()` and `setup.Close()` only (module_leader.go:121-125). | Same: call `acpRT.Cleanup(context.Background())` after `setup.Close()`. |
+| F12 | internal/app/session_start.go:344-345 | Row budget ignores the `Warning: skills: ` prefix, so a line is over 256 bytes. | REAL | Low | `room = 256 - len(Text) - 2` (session_start.go:344). The line adds `"Warning: skills: "` (17 bytes) at line 275. docs/cli.md:238 says "lines of at most 256 bytes each". `Text` itself is not cut. Only the Warnings text line is affected; the ACP diagnostic row is within 256. | Subtract `len("Warning: skills: ")` in `Warnings` only, or reword the doc to say "rows". |
+| F13 | internal/app/session_start.go:363-368 | Prefix test labels a project context file below the Ask home as `user`. | REAL | Low | `HasPrefix(path, askHome+sep)` (session_start.go:364). A project with `cwd = $ASK_HOME/work` gets `AGENTS.md` labeled user. The user files are directly in `askHome` (`UserDir: askHome`, session_start.go:116). Label only; the load and the limits are unchanged. | Use `filepath.Dir(path) == s.askHome`. |
+| F14 | internal/leader/queue.go:27-28 | Agent queue is unbounded. | DESIGN | Low | internal/leader/README.md:49: "an unbounded queue, as Grok has"; queue.go:5-6 documents that a producer never blocks. Clients are the same user (owner-only socket, peer-UID check). Each frame is capped by `MaxLine`. | none |
+| F15 | internal/leader/proc_linux.go:148-150 | Budget clamp of 1 ms can pass the deadline. | FALSE | - | `ctx.Err()` and the deadline are tested before the signal (proc_linux.go:153-160, 171-177). The clamp can add at most 1 ms to one poll, and the code re-checks the deadline right after. | none |
+| F16 | internal/leader/ids.go:313-319 | Overflowing exponents use the raw text as key, so equal numbers can differ. | DESIGN | Low | The raw-text fallback is documented (ids.go:311-312) and avoids memory use for huge exponents (ids.go:285-286). Only an ID with an exponent over 2^31 is affected; the effect is that one client can confuse its own duplicate-ID check. | none |
+| F17 | internal/leader/spawn.go:138-142 | `LogTail` accepts a negative or huge `n`. | DESIGN | Low | Single caller passes the constant 2048 (client.go:283). Package is under `internal/`; the input is not reachable from outside. | none |
+| F18 | internal/leader/server.go:199-202 | `Serve` does not require `Start`. | DESIGN | Low | Sole production caller starts first (module_leader.go:137-143). Order is a documented contract of `Start`/`Serve`; internal package. | none |
+| F19 | internal/leader/client.go:278 | `ConnectConfig.Env` is not passed to `StartConfig`. | FALSE | - | Line 278 already passes `Env: c.cfg.Env`. | none |
+| F20 | internal/leader/client.go:278 | Retraction of F19. | FALSE | - | The reviewer's own correction; the code is right. | none |
+
+## Counts
+
+- REAL: 6 (F4, F5, F10, F11, F12, F13; all Low)
+- FALSE: 7 (F1, F2, F6, F7, F15, F19, F20)
+- DESIGN: 7 (F3, F8, F9, F14, F16, F17, F18)
+- FIXED: 0
+
+## Unresolved questions
+
+- F5: not traced whether `Agent.Steer`/`FollowUp` on an idle agent can start a run by itself. Run starts through the host are gated, so the risk is Low either way.
+- F12: the doc at docs/cli.md:238 and the code comment (session_start.go:324-326) disagree on whether "row" includes the prefix. The owner decides which to change.

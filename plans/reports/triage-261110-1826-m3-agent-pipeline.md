@@ -1,0 +1,22 @@
+# Triage: ocr m3 agent/pipeline/tasks/bus/sessions (2026-11-10, develop)
+
+| # | location | claim (short) | verdict | severity | evidence | fix |
+|---|----------|---------------|---------|----------|----------|-----|
+| F1 | agent/loop_stream.go:91 | nil `*Stream` from Config.Stream panics | DESIGN | n/a | `providers/types.go:56-57` StreamFn "never fails at call time"; `Registry.Stream` returns `unknownAPIStream` for unknown API (`registry.go:57-58`); a panic in the loop is turned into an error by `runGuarded` (`agent/agent.go:704-712`) | none |
+| F2 | agent/follow.go:159 | Entries() can overlap writer Close() | FALSE | n/a | `sessions/writer.go:30-31` Close: "Reads stay valid afterwards"; `MemoryLog.Close` is a no-op (`memory.go:80-81`); `Entries` returns deep copies | none |
+| F3 | agent/agent.go:446 | SetThinkingLevel lacks disposed check | REAL | Low | `agent.go:446-453` has no `a.disposed` test, unlike `SetModel` (`:372`) and `idleLocked` (`:536`); effect is only a config write on a closed Agent | add `if a.disposed { return ErrDisposed }` under `mu` |
+| F4 | agent/agent.go:449 | must use busyLocked (dispatching) | FALSE | n/a | Contract is "while a run is active": `agent/types.go:15-16`; `SetModel` also uses `a.active != nil` (`agent.go:376`); only `Reset` documents the listener case (`agent.go:458-461`) | none |
+| F5 | agent/agent.go:367 | disposed check should precede validation/key work | REAL | Low | `SetModel` validates and resolves the key before the first `disposed` check (`agent.go:368-376`); commit-time check at `:405` keeps state safe, so only the returned error and wasted resolver call differ | move the disposed check to the top of `SetModel` (keep the commit-time check) |
+| F6 | agent/seed.go:66 | typed-nil `*CustomMessage` panics in customTypeOf | DESIGN | n/a | No producer builds a nil pointer message (`rg '&sessions.MessageEntry'` finds none outside tests); input is internal Config.NewContext, caller bug, not a trust boundary | none (optional `v != nil` guard) |
+| F7 | agent/tasks.go:120 | NoticeContext path posts no queue_update | FALSE | n/a | `inbox.update()` (`agent/queue.go:179-181`) carries only steering and followUp; context items are not shown, so an update would be an identical no-op event. The idle-path context branch (`tasks.go:127-134`) behaves the same | none |
+| F8 | bus/follow.go:113 | ring stores caller's `data` slice, no copy | DESIGN | n/a | Only caller is `Agent.publish` (`agent/follow.go:181-182`) with fresh bytes from `protocol.EncodeEvent`, never reused. Package is internal | none |
+| F9 | bus/follow.go:105 | head+1 wraps at MaxUint64 | FALSE | n/a | Needs 2^64 events; unreachable in practice. Seq is a per-process counter | none |
+| F10 | bus/follow.go:258 | every follower shares one backing array | DESIGN | n/a | Same as F8: internal consumers (`acp`, `tui`) only decode `Item.Data`; a per-follower copy would cost allocation on every event for no real threat | none |
+| F11 | pipeline/recovery.go:23 | `delay *= 2` can overflow Duration | FALSE | n/a | Loop runs while `delay < MaxDelay`; overflow needs `MaxDelay` above ~73 years. Default policy is 500 ms / 10 s / 5 retries (`providers/retry.go:15`) | none |
+| F12 | sessions/entry.go:200 | pointer forms satisfy Entry and skip Clone | DESIGN | n/a | `entry.go:9-12` says only this package implements Entry; no pointer entry is built anywhere in non-test code (rg empty). Callers pass values | none |
+| F13 | sessions/entry.go:218 | custom Message impls not deep-copied | DESIGN | n/a | Documented: `pkg/protocol/message.go:877-879` "A custom message type is returned as is" | none |
+| F14 | tasks/registry.go:133 | NextID called before closed check burns a task number | REAL | Low | `Start` calls `r.cfg.NextID` (`registry.go:133`) before the `r.closed` test under lock (`:150`); `Agent.nextTaskID` advances the agent sequence. Effect is only a gap in task numbers after Reset/Dispose; no safety impact | add an early closed check (lock, read, unlock) before `NextID`; keep the locked recheck |
+| F15 | tasks/notice.go:61 | truncated field is 1027 bytes, not 1024 | FALSE | n/a | Comment `notice.go:24-25` says the cap keeps notice size "bounded", not exactly 1024; no doc states a hard 1024 limit (rg in README and docs/async-task-runtime.md found none). 3 extra bytes do not break the bound | none |
+
+## Counts
+REAL 3 (F3, F5, F14; all Low), FALSE 6 (F2, F4, F7, F9, F11, F15), DESIGN 6 (F1, F6, F8, F10, F12, F13), FIXED 0.
