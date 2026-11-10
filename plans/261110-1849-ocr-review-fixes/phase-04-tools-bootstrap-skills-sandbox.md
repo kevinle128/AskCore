@@ -58,7 +58,7 @@ Command: `go test -run '^TestLoadContext' ./internal/bootstrap`
 
 ### 2. R3 (Medium): `read` keeps memory bounded on a large file
 
-User decision: whole read up to 4 MiB; above that a windowed line read; the binary sniff runs before any decode.
+User decisions: whole read up to 4 MiB; above that a windowed line read; the binary sniff runs before any decode (2026-11-10, earlier). An image file larger than 20 MiB (omp's cap) is refused before it is read whole, and the page text stays the same for every file size, with the total line count (2026-11-10).
 
 Evidence: `io.ReadAll(f)` (`internal/tools/file_read.go:123`), `string(data)` (`:138`) and `strings.Split` (`:175`) keep about three times the file in the leader, and each page reads the whole file again. One multi-GB read can stop the leader for all sessions.
 
@@ -71,11 +71,13 @@ Tests first in `file_read_test.go`:
 3. `TestReadLargeSingleLine`: a 5 MiB file with no newline gives the existing `[Line 1 is <size>, exceeds <limit> limit ...]` text (`internal/tools/file_read.go:224-227`) with the full line size.
 4. `TestReadLargeBinaryIsRefusedBeforeDecode`: a 5 MiB file with a NUL byte in the first 8 KiB gives the binary text.
 5. A cancelled context stops the scan and returns the context error.
+6. `TestReadRefusesImageOver20MiB`: a file that starts with PNG magic bytes and is 20 MiB + 1 byte gives the refusal text below and no image block; the `TotalAlloc` growth stays below 4 MiB (the file is not read whole; same rules as test 2: no `t.Parallel()`, `runtime.GC()` first).
+7. `TestReadImageUpTo20MiBReachesPixelCheck`: the 4097 x 4097 PNG of step 5 (well under 20 MiB) read through `read` gives the 16 M pixel refusal, and a small valid PNG gives an image block. This proves that an image under the byte cap still goes through the pixel check.
 
 Fix:
 
 1. Add `readWholeMax = 4 << 20`. Read the first `binarySniffBytes` (8 KiB, which covers `imageSniffBytes`, `file_image.go:26`) and run `detectImage` and `looksBinary` on them first.
-2. An image keeps today's whole read; step 5 bounds its decode.
+2. Add `readImageMax = 20 << 20`. An image whose `info.Size()` is above it is refused before the whole read, with `failf("Cannot read %s: the image is %s, over the %s image limit.", in.Path, formatSize(size), formatSize(readImageMax))`. An image of 20 MiB or less keeps today's whole read, and step 5 bounds its decode.
 3. Text of 4 MiB or less: today's path (read the rest, `readText`).
 4. Text over 4 MiB: a `bufio.Reader` scan that skips to `offset`, keeps lines up to the limit and up to `DefaultMaxBytes` + one line of output, measures (without storing) the first line when it is over the limit, and counts the remaining lines. Share the page and hint formatting with `readText`, so both paths give one text (DRY: split `readText` into "collect the page" and "format the page").
 5. Check `ctx.Err()` between buffers. Keep `r.fs.Record(abs, info)`.
@@ -159,7 +161,7 @@ Command: `go test -run 'View|Truncation' ./internal/sandbox ./internal/tools`
 | R2 skips a valid monorepo link that points above the git root | Medium | Low | The skip is listed in `ask settings show` (`outside_project`) and in the session warning; the user decision accepts it. |
 | R3 page text differs between the two paths | Medium | Medium | Test 1 compares both paths on the same bytes. |
 | R3 time on a multi-GB file | Medium | Low | Linear scan with an 8 KiB buffer and context checks; no memory growth. |
-| R3 does not bound an image file | Medium | Medium | A file that sniffs as an image is still read whole, because the resize needs all bytes; step 5 bounds only the decode. No accepted fix gives an image byte rule. Open question 1. |
+| R3 image memory | Low | Medium | An image is read whole only up to 20 MiB (user decision); step 5 bounds its decode to 16 M pixels. |
 | R7 false failure on a file system with coarse mtime | Low | Low | The first stat comes from the open file; only a real change between read and rename fails. |
 
 ## Rollback
@@ -168,9 +170,4 @@ Revert the phase commits. Revert phases 3 and 6 first if they use `SkipOutsidePr
 
 ## Docs impact
 
-Phase 7: `docs/cli.md:147`, `:237`, `:336`, `:391`; `internal/bootstrap/README.md`; `internal/tools/README.md:52`, `:54`; `internal/sandbox/README.md`; `CHANGELOG.md` Fixed lines for R2, R3, R7, N25, N26.
-
-## Open questions
-
-1. R3: an image file over 4 MiB is still read whole into the leader (only its decode gets the 16 M pixel cap). Should `read` also cap the source bytes of an image (which value), or refuse it with a hint? The accepted fix names no rule for images, so this plan does not add one.
-2. R3: the caller listed "windowed read text" as a user-visible change. This plan keeps the page text the same for every file size (the windowed path counts the total lines with a bounded buffer), so no model text and no tool description changes. Confirm that keeping the text is wanted, rather than omp's "stop after the page" form, which drops the total count.
+Phase 7: `docs/cli.md:147`, `:237`, `:336`, `:391`; `internal/bootstrap/README.md`; `internal/tools/README.md:52`, `:54`; `internal/sandbox/README.md`; `CHANGELOG.md` Fixed lines for R2, R3 (including the 20 MiB image limit), R7, N25, N26.

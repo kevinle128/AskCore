@@ -111,9 +111,9 @@ Fix: `if req.Body != nil { defer func() { _ = req.Body.Close() }() }` at the top
 
 Command for steps 5 and 6: `go test -run 'Close' ./internal/providers/anthropic ./internal/providers/openai`
 
-### 7. N7: wire `SupportsReasoningEffort` (see open question)
+### 7. N7: wire `SupportsReasoningEffort` (user decision 2026-11-10: wire, default true)
 
-Evidence: the field exists (`internal/providers/compat.go:17`) and models.json can set it (`internal/settings/models_file_test.go:37`), but no code reads it; `reasoning_effort` is sent whenever an effort is set (`openai/completions_body.go:100-102`). Removing the field would make a Pi-style key an "unknown compat key" problem (`internal/app/session_models.go:253-256`, `docs/cli.md:554`). Wiring keeps the files valid and follows Pi.
+Evidence: the field exists (`internal/providers/compat.go:17`) and models.json can set it (`internal/settings/models_file_test.go:37`), but no code reads it; `reasoning_effort` is sent whenever an effort is set (`openai/completions_body.go:100-102`). Removing the field would make a Pi-style key an "unknown compat key" problem (`internal/app/session_models.go:253-256`, `docs/cli.md:554`). The user chose to wire it: default true, and `false` means Ask does not send `reasoning_effort`.
 
 Tests first in `completions_test.go`: a Completions row with `SupportsReasoningEffort: false` and an effort sends no `reasoning_effort`; the Token Plan row (`catalog.go:64-69`) still sends it; a models.json model without the key still sends it.
 
@@ -181,7 +181,3 @@ Revert the phase commits. No stored data changes.
 ## Docs impact
 
 Phase 7: `docs/cli.md:553` (header rule), `docs/cli.md:554` (compat key `supportsReasoningEffort`), `CHANGELOG.md` Fixed lines for R6, N1, N7.
-
-## Open question
-
-N7: the triage tables offer "wire" or "remove". This plan wires it, because removal turns a valid Pi-style key into a settings problem. Confirm, or choose removal (then delete the field and accept the new problem line).

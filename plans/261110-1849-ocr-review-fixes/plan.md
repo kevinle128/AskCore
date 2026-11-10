@@ -50,17 +50,23 @@ Each file has one owner phase. The full lists are in the phase files. Two files 
 
 - R1: `Continue` -> `begin` takes the slot (`internal/agent/agent.go:567-591`) -> under `a.mu`, one decision: queued input runs in this run, or the run is marked closing -> `enqueue` on a closing run sets `wake` (`internal/agent/queue.go:344-348`) -> `end` starts the next run (`agent.go:609-614`).
 - R2: `LoadContext` (`internal/bootstrap/load.go:64-112`) -> for a project folder, resolve the file and the project root with `filepath.EvalSymlinks` -> a target outside the root becomes `Skip{Reason: SkipOutsideProject}` -> rendered by `contextSkipText` (session warning, ACP diagnostic) and `contextSkipWord` (`ask settings show`).
-- R3: `read` -> stat -> sniff the first 8 KiB (image, binary) -> whole read when the file is 4 MiB or less (today's path), else a buffered scan that keeps only the page.
+- R3: `read` -> stat -> sniff the first 8 KiB (image, binary) -> an image over 20 MiB is refused, a smaller image is read whole and then checked for 16 M pixels -> text of 4 MiB or less is read whole (today's path), larger text goes through a buffered scan that keeps only the page and counts the total lines.
 - R6: `authRunner` sets `opts.Auth` (`internal/app/module_auth.go:46-58`) -> `profileClient` (`internal/providers/openai/profiles.go:115-139`) picks the `Authorization` value: the models.json header for a static key, the token for OAuth -> the guard checks that value.
 
 ## Rollback
 
 Each phase is one or more focused commits. Revert the commits of a phase with `git revert`. No phase migrates data or changes a file format. Phase 3 and 6 steps that use the new enum or the exported constant revert with their phase; revert phase 6 before phase 3 or 4 when both are reverted.
 
+## Decisions
+
+User answers of 2026-11-10, applied in the owning phases:
+
+1. N7 (phase 2, step 7): wire `supportsReasoningEffort`, default true; `false` means Ask does not send `reasoning_effort`. A test covers it.
+2. R3 images (phase 4, step 2): `read` refuses an image file larger than 20 MiB (omp's cap) before it reads the file whole. An image of 20 MiB or less still goes through the 16 M pixel check (N25, phase 4, step 5). A test and a docs line (phase 7) cover it.
+3. R3 text (phase 4, step 2): the page text stays the same for every file size; the large-file path still counts and reports the total lines.
+
 ## Open questions
 
-1. N7 (phase 2): wire `supportsReasoningEffort` (planned) or remove it.
-2. R3 (phase 4): an image file over 4 MiB is still read whole; cap or refuse it?
-3. R3 (phase 4): the plan keeps the page text the same for every size (no model-visible change). Confirm.
+None.
 
 Note: N1 follows the approved rule, so a reply with only thinking now counts as empty and is retried.

@@ -35,7 +35,8 @@ Write in ASD-STE100 (`CONTRIBUTING.md`). Read each document before the edit, and
 | R11 | `docs/cli.md:639`, `docs/testing-llm-cassettes.md:67`, `:92` | Ask makes the capture folder with mode 0700 and writes the cassette with mode 0600. An existing folder keeps its mode. |
 | N1 | none (no doc names the empty-reply rule) | Changelog only. |
 | N3/N4 | `docs/cli.md:550` | A trailing `/` of `baseUrl` is removed. |
-| N7 | `docs/cli.md:554` | Name `supportsReasoningEffort` (default true; `false` stops `reasoning_effort`), if the user confirms the wire choice. |
+| N7 | `docs/cli.md:554` | Name `supportsReasoningEffort`: default true; `false` means Ask does not send `reasoning_effort` (user decision 2026-11-10). |
+| R3 images | `internal/tools/README.md:52` | `read` refuses an image file larger than 20 MiB before it reads it. |
 | N25 | `internal/tools/README.md:52` | An image of more than 16 million pixels is refused with a text note. |
 | N27 | `internal/sandbox/README.md` | `Truncation.TruncatedBy` names the limit that cut the output. |
 | N29/N34 | `docs/cli.md:449` | A signal during setup exits 130, 143, or 129; a lost leader exits 1, also after the end of input. |
@@ -47,7 +48,7 @@ Write in ASD-STE100 (`CONTRIBUTING.md`). Read each document before the edit, and
 
 ## CHANGELOG
 
-Add one line for each user-visible fix under `[Unreleased]` > `### Fixed` (`CHANGELOG.md:101`): R1, R2, R3, R6 (under `### Changed`, because the rule is new), R7, R11, N1, N3/N4, N7 (under `### Changed` if wired), N25, N26, N29, N30, N31/N32, N34, N35. Internal fixes (R4, R5, R8 to R10, N2, N5, N6, N8 to N24, N27, N28, N33) get no line, as the changelog rule covers only user-visible changes (`AGENTS.md`, Documentation).
+Add one line for each user-visible fix under `[Unreleased]` > `### Fixed` (`CHANGELOG.md:101`): R1, R2, R3, R6 (under `### Changed`, because the rule is new), R7, R11, N1, N3/N4, N7 (under `### Changed`), N25, N26, N29, N30, N31/N32, N34, N35. Internal fixes (R4, R5, R8 to R10, N2, N5, N6, N8 to N24, N27, N28, N33) get no line, as the changelog rule covers only user-visible changes (`AGENTS.md`, Documentation).
 
 ## Full gate
 
