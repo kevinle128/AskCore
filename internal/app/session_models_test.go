@@ -544,3 +544,27 @@ func TestFileKeyIsRefusedForRowOfAnotherEndpoint(t *testing.T) {
 	_, err = service.ResolveWith(ctx, auth.ResolveRequest{Model: other, Config: entry.configKey()})
 	require.ErrorIs(t, err, auth.ErrNoCredential, "the file key binds only to the endpoint the file wrote it for")
 }
+
+func TestModelsFileCompatKeepsReasoningEffortUnlessTheFileTurnsItOff(t *testing.T) {
+	home := privateHome(t)
+	writeModelsFile(t, home, `{"providers": {
+  "local": {
+    "baseUrl": "http://127.0.0.1:9/v1", "api": "openai-completions", "apiKey": "k",
+    "models": [
+      {"id": "plain"},
+      {"id": "other-key", "compat": {"supportsStore": true}},
+      {"id": "off", "compat": {"supportsReasoningEffort": false}},
+    ],
+  },
+}}`)
+	view, err := LoadModelView(context.Background(), home, nil)
+	require.NoError(t, err)
+	require.Empty(t, view.Problems())
+	for id, want := range map[string]bool{"plain": true, "other-key": true, "off": false} {
+		m, err := view.Set().Find(providers.Ref{Provider: "local", ID: id})
+		require.NoError(t, err, id)
+		compat, ok := m.Completions()
+		require.True(t, ok, id)
+		require.Equal(t, want, compat.SupportsReasoningEffort, id)
+	}
+}

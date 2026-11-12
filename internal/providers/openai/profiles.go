@@ -41,6 +41,9 @@ type responsesProfileRT struct {
 	token    string
 	endpoint string
 	chatGPT  bool
+	// authorization is the exact Authorization value the request must carry.
+	// Empty means "Bearer " + token.
+	authorization string
 }
 
 var forbiddenResponsesFields = []string{"background", "conversation", "max_output_tokens", "max_tool_calls", "metadata", "moderation", "multi_agent", "prompt", "prompt_cache_retention", "safety_identifier", "temperature", "top_logprobs", "top_p", "truncation", "user", "previous_response_id"}
@@ -55,7 +58,7 @@ func (t responsesProfileRT) RoundTrip(req *http.Request) (*http.Response, error)
 	if err != nil {
 		return nil, err
 	}
-	if req.Method != http.MethodPost || req.URL.Scheme != u.Scheme || req.URL.Host != u.Host || req.URL.Path != u.Path+"/responses" || req.URL.RawQuery != "" || req.URL.User != nil || req.URL.RawPath != "" || req.URL.Opaque != "" || (req.Host != "" && req.Host != u.Host) || req.URL.Fragment != "" || req.Header.Get("Authorization") != "Bearer "+t.token || len(req.Header.Values("Authorization")) != 1 || req.Header.Get("OpenAI-Organization") != "" || req.Header.Get("OpenAI-Project") != "" || req.Header.Get("ChatGPT-Account-ID") != "" || req.Header.Get("X-Api-Key") != "" || req.Header.Get("Cookie") != "" {
+	if req.Method != http.MethodPost || req.URL.Scheme != u.Scheme || req.URL.Host != u.Host || req.URL.Path != u.Path+"/responses" || req.URL.RawQuery != "" || req.URL.User != nil || req.URL.RawPath != "" || req.URL.Opaque != "" || (req.Host != "" && req.Host != u.Host) || req.URL.Fragment != "" || req.Header.Get("Authorization") != authorizationOr(t.authorization, t.token) || len(req.Header.Values("Authorization")) != 1 || req.Header.Get("OpenAI-Organization") != "" || req.Header.Get("OpenAI-Project") != "" || req.Header.Get("ChatGPT-Account-ID") != "" || req.Header.Get("X-Api-Key") != "" || req.Header.Get("Cookie") != "" {
 		return nil, fmt.Errorf("%w: Responses destination or headers are invalid", providers.ErrAuthentication)
 	}
 	body, err := io.ReadAll(req.Body)
@@ -111,8 +114,30 @@ func (t responsesProfileRT) RoundTrip(req *http.Request) (*http.Response, error)
 	return t.base.RoundTrip(clone)
 }
 
+func authorizationOr(authorization, token string) string {
+	if authorization != "" {
+		return authorization
+	}
+	return "Bearer " + token
+}
+
+// profileAuthorization picks the Authorization value of a bound request. A
+// user Authorization header of the model wins over a static API key, so a
+// proxy keeps its own credential; an OAuth token always wins over the header.
+func profileAuthorization(m providers.Model, token string, staticKey bool) string {
+	if staticKey {
+		for k, v := range m.Headers {
+			if http.CanonicalHeaderKey(k) == "Authorization" && v != "" {
+				return v
+			}
+		}
+	}
+	return "Bearer " + token
+}
+
 // The guard is last, after SDK serialization and model header isolation.
-func profileClient(base *http.Client, m providers.Model, token string, chatGPT bool) *http.Client {
+// staticKey tells a static API key from an OAuth credential.
+func profileClient(base *http.Client, m providers.Model, token string, chatGPT, staticKey bool) *http.Client {
 	c := &http.Client{}
 	if base != nil {
 		*c = *base
@@ -121,10 +146,11 @@ func profileClient(base *http.Client, m providers.Model, token string, chatGPT b
 	if transport == nil {
 		transport = http.DefaultTransport
 	}
+	authorization := profileAuthorization(m, token, staticKey)
 	if m.API == providers.APIOpenAICompletions {
-		c.Transport = completionKeyRT{base: transport, endpoint: m.BaseURL, token: token}
+		c.Transport = completionKeyRT{base: transport, endpoint: m.BaseURL, token: token, authorization: authorization}
 	} else {
-		c.Transport = responsesProfileRT{base: transport, token: token, endpoint: m.BaseURL, chatGPT: chatGPT}
+		c.Transport = responsesProfileRT{base: transport, token: token, endpoint: m.BaseURL, chatGPT: chatGPT, authorization: authorization}
 	}
 	headers := make(map[string]string, len(m.Headers)+1)
 	for k, v := range m.Headers {
@@ -134,7 +160,7 @@ func profileClient(base *http.Client, m providers.Model, token string, chatGPT b
 			headers[k] = v
 		}
 	}
-	headers["Authorization"] = "Bearer " + token
+	headers["Authorization"] = authorization
 	c.Transport = Isolate(c.Transport, headers)
 	c.CheckRedirect = func(*http.Request, []*http.Request) error { return http.ErrUseLastResponse }
 	c.Jar = nil
@@ -142,8 +168,8 @@ func profileClient(base *http.Client, m providers.Model, token string, chatGPT b
 }
 
 type completionKeyRT struct {
-	base            http.RoundTripper
-	endpoint, token string
+	base                           http.RoundTripper
+	endpoint, token, authorization string
 }
 
 func (t completionKeyRT) RoundTrip(req *http.Request) (*http.Response, error) {
@@ -151,7 +177,7 @@ func (t completionKeyRT) RoundTrip(req *http.Request) (*http.Response, error) {
 	if err != nil {
 		return nil, err
 	}
-	if req.Method != http.MethodPost || req.URL.Scheme != u.Scheme || req.URL.Host != u.Host || req.URL.Path != u.Path+"/chat/completions" || req.URL.RawQuery != "" || req.URL.User != nil || req.URL.RawPath != "" || req.URL.Opaque != "" || (req.Host != "" && req.Host != u.Host) || req.Header.Get("Authorization") != "Bearer "+t.token || len(req.Header.Values("Authorization")) != 1 || req.Header.Get("X-Api-Key") != "" || req.Header.Get("Cookie") != "" {
+	if req.Method != http.MethodPost || req.URL.Scheme != u.Scheme || req.URL.Host != u.Host || req.URL.Path != u.Path+"/chat/completions" || req.URL.RawQuery != "" || req.URL.User != nil || req.URL.RawPath != "" || req.URL.Opaque != "" || (req.Host != "" && req.Host != u.Host) || req.Header.Get("Authorization") != authorizationOr(t.authorization, t.token) || len(req.Header.Values("Authorization")) != 1 || req.Header.Get("X-Api-Key") != "" || req.Header.Get("Cookie") != "" {
 		return nil, fmt.Errorf("%w: Completions destination or headers are invalid", providers.ErrAuthentication)
 	}
 	return t.base.RoundTrip(req)

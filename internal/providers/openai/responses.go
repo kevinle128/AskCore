@@ -134,7 +134,7 @@ func (p *responses) produce(ctx context.Context, a *providers.Assembler, m provi
 
 	baseClient := isolateClient(p.cfg.http, m.Headers)
 	if subscription || opts.Auth.Method == "api-key" {
-		baseClient = profileClient(p.cfg.http, m, key, opts.Auth.Method == "openai-chatgpt")
+		baseClient = profileClient(p.cfg.http, m, key, opts.Auth.Method == "openai-chatgpt", opts.Auth.Method == "api-key")
 	}
 	httpClient := fantasykit.Client(baseClient, nil, idle.Touch)
 	if namespaces := responseNamespaces(msgs, m); len(namespaces) > 0 {

@@ -71,7 +71,7 @@ func NormalizeResponsesToolCallID(id string, model Model, source protocol.Assist
 	if _, native := responsesNativeProviders[source.Provider]; !native {
 		return strings.ReplaceAll(id, "|", "_")
 	}
-	if source.Model != model.ID {
+	if source.Model != model.ID || source.Provider != model.Provider || source.API != string(model.API) {
 		if item == "" {
 			return call
 		}

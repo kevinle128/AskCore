@@ -97,7 +97,7 @@ func applyCompletionsThinking(extra map[string]any, compat providers.Completions
 	if pr.Thinking == protocol.ThinkingOff {
 		return
 	}
-	if pr.Effort != "" {
+	if pr.Effort != "" && compat.SupportsReasoningEffort {
 		extra["reasoning_effort"] = pr.Effort
 	}
 }

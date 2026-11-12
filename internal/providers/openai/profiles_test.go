@@ -89,7 +89,13 @@ func TestXAIProfilesUseNativeRouteAndConditionalReasoning(t *testing.T) {
 					called = true
 					require.Equal(t, "api.x.ai", req.URL.Host)
 					require.Equal(t, "/v1/responses", req.URL.Path)
-					require.Equal(t, "Bearer xai-token", req.Header.Get("Authorization"))
+					// A static key yields to the user Authorization header; OAuth does not.
+					want := "Bearer xai-token"
+					if method == "api-key" {
+						want = "Bearer wrong"
+					}
+					require.Equal(t, want, req.Header.Values("Authorization")[0])
+					require.Len(t, req.Header.Values("Authorization"), 1)
 					var body map[string]any
 					require.NoError(t, json.NewDecoder(req.Body).Decode(&body))
 					if reasoning {
@@ -271,4 +277,62 @@ func TestChatGPTReplaysFullCanonicalLocalHistory(t *testing.T) {
 	require.NoError(t, err)
 	require.True(t, called)
 	require.Equal(t, "echo", req.Messages[2].(protocol.AssistantMessage).Content[2].(protocol.ToolCall).Name)
+}
+
+func TestUserAuthorizationHeaderWinsOverStaticKey(t *testing.T) {
+	t.Run("completions", func(t *testing.T) {
+		srv := newCaptureServer(t, completionsSSE())
+		m := completionsModel(srv.srv.URL)
+		m.Headers = map[string]string{"authorization": "Bearer proxy", "X-Trace": "t1"}
+		_, err := resultOf(t, completionsProvider(srv.srv, 0).Stream(context.Background(), m, helloReq(), providers.StreamOptions{
+			Auth: providers.AuthSnapshot{Provider: m.Provider, Method: "api-key", Endpoint: m.BaseURL, AccessToken: "tp-key"},
+		}))
+		require.NoError(t, err)
+		got := srv.take(t)
+		require.Equal(t, []string{"Bearer proxy"}, got.headers.Values("Authorization"))
+		require.Equal(t, "t1", got.headers.Get("X-Trace"))
+	})
+	t.Run("responses", func(t *testing.T) {
+		srv := newCaptureServer(t, responsesSSE())
+		m := responsesModel(srv.srv.URL)
+		m.Headers = map[string]string{"Authorization": "Bearer proxy"}
+		_, err := resultOf(t, responsesProvider(srv.srv, 0).Stream(context.Background(), m, helloReq(), providers.StreamOptions{
+			Auth: providers.AuthSnapshot{Provider: m.Provider, Method: "api-key", Endpoint: m.BaseURL, AccessToken: "sk-openai"},
+		}))
+		require.NoError(t, err)
+		require.Equal(t, []string{"Bearer proxy"}, srv.take(t).headers.Values("Authorization"))
+	})
+	t.Run("without a header the key is sent", func(t *testing.T) {
+		srv := newCaptureServer(t, responsesSSE())
+		m := responsesModel(srv.srv.URL)
+		_, err := resultOf(t, responsesProvider(srv.srv, 0).Stream(context.Background(), m, helloReq(), providers.StreamOptions{
+			Auth: providers.AuthSnapshot{Provider: m.Provider, Method: "api-key", Endpoint: m.BaseURL, AccessToken: "sk-openai"},
+		}))
+		require.NoError(t, err)
+		require.Equal(t, []string{"Bearer sk-openai"}, srv.take(t).headers.Values("Authorization"))
+	})
+}
+
+func TestOAuthTokenWinsOverUserAuthorizationHeader(t *testing.T) {
+	for _, tc := range []struct {
+		name  string
+		model providers.Model
+		auth  providers.AuthSnapshot
+	}{
+		{"chatgpt", providers.OpenAIGPT55(), providers.AuthSnapshot{Provider: "openai", Method: "openai-chatgpt", Profile: chatGPTProfile, Endpoint: providers.OpenAIURL, AccessToken: "oauth-token"}},
+		{"xai", providers.XAIGrok47(), providers.AuthSnapshot{Provider: "xai", Method: "xai-oauth", Profile: "xai", Endpoint: providers.XAIURL, AccessToken: "oauth-token"}},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			var got []string
+			client := &http.Client{Transport: rtFunc(func(req *http.Request) (*http.Response, error) {
+				got = req.Header.Values("Authorization")
+				return &http.Response{StatusCode: 200, Header: http.Header{"Content-Type": []string{"text/event-stream"}}, Body: io.NopCloser(strings.NewReader(responsesSSE())), Request: req}, nil
+			})}
+			m := tc.model
+			m.Headers = map[string]string{"Authorization": "Bearer proxy"}
+			_, err := resultOf(t, NewResponses(WithHTTPClient(client)).Stream(context.Background(), m, helloReq(), providers.StreamOptions{Auth: tc.auth}))
+			require.NoError(t, err)
+			require.Equal(t, []string{"Bearer oauth-token"}, got)
+		})
+	}
 }

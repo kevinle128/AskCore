@@ -241,7 +241,7 @@ func (mm *modelMapping) compat(key string, raw map[string]json.RawMessage, api p
 	case providers.APIAnthropicMessages:
 		target = &providers.AnthropicCompat{}
 	case providers.APIOpenAICompletions:
-		target = &providers.CompletionsCompat{}
+		target = &providers.CompletionsCompat{SupportsReasoningEffort: true}
 	case providers.APIOpenAIResponses:
 		target = &providers.ResponsesCompat{}
 	default:

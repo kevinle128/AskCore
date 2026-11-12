@@ -45,7 +45,7 @@ func TestCompletionsReasoningDeltaPrecedenceJSON(t *testing.T) {
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			sse := chatChunk(fmt.Sprintf(`{"id":"chatcmpl-1","object":"chat.completion.chunk","choices":[{"index":0,"delta":{"role":"assistant",%s},"finish_reason":null}]}`, tc.delta)) +
-				chatChunk(`{"id":"chatcmpl-1","object":"chat.completion.chunk","choices":[{"index":0,"delta":{},"finish_reason":"stop"}]}`) + "data: [DONE]\n\n"
+				chatChunk(`{"id":"chatcmpl-1","object":"chat.completion.chunk","choices":[{"index":0,"delta":{},"finish_reason":"length"}]}`) + "data: [DONE]\n\n"
 			srv := newCaptureServer(t, sse)
 			msg, err := resultOf(t, completionsProvider(srv.srv, 0).Stream(context.Background(), completionsModel(srv.srv.URL), helloReq(), providers.StreamOptions{}))
 			require.NoError(t, err)
