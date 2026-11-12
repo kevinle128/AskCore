@@ -271,8 +271,8 @@ func (s SessionStart) Warnings() []string {
 	if n := len(s.contextDiagnostics()); n > 0 {
 		lines = append(lines, fmt.Sprintf("Warning: %s; run ask settings show for details", plural(n, "context file was skipped", "context files were skipped")))
 	}
-	for _, d := range s.cappedSkillDiagnostics() {
-		line := "Warning: skills: " + d.Path
+	for _, d := range s.cappedSkillRows(len(skillsWarningPrefix)) {
+		line := skillsWarningPrefix + d.Path
 		if d.Path != "" {
 			line += ": "
 		}
@@ -319,18 +319,27 @@ func (s SessionStart) SkillDiagnostics() []protocol.ACPDiagnostic {
 const (
 	maxSkillRows     = 4
 	maxSkillRowBytes = 256
+	// skillsWarningPrefix starts each skills line of Warnings. Its bytes count
+	// against the 256 bytes of the line.
+	skillsWarningPrefix = "Warning: skills: "
 )
 
-// cappedSkillDiagnostics is SkillDiagnostics cut to four rows. The path of a
-// row is cut so that the row holds at most 256 bytes. A last row without a
-// path counts the rest.
+// cappedSkillDiagnostics is SkillDiagnostics cut to four rows for a consumer
+// that adds no text in front of a row.
 func (s SessionStart) cappedSkillDiagnostics() []protocol.ACPDiagnostic {
+	return s.cappedSkillRows(0)
+}
+
+// cappedSkillRows is SkillDiagnostics cut to four rows. The path of a row is
+// cut so that the row holds at most 256 bytes with reserve bytes in front of
+// it. A last row without a path counts the rest.
+func (s SessionStart) cappedSkillRows(reserve int) []protocol.ACPDiagnostic {
 	all := s.SkillDiagnostics()
 	if len(all) <= maxSkillRows {
-		return capRows(all)
+		return capRows(all, reserve)
 	}
 	rest := all[maxSkillRows:]
-	out := capRows(all[:maxSkillRows])
+	out := capRows(all[:maxSkillRows], reserve)
 	return append(out, protocol.ACPDiagnostic{
 		Layer: rest[0].Layer,
 		Key:   "skills",
@@ -338,10 +347,10 @@ func (s SessionStart) cappedSkillDiagnostics() []protocol.ACPDiagnostic {
 	})
 }
 
-func capRows(rows []protocol.ACPDiagnostic) []protocol.ACPDiagnostic {
+func capRows(rows []protocol.ACPDiagnostic, reserve int) []protocol.ACPDiagnostic {
 	out := slices.Clone(rows)
 	for i, d := range out {
-		room := max(maxSkillRowBytes-len(d.Text)-len(": "), 0)
+		room := max(maxSkillRowBytes-reserve-len(d.Text)-len(": "), 0)
 		out[i].Path = cutBytes(d.Path, room)
 	}
 	return out
@@ -358,10 +367,11 @@ func cutBytes(s string, n int) string {
 	return s[:n]
 }
 
-// contextLayer is "user" for a file in the Ask home and "project" for the
-// others.
+// contextLayer is "user" for a file that lies directly in the Ask home, the only
+// place where user context files are read, and "project" for the others. A
+// project folder below the Ask home is still a project.
 func (s SessionStart) contextLayer(path string) string {
-	if s.askHome != "" && strings.HasPrefix(path, s.askHome+string(filepath.Separator)) {
+	if s.askHome != "" && filepath.Dir(path) == s.askHome {
 		return string(settings.LayerUser)
 	}
 	return string(settings.LayerProject)
@@ -379,6 +389,8 @@ func contextSkipText(r bootstrap.SkipReason) string {
 		return fmt.Sprintf("left out: the context files are over %d KiB", bootstrap.MaxTotalBytes>>10)
 	case bootstrap.SkipTruncated:
 		return fmt.Sprintf("cut: the context files are over %d KiB", bootstrap.MaxTotalBytes>>10)
+	case bootstrap.SkipOutsideProject:
+		return "left out: the file links to a path outside the project"
 	default:
 		return ""
 	}
