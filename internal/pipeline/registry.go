@@ -275,17 +275,21 @@ func (r *Registry) PrepareRequest(ctx context.Context, in Request) (*RequestUpda
 	// update.
 	orig := in
 	if len(hs) > 0 {
-		// A handler may edit an element in place. It gets its own slice, so the
-		// original stays the comparison base and the caller's slice stays as
-		// it was.
-		in.Context.Messages = slices.Clone(orig.Context.Messages)
+		// A handler may edit a message through a pointer or an element of its
+		// content. It gets a deep copy, so the original stays the comparison
+		// base and the stored messages stay as they were.
+		msgs := make([]protocol.Message, len(orig.Context.Messages))
+		for i, m := range orig.Context.Messages {
+			msgs[i] = protocol.CloneMessage(m)
+		}
+		in.Context.Messages = msgs
 	}
 	terminal := func(_ context.Context, in Request) (*RequestUpdate, error) {
 		var upd RequestUpdate
 		changed := false
-		// DeepEqual, not ==: a message holds slices, and == on them panics. It
-		// returns early for the same slice header, so an unchanged request
-		// costs one pass.
+		// DeepEqual, not ==: a message holds slices, and == on them panics.
+		// With a handler the copy never shares a slice header with the
+		// original, so the compare walks every message.
 		if !reflect.DeepEqual(in.Context.Messages, orig.Context.Messages) || in.Context.Tools != orig.Context.Tools {
 			upd.Context, changed = &in.Context, true
 		}
