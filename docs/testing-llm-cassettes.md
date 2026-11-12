@@ -68,7 +68,7 @@ ASK_CAPTURE=/tmp/ask-capture ask -p "..." --provider openai --model gpt-5.5
 # stderr: ask: capturing provider HTTP to /tmp/ask-capture/20261005-215018.780.yaml
 ```
 
-Ask makes the capture folder with mode 0700 and writes the cassette with mode 0600. A folder that exists keeps its mode.
+Ask makes the capture folder with mode 0700 and writes the cassette with mode 0600. A folder that exists is set to mode 0700 too; if the user does not own it, capture stops with an error.
 
 1. Move the file to `cmd/tui/testdata/cassettes/<TestName>.yaml`.
 2. In the file, replace the random session ID (the value of `prompt_cache_key` in each request body) with `cassetteSessionID`, so the replay sends the same body.

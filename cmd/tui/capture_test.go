@@ -72,3 +72,23 @@ func TestFauxPaceIsReadOnlyForFauxRuns(t *testing.T) {
 	assert.Equal(t, 1, got.code)
 	assert.Contains(t, got.stderr, fauxPaceEnv+" must be a non-negative number")
 }
+
+// TestCaptureClosesAnExistingFolder checks that a capture folder that
+// others can open becomes owner-only.
+func TestCaptureClosesAnExistingFolder(t *testing.T) {
+	dir := filepath.Join(t.TempDir(), "shared")
+	require.NoError(t, os.Mkdir(dir, 0o755))
+	require.NoError(t, os.Chmod(dir, 0o755))
+	o := options{provider: providers.ProviderAnthropic, model: providers.AnthropicSonnet46().ID}
+	_, err := startCapture(&o, func(k string) string {
+		if k == captureEnv {
+			return dir
+		}
+		return ""
+	}, os.Stderr, sseResponse(http.StatusOK, sseText("pong")))
+	require.NoError(t, err)
+
+	info, err := os.Stat(dir)
+	require.NoError(t, err)
+	assert.Equal(t, os.FileMode(0o700), info.Mode().Perm())
+}

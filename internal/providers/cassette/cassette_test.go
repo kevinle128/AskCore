@@ -196,9 +196,10 @@ func TestRecordRemovesTheOldCassetteFirst(t *testing.T) {
 	_, err := cassette.New(path, cassette.Record)
 	require.NoError(t, err)
 	// A recording that fails before its first response must not leave the
-	// old cassette for the next replay.
-	_, err = os.Stat(path)
-	assert.True(t, os.IsNotExist(err), "the old cassette must be gone")
+	// old cassette for the next replay. The new file is empty until then.
+	info, err := os.Stat(path)
+	require.NoError(t, err)
+	assert.Zero(t, info.Size(), "the old cassette must be gone")
 }
 
 func TestPathMustEndInYAML(t *testing.T) {
@@ -233,4 +234,16 @@ func TestRecordKeepsTheCassetteOwnerOnly(t *testing.T) {
 		require.NoError(t, err)
 		assert.Equal(t, os.FileMode(0o600), info.Mode().Perm())
 	}
+}
+
+func TestRecordMakesTheOwnerOnlyFileBeforeTheFirstSave(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "sub", "early.yaml")
+	_, err := cassette.New(path, cassette.Record)
+	require.NoError(t, err)
+	info, err := os.Stat(path)
+	require.NoError(t, err)
+	assert.Equal(t, os.FileMode(0o600), info.Mode().Perm())
+	dirInfo, err := os.Stat(filepath.Dir(path))
+	require.NoError(t, err)
+	assert.Equal(t, os.FileMode(0o700), dirInfo.Mode().Perm())
 }

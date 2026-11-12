@@ -21,8 +21,7 @@ const captureEnv = "ASK_CAPTURE"
 // startCapture sets a recording transport on o when ASK_CAPTURE is set and
 // tells stderr where the cassette goes. It returns the cassette path, or ""
 // when capture is off or the provider makes no HTTP requests. real sends the requests; nil means
-// http.DefaultTransport. The cassette is saved after each response, so it
-// exists only after the first provider request.
+// http.DefaultTransport. The cassette file is made empty now and filled after each response.
 func startCapture(o *options, getenv func(string) string, stderr io.Writer, real http.RoundTripper) (string, error) {
 	dir := getenv(captureEnv)
 	if dir == "" {
@@ -33,6 +32,12 @@ func startCapture(o *options, getenv func(string) string, stderr io.Writer, real
 		return "", nil
 	}
 	if err := os.MkdirAll(dir, 0o700); err != nil {
+		return "", fmt.Errorf("%s: %w", captureEnv, err)
+	}
+	// MkdirAll leaves the mode of an existing folder alone. The user owns the
+	// capture folder, so close it to others; chmod fails for a folder the user
+	// does not own, and then capture stops.
+	if err := os.Chmod(dir, 0o700); err != nil {
 		return "", fmt.Errorf("%s: %w", captureEnv, err)
 	}
 	path := filepath.Join(dir, time.Now().Format("20060102-150405.000")+".yaml")

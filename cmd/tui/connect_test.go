@@ -2,13 +2,17 @@ package main
 
 import (
 	"bytes"
+	"context"
+	"encoding/json"
 	"io"
 	"net"
 	"os"
 	"path/filepath"
 	"strings"
+	"sync"
 	"syscall"
 	"testing"
+	"time"
 
 	"AskCore/internal/leader"
 	"AskCore/pkg/protocol"
@@ -158,4 +162,72 @@ func TestConnectSignalDuringSetupExitsWithTheSignalCode(t *testing.T) {
 
 		require.Equal(t, want, code, errb.String())
 	}
+}
+
+// stuckWriter blocks every write until release is closed and tells when the
+// first write starts.
+type stuckWriter struct {
+	started chan struct{}
+	release chan struct{}
+	once    sync.Once
+}
+
+func (w *stuckWriter) Write(p []byte) (int, error) {
+	w.once.Do(func() { close(w.started) })
+	<-w.release
+	return len(p), nil
+}
+
+// A prompt that is stuck in a write to a full output must not make the wait
+// after the end of stdin ignore a signal.
+func TestConnectFinishEndsOnSignalWhilePromptWriteIsStuck(t *testing.T) {
+	pr, pw := io.Pipe()
+	out := &stuckWriter{started: make(chan struct{}), release: make(chan struct{})}
+	defer close(out.release)
+	c := newLineClient(&leader.Client{Registered: &leader.Registered{
+		Writer: leader.NewFrameWriter(io.Discard, protocol.LeaderMaxFrame),
+		Reader: leader.NewFrameReader(pr, protocol.LeaderMaxFrame),
+	}}, out)
+	c.view = "s1"
+	go c.readLoop()
+	sigs := make(chan os.Signal, 1)
+	ctx, stop := withSignalContext(sigs)
+	defer stop()
+	c.ctx = ctx
+
+	c.prompt("hello")
+	require.NoError(t, pw.Close())
+	<-c.done
+	<-out.started
+
+	got := make(chan int, 1)
+	go func() { got <- c.finish(ctx, io.Discard) }()
+	sigs <- os.Interrupt
+	select {
+	case code := <-got:
+		require.Equal(t, 130, code)
+	case <-time.After(5 * time.Second):
+		t.Fatal("finish ignored the signal while a prompt write was stuck")
+	}
+}
+
+// Every way that the leader link can end fails a pending prompt, so the exit
+// code is 1 also when the end is an error frame and not a plain close.
+func TestConnectFinishExitsOneWhenLeaderSendsAnErrorFrame(t *testing.T) {
+	pr, pw := io.Pipe()
+	c := newLineClient(&leader.Client{Registered: &leader.Registered{
+		Writer: leader.NewFrameWriter(io.Discard, protocol.LeaderMaxFrame),
+		Reader: leader.NewFrameReader(pr, protocol.LeaderMaxFrame),
+	}}, io.Discard)
+	c.view = "s1"
+	go c.readLoop()
+
+	c.prompt("hello")
+	payload, err := json.Marshal(protocol.LeaderError{Kind: "shutting_down", Message: "the leader stops"})
+	require.NoError(t, err)
+	require.NoError(t, leader.NewFrameWriter(pw, protocol.LeaderMaxFrame).Write(protocol.LeaderFrame{Type: protocol.LeaderFrameError, Payload: payload}))
+
+	var stderr strings.Builder
+	require.Equal(t, 1, c.finish(context.Background(), &stderr))
+	require.Contains(t, stderr.String(), "the leader closed the connection")
 }

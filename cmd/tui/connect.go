@@ -195,6 +195,16 @@ func (l *lockedWriter) printf(format string, a ...any) {
 	_, _ = fmt.Fprintf(l.w, format+"\n", a...)
 }
 
+// tryPrintf prints unless another write holds the lock. That write may be
+// stuck on a full output, and the caller must not wait behind it.
+func (l *lockedWriter) tryPrintf(format string, a ...any) {
+	if !l.mu.TryLock() {
+		return
+	}
+	defer l.mu.Unlock()
+	_, _ = fmt.Fprintf(l.w, format+"\n", a...)
+}
+
 func newLineClient(cl *leader.Client, out io.Writer) *lineClient {
 	c := &lineClient{
 		out: &lockedWriter{w: out}, ctx: context.Background(),
@@ -688,10 +698,17 @@ func (c *lineClient) finish(ctx context.Context, stderr io.Writer) int {
 	case <-settled:
 	case <-c.done:
 		// A call that the closed connection fails returns at once, so the
-		// wait is short and tells whether a prompt was cut off.
-		<-settled
+		// wait is short and tells whether a prompt was cut off. A prompt that
+		// is stuck in a write to a full output never returns, so a signal
+		// must end the wait too.
+		select {
+		case <-settled:
+		case <-ctx.Done():
+			code, _ := signalExit(ctx)
+			return code
+		}
 	case <-ctx.Done():
-		c.out.printf("bye")
+		c.out.tryPrintf("bye")
 		code, _ := signalExit(ctx)
 		return code
 	}
