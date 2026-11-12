@@ -156,6 +156,13 @@ func (r *Recorder) RoundTrip(req *http.Request) (*http.Response, error) {
 			_ = resp.Body.Close()
 			return nil, r.fail(fmt.Errorf("cassette %s: save: %w", r.path, err))
 		}
+		// go-vcr creates the file again at each save with the default mode;
+		// a cassette can hold prompts and tool results, so only the owner may
+		// read it.
+		if err := os.Chmod(r.path, 0o600); err != nil {
+			_ = resp.Body.Close()
+			return nil, r.fail(fmt.Errorf("cassette %s: mode: %w", r.path, err))
+		}
 	}
 	return resp, nil
 }

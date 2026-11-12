@@ -219,3 +219,18 @@ func TestReplayIsStrictlyInOrder(t *testing.T) {
 	assert.Contains(t, err.Error(), `-  "a": 1`)
 	assert.Contains(t, err.Error(), `+  "a": 2`)
 }
+
+func TestRecordKeepsTheCassetteOwnerOnly(t *testing.T) {
+	srv, _ := newServer(t)
+	path := filepath.Join(t.TempDir(), "private.yaml")
+	rec, err := cassette.New(path, cassette.Record)
+	require.NoError(t, err)
+	for _, body := range []string{`{"a":1}`, `{"a":2}`} {
+		resp, err := post(t, rec, srv.URL+"/v1/messages", body)
+		require.NoError(t, err)
+		readBody(t, resp)
+		info, err := os.Stat(path)
+		require.NoError(t, err)
+		assert.Equal(t, os.FileMode(0o600), info.Mode().Perm())
+	}
+}

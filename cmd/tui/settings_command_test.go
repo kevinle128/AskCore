@@ -276,6 +276,31 @@ func TestSettingsShowListsContextFilesAndSkillProblems(t *testing.T) {
 	assert.Contains(t, text.stdout, "\nSkill problems:\n  user "+broken+": no frontmatter\n")
 }
 
+func TestSettingsShowNamesAContextFileLinkedOutsideTheProject(t *testing.T) {
+	project, root := settingsProjectDir(t, `{}`, 0o644)
+	require.NoError(t, os.Mkdir(filepath.Join(project, ".git"), 0o755))
+	outside := filepath.Join(t.TempDir(), "rules.md")
+	require.NoError(t, os.WriteFile(outside, []byte("outside rules"), 0o644))
+	require.NoError(t, os.Symlink(outside, filepath.Join(project, "AGENTS.md")))
+	t.Setenv("HOME", t.TempDir())
+	home := privateHome(t)
+
+	got := printInProject(t, project, home, "settings", "show", "--json")
+
+	require.Equal(t, 0, got.code, got.stderr)
+	d := decodeSettingsDump(t, got.stdout)
+	require.Len(t, d.Context, 1)
+	assert.Equal(t, filepath.Join(root, "AGENTS.md"), d.Context[0].Path)
+	assert.Equal(t, "outside_project", d.Context[0].Skipped)
+
+	text := printInProject(t, project, home, "settings", "show")
+
+	require.Equal(t, 0, text.code, text.stderr)
+	assert.Contains(t, text.stdout, filepath.Join(root, "AGENTS.md")+"  ")
+	assert.Contains(t, text.stdout, "outside_project\n")
+	assert.NotContains(t, text.stdout+text.stderr, "outside rules")
+}
+
 func TestSettingsShowKeepsEverySkillProblemAndShowsTheSkillsBudget(t *testing.T) {
 	project, _ := settingsProjectDir(t, `{}`, 0o644)
 	userHome := t.TempDir()

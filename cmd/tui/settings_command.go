@@ -352,6 +352,8 @@ func contextSkipWord(r bootstrap.SkipReason) string {
 		return "budget"
 	case bootstrap.SkipTruncated:
 		return "truncated"
+	case bootstrap.SkipOutsideProject:
+		return "outside_project"
 	default:
 		return "unknown"
 	}

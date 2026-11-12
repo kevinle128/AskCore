@@ -2,8 +2,16 @@ package main
 
 import (
 	"bytes"
+	"io"
+	"net"
+	"os"
+	"path/filepath"
 	"strings"
+	"syscall"
 	"testing"
+
+	"AskCore/internal/leader"
+	"AskCore/pkg/protocol"
 
 	"github.com/stretchr/testify/require"
 )
@@ -81,4 +89,73 @@ func TestConnectFailsVisiblyWithoutAsk(t *testing.T) {
 	require.Equal(t, 1, code)
 	require.Contains(t, errOut.String(), "ask binary was not found")
 	require.Empty(t, out.String())
+}
+
+// A signal ends a call that a leader never answers: the setup calls use the
+// context that the first signal cancels.
+func TestConnectSignalEndsAnUnansweredCall(t *testing.T) {
+	pr, pw := io.Pipe()
+	defer func() { _ = pw.Close() }()
+	c := newLineClient(&leader.Client{Registered: &leader.Registered{
+		Writer: leader.NewFrameWriter(io.Discard, protocol.LeaderMaxFrame),
+		Reader: leader.NewFrameReader(pr, protocol.LeaderMaxFrame),
+	}}, io.Discard)
+	go c.readLoop()
+	sigs := make(chan os.Signal, 1)
+	ctx, stop := withSignalContext(sigs)
+	defer stop()
+	c.ctx = ctx
+
+	sigs <- syscall.SIGTERM
+	_, f := c.call("initialize", map[string]any{})
+
+	require.NotNil(t, f)
+	code, signalled := signalExit(ctx)
+	require.True(t, signalled)
+	require.Equal(t, 143, code)
+}
+
+func TestConnectSignalExitIsAbsentWithoutASignal(t *testing.T) {
+	ctx, stop := withSignalContext(make(chan os.Signal))
+	_, signalled := signalExit(ctx)
+	require.False(t, signalled)
+	stop()
+	_, signalled = signalExit(ctx)
+	require.False(t, signalled, "the end of the command is not a signal")
+}
+
+// A signal during setup exits with the code of the signal, also when the
+// leader holds the connection and never answers.
+func TestConnectSignalDuringSetupExitsWithTheSignalCode(t *testing.T) {
+	for sig, want := range map[os.Signal]int{syscall.SIGTERM: 143, os.Interrupt: 130, syscall.SIGHUP: 129} {
+		home := leaderHome(t)
+		paths, err := leader.ResolvePaths(home)
+		require.NoError(t, err)
+		require.NoError(t, os.MkdirAll(filepath.Dir(paths.Socket), 0o700))
+		ln, err := net.Listen("unix", paths.Socket)
+		require.NoError(t, err)
+		accepted := make(chan struct{}, 1)
+		go func() {
+			conn, err := ln.Accept()
+			if err != nil {
+				return
+			}
+			accepted <- struct{}{}
+			_, _ = io.Copy(io.Discard, conn)
+		}()
+
+		sigs := make(chan os.Signal, 1)
+		go func() { <-accepted; sigs <- sig }()
+		var out, errb bytes.Buffer
+		deps := runDependencies{getenv: func(k string) string {
+			if k == "ASK_HOME" {
+				return home
+			}
+			return ""
+		}}
+		code := runConnect(nil, strings.NewReader(""), &out, &errb, deps, sigs, filepath.Join(home, "no-such-ask"))
+		_ = ln.Close()
+
+		require.Equal(t, want, code, errb.String())
+	}
 }

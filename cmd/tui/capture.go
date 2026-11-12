@@ -32,7 +32,7 @@ func startCapture(o *options, getenv func(string) string, stderr io.Writer, real
 		report(stderr, "ask: "+captureEnv+" ignored: provider", o.provider, "makes no HTTP requests")
 		return "", nil
 	}
-	if err := os.MkdirAll(dir, 0o755); err != nil {
+	if err := os.MkdirAll(dir, 0o700); err != nil {
 		return "", fmt.Errorf("%s: %w", captureEnv, err)
 	}
 	path := filepath.Join(dir, time.Now().Format("20060102-150405.000")+".yaml")

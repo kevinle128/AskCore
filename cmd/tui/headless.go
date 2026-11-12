@@ -160,10 +160,6 @@ func runWithDependencies(argv []string, stdin io.Reader, stdout, stderr io.Write
 		o.transport = deps.inferenceHTTP.Transport
 	}
 	o.environ = deps.environ
-	if _, err := startCapture(&o, deps.getenv, stderr, nil); err != nil {
-		report(stderr, "Error:", err)
-		return 1
-	}
 	newAuth := func() (*auth.Service, error) {
 		return app.NewNativeAuth(deps.getenv("ASK_HOME"), env, auth.NativeOptions{HTTPClient: deps.authHTTP, Now: deps.now, Wait: deps.wait})
 	}
@@ -185,6 +181,12 @@ func runWithDependencies(argv []string, stdin io.Reader, stdout, stderr io.Write
 	}
 	start, service, view, err := printStartModel(&o, deps.getenv, newAuth, &session, stderr)
 	if err != nil {
+		report(stderr, "Error:", err)
+		return 1
+	}
+	// The provider is known only after the start model is chosen, so a run
+	// that picks its provider with --model alone is captured too.
+	if _, err := startCapture(&o, deps.getenv, stderr, nil); err != nil {
 		report(stderr, "Error:", err)
 		return 1
 	}
@@ -261,7 +263,14 @@ func printStartModel(o *options, getenv func(string) string, newAuth func() (*au
 			return providers.Model{}, nil, nil, fmt.Errorf("provider %q is not available", o.provider)
 		}
 	}
-	_, demo, err := fauxStream(defaultModel, getenv)
+	// The demo model does not depend on the pace, and the pace variable is for
+	// the faux provider only, so a bad value must not stop a real-provider run.
+	_, demo, err := fauxStream(defaultModel, func(k string) string {
+		if k == fauxPaceEnv {
+			return ""
+		}
+		return getenv(k)
+	})
 	if err != nil {
 		return providers.Model{}, nil, nil, err
 	}

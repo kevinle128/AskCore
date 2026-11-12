@@ -173,14 +173,6 @@ class Session:
         self.reader.join(1)
 
 
-def save(name, sess, tail=24):
-    p = os.path.join(OUT, name + ".txt")
-    t = sess.view()
-    with open(p, "w") as f:
-        f.write(t + "\n")
-    return t
-
-
 def leader_stop(home):
     return subprocess.run([ASK, "leader", "stop"], env=child_env(home), capture_output=True, text=True, timeout=20)
 
