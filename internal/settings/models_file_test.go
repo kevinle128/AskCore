@@ -308,3 +308,20 @@ func TestModelsFileBaseURLMustBeHTTPWithHostAndNoUserInfo(t *testing.T) {
 		}
 	}
 }
+
+func TestModelsFileBaseURLTrailingSlashIsTrimmedOnce(t *testing.T) {
+	file, problems := parseModels(t, `{"providers": {
+		"local": {"baseUrl": "http://127.0.0.1:11434/v1/", "apiKey": "k"},
+		"root": {"baseUrl": "https://h/", "apiKey": "k"},
+		"plain": {"baseUrl": "https://h/v1", "apiKey": "k"}
+	}}`)
+	if len(problems) != 0 {
+		t.Fatalf("problems %v", problemKeys(problems))
+	}
+	want := map[string]string{"local": "http://127.0.0.1:11434/v1", "root": "https://h", "plain": "https://h/v1"}
+	for id, base := range want {
+		if got := file.Providers[id].BaseURL; got != base {
+			t.Fatalf("%s baseUrl %q, want %q", id, got, base)
+		}
+	}
+}

@@ -9,6 +9,7 @@ import (
 	"math"
 	"net/url"
 	"strconv"
+	"strings"
 )
 
 // ModelsFile is the decoded user models.json. It holds only the entries that
@@ -174,6 +175,8 @@ func (d *modelsDecoder) provider(n *jsonNode, id, key string) (ProviderEntry, er
 	if p.BaseURL != "" && !validBaseURL(p.BaseURL) {
 		return p, d.drop(key+".baseUrl", "baseUrl must be an http or https URL with a host and no user name or password", "provider")
 	}
+	// Provider guards build request paths as base + suffix, so a trailing slash would double it.
+	p.BaseURL = strings.TrimRight(p.BaseURL, "/")
 	if p.API, err = d.str(n, key, "api", "provider"); err != nil {
 		return p, err
 	}
