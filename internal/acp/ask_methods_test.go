@@ -46,7 +46,7 @@ func TestAdapterStateIsACopyOfCurrentState(t *testing.T) {
 	require.Equal(t, sid, idle.SessionID)
 	require.NotEmpty(t, idle.Epoch)
 	require.Equal(t, 0, idle.MessageCount)
-	require.Equal(t, protocol.ThinkingOff, idle.ThinkingLevel)
+	require.Equal(t, protocol.ThinkingDefault, idle.ThinkingLevel)
 	raw := p.call(protocol.ACPState, map[string]any{"sessionId": sid})
 	require.Contains(t, string(raw.Result), `"steering":[]`)
 	require.Contains(t, string(raw.Result), `"followUp":[]`)
@@ -211,6 +211,38 @@ func TestAdapterSetModelReadinessFailureKeepsState(t *testing.T) {
 	require.Equal(t, protocol.ACPErrNoAPIKey, f.errKind(t))
 	require.NotContains(t, f.Error.Message, "secret-detail")
 	require.Equal(t, before, p.state(sid))
+}
+
+// TestAdapterThinkingDefault reads and sets the level default on the wire. A
+// session with no chosen level reports default, set_thinking takes default and
+// removes a chosen level with no clamp, and set_model with no thinkingLevel
+// keeps default.
+func TestAdapterThinkingDefault(t *testing.T) {
+	p := newAdapterPeer(t, testConfig(func() []faux.Step { return []faux.Step{faux.Say("x")} }, nil), nil)
+	sid := p.start()
+	raw := p.call(protocol.ACPState, map[string]any{"sessionId": sid})
+	require.Nil(t, raw.Error)
+	require.Contains(t, string(raw.Result), `"thinkingLevel":"default"`)
+
+	target := providers.OpenAIGPT55()
+	targetID := fmt.Sprintf("%s/%s@%s", target.Provider, target.ID, target.API)
+	set := p.call(protocol.ACPSetModel, map[string]any{"sessionId": sid, "modelId": targetID})
+	require.Nil(t, set.Error)
+	require.Contains(t, string(set.Result), `"thinkingLevel":"default"`, "a model change keeps no chosen level")
+
+	var res protocol.ACPThinkingResult
+	p.ok(protocol.ACPSetThinking, map[string]any{"sessionId": sid, "level": "high"}, &res)
+	require.Equal(t, protocol.ThinkingHigh, res.Level)
+	level := p.call(protocol.ACPSetThinking, map[string]any{"sessionId": sid, "level": "default"})
+	require.Nil(t, level.Error)
+	require.JSONEq(t, `{"level":"default"}`, string(level.Result))
+	require.Equal(t, protocol.ThinkingDefault, p.state(sid).ThinkingLevel)
+
+	// A scope entry ":default" sends default with set_model.
+	p.ok(protocol.ACPSetThinking, map[string]any{"sessionId": sid, "level": "high"}, nil)
+	set = p.call(protocol.ACPSetModel, map[string]any{"sessionId": sid, "modelId": targetID, "thinkingLevel": "default"})
+	require.Nil(t, set.Error)
+	require.Contains(t, string(set.Result), `"thinkingLevel":"default"`)
 }
 
 func TestAdapterThinkingClampsAndRejectsBusy(t *testing.T) {

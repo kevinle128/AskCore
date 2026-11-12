@@ -11,6 +11,7 @@ import (
 	"slices"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"time"
 	"unicode/utf8"
 
@@ -124,6 +125,11 @@ type Options struct {
 	// DisableBackground turns background work off: a foreground command stops
 	// at its wait budget, and a background start or a monitor is refused.
 	DisableBackground bool
+	// StallAfter is the silence of a background bash job after which the table
+	// sends one notice that the job still runs. New output starts a new silence
+	// period. Zero or less turns the notice off. A monitor and a foreground job
+	// inside its wait budget never get it.
+	StallAfter time.Duration
 }
 
 // BackgroundLimit is the time a job may run in the background. It counts from
@@ -134,6 +140,10 @@ type BackgroundLimit struct {
 	Default time.Duration
 	// Max caps a limit that a start asks for. Zero means no cap.
 	Max time.Duration
+	// BashOnly keeps the limit off monitors: a monitor keeps its own timeout.
+	// A session that has no limit for monitors, such as an interactive one,
+	// still stops a background bash job that runs for too long.
+	BashOnly bool
 }
 
 // of returns the limit for a request, zero when limits are off.
@@ -214,6 +224,13 @@ type Job struct {
 	stopTimeout   func() bool
 	muted         bool // the owner refused a notice as expected: no more events
 	stopLimit     func() bool
+	bgSince       int64 // nanoseconds since started when the job moved to the background
+
+	// The fields below are atomic because the output path reads and writes
+	// them under the process write lock and must not take t.mu.
+	lastOut   atomic.Int64                // nanoseconds since started of the last output chunk, 0 for none
+	stall     atomic.Int32                // stallOff, stallArmed or stallQuiet
+	stopStall atomic.Pointer[func() bool] // stop func of the one armed stall timer
 
 	owner Owner  // set at start, never changed
 	gen   uint64 // generation of owner
@@ -289,14 +306,15 @@ func (j *Job) finishedLocked() bool {
 
 // Table is the job table of one session. It is safe for concurrent use.
 type Table struct {
-	clock     sandbox.Clock
-	env       func() []string
-	maxActive int
-	killGrace time.Duration
-	onError   func(error)
-	expected  func(error) bool
-	limit     BackgroundLimit
-	noBg      bool
+	clock      sandbox.Clock
+	env        func() []string
+	maxActive  int
+	killGrace  time.Duration
+	onError    func(error)
+	expected   func(error) bool
+	limit      BackgroundLimit
+	noBg       bool
+	stallAfter time.Duration
 
 	mu       sync.Mutex // guards the fields below and the state of every Job
 	jobs     map[string]*Job
@@ -329,8 +347,10 @@ func New(o Options) *Table {
 		expected:  o.IsExpectedDrop,
 		limit:     o.BackgroundLimit,
 		noBg:      o.DisableBackground,
-		jobs:      make(map[string]*Job),
-		counters:  make(map[Kind]int),
+		// A session without background work has no background job to watch.
+		stallAfter: stallDuration(o),
+		jobs:       make(map[string]*Job),
+		counters:   make(map[Kind]int),
 	}
 	if t.clock == nil {
 		t.clock = sandbox.SystemClock
@@ -364,7 +384,7 @@ func (t *Table) Start(spec StartSpec) (*Job, error) {
 		return nil, err
 	}
 	if !spec.Foreground {
-		t.armLimit(j, t.limit.of(spec.BackgroundLimit))
+		t.armBackground(j, t.limit.of(spec.BackgroundLimit))
 	}
 	return j, nil
 }
@@ -382,6 +402,104 @@ func (t *Table) armLimit(j *Job, d time.Duration) {
 		return
 	}
 	j.stopLimit = stop
+}
+
+// stallDuration is the silence limit of a table, zero when it is off.
+func stallDuration(o Options) time.Duration {
+	if o.DisableBackground || o.StallAfter <= 0 {
+		return 0
+	}
+	return o.StallAfter
+}
+
+const (
+	stallOff   int32 = iota // the job is not in the background
+	stallArmed              // one stall timer is armed or just fired
+	stallQuiet              // the notice was sent and no timer is armed
+)
+
+// armBackground starts the background clocks of a bash job that moved to the
+// background: the time limit and the stall timer. Zero limit arms no limit.
+func (t *Table) armBackground(j *Job, limit time.Duration) {
+	t.armLimit(j, limit)
+	// The state change makes the first call the only one that arms the timer.
+	if t.stallAfter <= 0 || j.kind != KindBash || !j.stall.CompareAndSwap(stallOff, stallArmed) {
+		return
+	}
+	t.mu.Lock()
+	j.bgSince = int64(t.clock.Now().Sub(j.started))
+	t.mu.Unlock()
+	t.armStall(j, t.stallAfter)
+}
+
+// noteOutput records the time of an output chunk. It runs under the process
+// write lock, so it takes no lock, keeps no chunk and never blocks. Only the
+// first chunk after a stall notice arms a timer.
+func (j *Job) noteOutput(sandbox.Stream, []byte) {
+	// Zero means no output, so a chunk at the very start is stored as 1.
+	j.lastOut.Store(max(int64(j.t.clock.Now().Sub(j.started)), 1))
+	if j.stall.Load() == stallQuiet && j.stall.CompareAndSwap(stallQuiet, stallArmed) {
+		j.t.armStall(j, j.t.stallAfter)
+	}
+}
+
+// armStall arms the one stall timer of j. Callers hold the stallArmed state,
+// so no second timer exists. The timer is stopped at once when j ended.
+func (t *Table) armStall(j *Job, d time.Duration) {
+	stop := t.clock.AfterFunc(d, func() { t.stallFire(j) })
+	j.stopStall.Store(&stop)
+	select {
+	case <-j.done:
+		stop()
+	default:
+	}
+}
+
+// stallFire runs when the stall timer of j is due. A timer is never reset for
+// each chunk, so it checks how long the job was silent and arms again for the
+// rest when output came in the meantime.
+func (t *Table) stallFire(j *Job) {
+	t.mu.Lock()
+	if j.finishedLocked() || j.killReason != "" || j.killedByModel || j.muted || t.closing {
+		t.mu.Unlock()
+		return
+	}
+	watched := j.waiters > 0
+	last := j.lastOut.Load()
+	remaining := t.stallRemainingLocked(j, last)
+	if watched || remaining > 0 {
+		t.mu.Unlock()
+		if watched {
+			// A job_output wait call watches the job: the silence counts again.
+			remaining = t.stallAfter
+		}
+		t.armStall(j, remaining)
+		return
+	}
+	// Output that arrives from here sees the quiet state and arms the timer.
+	j.stall.Store(stallQuiet)
+	if now := j.lastOut.Load(); now != last {
+		// The chunk came before the state change and saw no quiet state.
+		if j.stall.CompareAndSwap(stallQuiet, stallArmed) {
+			remaining = t.stallRemainingLocked(j, now)
+			t.mu.Unlock()
+			t.armStall(j, max(remaining, time.Nanosecond))
+		} else {
+			t.mu.Unlock()
+		}
+		return
+	}
+	text := j.stallText(t.stallAfter)
+	t.mu.Unlock()
+	t.deliver(j, "stall notice", text)
+}
+
+// stallRemainingLocked is the time that is left until j has been silent for
+// stallAfter, counted from the later of the move to the background and the
+// last chunk. It is zero or less when the silence is long enough.
+func (t *Table) stallRemainingLocked(j *Job, lastOut int64) time.Duration {
+	now := int64(t.clock.Now().Sub(j.started))
+	return t.stallAfter - time.Duration(now-max(j.bgSince, lastOut))
 }
 
 // Idle returns a channel that is closed while every job has handed off its
@@ -446,6 +564,8 @@ func (t *Table) launch(kind Kind, command, cwd string, mon *monitor, held bool, 
 	if mon != nil {
 		mon.bind(t, j)
 		spec.Observe = mon.observe
+	} else if kind == KindBash && t.stallAfter > 0 {
+		spec.Observe = j.noteOutput
 	}
 	// Starting a process is a fork and an exec; the lock keeps the cap and the
 	// ids exact without a reservation step.
@@ -569,6 +689,12 @@ func (t *Table) own(j *Job) {
 	close(j.done)
 	t.mu.Unlock()
 
+	// armStall stores its stop func before it checks done, so either this load
+	// sees the timer or armStall stops it: no timer outlives the job.
+	if stopStall := j.stopStall.Load(); stopStall != nil {
+		(*stopStall)()
+	}
+
 	if stop != nil {
 		stop()
 	}
@@ -642,7 +768,7 @@ func (t *Table) Wait(ctx context.Context, id string, budget time.Duration) WaitO
 			j.waiters--
 		}
 		t.mu.Unlock()
-		t.armLimit(j, t.limit.of(0))
+		t.armBackground(j, t.limit.of(0))
 		return Background
 	}
 	// A waiter that is registered when the job ends owns the report of the
@@ -676,7 +802,7 @@ func (t *Table) Wait(ctx context.Context, id string, budget time.Duration) WaitO
 			return Done
 		}
 		t.mu.Unlock()
-		t.armLimit(j, t.limit.of(0))
+		t.armBackground(j, t.limit.of(0))
 		return Background
 	case <-ctx.Done():
 		t.killJob(j, cancelReason, true)

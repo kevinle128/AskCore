@@ -24,6 +24,8 @@ func TestParseVectors(t *testing.T) {
 		{"V2 open key", `{"a`, obj{}},
 		{"V2 key", `{"a"`, obj{}},
 		{"V2 colon", `{"a":`, obj{}},
+		{"missing colon", `{"a" 12}`, obj{}},
+		{"missing colon after a pair", `{"a":1,"b" 2}`, obj{"a": 1.0}},
 		{"V3 number", `{"a":1`, obj{"a": 1.0}},
 		{"V4 comma", `{"a":1,`, obj{"a": 1.0}},
 		{"V5 open string", `{"a":"x`, obj{"a": "x"}},

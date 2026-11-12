@@ -152,6 +152,23 @@ func TestMonitorDeadlineCappedByBackgroundLimit(t *testing.T) {
 	}
 }
 
+func TestMonitorKeepsItsOwnDeadlineWhenLimitIsBashOnly(t *testing.T) {
+	r := newRig(t, withFakeClock(), withOptions(func(o *Options) {
+		o.BackgroundLimit = BackgroundLimit{Default: time.Second, Max: time.Hour, BashOnly: true}
+	}))
+	j := r.monitor(MonitorSpec{Command: "sleep 300", Persistent: true})
+	assert.Equal(t, 0, r.clock.Pending(), "a persistent monitor gets no deadline")
+	r.clock.Advance(time.Hour)
+	assert.Equal(t, StatusRunning, j.Status())
+
+	gate, open := r.gate("bash-end")
+	b := r.bash(gate)
+	r.clock.Advance(time.Second)
+	waitDone(t, b)
+	assert.Equal(t, limitReason, b.KillReason(), "the limit still stops a bash job")
+	open()
+}
+
 func TestDisabledBackgroundStopsAtBudgetAndRefusesBackground(t *testing.T) {
 	r := newRig(t, withFakeClock(), withOptions(func(o *Options) { o.DisableBackground = true }))
 	gate, open := r.gate("never")

@@ -8,6 +8,7 @@ The format follows [Keep a Changelog 1.1.0](https://keepachangelog.com/en/1.1.0/
 
 ### Added
 
+- **Background jobs:** A background `bash` job that prints no output for 5 minutes sends the model a stall notice and the job runs on. The TUI draws `still running · no output for 5 minutes`. `ASK_BG_STALL_MS` changes the time; `0` turns the notice off.
 - **CLI:** `--system-prompt <text|file>` replaces the default system prompt, and `--append-system-prompt <text|file>` adds text after it. A value that names an existing file is read as a file. All prompt text of the flags is at most 256 KiB.
 - **CLI:** `-t` / `--tools <names>` keeps only the named built-in tools, and `-nt` / `--no-tools` keeps none. A name that is not a built-in tool, or `-t` together with `-nt`, exits 1.
 - **CLI:** The TUI and `ask acp` sessions take the same four flags: the TUI sends them to the leader or the in-process agent for each session it opens. `ask acp` has no flags, but a client can send `_meta["ask.dev/session"]` with `session/new`. A leader of an older build ignores the flags, and the TUI then shows a warning.
@@ -67,10 +68,14 @@ The format follows [Keep a Changelog 1.1.0](https://keepachangelog.com/en/1.1.0/
 - **TUI:** `ctrl+p` changes the session model to the next model of the scope (or of `/model` when no scope is set), and `ctrl+shift+p` to the previous one. Terminal.app sends `ctrl+shift+p` as `ctrl+p`, so it has no back key.
 - **TUI:** `/model` shows the problems of `models.json` that it read, and marks the session model `not in models.json` or `changed` after an edit of the file. A prompt on such a model fails with `model configuration changed; choose the model again` and sends nothing.
 - **TUI:** The TUI sends `--model`, `--thinking`, and `--models` to its leader. A leader that does not apply them fails the session start with `the leader did not apply --model; restart it with this build`.
+- **TUI:** When you chose no thinking level, the footer row shows `◐ default`. `shift+tab` cycles `default`, `off`, ..., `max`, and then `default` again, so you can go back to no chosen level. When a leader of an older build refuses `default`, the status row tells you to restart it with `ask leader stop`.
+- **CLI:** `--thinking default`, the model pattern suffix `:default`, and the session option `thinking: "default"` choose no thinking level. They remove a level that a pattern or a scope entry chose.
 - **Protocol:** `session/new` takes `model`, `thinking`, and `models` in `_meta["ask.dev/session"]` and echoes the applied options in `_meta["ask.dev/appliedOptions"]`. `_ask/session/get_available_models` returns `scope` and `diagnostics`, `ACPModel` has `notInConfig`, and `_ask/session/set_model` takes `thinkingLevel`.
 
 ### Changed
 
+- **Protocol:** `_ask/session/state`, `_ask/session/set_model`, and `_ask/session/set_thinking` answer `default`, not `off`, when no thinking level is chosen, and `set_thinking` takes `default`. `ASK_REASONING_LEVEL`, the `thinkingLevel` of an assistant message (also in `ask -p --mode json`), and the `PrepareRequest` hook view say `default` too.
+- **Background jobs:** The leader, `ask acp`, and the in-process TUI now stop a `bash` background job after 2 hours (`ASK_BG_LIMIT_MS`; `0` turns the limit off), and the TUI draws a line when a limit stops a job. Monitors keep their own timeouts.
 - **CLI:** `--model <id>` without `--provider` now resolves the id across all providers; before, it used the `faux` provider. `--provider P --model <id>` works as before.
 - **TUI:** `/model` does not save the default model when the trusted project settings set another `defaultModel`, or when the user settings file is not safe or has a known key with a bad value. The file keeps its bytes, and the model switch still applies.
 - **Settings:** A `defaultModel` that is not a valid model id is now a settings problem with the path of the file. The session starts as with no default model.
@@ -91,19 +96,36 @@ The format follows [Keep a Changelog 1.1.0](https://keepachangelog.com/en/1.1.0/
 - **Providers:** `gpt-5.5` gets the thinking level `xhigh` and now sends the reasoning effort. `claude-sonnet-4-6` gets the thinking level `max`. On both models a saved `minimal` level becomes `off`.
 - **Providers:** On `grok-4.7`, thinking `off` now sends the lowest reasoning effort.
 - **Providers:** An Anthropic model without reasoning support always sends thinking as disabled.
-- **Providers:** In `ask -p`, `--thinking off` on a model that cannot turn thinking off (`grok-4.7`, `gpt-6-astra`, `gpt-6.1-sol`) sends no reasoning effort, so the vendor default applies. The `/model` selector and the thinking key of the TUI use the lowest effort instead.
+- **Providers:** A model change no longer turns thinking off when you chose no level: Ask still sends no level, and the provider path picks one. A chosen level still fits the new model. A level that a `PrepareRequest` hook sets now fits the model too, so its off sends the lowest effort on `grok-4.7` and `none` on `gpt-5.5`, not the vendor default.
+- **Providers:** A `PrepareRequest` hook that changes the model and sets no level now fits a chosen thinking level to the new model, like a model change. A chosen `off` sends the lowest effort on `grok-4.7`, not the vendor default. An empty level stays empty.
+- **CLI:** A requested start thinking level now fits the levels of the model in every mode, with the rule of the `/model` selector and the thinking key of the TUI. On a model that cannot turn thinking off (`grok-4.7`, `gpt-6-astra`, `gpt-6.1-sol`), `ask -p --thinking off` now sends the lowest reasoning effort, not the vendor default.
 - **Providers:** The ids `gpt-6-terra` and `gpt-6.1-luna` no longer show in `/model`, because the model metadata has no row for them.
 - **TUI:** The header row and its rule take one row from a box in the prompt pane slot. On a terminal of 14 rows, the browser sign-in box shows two rows of the address and not three.
-- **Dependencies:** `charm.land/fantasy` uses the fork commit `e894229`. A reasoning effort that the caller sets now reaches the request for model ids that the library does not know, such as `gpt-6` and `grok-4.7` ([upstream pull request](https://github.com/charmbracelet/fantasy/pull/443)).
+- **Dependencies:** `charm.land/fantasy` uses the fork commit `f9c19ad` (upstream `v0.46.0` and later). A reasoning effort that the caller sets now reaches the request for model ids that the library does not know, such as `gpt-6` and `grok-4.7`. On ids that are not OpenAI reasoning models, such as `grok-4.7`, the system prompt keeps the `system` role and a set temperature or top_p is sent, not dropped ([upstream pull request](https://github.com/charmbracelet/fantasy/pull/443)).
+- **Providers:** On the OpenAI wires, an `Authorization` header in `models.json` now wins over a static API key (saved key, `apiKey`, environment, or `--api-key`), and a saved OAuth sign-in wins over the header. The other credential headers are removed.
+- **Providers:** `supportsReasoningEffort` in the `compat` of an `openai-completions` provider is now read. It is true by default; `false` means Ask does not send `reasoning_effort`.
 
 ### Fixed
 
+- **Agent:** A `PrepareRequest` hook that sets `off` on a session with no chosen thinking level now forces the lowest level of the model for its run. Before, the hook saw `off` for no chosen level, so its change was lost.
 - **Providers:** Anthropic models now show their thinking. Ask asks for a summary of the thinking (`display: "summarized"`). From Claude Opus 4.7 on, the thinking text was empty without it.
 - **Providers:** The `gpt-6` models (astra, luna, sol, terra) now send their thinking level and show it in the `/model` selector. `gpt-6-astra` and `gpt-6.1-sol` refuse "none", so thinking off in the selector uses their lowest effort.
 - **Providers:** `grok-4.7` now sends its thinking level (`low`, `medium`, `high`, `xhigh`). It cannot turn thinking off, so the selector uses `low` for off.
 - **Settings:** Two `ask` processes that use a new `ASK_HOME` at the same time no longer fail with `file exists`.
+- **Auth:** A saved sign-in whose last refresh has no known result no longer shows `none` in `ask settings show` and no longer gives `unknown model`. Ask shows `saved:<method>` with the recovery commands (`ask auth login` or `ask auth logout`), and a request fails with `refresh result uncertain; sign in again`. Such a sign-in still blocks the environment key.
 - **Editors:** A prompt over ACP binds only to its own run. A run that a background notice started is no longer taken for the prompt.
 - **Tools:** Output lines of a `monitor` are escaped, so command output cannot close the `monitor-event` element or the `<system-reminder>` around it.
+- **Agent:** `Continue` with nothing to continue now runs the input that is already queued. Input that arrives later starts the next run and does not wait in an idle Agent.
+- **Context files:** A project `AGENTS.md` or `CLAUDE.md` whose link target is outside the project is left out with the reason `outside_project`. `ask settings show` names it.
+- **Tools:** `read` scans a text file above 4 MiB page by page, with the same page text. It refuses an image file above 20 MiB and an image of more than 16 million pixels.
+- **Tools:** `edit` fails when the file changes between its read and its write.
+- **Tools:** A string with an integer value, such as `"9007199254740993"`, keeps its exact value in a tool argument.
+- **Providers:** An empty reply, one with only empty blocks or only thinking, is no longer a success. A reply that stops for a content filter is exempt.
+- **Settings:** A trailing `/` of `baseUrl` in `models.json` is removed.
+- **CLI:** `ASK_CAPTURE` makes the folder with mode 0700 and writes the cassette with mode 0600. It also records when only `--model` selects the provider.
+- **CLI:** A bad `ASK_FAUX_TPS` no longer breaks a run with a real provider.
+- **CLI:** A signal during the setup of `ask connect` ends it with 130, 143, or 129. It exits 1 when the leader closes with a prompt in flight.
+- **CLI:** `ask leader status --json` and `ask leader list --json` exit 1 when the output cannot be written.
 
 ## [0.1.0] - 2026-10-15
 

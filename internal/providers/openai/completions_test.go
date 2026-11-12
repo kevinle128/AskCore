@@ -403,3 +403,55 @@ func TestCompletionsGoleakNormalAbortIdle(t *testing.T) {
 		assert.Less(t, time.Since(start), 2*time.Second)
 	})
 }
+
+func TestCompletionsReasoningEffortFollowsCompat(t *testing.T) {
+	for _, tc := range []struct {
+		name    string
+		support bool
+		want    bool
+	}{{"supported", true, true}, {"not supported", false, false}} {
+		t.Run(tc.name, func(t *testing.T) {
+			srv := newCaptureServer(t, completionsSSE())
+			m := completionsModel(srv.srv.URL)
+			m.ThinkingLevelMap = providers.ThinkingLevelMap{protocol.ThinkingHigh: strPtr("high")}
+			m.Compat = providers.CompletionsCompat{SupportsReasoningEffort: tc.support, SupportsFinishReason: true}
+			_, err := resultOf(t, completionsProvider(srv.srv, 0).Stream(context.Background(), m, helloReq(), providers.StreamOptions{Reasoning: protocol.ThinkingHigh}))
+			require.NoError(t, err)
+			body := srv.take(t).body(t)
+			if tc.want {
+				assert.Equal(t, "high", body["reasoning_effort"])
+			} else {
+				assert.NotContains(t, body, "reasoning_effort")
+			}
+		})
+	}
+}
+
+func TestTokenPlanRowSendsReasoningEffort(t *testing.T) {
+	assert.True(t, providers.TokenPlanCompletions().Compat.(providers.CompletionsCompat).SupportsReasoningEffort)
+}
+
+type closeRecorder struct {
+	io.Reader
+	closed bool
+}
+
+func (c *closeRecorder) Close() error { c.closed = true; return nil }
+
+func TestOmitStreamOptionsClosesTheOriginalBody(t *testing.T) {
+	raw := `{"stream":true,"stream_options":{"include_usage":true}}`
+	body := &closeRecorder{Reader: strings.NewReader(raw)}
+	req, err := http.NewRequest(http.MethodPost, "http://example.invalid/v1/chat/completions", body)
+	require.NoError(t, err)
+	req.GetBody = func() (io.ReadCloser, error) { return io.NopCloser(strings.NewReader(raw)), nil }
+	rt := omitStreamOptionsRT{base: rtFunc(func(r *http.Request) (*http.Response, error) {
+		got, err := io.ReadAll(r.Body)
+		require.NoError(t, err)
+		require.NotContains(t, string(got), "stream_options")
+		return &http.Response{StatusCode: 200, Body: io.NopCloser(strings.NewReader("")), Request: r}, nil
+	})}
+	resp, err := rt.RoundTrip(req)
+	require.NoError(t, err)
+	_ = resp.Body.Close()
+	require.True(t, body.closed)
+}

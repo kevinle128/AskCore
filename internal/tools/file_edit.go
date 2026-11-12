@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"io"
 	"os"
 	"slices"
 	"strings"
@@ -42,6 +43,9 @@ var utf8BOM = []byte{0xEF, 0xBB, 0xBF}
 // session read or wrote it, and it counts identical no-op calls.
 type Edit struct {
 	fs *FileState
+	// beforeCommit runs just before the final check of a write. Tests set it
+	// to change the file at that moment; it is nil in production.
+	beforeCommit func(path string)
 
 	mu    sync.Mutex
 	noops map[string]noopCount // by file path
@@ -161,6 +165,25 @@ func parseEditList(data []byte) (json.RawMessage, bool) {
 	return nil, false
 }
 
+// readOpenFile reads path through one open file and returns the stat of that
+// same file.
+func readOpenFile(path string) ([]byte, os.FileInfo, error) {
+	f, err := os.Open(path)
+	if err != nil {
+		return nil, nil, err
+	}
+	defer func() { _ = f.Close() }() // read-only file
+	info, err := f.Stat()
+	if err != nil {
+		return nil, nil, err
+	}
+	data, err := io.ReadAll(f)
+	if err != nil {
+		return nil, nil, err
+	}
+	return data, info, nil
+}
+
 func (e *Edit) Execute(ctx context.Context, tc Context, args json.RawMessage) (protocol.ToolExecutionResult, error) {
 	if err := ctx.Err(); err != nil {
 		return protocol.ToolExecutionResult{}, err
@@ -196,7 +219,9 @@ func (e *Edit) Execute(ctx context.Context, tc Context, args json.RawMessage) (p
 		}
 		return protocol.ToolExecutionResult{}, fmt.Errorf("edit: %w", err)
 	}
-	data, err := os.ReadFile(abs)
+	// Stat the open file and read from it, so the stat and the bytes belong to
+	// the same file. The stat is the baseline for the check before the rename.
+	data, readInfo, err := readOpenFile(abs)
 	if err != nil {
 		return protocol.ToolExecutionResult{}, failf("Could not edit file: %s. %s.", in.Path, reason(err))
 	}
@@ -228,7 +253,28 @@ func (e *Edit) Execute(ctx context.Context, tc Context, args json.RawMessage) (p
 	if err := ctx.Err(); err != nil {
 		return protocol.ToolExecutionResult{}, err
 	}
-	if err := WriteFileAtomic(abs, []byte(out), 0o644); err != nil {
+	// PathLock stops other edits in this process only. A write by another
+	// process between the read and the rename would be lost, so the file is
+	// checked once more before the rename.
+	unchanged := func() error {
+		if e.beforeCommit != nil {
+			e.beforeCommit(abs)
+		}
+		now, err := os.Stat(abs)
+		if err != nil {
+			return fmt.Errorf("%w: %s: %s", ErrFileChanged, abs, reason(err))
+		}
+		// Size and mtime alone miss a copy that keeps both (cp -p, rsync -t,
+		// coarse timestamps); a replacement by rename shows as another file.
+		if !os.SameFile(readInfo, now) || now.Size() != readInfo.Size() || now.ModTime().UnixNano() != readInfo.ModTime().UnixNano() {
+			return fmt.Errorf("%w: %s", ErrFileChanged, abs)
+		}
+		return nil
+	}
+	if err := writeFileAtomicChecked(abs, []byte(out), 0o644, unchanged); err != nil {
+		if errors.Is(err, ErrFileChanged) {
+			return protocol.ToolExecutionResult{}, failf("%s changed on disk since you last read it. Read it again before you edit.", in.Path)
+		}
 		return protocol.ToolExecutionResult{}, err
 	}
 	if st, err := os.Stat(abs); err == nil {

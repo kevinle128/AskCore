@@ -89,7 +89,7 @@ func ServeStdio(ctx context.Context, cfg StdioConfig) StdioExit {
 			_ = c.Close()
 		}
 	}
-	pend := &pendingResponses{ids: map[string]struct{}{}}
+	pend := &pendingResponses{ids: map[string]int{}}
 	reader := &recordReader{r: NewLineLimitReader(cfg.In, maxFrame), ignore: &inClosed, ready: make(chan struct{}), pend: pend, limit: maxFrame}
 	out := &gatedOutput{a: a, closed: make(chan struct{})}
 	if c, ok := cfg.Out.(io.Closer); ok {
@@ -275,7 +275,7 @@ func (t *tracked) HandleExtensionMethod(ctx context.Context, method string, raw 
 // returns, so a handler count is not enough to know that the response left.
 type pendingResponses struct {
 	mu     sync.Mutex
-	ids    map[string]struct{}
+	ids    map[string]int
 	closed bool
 	idle   chan struct{}
 }
@@ -300,7 +300,7 @@ func (p *pendingResponses) request(line []byte) {
 	p.mu.Lock()
 	defer p.mu.Unlock()
 	if !p.closed {
-		p.ids[key] = struct{}{}
+		p.ids[key]++
 	}
 }
 
@@ -322,8 +322,13 @@ func (p *pendingResponses) written(frame []byte) {
 	key := idKey(head.ID)
 	p.mu.Lock()
 	defer p.mu.Unlock()
-	if _, ok := p.ids[key]; ok {
-		delete(p.ids, key)
+	if n, ok := p.ids[key]; ok {
+		// Two requests may share an ID; the barrier opens after both responses.
+		if n <= 1 {
+			delete(p.ids, key)
+		} else {
+			p.ids[key] = n - 1
+		}
 		p.signalLocked()
 	}
 }

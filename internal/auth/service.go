@@ -190,7 +190,8 @@ func (s *Service) ResolveWith(ctx context.Context, req ResolveRequest) (provider
 }
 
 // KeySource names the source that ResolveWith would use for req. It never
-// runs a command, never refreshes a token and never returns a secret.
+// runs a command, never refreshes a token and never returns a secret. With
+// ErrRecovery, the source names the saved record that waits for recovery.
 func (s *Service) KeySource(ctx context.Context, req ResolveRequest) (Source, error) {
 	src, _, err := s.selectSource(ctx, req, true)
 	return src, err
@@ -285,7 +286,9 @@ func (s *Service) configSource(ctx context.Context, m providers.Model, ck *Confi
 func (s *Service) savedSource(ctx context.Context, m providers.Model, c settings.Credential, dryRun bool) (Source, providers.AuthSnapshot, error) {
 	src := Source{Kind: SourceSaved, Name: "saved:" + c.Method}
 	if c.RefreshState != nil {
-		return Source{}, providers.AuthSnapshot{}, ErrRecovery
+		// The source is named so that a dry run can tell which record blocks
+		// the request. The snapshot stays empty.
+		return src, providers.AuthSnapshot{}, ErrRecovery
 	}
 	if c.Method == "api-key" {
 		snap, err := s.keySnapshot(m, c.APIKey, string(SourceSaved))

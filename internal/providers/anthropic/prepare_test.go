@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
+	"strings"
 	"testing"
 
 	"github.com/stretchr/testify/assert"
@@ -164,4 +165,24 @@ func TestPrepareUnknownLimitsUseTheFamilyDefault(t *testing.T) {
 	pr, body := prepareAndEncode(t, m, providers.StreamOptions{})
 	assert.Equal(t, 128_000, pr.MaxTokens)
 	assert.EqualValues(t, 128_000, body["max_tokens"])
+}
+
+func TestPrepareMaxTokensEstimateUsesBytesNotRunes(t *testing.T) {
+	m := Model()
+	m.ContextWindow = 100_000
+	m.MaxTokens = 90_000
+	prompt := func(text string) providers.TranscriptRequest {
+		return providers.NormalizeRequest(providers.Request{Messages: []protocol.Message{
+			protocol.UserMessage{Content: []protocol.UserBlock{protocol.Text{Text: text}}},
+		}})
+	}
+	// "a" x 120000 and the three-byte rune x 40000 have the same byte size.
+	ascii, err := New().(providers.Preparer).Prepare(m, prompt(strings.Repeat("a", 120_000)), providers.StreamOptions{})
+	require.NoError(t, err)
+	cjk, err := New().(providers.Preparer).Prepare(m, prompt(strings.Repeat("中", 40_000)), providers.StreamOptions{})
+	require.NoError(t, err)
+	assert.Equal(t, ascii.MaxTokens, cjk.MaxTokens, "equal byte size gives equal room")
+	// Rune count / 4 would leave about 85900; bytes / 4 plus the margin leaves about 62800.
+	assert.Less(t, cjk.MaxTokens, 65_000)
+	assert.Greater(t, cjk.MaxTokens, 60_000)
 }

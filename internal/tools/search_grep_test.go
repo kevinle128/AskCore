@@ -176,6 +176,35 @@ func waitForFile(path string) {
 	}
 }
 
+// deadlineAtFile returns a search deadline that fires when path has content,
+// not after the timeout. The fake program writes path after its output, so
+// the search stops only after the output is in the pipe, however late the
+// program starts on a loaded machine. Like a timeout, it ends the context
+// with the cause context.DeadlineExceeded. The wait has no time limit of its
+// own: the program writes path once it runs, and the search context ends the
+// wait when the program exits first.
+func deadlineAtFile(path string) searchDeadline {
+	return func(ctx context.Context, _ time.Duration) (context.Context, context.CancelFunc) {
+		sctx, cancel := context.WithCancelCause(ctx)
+		go func() {
+			tick := time.NewTicker(5 * time.Millisecond)
+			defer tick.Stop()
+			for {
+				if st, err := os.Stat(path); err == nil && st.Size() > 0 {
+					cancel(context.DeadlineExceeded)
+					return
+				}
+				select {
+				case <-sctx.Done():
+					return
+				case <-tick.C:
+				}
+			}
+		}()
+		return sctx, func() { cancel(context.Canceled) }
+	}
+}
+
 // assertGroupGone reads the process group id the fake program wrote and
 // checks that no process of the group is left.
 func assertGroupGone(t *testing.T, pidFile string) {
@@ -432,12 +461,18 @@ func TestGrepReportsBadRegexAndMissingPath(t *testing.T) {
 func TestGrepTimeoutReturnsPartialMatches(t *testing.T) {
 	root := t.TempDir()
 	pidFile := filepath.Join(root, "pid")
+	written := filepath.Join(root, "written")
 	body := fmt.Sprintf(`echo $$ > %s
 printf '{"type":"match","data":{"path":{"text":"%s"},"lines":{"text":"hit\\n"},"line_number":1}}\n'
+echo done > %s
 sleep 60
-`, pidFile, filepath.Join(root, "f.txt"))
+`, pidFile, filepath.Join(root, "f.txt"), written)
 	rg := writeFakeBinary(t, "rg", body)
-	g := Grep{lookPath: fixedLookPath(map[string]string{"rg": rg}), timeout: 1500 * time.Millisecond}
+	g := Grep{
+		lookPath: fixedLookPath(map[string]string{"rg": rg}),
+		timeout:  1500 * time.Millisecond,
+		deadline: deadlineAtFile(written),
+	}
 	text, _ := runGrep(t, g, root, map[string]any{"pattern": "hit"})
 	if want := "f.txt:1: hit\n\n[search stopped after 1.5 s]"; text != want {
 		t.Fatalf("text = %q, want %q", text, want)

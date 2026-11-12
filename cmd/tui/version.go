@@ -12,6 +12,7 @@ import (
 	"sync"
 	"time"
 
+	"AskCore/internal/acp"
 	"AskCore/pkg/protocol"
 )
 
@@ -25,9 +26,6 @@ Usage:
 commitTime (a binary with a VCS stamp) or devStamp (a binary without one).
 A client reads it before it starts "ask leader" from this binary.
 `
-
-// acpWireVersion is the ACP wire version that ask acp and ask leader speak.
-const acpWireVersion = 1
 
 // buildFacts holds what the binary says about its VCS stamp.
 type buildFacts struct {
@@ -141,7 +139,7 @@ func runVersion(argv []string, stdout, stderr io.Writer) int {
 		return 0
 	}
 	commit, dev := buildStamps()
-	data, err := json.Marshal(protocol.VersionInfo{Name: "ask", Build: buildIdentity(), LeaderProtocol: protocol.LeaderProtocolVersion, ACPVersion: acpWireVersion, CommitTime: commit, DevStamp: dev})
+	data, err := json.Marshal(protocol.VersionInfo{Name: "ask", Build: buildIdentity(), LeaderProtocol: protocol.LeaderProtocolVersion, ACPVersion: acp.WireVersion, CommitTime: commit, DevStamp: dev})
 	if err != nil {
 		report(stderr, "Error:", err)
 		return 1

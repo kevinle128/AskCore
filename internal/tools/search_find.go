@@ -29,6 +29,9 @@ type Find struct {
 	lookPath func(string) (string, error)
 	// timeout bounds one search. Zero means the default.
 	timeout time.Duration
+	// deadline makes the context that ends the search after timeout. Nil
+	// means context.WithTimeout.
+	deadline searchDeadline
 }
 
 var _ ConcurrencySafe = Find{}
@@ -95,7 +98,7 @@ func (f Find) Execute(ctx context.Context, tc Context, args json.RawMessage) (pr
 	if timeout <= 0 {
 		timeout = findTimeout
 	}
-	sctx, cancel := context.WithTimeout(ctx, timeout)
+	sctx, cancel := f.deadline.with(ctx, timeout)
 	defer cancel()
 
 	// Each source returns at most limit+1 paths: the extra one tells that the

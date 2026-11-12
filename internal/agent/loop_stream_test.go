@@ -84,7 +84,7 @@ func TestStreamThinkingLevelStamp(t *testing.T) {
 	require.NoError(t, err)
 	level := lastAssistant(t, msgs).ThinkingLevel
 	require.NotNil(t, level)
-	assert.Equal(t, protocol.ThinkingOff, *level)
+	assert.Equal(t, protocol.ThinkingDefault, *level, "no chosen level is stamped default")
 
 	cfg := config(p, m, nil)
 	cfg.Options.Reasoning = protocol.ThinkingLow

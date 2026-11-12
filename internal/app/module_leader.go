@@ -95,6 +95,7 @@ func NewLeaderRuntime(p LeaderParams) (*LeaderRuntime, error) {
 	a, err = acp.NewAdapter(context.Background(), cfg)
 	if err != nil {
 		setup.Close()
+		_ = acpRT.Cleanup(context.Background())
 		return nil, err
 	}
 
@@ -121,6 +122,7 @@ func NewLeaderRuntime(p LeaderParams) (*LeaderRuntime, error) {
 	if err != nil {
 		_ = a.Close()
 		setup.Close()
+		_ = acpRT.Cleanup(context.Background())
 		return nil, err
 	}
 	// Sign-ins end first: each one holds a refresh slot that the drain waits for.

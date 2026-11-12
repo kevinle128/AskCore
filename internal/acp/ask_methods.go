@@ -327,10 +327,12 @@ func (a *Adapter) setModel(ctx context.Context, raw json.RawMessage) (any, error
 	return res, nil
 }
 
+// validThinking reports whether l is a thinking level word. default removes
+// the chosen level.
 func validThinking(l protocol.ThinkingLevel) bool {
 	switch l {
-	case protocol.ThinkingOff, protocol.ThinkingMinimal, protocol.ThinkingLow, protocol.ThinkingMedium,
-		protocol.ThinkingHigh, protocol.ThinkingXHigh, protocol.ThinkingMax:
+	case protocol.ThinkingDefault, protocol.ThinkingOff, protocol.ThinkingMinimal, protocol.ThinkingLow,
+		protocol.ThinkingMedium, protocol.ThinkingHigh, protocol.ThinkingXHigh, protocol.ThinkingMax:
 		return true
 	}
 	return false

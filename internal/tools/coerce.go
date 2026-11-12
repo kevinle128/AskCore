@@ -2,6 +2,7 @@ package tools
 
 import (
 	"encoding/json"
+	"errors"
 	"math"
 	"slices"
 	"strconv"
@@ -193,6 +194,15 @@ func coercePrimitive(v any, typ string) (any, bool) {
 			}
 			return json.Number("0"), true
 		case string:
+			// An integer string keeps its exact value: a float has 53 bits.
+			n, ierr := strconv.ParseInt(strings.TrimSpace(x), 10, 64)
+			if ierr == nil {
+				return json.Number(strconv.FormatInt(n, 10)), true
+			}
+			if typ == "integer" && errors.Is(ierr, strconv.ErrRange) {
+				// Rounding it to a float would change the value.
+				return v, false
+			}
 			f, ok := parseNumber(x)
 			if ok && (typ == "number" || f == math.Trunc(f)) {
 				return formatNumber(f), true

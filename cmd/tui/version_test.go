@@ -10,6 +10,7 @@ import (
 	"testing"
 	"time"
 
+	"AskCore/internal/acp"
 	"AskCore/internal/leader"
 	"AskCore/pkg/protocol"
 
@@ -24,7 +25,7 @@ func TestVersionJSON(t *testing.T) {
 	require.NoError(t, json.Unmarshal(out.Bytes(), &info))
 	require.Equal(t, "ask", info.Name)
 	require.Equal(t, protocol.LeaderProtocolVersion, info.LeaderProtocol)
-	require.Equal(t, 1, info.ACPVersion)
+	require.Equal(t, acp.WireVersion, info.ACPVersion)
 	require.NotEmpty(t, info.Build)
 	require.Equal(t, buildIdentity(), info.Build)
 	require.Equal(t, 1, bytes.Count(out.Bytes(), []byte("\n")), "one JSON object on one line")

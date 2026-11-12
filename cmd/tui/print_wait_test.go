@@ -179,11 +179,73 @@ func TestParseMaxTurns(t *testing.T) {
 	}
 }
 
-// A session of the TUI, the leader or ask acp has no background limit.
-func TestNativeSessionHasNoBackgroundLimit(t *testing.T) {
-	_, jt := newTestSession(t, tokenPlanOptions(&scriptedModel{}), nativeEnv(nil))
-	j, err := jt.Start(jobs.StartSpec{Command: "sleep 300", Cwd: t.TempDir(), BackgroundLimit: time.Millisecond})
-	require.NoError(t, err)
-	time.Sleep(300 * time.Millisecond)
-	assert.Equal(t, jobs.StatusRunning, j.Status(), "no limit stops it")
+func TestEnvMillis(t *testing.T) {
+	t.Parallel()
+	const name, def = "X_MS", 7 * time.Second
+	for _, tc := range []struct {
+		name, val string
+		want      time.Duration
+	}{
+		{"unset", "", def},
+		{"valid", "250", 250 * time.Millisecond},
+		{"zero", "0", 0},
+		{"negative", "-5", def},
+		{"text", "soon", def},
+	} {
+		got := envMillis(func(string) string { return tc.val }, name, def)
+		assert.Equal(t, tc.want, got, tc.name)
+	}
+}
+
+// The leader, ask acp and the in-process TUI build their agent from
+// sessionOptions, so its limit is the one a long session gets.
+func TestSessionOptionsSetInteractiveLimit(t *testing.T) {
+	t.Parallel()
+	for _, tc := range []struct {
+		name string
+		env  map[string]string
+		want jobs.BackgroundLimit
+	}{
+		{"default", nil, jobs.BackgroundLimit{Default: 2 * time.Hour, Max: 2 * time.Hour, BashOnly: true}},
+		{"off", map[string]string{bgLimitEnv: "0"}, jobs.BackgroundLimit{}},
+		{"raised", map[string]string{bgLimitEnv: "10800000"}, jobs.BackgroundLimit{Default: 3 * time.Hour, Max: 3 * time.Hour, BashOnly: true}},
+		{"lowered", map[string]string{bgLimitEnv: "60000"}, jobs.BackgroundLimit{Default: time.Minute, Max: 2 * time.Hour, BashOnly: true}},
+		{"invalid", map[string]string{bgLimitEnv: "-1"}, jobs.BackgroundLimit{Default: 2 * time.Hour, Max: 2 * time.Hour, BashOnly: true}},
+	} {
+		o := sessionOptions(runDependencies{getenv: nativeEnv(tc.env)})
+		assert.Equal(t, tc.want, o.bgLimit, tc.name)
+	}
+}
+
+// A silent background command wakes the model once, before it ends.
+func TestPrintStallNoticeReachesModel(t *testing.T) {
+	t.Parallel()
+	m := scriptModel(t,
+		call(t, "bash", map[string]any{"command": "sleep 1; echo late", "run_in_background": true}),
+		say("first answer"),
+		say("saw the stall"),
+		say("saw the end"),
+	)
+
+	r := runPrint(t, m, printSpec{env: map[string]string{bgStallEnv: "200"}})
+
+	r.requireOK(t)
+	require.Equal(t, 4, m.requestCount())
+	assert.Contains(t, m.userText(2), "printed no output for 200ms")
+	assert.Contains(t, m.userText(3), "[status: completed, exit code: 0]")
+}
+
+func TestPrintStallOffWithZero(t *testing.T) {
+	t.Parallel()
+	m := scriptModel(t,
+		call(t, "bash", map[string]any{"command": "sleep 1; echo late", "run_in_background": true}),
+		say("first answer"),
+		say("saw the end"),
+	)
+
+	r := runPrint(t, m, printSpec{env: map[string]string{bgStallEnv: "0"}})
+
+	assert.Equal(t, "first answer\nsaw the end\n", r.requireOK(t))
+	require.Equal(t, 3, m.requestCount())
+	assert.NotContains(t, m.userText(2), "printed no output")
 }

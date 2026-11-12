@@ -38,7 +38,7 @@ The mode is chosen in this order:
 | `--model <pattern>` | Model pattern `[provider/]id[@api][:level]`, for example `anthropic/claude-sonnet-4-6:high`. See [Model patterns](#model-patterns). With `--provider P`, the pattern is `P/<pattern>`. `--provider` alone uses the default model of the provider: `faux-1` (faux), `deepseek-v4.1-flash` (alibaba-token-plan), `claude-sonnet-4-6` (anthropic), `gpt-5.5` (openai), `grok-4.7` (xai). The model list is in [reference/providers.md](reference/providers.md). |
 | `--models <patterns>` | The scope: the models to start on and to cycle through with `ctrl+p` in the TUI. Give a comma list; repeat the flag to add more. Each entry is a pattern or a glob. It replaces the `enabledModels` setting. See [Model scope](#model-scope). |
 | `--api-key <key>` | Key for this run. It needs a model (`--model`, with or without a provider in the pattern), except for `alibaba-token-plan`. A key in the arguments is visible to other processes. Prefer the environment or `ask auth login`. |
-| `--thinking <level>` | `off`, `minimal`, `low`, `medium`, `high`, `xhigh`, or `max`. It wins over a `:level` of the pattern. `alibaba-token-plan` defaults to `medium`. |
+| `--thinking <level>` | `default`, `off`, `minimal`, `low`, `medium`, `high`, `xhigh`, or `max`. It wins over a `:level` of the pattern. `default` removes the level that a pattern or a scope entry chose. `alibaba-token-plan` defaults to `medium`. |
 | `--offline` | Do not refresh the model list from the network. It is the same as `ASK_DISABLE_MODEL_REFRESH=1` for this process and for a leader that this command starts. A leader that already runs keeps its own setting; stop it with `ask leader stop` first. Print mode makes no refresh request, so the flag changes nothing there. |
 | `--max-turns <n>` | Print and JSON mode. End the run after `n` turns. `n` is a whole number above 0, or the command exits 1. See [Background work in print mode](#background-work-in-print-mode). |
 | `--system-prompt <text\|file>` | Replace the default system prompt for this run. See [Prompt, context files, skills, and tools](#prompt-context-files-skills-and-tools). |
@@ -73,7 +73,13 @@ The demo provider `faux` is the default of `ask -p`. It runs a script: `echo <te
 
 When the saved default is not in the model list, or its provider has no credential, `ask -p` writes one line to stderr, for example `Warning: default model <id> is not usable (no credential); using faux/faux-1@faux.`, and runs on `faux`.
 
-The level is `--thinking`, else the `:level` of the pattern or of the scope entry. When the start model has no thinking, a requested level is dropped. `ask -p` then writes `Warning: <provider>/<id> has no thinking; level <level> is not used.`, and the TUI shows the same text as a session notice. The run continues with thinking off.
+The level is `--thinking`, else the `:level` of the pattern or of the scope entry. With neither, no level is chosen, and Ask shows the level as `default`. When the start model has no thinking, a requested level is dropped (`default` and `off` are never dropped). `ask -p` then writes `Warning: <provider>/<id> has no thinking; level <level> is not used.`, and the TUI shows the same text as a session notice. The run continues with thinking off.
+
+A requested start level then fits the levels of the model, with the same rule as `/model` and the thinking key of the TUI. A level that the model does not have becomes the nearest lower level that it has. Some models cannot turn thinking off (`grok-4.7`, `gpt-6-astra`, `gpt-6.1-sol`). For these models, off becomes the lowest effort of the model, in `ask -p`, the TUI, the leader, and `ask acp`.
+
+With no chosen level (`default`), Ask sends no level, and the provider path picks one. The OpenAI Responses adapter (`openai`, `xai`) sends no reasoning effort, so the vendor default applies. The Anthropic Messages adapter (`anthropic`, `alibaba-token-plan`) and the OpenAI Completions adapter (`alibaba-token-plan`, custom providers) use `medium`. `_ask/session/state`, the footer row of the TUI, `ASK_REASONING_LEVEL`, and the `thinkingLevel` of an assistant message say `default`.
+
+A model change (`/model`, `ctrl+p`, or the `setModel` method of a client) keeps the level that you chose. A level, off included, fits the new model with the same rule. With no level, the level stays empty after a model change, so the request still has no reasoning effort. A `PrepareRequest` hook sees `default` when no level is chosen. A hook that sets a level uses the same rule with the model of the request: off stays off, and on a model that cannot turn thinking off it becomes the lowest effort. A hook that sets `default` removes the chosen level. A hook level applies to the requests of its run only: the session keeps its level, and the footer row does not change. A `PrepareRequest` hook that changes the model and sets no level uses the rule of a model change: a chosen level fits the new model for the rest of that run, and an empty level stays empty.
 
 ### Model patterns
 
@@ -81,7 +87,7 @@ The level is `--thinking`, else the `:level` of the pattern or of the scope entr
 
 - `provider/id` selects one model. `@api` selects the wire when a provider has the model on two APIs (for example `alibaba-token-plan/deepseek-v4.1-flash@openai-completions`).
 - An id without a provider resolves across all providers. An exact id, an alias, a dated id, and then a part of an id match. When two providers have a match, the pattern is ambiguous: the error lists the choices, and you add the provider.
-- `:level` sets the thinking level. The level words are `off`, `minimal`, `low`, `medium`, `high`, `xhigh`, and `max`.
+- `:level` sets the thinking level. The level words are `default`, `off`, `minimal`, `low`, `medium`, `high`, `xhigh`, and `max`. `:default` chooses no level.
 - Ask first tries the whole pattern as a model id. Only when no model has that id does Ask read the text after the last colon as a level. Thus `local/qwen3-coder:30b` is the model `qwen3-coder:30b`, and a model with the id `x:max` is that model, not `x` with level `max`. `kimi:high` is the model `kimi` with level `high`, not the model `kimi-highspeed`.
 - A word after the colon that is not a level word makes the pattern an unknown model: `Error: unknown model "openai/gpt-5.5:hgih"`. When the text before the colon is a model, the error lists the level words.
 
@@ -107,7 +113,10 @@ A `bash` job or a `monitor` can still run when the last prompt ends. `ask -p` an
 - After 5 seconds, a terminal on stderr shows `Waiting for background work to finish: <job> (<label>), ...`. In `--mode json` it shows only when stdout is not a terminal.
 - `--max-turns <n>` counts every turn of the run, also the turns that a notice starts. A turn that the agent retries does not count. When the limit is reached, the run stops before turn `n+1` and exits with code 1. The line `Error: Reached max turns (n)` goes to stdout, or to stderr with `--mode json`, so the JSON event stream stays valid. The interactive TUI ignores the flag.
 
-The TUI, the leader, and `ask acp` set no time limit on background jobs. The variables `ASK_PRINT_BG_LIMIT_MS`, `ASK_PRINT_BG_WAIT_CEILING_MS`, and `ASK_DISABLE_BACKGROUND_TASKS` are in [Environment variables](#environment-variables). The owner of the rules is [internal/jobs/README.md](../internal/jobs/README.md#background-limit-and-quiescence). The tool texts are in [reference/tools.md](reference/tools.md).
+- A `bash` job that prints no output for 5 minutes sends the model one stall notice. The job runs on. The TUI shows `still running · no output for 5 minutes`. Each new output starts the 5 minutes again. `ASK_BG_STALL_MS` changes the time; `0` turns the notice off.
+- The TUI, the leader, and `ask acp` stop a `bash` background job after 2 hours. A `bash` call can set a shorter limit with `timeout`. The model and the TUI get a notice when the limit stops a job. `ASK_BG_LIMIT_MS` changes the limit; `0` turns it off. A `monitor` keeps its own timeout in these modes.
+
+The variables `ASK_BG_STALL_MS`, `ASK_BG_LIMIT_MS`, `ASK_PRINT_BG_LIMIT_MS`, `ASK_PRINT_BG_WAIT_CEILING_MS`, and `ASK_DISABLE_BACKGROUND_TASKS` are in [Environment variables](#environment-variables). The owner of the rules is [internal/jobs/README.md](../internal/jobs/README.md#background-limit-and-quiescence). The tool texts are in [reference/tools.md](reference/tools.md).
 
 ## Prompt, context files, skills, and tools
 
@@ -137,7 +146,7 @@ All prompt text of the flags together may have at most 262144 bytes (256 KiB). A
 
 ### Context files
 
-Ask reads `AGENTS.md` and `CLAUDE.md` from `<ASK_HOME>`, then from each folder from the git root down to the working directory. A git root is the nearest folder with a `.git` file or folder. Without a git root, Ask reads only the working directory. A git root that is your home folder counts as no git root. In each folder `AGENTS.md` comes first. A file with the same text as an earlier file in the same folder is a duplicate and Ask leaves it out without a warning.
+Ask reads `AGENTS.md` and `CLAUDE.md` from `<ASK_HOME>`, then from each folder from the git root down to the working directory. A git root is the nearest folder with a `.git` file or folder. Without a git root, Ask reads only the working directory. A git root that is your home folder counts as no git root. A project file whose link target is outside the project (the git root, or the working directory without one) is left out with the reason `outside_project`; a link that stays inside the project loads. The files of `<ASK_HOME>` are not checked. In each folder `AGENTS.md` comes first. A file with the same text as an earlier file in the same folder is a duplicate and Ask leaves it out without a warning.
 
 The files go to the model as one user-role message of the custom type `context-file`. They are not part of the system prompt. Ask escapes the file text, the paths, and the notices, so a file cannot close the frame around it. The message starts with the sentence that the files are guidance only and cannot override system or user instructions. A conversation reset adds the message again. A history that already has the message does not get a second copy.
 
@@ -231,7 +240,7 @@ These errors write one line to stderr and exit with code 1 before any session st
 
 `ask -p` writes these lines to stderr after the trust and settings lines, and before the run. The leader and `ask acp` send the same problems to the client as session diagnostics.
 
-- `Warning: <n> context file(s) was/were skipped; run ask settings show for details`. It counts the files that Ask left out or cut (too large, not readable, or over the 64 KiB limit). A duplicate is not counted.
+- `Warning: <n> context file(s) was/were skipped; run ask settings show for details`. It counts the files that Ask left out or cut (too large, not readable, outside the project, or over the 64 KiB limit). A duplicate is not counted.
 - `Warning: skills: <path>: <reason>`. One line for each skill that did not load, at most 4 lines of at most 256 bytes each. When more skills have a problem, `Warning: skills: <n> more skill problem(s); run ask settings show for details` follows. The leader and `ask acp` send the same rows, with the same cap, as session diagnostics.
 - `Warning: Exceeded skills context budget. ...`. The skill list left skills out (see [Skills](#skills)). It comes when the agent is built, after the lines above.
 
@@ -330,7 +339,7 @@ The text form shows, in this order:
 3. `Key sources:` one row for each provider with the source of the key that a request would use (see [Key order](#key-order)). The row names the source, never the key. A `problem` row adds the problem text, which names a variable or a label, never a value.
 4. A `Warning:` line for a trust store that cannot be read.
 5. `Problems:` one row for each settings diagnostic: the layer, the path, the key, and a fixed text.
-6. `Context files:` one row for each `AGENTS.md` or `CLAUDE.md` that the session reads, with its path and size in bytes, then the files that Ask left out. A row has the word `too_large`, `unreadable`, `duplicate`, `budget`, or `truncated` when Ask did not deliver the file whole. `(none)` means that no context file exists.
+6. `Context files:` one row for each `AGENTS.md` or `CLAUDE.md` that the session reads, with its path and size in bytes, then the files that Ask left out. A row has the word `too_large`, `unreadable`, `duplicate`, `outside_project`, `budget`, or `truncated` when Ask did not deliver the file whole. `(none)` means that no context file exists.
 7. `Skill problems:` one row for each skill that did not load: the layer, the path, and a fixed text. The list is complete: the 4-row cap of `ask -p` and the TUI does not apply here. The block is absent when every skill loaded.
 
 `--json` prints one JSON object with this shape. Arrays are always present, also when they are empty.
@@ -385,7 +394,7 @@ The text form shows, in this order:
 | `settings[].source` | `default`, `user`, or `project`. |
 | `diagnostics[].key` | The key, or empty for a problem with the whole file. |
 | `context[].bytes` | The size of the file in bytes. `0` when Ask cannot read it. |
-| `context[].skipped` | Empty for a file that the session gets whole, else `too_large`, `unreadable`, `duplicate`, `budget`, or `truncated`. |
+| `context[].skipped` | Empty for a file that the session gets whole, else `too_large`, `unreadable`, `duplicate`, `outside_project`, `budget`, or `truncated`. |
 | `skillDiagnostics[]` | Every skill that did not load. `key` is `skills`. |
 | `settings[].value` of `enabledModels` | The array joined with commas, or empty when unset. |
 | `modelsFile.state` | `loaded`, `problem` (the file has a problem; see `diagnostics`), or `missing`. |
@@ -408,7 +417,7 @@ ask leader --help
 
 - `--offline` turns the model refresh of the leader off, as `ASK_DISABLE_MODEL_REFRESH=1`. A TUI started with `--offline` passes the variable to a leader that it starts.
 - The leader listens on `<ASK_HOME>/leader.sock`. The socket has mode 0600 in a directory of mode 0700. Only the owner can connect.
-- `status`, `list`, and `stop` never start a leader. `--json` works only with `status` and `list`.
+- `status`, `list`, and `stop` never start a leader. `--json` works only with `status` and `list`; it exits 1 when the output cannot be written.
 - `stop` waits up to 15 s for each step. On Linux it falls back to SIGTERM through a verified process handle.
 - A leader that a client started has the internal flag `--spawned-by-client` and writes `<ASK_HOME>/leader.log`. The log rotates at 8 MiB. Do not use this flag by hand.
 - A client of a newer build replaces an older leader that a client started. The sessions and background jobs of the old leader end.
@@ -443,7 +452,7 @@ It reads one line of stdin at a time:
 
 Output is one line for each event. The first word is one of `connected`, `session`, `live`, `update`, `result`, `error`, `follow`, `event`, `resync`, `question`, `detached`, `bye`. At the end of stdin the client waits for the prompts in flight and leaves. Leaving only detaches: the leader and its runs go on.
 
-Exit codes: 0 left, 1 error or lost leader, 130, 143, 129.
+Exit codes: 0 left, 1 error or lost leader (also when the input ends after a prompt that ended because the leader closed), 130, 143, 129. A signal during setup, before the session starts, also exits with 130, 143, or 129.
 
 ## `ask version`
 
@@ -472,6 +481,8 @@ With no usable provider the session has no model. The footer row shows `no model
 The key `thinkingFold` in the settings sets the fold mode that a thinking step takes when it ends: `"expanded"` (all lines, the default), `"truncated"` (the last lines), or `"collapsed"` (one row). A missing key, an unknown value, or a file that cannot be read gives `"expanded"`. The TUI reads `<ASK_HOME>/settings.json` once when it starts, for the first frame. Then it uses the value of the session state, so a trusted project file can override the user value. The TUI never writes the key, so a change takes effect at the next start. A streaming thinking step always shows its last lines.
 
 `ctrl+t` opens or folds all thinking steps and also sets the mode for the thinking steps that end later in the same TUI process. It does not change `settings.json`.
+
+`shift+tab` changes the thinking level of a model that has thinking. The order is `default`, `off`, `minimal`, `low`, `medium`, `high`, `xhigh`, `max`, and then `default` again. `default` means no chosen level (see [Start model](#start-model)). A level that the model does not have fits the model, and the next press goes on from the level that you asked. The footer row shows the level. While a run works, the key gives `Thinking level can change when the run ends.`. A leader of an older build does not know `default`: the status row then shows `Could not change the thinking level: the leader does not know default.` and `Restart it with this build: ask leader stop`, and the next press asks `off`.
 
 `ctrl+p` changes the session model to the next model of the cycle list, and `ctrl+shift+p` changes it to the previous one. The keys work in the prompt pane, in the block list, and with the command list open. In `/model` and in the provider box, `ctrl+p` moves the list selection up. The cycle list is the scope (`--models` or `enabledModels`); with no scope it is every model that `/model` shows. The list wraps at each end. The footer row names the new model, and the status row shows `✓ Model: <provider>/<model> · <level> · <n> of <total>`. The key does not save the default. While a run works, the key gives `Model can change when the run ends.`; with one model in the list, it gives `No other model to cycle to.`. `ctrl+shift+p` needs a terminal with the kitty keyboard protocol or `modifyOtherKeys`, for example Ghostty, Alacritty, kitty, WezTerm, or xterm. Terminal.app sends `ctrl+shift+p` as `ctrl+p`, so there the key cycles forward and no key cycles back. The shortcut bar does not show these keys.
 
@@ -544,11 +555,11 @@ Ask reads only the user file. It does not read `<project>/.ask/models.json`, als
 
 | Field | Meaning |
 |---|---|
-| `providers.<id>.baseUrl` | The URL of the API. It must be an `http` or `https` URL with a host and no user name or password; another value is a problem and drops the provider. On a built-in provider it moves every model of the provider to this URL. |
+| `providers.<id>.baseUrl` | The URL of the API. It must be an `http` or `https` URL with a host and no user name or password; another value is a problem and drops the provider. Ask removes one trailing `/`. On a built-in provider it moves every model of the provider to this URL. |
 | `providers.<id>.api` | The wire: `anthropic-messages`, `openai-completions`, or `openai-responses`. A model can set its own `api`. |
 | `providers.<id>.apiKey` | The key of the provider, as a value (see [Values](#values)). |
 | `providers.<id>.headers` | Extra request headers, as an object of values. A model can set its own `headers`. |
-| `providers.<id>.compat` | Compatibility switches of the wire, for every model of the provider. An unknown key for the API gives a problem and is ignored. |
+| `providers.<id>.compat` | Compatibility switches of the wire, for every model of the provider. An unknown key for the API gives a problem and is ignored. For `openai-completions`, `supportsReasoningEffort` is true by default; `false` means Ask does not send `reasoning_effort`. |
 | `providers.<id>.models[]` | New models. `id` is required. The other fields are `name`, `api`, `reasoning`, `thinkingLevelMap`, `input` (`text`, `image`), `cost` (`input`, `output`, `cacheRead`, `cacheWrite`, in USD for each million tokens), `contextWindow`, `maxTokens`, `headers`, and `compat`. |
 | `providers.<id>.modelOverrides.<model id>` | Changes of one existing model, with the same fields as a model. |
 
@@ -580,6 +591,8 @@ A request takes the key from the first source that applies:
 2. The saved credential of `ask auth login` or `/providers` in `auth.json`, when it is for the same provider, API, and URL as the model. Ask never sends a saved key to a URL that the file changed.
 3. The `apiKey` of the provider in `models.json`. It applies to every model of that provider, also to a built-in provider whose URL the file does not change (as in Pi).
 4. The environment variable of the provider, when no credential is saved.
+
+On the OpenAI wires, an `Authorization` header that the model or its provider sets in `models.json` wins over a static API key (a saved key, `apiKey`, the environment, or `--api-key`). A saved OAuth sign-in wins over the header. Ask removes the other credential headers (`X-Api-Key`, `Openai-Organization`, `Openai-Project`, `Chatgpt-Account-Id`, `Cookie`).
 
 For a provider whose `baseUrl` the file changes, Ask uses `--api-key` only when the file entry of that provider also sets `apiKey`. Otherwise the request fails with `auth: unsupported credential method: <provider>/api-key`.
 
@@ -629,13 +642,15 @@ Trust is not a security boundary against the tools of the agent. A `bash` comman
 | `ASK_COMMAND_GUARD` | `ask -p`, leader, `ask acp` | `1` blocks a short list of destructive commands. It is off by default and is not a security boundary. |
 | `ASK_DISABLE_BACKGROUND_TASKS` | `ask -p`, leader, `ask acp`, in-process TUI | `1` turns background jobs off. A foreground `bash` command stops at its wait budget. A background start and `monitor` are refused. |
 | `ASK_DISABLE_MODEL_REFRESH` | leader, `ask acp`, in-process TUI, `ask auth login` | `1` turns the automatic network refresh of the model list off: no models.dev request and no account model list request. The list then comes from `<ASK_HOME>/model-cache.json` and the built-in catalog. `ask models refresh` still refreshes the list. `--offline` on `ask`, `ask acp`, and `ask leader` has the same effect. `ask auth login` has no `--offline` flag; use the variable. |
+| `ASK_BG_STALL_MS` | `ask -p`, leader, `ask acp`, in-process TUI | The time without output after which a background `bash` job sends a stall notice, in milliseconds (default 300000). `0` turns the notice off. An empty, negative, or invalid value gives the default. |
+| `ASK_BG_LIMIT_MS` | leader, `ask acp`, in-process TUI | The background time limit of `bash` jobs, in milliseconds (default 7200000). `0` turns the limit off. An empty, negative, or invalid value gives the default. A larger value also raises the 2 hour maximum. `ask -p` reads `ASK_PRINT_BG_LIMIT_MS` instead. |
 | `ASK_PRINT_BG_LIMIT_MS` | `ask -p` | The default background time limit, in milliseconds (default 600000). A value that is not a whole number above 0 is ignored. A larger value also raises the 2 hour maximum. |
 | `ASK_PRINT_BG_WAIT_CEILING_MS` | `ask -p` | The idle cap of the background wait, in milliseconds (default 600000). `0` means no cap. An empty, negative, or invalid value gives the default. |
-| `ASK_CAPTURE` | `ask -p` | A directory. The run records the provider HTTP traffic to a new cassette. Ignored for `faux`. |
+| `ASK_CAPTURE` | `ask -p` | A directory. The run records the provider HTTP traffic to a new cassette, also when only `--model` selects the provider. Ask makes the folder with mode 0700 and writes the cassette with mode 0600; a folder that exists keeps its mode. Ignored for `faux`. |
 | `TEA_TRACE` | interactive TUI | A file. It receives raw keyboard input, pasted keys included. The TUI warns on screen. Do not set it when you sign in. |
-| `ANTHROPIC_API_KEY`, `OPENAI_API_KEY`, `XAI_API_KEY`, `ASK_ALIBABA_TOKEN_PLAN_API_KEY` (or `ALIBABA_TOKEN_PLAN_API_KEY`) | providers | API key when no saved sign-in applies. |
+| `ANTHROPIC_API_KEY`, `OPENAI_API_KEY`, `XAI_API_KEY`, `ASK_ALIBABA_TOKEN_PLAN_API_KEY` (or `ALIBABA_TOKEN_PLAN_API_KEY`) | providers | API key when no saved sign-in applies. A saved sign-in whose last refresh has no known result also blocks the key: `ask settings show` shows `saved:<method>` with the problem `refresh result uncertain`, and a request fails with `refresh result uncertain; sign in again`. Run `ask auth login --provider <id> --method <method>` to sign in again, or `ask auth logout --provider <id>` to use the key. |
 
-Ask sets `ASK_SESSION_ID`, `ASK_PROVIDER`, `ASK_MODEL`, and `ASK_REASONING_LEVEL` in the environment of the processes that tools start. Do not set them.
+Ask sets `ASK_SESSION_ID`, `ASK_PROVIDER`, `ASK_MODEL`, and `ASK_REASONING_LEVEL` in the environment of the processes that tools start. `ASK_REASONING_LEVEL` is `default` when no thinking level is chosen. Do not set them.
 
 Test variables (`ASK_RECORD`, `ASK_UPDATE_DOCS`, and others) are in [testing-llm-cassettes.md](testing-llm-cassettes.md) and [../CONTRIBUTING.md](../CONTRIBUTING.md).
 

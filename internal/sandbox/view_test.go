@@ -136,3 +136,59 @@ func TestViewNeverSplitsRune(t *testing.T) {
 	small, _ := View(outputOf([]byte(strings.Repeat("€", 100))), DefaultMaxLines, 10)
 	assert.True(t, utf8.ValidString(small))
 }
+
+func TestViewNamesTheLimitThatCutTheOutput(t *testing.T) {
+	lines := func(n int, line string) string { return strings.Repeat(line+"\n", n) }
+	tests := []struct {
+		name               string
+		out                Output
+		maxLines, maxBytes int
+		want               string
+	}{
+		{
+			name:     "byte limit binds before the line limit",
+			out:      Output{Head: []byte(lines(50, "abcdefghi")), Total: 500},
+			maxLines: 1000, maxBytes: 100,
+			want: "bytes",
+		},
+		{
+			name:     "line limit binds",
+			out:      Output{Head: []byte(lines(100, "x")), Total: 200},
+			maxLines: 10, maxBytes: 1 << 20,
+			want: "lines",
+		},
+		{
+			name:     "dropped bytes with short output read as bytes",
+			out:      Output{Head: []byte(lines(2, "ab")), Tail: []byte(lines(2, "cd")), Total: 1 << 20, Dropped: 1<<20 - 12},
+			maxLines: 1000, maxBytes: 1 << 20,
+			want: "bytes",
+		},
+		{
+			name:     "fits",
+			out:      Output{Head: []byte(lines(3, "ab")), Total: 9},
+			maxLines: 10, maxBytes: 1000,
+			want: "",
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			_, tr := View(tt.out, tt.maxLines, tt.maxBytes)
+			assert.Equal(t, tt.want, tr.TruncatedBy)
+			assert.Equal(t, tt.want != "", tr.Truncated)
+		})
+	}
+}
+
+func TestViewByteCutThatKeepsTheLineLimitIsNamedBytes(t *testing.T) {
+	// Lines of 10 bytes: the head keeps 4 whole lines in its 40 bytes and the
+	// tail keeps 6 in its 60 bytes. The kept lines equal the line limit of 10,
+	// but only the byte limits cut.
+	data := []byte(strings.Repeat("abcdefghi\n", 50))
+	out := Output{Head: data, Total: int64(len(data))}
+
+	_, tr := View(out, 10, 100)
+
+	require.True(t, tr.Truncated)
+	assert.Equal(t, 10, tr.ShownLines)
+	assert.Equal(t, "bytes", tr.TruncatedBy)
+}

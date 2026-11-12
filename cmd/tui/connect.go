@@ -12,6 +12,7 @@ import (
 	"strconv"
 	"strings"
 	"sync"
+	"sync/atomic"
 
 	"AskCore/internal/leader"
 	"AskCore/internal/tuiclient/rpc"
@@ -174,8 +175,13 @@ type lineClient struct {
 	subs      map[string]string // subscription id -> session
 	questions map[string]string // raw id of a question -> session
 	inflight  sync.WaitGroup
-	done      <-chan struct{} // closed when the reader ended
-	once      sync.Once
+	// lost is set when a prompt ended because the leader closed the
+	// connection, so the end of stdin cannot report that run as complete.
+	lost atomic.Bool
+	// ctx ends the calls of the client. It is cancelled by the first signal.
+	ctx  context.Context
+	done <-chan struct{} // closed when the reader ended
+	once sync.Once
 }
 
 type lockedWriter struct {
@@ -189,9 +195,19 @@ func (l *lockedWriter) printf(format string, a ...any) {
 	_, _ = fmt.Fprintf(l.w, format+"\n", a...)
 }
 
+// tryPrintf prints unless another write holds the lock. That write may be
+// stuck on a full output, and the caller must not wait behind it.
+func (l *lockedWriter) tryPrintf(format string, a ...any) {
+	if !l.mu.TryLock() {
+		return
+	}
+	defer l.mu.Unlock()
+	_, _ = fmt.Fprintf(l.w, format+"\n", a...)
+}
+
 func newLineClient(cl *leader.Client, out io.Writer) *lineClient {
 	c := &lineClient{
-		out:  &lockedWriter{w: out},
+		out: &lockedWriter{w: out}, ctx: context.Background(),
 		subs: map[string]string{}, questions: map[string]string{},
 	}
 	c.conn = rpc.NewConn(rpc.NewLeaderTransport(cl), c)
@@ -218,7 +234,7 @@ func (c *lineClient) callForSession(method string, params any, followSession str
 			}
 		}
 	}
-	res, err := c.conn.CallCommit(context.Background(), method, params, commit)
+	res, err := c.conn.CallCommit(c.ctx, method, params, commit)
 	if err == nil {
 		return res, nil
 	}
@@ -521,6 +537,9 @@ func (c *lineClient) prompt(text string) {
 		defer c.inflight.Done()
 		res, f := c.call("session/prompt", map[string]any{"sessionId": sid, "prompt": []any{map[string]any{"type": "text", "text": text}}})
 		if f != nil {
+			if f.Kind == "connection_lost" {
+				c.lost.Store(true)
+			}
 			c.out.printf("error session=%s op=prompt code=%d kind=%s", sid, f.Code, f.Kind)
 			return
 		}
@@ -533,6 +552,36 @@ func (c *lineClient) prompt(text string) {
 }
 
 // ---- the command ----
+
+// signalCause is the cancel cause of the connect context when a signal ends
+// the run.
+type signalCause struct{ sig os.Signal }
+
+func (s signalCause) Error() string { return "signal: " + s.sig.String() }
+
+// signalExit returns the exit code of the signal that cancelled ctx.
+func signalExit(ctx context.Context) (int, bool) {
+	var s signalCause
+	if errors.As(context.Cause(ctx), &s) {
+		return signalExitCodes[s.sig], true
+	}
+	return 0, false
+}
+
+// withSignalContext returns a context that the first signal on sigs cancels.
+// One goroutine reads sigs, so the setup calls and the main loop see the same
+// signal. The stop function ends that goroutine.
+func withSignalContext(sigs <-chan os.Signal) (context.Context, func()) {
+	ctx, cancel := context.WithCancelCause(context.Background())
+	go func() {
+		select {
+		case sig := <-sigs:
+			cancel(signalCause{sig})
+		case <-ctx.Done():
+		}
+	}()
+	return ctx, func() { cancel(nil) }
+}
 
 // runConnect implements "ask connect". callerExe is this ask binary; a leader
 // that it has to start runs from it.
@@ -551,7 +600,9 @@ func runConnect(argv []string, stdin io.Reader, stdout, stderr io.Writer, deps r
 		report(stderr, "Error:", err)
 		return 1
 	}
-	cl, err := leader.ConnectOrSpawn(context.Background(), leader.ConnectConfig{
+	ctx, stop := withSignalContext(sigs)
+	defer stop()
+	cl, err := leader.ConnectOrSpawn(ctx, leader.ConnectConfig{
 		Paths:       paths,
 		Hello:       leaderHello("connect"),
 		CallerExe:   callerExe,
@@ -559,14 +610,21 @@ func runConnect(argv []string, stdin io.Reader, stdout, stderr io.Writer, deps r
 		Warn:        func(s string) { report(stderr, s) },
 	})
 	if err != nil {
+		if code, ok := signalExit(ctx); ok {
+			return code
+		}
 		report(stderr, "Error:", err)
 		return 1
 	}
 	c := newLineClient(cl, stdout)
+	c.ctx = ctx
 	go c.readLoop()
 	defer c.close()
 
 	if _, f := c.call("initialize", map[string]any{"protocolVersion": 1, "clientCapabilities": map[string]any{}, "clientInfo": map[string]any{"name": "ask-connect", "version": buildIdentity()}}); f != nil {
+		if code, ok := signalExit(ctx); ok {
+			return code
+		}
 		report(stderr, "Error: initialize:", f.Kind, f.Message)
 		return 1
 	}
@@ -582,6 +640,9 @@ func runConnect(argv []string, stdin io.Reader, stdout, stderr io.Writer, deps r
 		ok = c.newSession(cwd)
 	}
 	if !ok {
+		if code, signalled := signalExit(ctx); signalled {
+			return code
+		}
 		return 1
 	}
 
@@ -603,12 +664,13 @@ func runConnect(argv []string, stdin io.Reader, stdout, stderr io.Writer, deps r
 		case <-c.done:
 			report(stderr, "ask connect: the leader closed the connection")
 			return 1
-		case sig := <-sigs:
+		case <-ctx.Done():
 			c.out.printf("bye")
-			return signalExitCodes[sig]
+			code, _ := signalExit(ctx)
+			return code
 		case line, open := <-lines:
 			if !open {
-				return c.finish(sigs)
+				return c.finish(ctx, stderr)
 			}
 			cmd, perr := parseInputLine(line)
 			if errors.Is(perr, errBlankLine) {
@@ -628,15 +690,31 @@ func runConnect(argv []string, stdin io.Reader, stdout, stderr io.Writer, deps r
 }
 
 // finish waits for the prompts in flight after the end of stdin, then leaves.
-func (c *lineClient) finish(sigs <-chan os.Signal) int {
+// It exits 1 when the leader closed the connection before a prompt ended.
+func (c *lineClient) finish(ctx context.Context, stderr io.Writer) int {
 	settled := make(chan struct{})
 	go func() { c.inflight.Wait(); close(settled) }()
 	select {
 	case <-settled:
 	case <-c.done:
-	case sig := <-sigs:
-		c.out.printf("bye")
-		return signalExitCodes[sig]
+		// A call that the closed connection fails returns at once, so the
+		// wait is short and tells whether a prompt was cut off. A prompt that
+		// is stuck in a write to a full output never returns, so a signal
+		// must end the wait too.
+		select {
+		case <-settled:
+		case <-ctx.Done():
+			code, _ := signalExit(ctx)
+			return code
+		}
+	case <-ctx.Done():
+		c.out.tryPrintf("bye")
+		code, _ := signalExit(ctx)
+		return code
+	}
+	if c.lost.Load() {
+		report(stderr, "ask connect: the leader closed the connection")
+		return 1
 	}
 	c.out.printf("bye")
 	return 0

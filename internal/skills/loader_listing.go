@@ -2,6 +2,7 @@ package skills
 
 import (
 	"fmt"
+	"slices"
 	"unicode/utf8"
 
 	"AskCore/pkg/protocol"
@@ -47,6 +48,10 @@ type entry struct {
 	shown int
 	// capped is set when the 1024 rune cap cut the description.
 	capped bool
+	// quoteExtra[n] is how many bytes, and as many runes, that Quote adds to
+	// the first n runes of desc: an escaped tag grows by three. It is nil when
+	// the description holds no "<", so most entries pay nothing.
+	quoteExtra []int
 	// fixedBytes and fixedRunes measure the entry text without its
 	// description and its closing newline, which cost charges as the line
 	// break.
@@ -144,6 +149,7 @@ func newEntry(s Skill) entry {
 		e.desc = []rune(string(d[:maxListedDescription-len(descriptionEllipsis)]) + descriptionEllipsis)
 		e.capped = true
 	}
+	e.quoteExtra = quoteExtraOf(e.desc)
 	var empty, r protocol.ReminderText
 	writeEntry(&r, s, "")
 	text, wrap := r.String(), empty.String()
@@ -153,6 +159,39 @@ func newEntry(s Skill) entry {
 }
 
 func (e *entry) descBytes(n int) int { return len(string(e.desc[:n])) }
+
+// escaped is the growth that Quote causes in the first n runes of the
+// description.
+func (e *entry) escaped(n int) int {
+	if e.quoteExtra == nil {
+		return 0
+	}
+	return e.quoteExtra[n]
+}
+
+// quoteExtraOf measures the growth of every prefix of desc through Quote, the
+// call that writes the entry. Quote escapes a tag only when the whole tag is
+// in the text, and a tag ends in "r", so only a prefix that ends in "r" or "R"
+// can differ from the shorter prefix before it.
+func quoteExtraOf(desc []rune) []int {
+	if !slices.Contains(desc, '<') {
+		return nil
+	}
+	var empty protocol.ReminderText
+	wrap := empty.Len()
+	extra := make([]int, len(desc)+1)
+	cur := 0
+	for n := 1; n <= len(desc); n++ {
+		if r := desc[n-1]; r == 'r' || r == 'R' {
+			raw := string(desc[:n])
+			var q protocol.ReminderText
+			q.Quote(raw)
+			cur = q.Len() - wrap - len(raw)
+		}
+		extra[n] = cur
+	}
+	return extra
+}
 
 func writeEntry(r *protocol.ReminderText, s Skill, desc string) {
 	r.Frame("<skill>\n<name>")

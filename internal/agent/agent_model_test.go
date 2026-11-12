@@ -481,3 +481,36 @@ func completionsChatSSE() string {
 		"data: {\"id\":\"chatcmpl-1\",\"object\":\"chat.completion.chunk\",\"choices\":[],\"usage\":{\"prompt_tokens\":10,\"completion_tokens\":2,\"total_tokens\":12}}\n\n" +
 		"data: [DONE]\n\n"
 }
+
+// TestNewClampsTheStartLevel checks that New stores the start level that
+// ClampThinkingLevel gives for the start model, that an empty level stays
+// empty, and that an Agent with no model keeps the requested level until
+// SetModel clamps it.
+func TestNewClampsTheStartLevel(t *testing.T) {
+	p, _ := newFaux(t)
+	grok := providers.XAIGrok47()
+	bound := providers.BoundKey{Provider: grok.Provider, Secret: anthKey}
+	for level, want := range map[protocol.ThinkingLevel]protocol.ThinkingLevel{
+		"":                       protocol.ThinkingDefault,
+		protocol.ThinkingDefault: protocol.ThinkingDefault,
+		protocol.ThinkingOff:     protocol.ThinkingLow,
+		protocol.ThinkingMax:     protocol.ThinkingXHigh,
+		protocol.ThinkingHigh:    protocol.ThinkingHigh,
+	} {
+		a, err := agent.New(agent.Config{LoopConfig: agent.LoopConfig{
+			Model: grok, Stream: p.Stream, BoundKey: bound,
+			Options: providers.StreamOptions{Reasoning: level, APIKey: anthKey},
+		}})
+		require.NoError(t, err)
+		assert.Equal(t, want, a.State().ThinkingLevel, "start level %q", level)
+	}
+
+	a, err := agent.New(agent.Config{LoopConfig: agent.LoopConfig{
+		Stream: p.Stream, BoundKey: bound,
+		Options: providers.StreamOptions{Reasoning: protocol.ThinkingHigh, APIKey: anthKey},
+	}})
+	require.NoError(t, err)
+	assert.Equal(t, protocol.ThinkingHigh, a.State().ThinkingLevel, "no model keeps the level")
+	require.NoError(t, a.SetModel(context.Background(), grok))
+	assert.Equal(t, protocol.ThinkingHigh, a.State().ThinkingLevel)
+}

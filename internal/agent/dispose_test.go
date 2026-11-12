@@ -13,6 +13,7 @@ import (
 	"github.com/stretchr/testify/require"
 
 	"AskCore/internal/agent"
+	"AskCore/internal/providers"
 	"AskCore/internal/providers/faux"
 	"AskCore/internal/sessions"
 	"AskCore/internal/tools"
@@ -206,4 +207,30 @@ func TestDisposeWaitsForStartedToolBody(t *testing.T) {
 
 	assert.True(t, finished.Load(), "Dispose returned only after the body returned")
 	require.NoError(t, <-done)
+}
+
+func TestSetThinkingLevelAfterDispose(t *testing.T) {
+	p, m := newFaux(t)
+	a := newAgent(t, p, m, nil)
+	before := a.State().ThinkingLevel
+	require.NoError(t, a.Dispose())
+
+	require.ErrorIs(t, a.SetThinkingLevel(protocol.ThinkingLow), agent.ErrDisposed)
+	assert.Equal(t, before, a.State().ThinkingLevel, "the stored level did not change")
+}
+
+func TestSetModelAfterDisposeReturnsDisposed(t *testing.T) {
+	p, m := newFaux(t)
+	var keyCalls atomic.Int32
+	a := newAgent(t, p, m, func(c *agent.Config) {
+		c.GetAPIKey = func(context.Context, string) (string, error) {
+			keyCalls.Add(1)
+			return "key", nil
+		}
+	})
+	require.NoError(t, a.Dispose())
+
+	err := a.SetModel(context.Background(), providers.Model{})
+	require.ErrorIs(t, err, agent.ErrDisposed, "the disposed state wins over a model that is invalid")
+	assert.Zero(t, keyCalls.Load())
 }

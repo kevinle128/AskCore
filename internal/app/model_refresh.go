@@ -277,7 +277,10 @@ func readModelCache(ctx context.Context, cache *settings.ModelCache, log *zap.Lo
 
 // buildModelSnapshot merges the catalog, the overlay of data, for each
 // provider the cached list of its current credential, and the user file f. A
-// provider whose current credential has no known list keeps all its rows. Both
+// provider whose current credential has no known list keeps all its rows. A
+// saved record that waits for recovery also keeps all rows: its cached list
+// does not tell the current access, and a request then gives the recovery
+// error instead of an unknown model. Both
 // lists get the user file, so a row of the file is in the catalog too and its
 // overrides win after each refresh. former is the set of endpoints that the
 // tables of earlier snapshots had, or nil.
@@ -293,6 +296,9 @@ func buildModelSnapshot(ctx context.Context, base []providers.Model, data settin
 	}
 	accounts := map[string]providers.AccountView{}
 	for _, provider := range providerIDs(base) {
+		if service.WaitsForRecovery(ctx, provider) {
+			continue
+		}
 		key := service.CurrentAccountKey(ctx, provider, data.Salt)
 		entry, ok := data.Accounts[key]
 		if key == "" || !ok || entry.Provider != provider || entry.State != settings.AccountModelsKnown {

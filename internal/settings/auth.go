@@ -546,6 +546,9 @@ func (s *AuthStore) CommitRefresh(ctx context.Context, p string, generation uint
 		if c.Generation != generation || c.RefreshState == nil || c.RefreshState.AttemptID != attemptID {
 			return ErrConflict
 		}
+		if replacement.Method != c.Method || replacement.OAuth == nil {
+			return errors.New("refresh replacement must be an OAuth credential of the same method")
+		}
 		replacement.Generation = generation + 1
 		replacement.RefreshState = nil
 		d.providers[p], e = marshalCredential(d.providers[p], replacement)

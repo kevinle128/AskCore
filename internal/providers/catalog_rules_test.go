@@ -62,6 +62,8 @@ func TestFamilyRuleMatch(t *testing.T) {
 		{ProviderOpenAI, "gpt-6-terra", false, false},
 		{ProviderOpenAI, "gpt-daybreak-blue-latest", false, true},
 		{ProviderXAI, "grok-4.7", false, true},
+		{ProviderXAI, "grok-4.20-0309-reasoning", false, true},
+		{ProviderXAI, "grok-4.20-0309-non-reasoning", false, true},
 		{ProviderXAI, "grok-4.20-multi-agent-0309", false, false},
 		{ProviderTokenPlan, "deepseek-v4.1-flash-1017", false, true},
 		{ProviderTokenPlan, "MiniMax-M2.5", false, true},
@@ -207,4 +209,27 @@ func TestHiddenFamiliesStayHidden(t *testing.T) {
 		}
 	}
 	assert.Positive(t, hiddenInSnapshot, "the snapshot has rows of hidden families")
+}
+
+// TestGrok420FamiliesHaveNoThinkingLevels checks that the grok-4.20 rows can
+// never get an effort level. xAI answers HTTP 400 when a request to these ids
+// has reasoning.effort. The rules stay hidden; the check also holds for a
+// rule that a later change shows and gives effort words.
+func TestGrok420FamiliesHaveNoThinkingLevels(t *testing.T) {
+	t.Parallel()
+	for _, id := range []string{"grok-4.20-0309-reasoning", "grok-4.20-0309-non-reasoning"} {
+		r, ok := ruleFor(ProviderXAI, id)
+		require.True(t, ok, id)
+		assert.NotEmpty(t, r.hidden, "%s stays hidden", id)
+
+		shown := r.request(APIOpenAIResponses, XAIURL, ResponsesCompat{Store: false, SupportsMaxOutputTokens: true}, 30_000, 1_000_000).
+			thinking(offByWord, effortWords...)
+		shown.hidden = ""
+		for _, reasoning := range []bool{true, false} {
+			on, levels, ok := shown.thinkingOf(reasoning, effortWords)
+			assert.True(t, ok, "%s reasoning=%v makes a request", id, reasoning)
+			assert.False(t, on, "%s reasoning=%v has no thinking", id, reasoning)
+			assert.Nil(t, levels, "%s reasoning=%v has no thinking levels", id, reasoning)
+		}
+	}
 }

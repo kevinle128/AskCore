@@ -60,10 +60,10 @@ func (t oauthTransport) RoundTrip(req *http.Request) (*http.Response, error) {
 		}
 	}
 	body, err := io.ReadAll(req.Body)
+	_ = req.Body.Close()
 	if err != nil {
 		return nil, err
 	}
-	req.Body = io.NopCloser(bytes.NewReader(body))
 	var fields struct {
 		System []struct {
 			Text string `json:"text"`
@@ -72,7 +72,12 @@ func (t oauthTransport) RoundTrip(req *http.Request) (*http.Response, error) {
 	if json.Unmarshal(body, &fields) != nil || len(fields.System) == 0 || fields.System[0].Text != "You are Claude Code, Anthropic's official CLI for Claude." {
 		return nil, errors.New("anthropic subscription system profile is invalid")
 	}
-	return t.base.RoundTrip(req)
+	// Send a copy: the caller's request keeps its own body.
+	clone := req.Clone(req.Context())
+	clone.Body = io.NopCloser(bytes.NewReader(body))
+	clone.GetBody = func() (io.ReadCloser, error) { return io.NopCloser(bytes.NewReader(body)), nil }
+	clone.ContentLength = int64(len(body))
+	return t.base.RoundTrip(clone)
 }
 
 func containsBeta(value, flag string) bool {

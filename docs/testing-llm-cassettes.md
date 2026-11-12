@@ -68,6 +68,8 @@ ASK_CAPTURE=/tmp/ask-capture ask -p "..." --provider openai --model gpt-5.5
 # stderr: ask: capturing provider HTTP to /tmp/ask-capture/20261005-215018.780.yaml
 ```
 
+Ask makes the capture folder with mode 0700 and writes the cassette with mode 0600. A folder that exists is set to mode 0700 too; if the user does not own it, capture stops with an error.
+
 1. Move the file to `cmd/tui/testdata/cassettes/<TestName>.yaml`.
 2. In the file, replace the random session ID (the value of `prompt_cache_key` in each request body) with `cassetteSessionID`, so the replay sends the same body.
 3. Write `TestName` with `useCassette`, and use the same prompt and tools. `TestCapturedSessionReplays` is an example.
@@ -89,7 +91,7 @@ Each subscription route needs real login, prompt/tool, and local logout acceptan
 Offline command tests use the real parser, auth service, store, agent, and adapters, with only external HTTP and time boundaries injected.
 The owning scenarios are [auth command tests](../cmd/tui/auth_command_test.go), [native OAuth command tests](../cmd/tui/auth_oauth_command_test.go), and [signal tests](../cmd/tui/auth_signal_test.go).
 
-A captured inference cassette can contain prompts, tool results, file paths, and private user data even when auth headers are removed.
+A captured inference cassette can contain prompts, tool results, file paths, and private user data even when auth headers are removed. Ask writes it with mode 0600.
 Review and sanitize it before sharing or committing it.
 Never put credentials, authorization codes, ID tokens, or account hints in an evidence report.
 
@@ -99,7 +101,7 @@ Never put credentials, authorization codes, ID tokens, or account hints in an ev
 |---|---|
 | `ASK_RECORD=1` | Tests record their cassettes from the real model instead of replaying. |
 | `ASK_RECORD_MAX_REQUESTS=<n>` | The request limit for each recording. The default is 10. |
-| `ASK_CAPTURE=<dir>` | `ask -p` records the provider HTTP of the run to a new cassette in `<dir>`. |
+| `ASK_CAPTURE=<dir>` | `ask -p` records the provider HTTP of the run to a new cassette in `<dir>`. It also records when only `--model` selects the provider. |
 | `ASK_LIVE=1` | Runs the live smoke tests. |
 
 ## Known limits

@@ -50,7 +50,8 @@ type Request struct {
 	// StagedMessages are admitted input not yet committed to history.
 	StagedMessages []protocol.Message
 	Model          providers.Model
-	// ThinkingLevel is "off" when the request asks for no reasoning.
+	// ThinkingLevel is "default" when no level is chosen and the provider path
+	// picks; "off" when the request asks for the lowest level of the model.
 	ThinkingLevel protocol.ThinkingLevel
 }
 
@@ -63,7 +64,12 @@ type RequestUpdate struct {
 	// messages.
 	RequestMessages []protocol.Message
 	Model           *providers.Model
-	// ThinkingLevel "off" turns reasoning off.
+	// ThinkingLevel: empty keeps the current level; when Model changes, a
+	// chosen current level is clamped to the new model and no chosen level
+	// stays default. "default" removes the chosen level with no clamp. Any
+	// other word is clamped to the model of the request, like a level that
+	// the user sets: "off" gives the lowest level of a model that cannot turn
+	// reasoning off.
 	ThinkingLevel protocol.ThinkingLevel
 }
 
@@ -148,6 +154,13 @@ func (r *AfterToolCallResult) Clone() *AfterToolCallResult {
 		}
 	}
 	return &out
+}
+
+// CloneToolResult returns a deep copy of r, so a holder can change the copy
+// without a change to the original.
+func CloneToolResult(r protocol.ToolExecutionResult) protocol.ToolExecutionResult {
+	c := (&AfterToolCallResult{Content: r.Content, Details: r.Details, StructuredContent: r.StructuredContent, IsError: r.IsError, Terminate: r.Terminate, Usage: r.Usage}).Clone()
+	return protocol.ToolExecutionResult{Content: c.Content, Details: c.Details, StructuredContent: c.StructuredContent, IsError: c.IsError, Terminate: c.Terminate, Usage: c.Usage}
 }
 
 // Apply returns res with the overrides of r and the new error flag. A nil r

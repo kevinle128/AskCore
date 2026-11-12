@@ -1015,3 +1015,26 @@ func TestBrokerSavedKeyForgetsProviderCache(t *testing.T) {
 		t.Fatalf("forget calls: %v", counts)
 	}
 }
+
+func TestBrokerLogoutRefusesUnknownMethod(t *testing.T) {
+	e := newBrokerEnv(t, brokerSetup{})
+	defer e.done()
+	ctx := context.Background()
+	if _, err := e.broker.Logout(ctx, providers.ProviderAnthropic, "no-such-method"); !errors.Is(err, ErrMethod) {
+		t.Fatalf("unknown method: %v", err)
+	}
+	noEvent(t, e.changes, "change after a refused logout")
+	if _, err := e.broker.Logout(ctx, providers.ProviderAnthropic, ""); err != nil {
+		t.Fatalf("empty method: %v", err)
+	}
+	recv(t, e.changes, "removal change")
+	var method string
+	for _, o := range LoginOptions() {
+		if o.Provider == providers.ProviderAnthropic {
+			method = o.Method
+		}
+	}
+	if _, err := e.broker.Logout(ctx, providers.ProviderAnthropic, method); err != nil {
+		t.Fatalf("known method: %v", err)
+	}
+}

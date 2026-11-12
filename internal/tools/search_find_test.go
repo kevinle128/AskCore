@@ -237,8 +237,13 @@ func TestFindSearchesGivenPathAndReportsMissingPath(t *testing.T) {
 func TestFindTimeoutReturnsPartialResult(t *testing.T) {
 	root := t.TempDir()
 	pidFile := filepath.Join(root, "pid")
-	fd := writeFakeBinary(t, "fd", "echo $$ > "+pidFile+"\nprintf 'found.txt\\n'\nsleep 60\n")
-	f := Find{lookPath: fixedLookPath(map[string]string{"fd": fd}), timeout: 1500 * time.Millisecond}
+	written := filepath.Join(root, "written")
+	fd := writeFakeBinary(t, "fd", "echo $$ > "+pidFile+"\nprintf 'found.txt\\n'\necho done > "+written+"\nsleep 60\n")
+	f := Find{
+		lookPath: fixedLookPath(map[string]string{"fd": fd}),
+		timeout:  1500 * time.Millisecond,
+		deadline: deadlineAtFile(written),
+	}
 	text, _ := runFind(t, f, root, map[string]any{"pattern": "*"})
 	if want := "found.txt\n\n[search stopped after 1.5 s]"; text != want {
 		t.Fatalf("text = %q, want %q", text, want)

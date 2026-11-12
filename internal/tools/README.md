@@ -49,17 +49,17 @@ No permission popup or separate approval layer is part of the current registry.
 
 | Tool | Notes |
 |---|---|
-| `read` | Numbered lines, `offset` and `limit`, 2000 lines or 50 KB per call. An image is returned as an image block and is resized when too large. A model without image input gets a text note. |
+| `read` | Numbered lines, `offset` and `limit`, 2000 lines or 50 KB per call. A file of up to 4 MiB is read whole; a larger text file is read page by page with bounded memory, and each page still reports the total line count. An image is returned as an image block and is resized when too large. `read` refuses an image file larger than 20 MiB before it reads it, and an image of more than 16 million pixels gets a text note. A model without image input gets a text note. |
 | `write` | Atomic write, parents created, execute bit set for a file that starts with a shebang. Refuses a generated file. |
-| `edit` | Pi `edits[{oldText,newText}]`. A match ladder runs from exact to fuzzy; a rung with more than one place is an error. Refuses a file that changed since the session last read it. |
+| `edit` | Pi `edits[{oldText,newText}]`. A match ladder runs from exact to fuzzy; a rung with more than one place is an error. Refuses a file that changed since the session last read it. It also fails when the file changes between its own read and its write; a change in the same mtime tick with the same size is not seen. |
 | `ls`, `grep`, `find` | Pi limits and messages. `grep` needs `rg`. `find` uses `fd`, then `rg --files`, then an in-house walk with a `.gitignore` subset. |
-| `bash` | Every call is a job. `timeout` is the wait budget (default 120 s, maximum 600 s); a command that runs longer continues in the background. `run_in_background` skips the wait; with it, `timeout` is the background time limit of the job where the session sets one (`ask -p`: default 10 min, maximum 2 h). |
+| `bash` | Every call is a job. `timeout` is the wait budget (default 120 s, maximum 600 s); a command that runs longer continues in the background. `run_in_background` skips the wait; with it, `timeout` is the background time limit of the job where the session sets one (default 2 h, maximum 2 h; `ask -p`: default 10 min). A background job that prints no output for 5 min gets a stall notice; the job runs on. |
 | `job_output`, `job_kill`, `job_list` | Read, stop and list the jobs of the current conversation. A job of an earlier conversation is unknown to them. `job_output` answers at once unless `wait` is true. |
 | `monitor` | Runs a command; each stdout line is an event for the model. |
 
 A non-persistent monitor has a default and maximum timeout of 10 hours.
 Positive fractional `timeout_ms` values are rounded up to the next millisecond.
-`persistent: true` runs until `job_kill` or session close. A session with a background time limit (`ask -p`) stops every monitor after at most that limit, a persistent one included.
+`persistent: true` runs until `job_kill` or session close. Only `ask -p` applies its background time limit to monitors, a persistent one included; other sessions limit bash jobs only.
 The shell tools refuse to run when the call context has no notice port (`tools.Context.Notices` is nil). The rules of the job table are in [internal/jobs](../jobs/README.md).
 
 `ConcurrencySafe` is true for `read`, `ls`, `grep`, `find`, `job_list` and `job_output` without `wait`.

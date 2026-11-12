@@ -30,6 +30,10 @@ func TestSessionOptionsBounds(t *testing.T) {
 	require.Equal(t, protocol.ThinkingHigh, got.Thinking)
 	require.Len(t, got.Models, protocol.ACPSessionModelsMax)
 
+	got, err = flagsFromMeta(map[string]any{key: map[string]any{"thinking": "default"}})
+	require.NoError(t, err, "default is a thinking level")
+	require.Equal(t, protocol.ThinkingDefault, got.Thinking)
+
 	for name, tc := range map[string]struct {
 		opts map[string]any
 		text string

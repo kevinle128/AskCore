@@ -61,6 +61,10 @@ func Continue(ctx context.Context, ac pipeline.AgentContext, cfg LoopConfig, emi
 // work into that window.
 func (a *Agent) SetQuiescenceProbe(f func()) { a.quiescenceProbe = f }
 
+// SetContinueProbe sets the function that Continue calls before and after its
+// decision. A test uses it to queue input in either window.
+func (a *Agent) SetContinueProbe(f func(afterDecision bool)) { a.continueProbe = f }
+
 // NoticesForTest returns the notice port of the current generation. Production
 // code gets a port only from the run it belongs to.
 func NoticesForTest(a *Agent) tasks.Port {

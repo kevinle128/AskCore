@@ -548,6 +548,11 @@ func (s *sessionView) modelFailure(id string, err error) (text, next string) {
 	return "Could not change the model: " + reason + ". Model not changed.", ""
 }
 
+// defaultRefusedNotice is the error notice when a leader of an older build
+// refuses the thinking level default. It has a fixed text, so a long message
+// of the leader cannot make the rows wider.
+const defaultRefusedNotice = "Could not change the thinking level: the leader does not know default.\nRestart it with this build: ask leader stop"
+
 func (s *sessionView) cycleThinking() tea.Cmd {
 	if !s.reasoning() {
 		return nil
@@ -580,6 +585,14 @@ func (s *sessionView) onThinking(msg thinkingMsg) {
 		return
 	}
 	if msg.err != nil {
+		// A leader of an older build does not know default. The next press
+		// skips it, so the cycle does not stop there.
+		var re *RequestError
+		if msg.asked == protocol.ThinkingDefault && errors.As(msg.err, &re) && re.Kind == string(protocol.ACPErrInvalidParams) {
+			s.thinkTry = msg.asked
+			s.setNotice(defaultRefusedNotice, true)
+			return
+		}
 		s.setNotice("Could not change the thinking level: "+errText(msg.err), true)
 		return
 	}

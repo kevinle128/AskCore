@@ -191,6 +191,15 @@ func (s *Service) CurrentAccountKey(ctx context.Context, provider string, salt [
 	return AccountKey(provider, c.Method, c, salt)
 }
 
+// WaitsForRecovery reports whether the saved record of provider waits for
+// recovery: its last refresh has no known result. A cached account list of
+// such a record does not tell the current access. It reads local state only
+// and never refreshes a token.
+func (s *Service) WaitsForRecovery(ctx context.Context, provider string) bool {
+	c, err := s.currentCredential(ctx, provider)
+	return err == nil && c.RefreshState != nil
+}
+
 // currentCredential returns the saved credential of provider, or an
 // environment key as an api-key credential when no record exists. It never
 // refreshes a token.

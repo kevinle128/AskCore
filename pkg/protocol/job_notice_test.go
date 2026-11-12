@@ -39,6 +39,32 @@ func TestParseJobNotice(t *testing.T) {
 	require.False(t, ok)
 }
 
+func TestParseJobNoticeStallAndLimit(t *testing.T) {
+	for text, want := range map[string]JobNotice{
+		`Background command "npm run dev" (job bash-3) printed no output for 5 minutes. It still runs. Read it with job_output, stop it with job_kill, or leave it running.`: {
+			JobID: "bash-3", Kind: "bash", Label: "npm run dev", Status: "running", Detail: "no output for 5 minutes"},
+		`Background command "echo \"a)\" (x)" (job bash-4) printed no output for 1 second. It still runs. Read it with job_output, stop it with job_kill, or leave it running.`: {
+			JobID: "bash-4", Kind: "bash", Label: `echo "a)" (x)`, Status: "running", Detail: "no output for 1 second"},
+		`Background command "sleep 9" (job bash-5) printed no output for 1.5s. It still runs. Read it with job_output, stop it with job_kill, or leave it running.`: {
+			JobID: "bash-5", Kind: "bash", Label: "sleep 9", Status: "running", Detail: "no output for 1.5s"},
+		`Background command "make" was stopped after reaching its background time limit. It was job bash-6. Read its output with job_output; start it again with a longer timeout if the work still needs it.`: {
+			JobID: "bash-6", Kind: "bash", Label: "make", Status: "killed", Detail: "background time limit"},
+		`Background command "echo \"a)\" (job bash-9)" was stopped after reaching its background time limit. It was job bash-7. Read its output with job_output; start it again with a longer timeout if the work still needs it.`: {
+			JobID: "bash-7", Kind: "bash", Label: `echo "a)" (job bash-9)`, Status: "killed", Detail: "background time limit"},
+	} {
+		got, ok := ParseJobNotice(text)
+		require.True(t, ok, text)
+		require.Equal(t, want, got, text)
+	}
+	for _, bad := range []string{
+		`Background command "x" (job bash-1) printed no output for . It still runs.`,
+		`Background command x (job bash-1) printed no output for 5 minutes. It still runs. Read it with job_output, stop it with job_kill, or leave it running.`,
+	} {
+		_, ok := ParseJobNotice(bad)
+		require.False(t, ok, bad)
+	}
+}
+
 func TestParseMonitorEvents(t *testing.T) {
 	text := "<monitor-event job=\"monitor-1\" description=\"server log\">\nline one\nline two\n[2 events suppressed by the flood guard]\nline three\n</monitor-event>"
 	got, ok := ParseMonitorEvents(text)

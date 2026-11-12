@@ -25,6 +25,7 @@ Call `Broker.Close` before `StopRefresh` and the refresh drain, because a runnin
 
 Reuse [NewNativeAuth](../app/auth_native.go) and [BindAuth](../app/module_auth.go) for runtime composition.
 An uncertain saved refresh requires explicit recovery and cannot select a different billing route.
+Such a record (`RefreshState` set) also blocks the environment key. `KeySource` names it (`saved:<method>`) together with `ErrRecovery`, and `WaitsForRecovery` tells the model list that its cached account list does not tell the current access.
 
 ## Key order
 

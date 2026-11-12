@@ -99,6 +99,10 @@ type Agent struct {
 	// quiescenceProbe is a test seam, nil in production. WaitForQuiescence calls
 	// it after its checks and before it reads work again.
 	quiescenceProbe func()
+	// continueProbe is a test seam, nil in production. Continue calls it with
+	// false before it decides, and with true after it decided, before it
+	// returns or runs.
+	continueProbe func(afterDecision bool)
 	// life is the lifetime context of the Agent: only Dispose cancels it, with
 	// endLife. tasks is the registry of the current generation, taskGen. Reset
 	// replaces the registry and raises the generation, so a notice or an event
@@ -190,6 +194,15 @@ func New(cfg Config) (*Agent, error) {
 	if err := validateSeed(cfg.Seed); err != nil {
 		return nil, err
 	}
+	// A requested start level follows the same rule as SetModel and
+	// SetThinkingLevel. The word default is stored as the empty level, which
+	// stays empty: Ask sends no level and the provider path picks one. An
+	// Agent with no model keeps the requested level, so the first SetModel
+	// clamps it to that model.
+	a.cfg.Options.Reasoning = storedLevel(cfg.Options.Reasoning)
+	if cfg.Model.ID != "" && a.cfg.Options.Reasoning != "" {
+		a.cfg.Options.Reasoning = providers.ClampThinkingLevel(cfg.Model, a.cfg.Options.Reasoning)
+	}
 	src, err := a.openSource()
 	if err != nil {
 		_ = src.Close()
@@ -226,22 +239,49 @@ func (a *Agent) Prompt(ctx context.Context, msgs ...protocol.Message) error {
 }
 
 // Continue runs the loop on the current context without a new message, like
-// Prompt. It fails before any event when the context is empty or ends with
-// an assistant message.
+// Prompt. When the context is empty or ends with an assistant message, it
+// runs the queued input instead; with no queued input it fails before any
+// event with ErrContinueEmpty or ErrContinueFromAssistant. The run is then
+// marked closing, so input that arrives after that decision starts the next
+// run and is not left in an idle Agent.
 func (a *Agent) Continue(ctx context.Context) error {
 	r, err := a.begin(ctx)
 	if err != nil {
 		return err
 	}
 	defer a.end(r)
-	msgs := r.source.Messages()
-	if !hasConversation(msgs) {
-		return ErrContinueEmpty
+	if a.continueProbe != nil {
+		a.continueProbe(false)
 	}
-	if msgs[len(msgs)-1].Role() == protocol.RoleAssistant {
-		return ErrContinueFromAssistant
+	msgs := r.source.Messages()
+	var failure error
+	switch {
+	case !hasConversation(msgs):
+		failure = ErrContinueEmpty
+	case msgs[len(msgs)-1].Role() == protocol.RoleAssistant:
+		failure = ErrContinueFromAssistant
+	}
+	queued := false
+	if failure != nil {
+		// One critical section decides: input that is queued now runs in this
+		// run, and input that arrives later sees a closing run and wakes the
+		// next one.
+		a.mu.Lock()
+		if queued = a.in.len() > 0; !queued {
+			r.closing = true
+		}
+		a.mu.Unlock()
+	}
+	if a.continueProbe != nil {
+		a.continueProbe(true)
+	}
+	if failure != nil && !queued {
+		return failure
 	}
 	notifyRunStart(ctx, r.id)
+	if queued {
+		return a.execute(r, a.queuedLoop(r))
+	}
 	return a.execute(r, func(ctx context.Context, ac pipeline.AgentContext, cfg LoopConfig, d driver, emit Emit) error {
 		_, err := continueLoop(ctx, ac, cfg, d, emit)
 		return err
@@ -362,9 +402,16 @@ func (a *Agent) dispose() error {
 	return err
 }
 
-// SetModel stores model for the next run. It is idle-only: a busy agent
-// returns ErrBusy and does not change the model or thinking level.
+// SetModel stores model for the next run and clamps a chosen thinking level to
+// it. An empty level stays empty. It is idle-only: a busy agent returns
+// ErrBusy and does not change the model or thinking level.
 func (a *Agent) SetModel(ctx context.Context, model providers.Model) error {
+	a.mu.Lock()
+	if a.disposed {
+		a.mu.Unlock()
+		return ErrDisposed
+	}
+	a.mu.Unlock()
 	if err := providers.Validate(model); err != nil {
 		return err
 	}
@@ -410,7 +457,11 @@ func (a *Agent) SetModel(ctx context.Context, model providers.Model) error {
 	}
 	a.cfg.Model = model
 	a.clearPending = false
-	a.cfg.Options.Reasoning = providers.ClampThinkingLevel(model, thinkingLevel(a.cfg.Options.Reasoning))
+	// An empty level stays empty, so Ask sends no level and the provider path
+	// picks one. A chosen level, off included, is clamped to the new model.
+	if a.cfg.Options.Reasoning != "" {
+		a.cfg.Options.Reasoning = providers.ClampThinkingLevel(model, a.cfg.Options.Reasoning)
+	}
 	a.postLocked(&protocol.ModelUpdate{Provider: model.Provider, ID: model.ID, API: string(model.API)})
 	return nil
 }
@@ -441,15 +492,19 @@ func (a *Agent) clearModelLocked() {
 	a.postLocked(&protocol.ModelUpdate{})
 }
 
-// SetThinkingLevel stores ClampThinkingLevel of the current model. It does
-// not look up a key. ErrBusy leaves the stored level alone.
+// SetThinkingLevel stores ClampThinkingLevel of the current model. The word
+// default removes the chosen level with no clamp. It does not look up a key.
+// ErrBusy leaves the stored level alone.
 func (a *Agent) SetThinkingLevel(level protocol.ThinkingLevel) error {
 	a.mu.Lock()
 	defer a.mu.Unlock()
+	if a.disposed {
+		return ErrDisposed
+	}
 	if a.active != nil {
 		return ErrBusy
 	}
-	a.cfg.Options.Reasoning = providers.ClampThinkingLevel(a.cfg.Model, level)
+	a.cfg.Options.Reasoning = clampedLevel(a.cfg.Model, level)
 	return nil
 }
 
@@ -557,11 +612,31 @@ func (a *Agent) State() State {
 	return State{Status: st, Messages: src.Messages(), Model: model, ThinkingLevel: level, Steering: steering, FollowUp: followUp}
 }
 
+// thinkingLevel is the word that readers of the stored level get: the empty
+// level is default, for every model.
 func thinkingLevel(level protocol.ThinkingLevel) protocol.ThinkingLevel {
 	if level == "" {
-		return protocol.ThinkingOff
+		return protocol.ThinkingDefault
 	}
 	return level
+}
+
+// storedLevel is the form of level in Options.Reasoning: the word default is
+// the empty level, so the provider adapters never get it.
+func storedLevel(level protocol.ThinkingLevel) protocol.ThinkingLevel {
+	if level == protocol.ThinkingDefault {
+		return ""
+	}
+	return level
+}
+
+// clampedLevel stores a level that a user or a hook sets: default gives the
+// empty level with no clamp, and any other word is clamped to m.
+func clampedLevel(m providers.Model, level protocol.ThinkingLevel) protocol.ThinkingLevel {
+	if level = storedLevel(level); level == "" {
+		return ""
+	}
+	return providers.ClampThinkingLevel(m, level)
 }
 
 func (a *Agent) begin(ctx context.Context) (*run, error) {
@@ -628,7 +703,12 @@ func (a *Agent) drive(r *run) {
 		// goroutine. The run has no input to take, so it publishes nothing.
 		return
 	}
-	_ = a.execute(r, func(ctx context.Context, ac pipeline.AgentContext, cfg LoopConfig, d driver, emit Emit) error {
+	_ = a.execute(r, a.queuedLoop(r))
+}
+
+// queuedLoop is the loop of a run that takes input which is already queued.
+func (a *Agent) queuedLoop(r *run) loopFunc {
+	return func(ctx context.Context, ac pipeline.AgentContext, cfg LoopConfig, d driver, emit Emit) error {
 		if cfg.Model.ID == "" {
 			// The queued input has no model to run on. The run ends with the
 			// error and a settled event, and the input stays queued. The empty
@@ -638,7 +718,7 @@ func (a *Agent) drive(r *run) {
 		}
 		_, err := runQueued(ctx, ac, cfg, d, emit)
 		return err
-	})
+	}
 }
 
 // execute runs one loop and owns its ending: the run-failure path of Pi's

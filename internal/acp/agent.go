@@ -16,8 +16,8 @@ import (
 	sdk "github.com/coder/acp-go-sdk"
 )
 
-// wireVersion is the only ACP wire version that the adapter speaks.
-const wireVersion = 1
+// WireVersion is the only ACP wire version that the adapter speaks.
+const WireVersion = 1
 
 // notifier is the part of the SDK connection that sends frames to the client.
 type notifier interface {
@@ -250,7 +250,7 @@ func (a *Adapter) Initialize(_ context.Context, _ sdk.InitializeRequest) (sdk.In
 	a.initialized.Store(true)
 	info := a.cfg.Info
 	return sdk.InitializeResponse{
-		ProtocolVersion: sdk.ProtocolVersion(wireVersion),
+		ProtocolVersion: sdk.ProtocolVersion(WireVersion),
 		AgentCapabilities: sdk.AgentCapabilities{
 			PromptCapabilities:  sdk.PromptCapabilities{Image: true},
 			SessionCapabilities: sdk.SessionCapabilities{Close: &sdk.SessionCloseCapabilities{}},

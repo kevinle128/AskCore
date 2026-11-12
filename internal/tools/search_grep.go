@@ -41,6 +41,9 @@ type Grep struct {
 	lookPath func(string) (string, error)
 	// timeout bounds one search. Zero means the default.
 	timeout time.Duration
+	// deadline makes the context that ends the search after timeout. Nil
+	// means context.WithTimeout.
+	deadline searchDeadline
 }
 
 var _ ConcurrencySafe = Grep{}
@@ -152,7 +155,7 @@ func (g Grep) Execute(ctx context.Context, tc Context, args json.RawMessage) (pr
 	if timeout <= 0 {
 		timeout = grepTimeout
 	}
-	sctx, cancel := context.WithTimeout(ctx, timeout)
+	sctx, cancel := g.deadline.with(ctx, timeout)
 	defer cancel()
 	res, end, err := runSearch(sctx, spec, col.stop)
 	if err != nil {
@@ -242,6 +245,19 @@ func searchResult(text string, notices []string, details protocol.ToolResultDeta
 		Content: []protocol.UserBlock{protocol.Text{Text: b.String()}},
 		Details: raw,
 	}, nil
+}
+
+// searchDeadline makes the context that ends one search after timeout. A test
+// sets one to end the search at a known point instead of at a clock time.
+type searchDeadline func(ctx context.Context, timeout time.Duration) (context.Context, context.CancelFunc)
+
+// with returns the search context. A nil searchDeadline uses
+// context.WithTimeout.
+func (d searchDeadline) with(ctx context.Context, timeout time.Duration) (context.Context, context.CancelFunc) {
+	if d == nil {
+		return context.WithTimeout(ctx, timeout)
+	}
+	return d(ctx, timeout)
 }
 
 // searchEnd tells how runSearch ended.

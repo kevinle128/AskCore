@@ -717,7 +717,7 @@ func TestACPE2EState(t *testing.T) {
 	}
 	var idle state
 	p.ok("_ask/session/state", e2eSession(sid), &idle)
-	require.Equal(t, state{SessionID: sid, Epoch: idle.Epoch, ModelID: "faux/faux-1@faux", ThinkingLevel: "off", Steering: []string{}, FollowUp: []string{}}, idle)
+	require.Equal(t, state{SessionID: sid, Epoch: idle.Epoch, ModelID: "faux/faux-1@faux", ThinkingLevel: "default", Steering: []string{}, FollowUp: []string{}}, idle)
 	require.NotEmpty(t, idle.Epoch)
 
 	id := p.send("session/prompt", e2ePrompt(sid, longPromptText))

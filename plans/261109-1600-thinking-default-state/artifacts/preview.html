@@ -1,0 +1,209 @@
+<!doctype html>
+<html lang="en"><head><meta charset="utf-8">
+<title>Thinking level default</title>
+<style>
+body { margin:0; font-family: system-ui, sans-serif; background:#0b0c11; color:#cfd2e3; display:flex; }
+nav { position:sticky; top:0; height:100vh; overflow:auto; width:280px; padding:16px; box-sizing:border-box;
+       background:#11121a; border-right:1px solid #22243a; font-size:13px; flex:none; }
+nav a { display:block; color:#aeb2c9; text-decoration:none; padding:3px 0; }
+nav a:hover { color:#f472b6; }
+main { padding:24px 32px; flex:1; min-width:0; overflow-x:auto; }
+h1 { font-size:20px; margin:0 0 4px; }
+.note { color:#8b8fa8; font-size:14px; max-width:900px; }
+section { margin:36px 0; }
+h2 { font-size:16px; margin:0 0 4px; }
+.cap { margin:0 0 10px; color:#aeb2c9; font-size:14px; max-width:900px; }
+.size { font-size:12px; color:#6f7390; margin:10px 0 4px 110px; }
+.pair { display:flex; align-items:flex-start; }
+.labels { width:100px; margin-right:10px; padding:14px 0; font:11px/1.42 system-ui; color:#7d81a0; text-align:right; flex:none; }
+.lab { height:calc(13.5px * 1.42); line-height:calc(13.5px * 1.42); white-space:nowrap; }
+.term { background:#13141c; color:#d9dbe8; font:13.5px/1.42 "JetBrains Mono","SF Mono",Menlo,monospace;
+         padding:14px 16px; border-radius:12px; box-shadow:0 10px 40px rgba(0,0,0,.5); border:1px solid #23253a; box-sizing:content-box; }
+.row { white-space:pre; height:calc(13.5px * 1.42); }
+.cursor { color:#f472b6; animation: blink 1s steps(1) infinite; }
+@keyframes blink { 50% { opacity:0; } }
+.logo { background: linear-gradient(90deg,#a78bfa,#f472b6,#fb923c); -webkit-background-clip:text; background-clip:text;
+         color:transparent !important; font-weight:700; }
+</style></head><body>
+<nav><b>Design states</b><br><br><a href="#D1">D1 Session start, no level chosen</a><a href="#D2">D2 shift+tab from default goes to off</a><a href="#D3">D3 shift+tab from the last level comes back to default</a><a href="#D4">D4 ctrl+p to a scope entry that states no level</a><a href="#D5">D5 ctrl+p to a model that has no thinking</a><a href="#D6">D6 shift+tab while the run works</a><a href="#D7">D7 An older leader refuses default</a><a href="#D8">D8 Narrow terminal: ctrl+p notice and footer row</a></nav>
+<main>
+<h1>Thinking level with no choice: TUI design preview (draft)</h1>
+<p class="note">Each box is one terminal at the stated size, on the alternate screen. The names at the left are the
+screen parts from internal/tui/README.md; they are not on screen. Colors follow docs/tui-style-guide.md.
+Source: artifacts/sketch-gen.py, the same rows as design.md. ▌ is the cursor.</p>
+<section id="D1"><h2>D1. Session start, no level chosen</h2><p class="cap">The TUI started with no --thinking and no :level, on a model that has thinking. The request sends no level, so the default of the provider applies. The footer row says default, not off. No notice.</p><div class="size">80×24</div><div class="pair"><div class="labels"><div class="lab">header</div><div class="lab">rule</div><div class="lab">block pane</div><div class="lab"></div><div class="lab"></div><div class="lab"></div><div class="lab"></div><div class="lab"></div><div class="lab"></div><div class="lab"></div><div class="lab"></div><div class="lab"></div><div class="lab"></div><div class="lab"></div><div class="lab"></div><div class="lab"></div><div class="lab"></div><div class="lab"></div><div class="lab"></div><div class="lab">rule</div><div class="lab">prompt pane</div><div class="lab">rule</div><div class="lab">footer</div><div class="lab">bar</div></div><div class="term" style="width:80ch"><div class="row"><span class="logo" style=""> ◢◤ ask</span><span class="" style="">                                                                         </span></div>
+<div class="row"><span class="" style="color:#4c4f66">────────────────────────────────────────────────────────────────────────────────</span><span class="" style=""></span></div>
+<div class="row"><span class="" style="">                                                                                </span></div>
+<div class="row"><span class="" style="">                                                                                </span></div>
+<div class="row"><span class="" style="">                                                                                </span></div>
+<div class="row"><span class="" style="">                                                                                </span></div>
+<div class="row"><span class="" style="">                                                                                </span></div>
+<div class="row"><span class="" style="">                                                                                </span></div>
+<div class="row"><span class="" style="">                                                                                </span></div>
+<div class="row"><span class="" style="">                                                                                </span></div>
+<div class="row"><span class="" style="">                                                                                </span></div>
+<div class="row"><span class="" style="">                                                                                </span></div>
+<div class="row"><span class="" style="">                                                                                </span></div>
+<div class="row"><span class="" style="">                                                                                </span></div>
+<div class="row"><span class="" style="">                                                                                </span></div>
+<div class="row"><span class="" style="">                                                                                </span></div>
+<div class="row"><span class="" style="">                                                                                </span></div>
+<div class="row"><span class="" style="">                                                                                </span></div>
+<div class="row"><span class="" style="">                                                                                </span></div>
+<div class="row"><span class="" style="color:#4c4f66">────────────────────────────────────────────────────────────────────────────────</span><span class="" style=""></span></div>
+<div class="row"><span class="" style="color:#f472b6"> ❯ </span><span class="" style="color:#6f7390">Ask anything  ·  / commands  ·  ctrl+l model</span><span class="" style="">                                 </span></div>
+<div class="row"><span class="" style="color:#4c4f66">────────────────────────────────────────────────────────────────────────────────</span><span class="" style=""></span></div>
+<div class="row"><span class="" style="color:#6f7390"> ⌂ ~/src/askcore</span><span class="" style="">                          </span><span class="" style="color:#a78bfa">openai/gpt-5.5</span><span class="" style="color:#a78bfa"> ◐ default</span><span class="" style="">  </span><span class="" style="color:#f472b6">▱▱▱▱▱▱▱▱ 0%</span><span class="" style=""> </span></div>
+<div class="row"><span class="" style="color:#4c4f66"> Tab blocks · ctrl+t thinking · ctrl+l model · / commands</span><span class="" style="">                       </span></div></div></div></section><section id="D2"><h2>D2. shift+tab from default goes to off</h2><p class="cap">One press of shift+tab while the run is idle. The level is now a choice: off. Only the footer row changes, as for every other level today; the status row stays empty.</p><div class="size">80×24</div><div class="pair"><div class="labels"><div class="lab">header</div><div class="lab">rule</div><div class="lab">block pane</div><div class="lab"></div><div class="lab"></div><div class="lab"></div><div class="lab"></div><div class="lab"></div><div class="lab"></div><div class="lab"></div><div class="lab"></div><div class="lab"></div><div class="lab"></div><div class="lab"></div><div class="lab"></div><div class="lab"></div><div class="lab"></div><div class="lab"></div><div class="lab"></div><div class="lab">rule</div><div class="lab">prompt pane</div><div class="lab">rule</div><div class="lab">footer</div><div class="lab">bar</div></div><div class="term" style="width:80ch"><div class="row"><span class="logo" style=""> ◢◤ ask</span><span class="" style="">                                                                         </span></div>
+<div class="row"><span class="" style="color:#4c4f66">────────────────────────────────────────────────────────────────────────────────</span><span class="" style=""></span></div>
+<div class="row"><span class="" style="font-weight:700;color:#f472b6">  ❯ </span><span class="" style="font-weight:700;color:#d9dbe8">why does TestLeaderStale fail on CI?</span><span class="" style="">                                 </span><span class="" style="color:#4c4f66">14:02</span><span class="" style="">  </span></div>
+<div class="row"><span class="" style="">                                                                                </span></div>
+<div class="row"><span class="" style="">  The test waits for the stale socket check, but CI runs it with a 1 s</span><span class="" style="">          </span></div>
+<div class="row"><span class="" style="">  deadline. The leader removes the stale socket after the lock probe, and the</span><span class="" style="">   </span></div>
+<div class="row"><span class="" style="">  probe can take 1.2 s.</span><span class="" style="">                                                         </span></div>
+<div class="row"><span class="" style="">                                                                                </span></div>
+<div class="row"><span class="" style="color:#6f7390">  gpt-5.5 · 4.2s · ↑12.4k ↓1.8k · $0.040</span><span class="" style="">                                        </span></div>
+<div class="row"><span class="" style="">                                                                                </span></div>
+<div class="row"><span class="" style="">                                                                                </span></div>
+<div class="row"><span class="" style="">                                                                                </span></div>
+<div class="row"><span class="" style="">                                                                                </span></div>
+<div class="row"><span class="" style="">                                                                                </span></div>
+<div class="row"><span class="" style="">                                                                                </span></div>
+<div class="row"><span class="" style="">                                                                                </span></div>
+<div class="row"><span class="" style="">                                                                                </span></div>
+<div class="row"><span class="" style="">                                                                                </span></div>
+<div class="row"><span class="" style="">                                                                                </span></div>
+<div class="row"><span class="" style="color:#4c4f66">────────────────────────────────────────────────────────────────────────────────</span><span class="" style=""></span></div>
+<div class="row"><span class="" style="color:#f472b6"> ❯ </span><span class="" style="color:#6f7390">Ask anything  ·  / commands  ·  ctrl+l model</span><span class="" style="">                                 </span></div>
+<div class="row"><span class="" style="color:#4c4f66">────────────────────────────────────────────────────────────────────────────────</span><span class="" style=""></span></div>
+<div class="row"><span class="" style="color:#6f7390"> ⌂ ~/src/askcore</span><span class="" style="">                              </span><span class="" style="color:#a78bfa">openai/gpt-5.5</span><span class="" style="color:#a78bfa"> ◐ off</span><span class="" style="">  </span><span class="" style="color:#f472b6">▱▱▱▱▱▱▱▱ 4%</span><span class="" style=""> </span></div>
+<div class="row"><span class="" style="color:#4c4f66"> Tab blocks · ctrl+t thinking · ctrl+l model · / commands</span><span class="" style="">                       </span></div></div></div></section><section id="D3"><h2>D3. shift+tab from the last level comes back to default</h2><p class="cap">From max (or from the highest level that the model has), the next press asks default. The footer row says default again, and the next request sends no level.</p><div class="size">80×24</div><div class="pair"><div class="labels"><div class="lab">header</div><div class="lab">rule</div><div class="lab">block pane</div><div class="lab"></div><div class="lab"></div><div class="lab"></div><div class="lab"></div><div class="lab"></div><div class="lab"></div><div class="lab"></div><div class="lab"></div><div class="lab"></div><div class="lab"></div><div class="lab"></div><div class="lab"></div><div class="lab"></div><div class="lab"></div><div class="lab"></div><div class="lab"></div><div class="lab">rule</div><div class="lab">prompt pane</div><div class="lab">rule</div><div class="lab">footer</div><div class="lab">bar</div></div><div class="term" style="width:80ch"><div class="row"><span class="logo" style=""> ◢◤ ask</span><span class="" style="">                                                                         </span></div>
+<div class="row"><span class="" style="color:#4c4f66">────────────────────────────────────────────────────────────────────────────────</span><span class="" style=""></span></div>
+<div class="row"><span class="" style="font-weight:700;color:#f472b6">  ❯ </span><span class="" style="font-weight:700;color:#d9dbe8">why does TestLeaderStale fail on CI?</span><span class="" style="">                                 </span><span class="" style="color:#4c4f66">14:02</span><span class="" style="">  </span></div>
+<div class="row"><span class="" style="">                                                                                </span></div>
+<div class="row"><span class="" style="">  The test waits for the stale socket check, but CI runs it with a 1 s</span><span class="" style="">          </span></div>
+<div class="row"><span class="" style="">  deadline. The leader removes the stale socket after the lock probe, and the</span><span class="" style="">   </span></div>
+<div class="row"><span class="" style="">  probe can take 1.2 s.</span><span class="" style="">                                                         </span></div>
+<div class="row"><span class="" style="">                                                                                </span></div>
+<div class="row"><span class="" style="color:#6f7390">  gpt-5.5 · 4.2s · ↑12.4k ↓1.8k · $0.040</span><span class="" style="">                                        </span></div>
+<div class="row"><span class="" style="">                                                                                </span></div>
+<div class="row"><span class="" style="">                                                                                </span></div>
+<div class="row"><span class="" style="">                                                                                </span></div>
+<div class="row"><span class="" style="">                                                                                </span></div>
+<div class="row"><span class="" style="">                                                                                </span></div>
+<div class="row"><span class="" style="">                                                                                </span></div>
+<div class="row"><span class="" style="">                                                                                </span></div>
+<div class="row"><span class="" style="">                                                                                </span></div>
+<div class="row"><span class="" style="">                                                                                </span></div>
+<div class="row"><span class="" style="">                                                                                </span></div>
+<div class="row"><span class="" style="color:#4c4f66">────────────────────────────────────────────────────────────────────────────────</span><span class="" style=""></span></div>
+<div class="row"><span class="" style="color:#f472b6"> ❯ </span><span class="" style="color:#6f7390">Ask anything  ·  / commands  ·  ctrl+l model</span><span class="" style="">                                 </span></div>
+<div class="row"><span class="" style="color:#4c4f66">────────────────────────────────────────────────────────────────────────────────</span><span class="" style=""></span></div>
+<div class="row"><span class="" style="color:#6f7390"> ⌂ ~/src/askcore</span><span class="" style="">                          </span><span class="" style="color:#a78bfa">openai/gpt-5.5</span><span class="" style="color:#a78bfa"> ◐ default</span><span class="" style="">  </span><span class="" style="color:#f472b6">▱▱▱▱▱▱▱▱ 4%</span><span class="" style=""> </span></div>
+<div class="row"><span class="" style="color:#4c4f66"> Tab blocks · ctrl+t thinking · ctrl+l model · / commands</span><span class="" style="">                       </span></div></div></div></section><section id="D4"><h2>D4. ctrl+p to a scope entry that states no level</h2><p class="cap">The level stays default after a model change. The cycle notice names it, as it names a chosen level today.</p><div class="size">80×24</div><div class="pair"><div class="labels"><div class="lab">header</div><div class="lab">rule</div><div class="lab">block pane</div><div class="lab"></div><div class="lab"></div><div class="lab"></div><div class="lab"></div><div class="lab"></div><div class="lab"></div><div class="lab"></div><div class="lab"></div><div class="lab"></div><div class="lab"></div><div class="lab"></div><div class="lab"></div><div class="lab"></div><div class="lab"></div><div class="lab"></div><div class="lab">status</div><div class="lab">rule</div><div class="lab">prompt pane</div><div class="lab">rule</div><div class="lab">footer</div><div class="lab">bar</div></div><div class="term" style="width:80ch"><div class="row"><span class="logo" style=""> ◢◤ ask</span><span class="" style="">                                                                         </span></div>
+<div class="row"><span class="" style="color:#4c4f66">────────────────────────────────────────────────────────────────────────────────</span><span class="" style=""></span></div>
+<div class="row"><span class="" style="font-weight:700;color:#f472b6">  ❯ </span><span class="" style="font-weight:700;color:#d9dbe8">why does TestLeaderStale fail on CI?</span><span class="" style="">                                 </span><span class="" style="color:#4c4f66">14:02</span><span class="" style="">  </span></div>
+<div class="row"><span class="" style="">                                                                                </span></div>
+<div class="row"><span class="" style="">  The test waits for the stale socket check, but CI runs it with a 1 s</span><span class="" style="">          </span></div>
+<div class="row"><span class="" style="">  deadline. The leader removes the stale socket after the lock probe, and the</span><span class="" style="">   </span></div>
+<div class="row"><span class="" style="">  probe can take 1.2 s.</span><span class="" style="">                                                         </span></div>
+<div class="row"><span class="" style="">                                                                                </span></div>
+<div class="row"><span class="" style="color:#6f7390">  gpt-5.5 · 4.2s · ↑12.4k ↓1.8k · $0.040</span><span class="" style="">                                        </span></div>
+<div class="row"><span class="" style="">                                                                                </span></div>
+<div class="row"><span class="" style="">                                                                                </span></div>
+<div class="row"><span class="" style="">                                                                                </span></div>
+<div class="row"><span class="" style="">                                                                                </span></div>
+<div class="row"><span class="" style="">                                                                                </span></div>
+<div class="row"><span class="" style="">                                                                                </span></div>
+<div class="row"><span class="" style="">                                                                                </span></div>
+<div class="row"><span class="" style="">                                                                                </span></div>
+<div class="row"><span class="" style="">                                                                                </span></div>
+<div class="row"><span class="" style="color:#4c4f66">┊ </span><span class="" style="color:#4ade80">✓ </span><span class="" style="color:#4c4f66">Model: anthropic/claude-sonnet-4-6 · default · 2 of 3</span><span class="" style="">                       </span></div>
+<div class="row"><span class="" style="color:#4c4f66">────────────────────────────────────────────────────────────────────────────────</span><span class="" style=""></span></div>
+<div class="row"><span class="" style="color:#f472b6"> ❯ </span><span class="" style="color:#6f7390">Ask anything  ·  / commands  ·  ctrl+l model</span><span class="" style="">                                 </span></div>
+<div class="row"><span class="" style="color:#4c4f66">────────────────────────────────────────────────────────────────────────────────</span><span class="" style=""></span></div>
+<div class="row"><span class="" style="color:#6f7390"> ⌂ ~/src/askcore</span><span class="" style="">            </span><span class="" style="color:#a78bfa">anthropic/claude-sonnet-4-6</span><span class="" style="color:#a78bfa"> ◐ default</span><span class="" style="">  </span><span class="" style="color:#f472b6">▰▱▱▱▱▱▱▱ 12%</span><span class="" style=""> </span></div>
+<div class="row"><span class="" style="color:#4c4f66"> Tab blocks · ctrl+t thinking · ctrl+l model · / commands</span><span class="" style="">                       </span></div></div></div></section><section id="D5"><h2>D5. ctrl+p to a model that has no thinking</h2><p class="cap">A model with no thinking shows no level in the footer row and in the notice, as today. The session keeps default; the next model with thinking shows default again.</p><div class="size">80×24</div><div class="pair"><div class="labels"><div class="lab">header</div><div class="lab">rule</div><div class="lab">block pane</div><div class="lab"></div><div class="lab"></div><div class="lab"></div><div class="lab"></div><div class="lab"></div><div class="lab"></div><div class="lab"></div><div class="lab"></div><div class="lab"></div><div class="lab"></div><div class="lab"></div><div class="lab"></div><div class="lab"></div><div class="lab"></div><div class="lab"></div><div class="lab">status</div><div class="lab">rule</div><div class="lab">prompt pane</div><div class="lab">rule</div><div class="lab">footer</div><div class="lab">bar</div></div><div class="term" style="width:80ch"><div class="row"><span class="logo" style=""> ◢◤ ask</span><span class="" style="">                                                                         </span></div>
+<div class="row"><span class="" style="color:#4c4f66">────────────────────────────────────────────────────────────────────────────────</span><span class="" style=""></span></div>
+<div class="row"><span class="" style="font-weight:700;color:#f472b6">  ❯ </span><span class="" style="font-weight:700;color:#d9dbe8">why does TestLeaderStale fail on CI?</span><span class="" style="">                                 </span><span class="" style="color:#4c4f66">14:02</span><span class="" style="">  </span></div>
+<div class="row"><span class="" style="">                                                                                </span></div>
+<div class="row"><span class="" style="">  The test waits for the stale socket check, but CI runs it with a 1 s</span><span class="" style="">          </span></div>
+<div class="row"><span class="" style="">  deadline. The leader removes the stale socket after the lock probe, and the</span><span class="" style="">   </span></div>
+<div class="row"><span class="" style="">  probe can take 1.2 s.</span><span class="" style="">                                                         </span></div>
+<div class="row"><span class="" style="">                                                                                </span></div>
+<div class="row"><span class="" style="color:#6f7390">  gpt-5.5 · 4.2s · ↑12.4k ↓1.8k · $0.040</span><span class="" style="">                                        </span></div>
+<div class="row"><span class="" style="">                                                                                </span></div>
+<div class="row"><span class="" style="">                                                                                </span></div>
+<div class="row"><span class="" style="">                                                                                </span></div>
+<div class="row"><span class="" style="">                                                                                </span></div>
+<div class="row"><span class="" style="">                                                                                </span></div>
+<div class="row"><span class="" style="">                                                                                </span></div>
+<div class="row"><span class="" style="">                                                                                </span></div>
+<div class="row"><span class="" style="">                                                                                </span></div>
+<div class="row"><span class="" style="">                                                                                </span></div>
+<div class="row"><span class="" style="color:#4c4f66">┊ </span><span class="" style="color:#4ade80">✓ </span><span class="" style="color:#4c4f66">Model: local/alpha · 3 of 3</span><span class="" style="">                                                 </span></div>
+<div class="row"><span class="" style="color:#4c4f66">────────────────────────────────────────────────────────────────────────────────</span><span class="" style=""></span></div>
+<div class="row"><span class="" style="color:#f472b6"> ❯ </span><span class="" style="color:#6f7390">Ask anything  ·  / commands  ·  ctrl+l model</span><span class="" style="">                                 </span></div>
+<div class="row"><span class="" style="color:#4c4f66">────────────────────────────────────────────────────────────────────────────────</span><span class="" style=""></span></div>
+<div class="row"><span class="" style="color:#6f7390"> ⌂ ~/src/askcore</span><span class="" style="">                                       </span><span class="" style="color:#a78bfa">local/alpha</span><span class="" style="">  </span><span class="" style="color:#f472b6">▱▱▱▱▱▱▱▱ 4%</span><span class="" style=""> </span></div>
+<div class="row"><span class="" style="color:#4c4f66"> Tab blocks · ctrl+t thinking · ctrl+l model · / commands</span><span class="" style="">                       </span></div></div></div></section><section id="D6"><h2>D6. shift+tab while the run works</h2><p class="cap">The text is the text of today. The level does not change, and the footer row keeps default.</p><div class="size">80×24</div><div class="pair"><div class="labels"><div class="lab">header</div><div class="lab">rule</div><div class="lab">block pane</div><div class="lab"></div><div class="lab"></div><div class="lab"></div><div class="lab"></div><div class="lab"></div><div class="lab"></div><div class="lab"></div><div class="lab"></div><div class="lab"></div><div class="lab"></div><div class="lab"></div><div class="lab"></div><div class="lab"></div><div class="lab"></div><div class="lab"></div><div class="lab">status</div><div class="lab">rule</div><div class="lab">prompt pane</div><div class="lab">rule</div><div class="lab">footer</div><div class="lab">bar</div></div><div class="term" style="width:80ch"><div class="row"><span class="logo" style=""> ◢◤ ask</span><span class="" style="">                                                                         </span></div>
+<div class="row"><span class="" style="color:#4c4f66">────────────────────────────────────────────────────────────────────────────────</span><span class="" style=""></span></div>
+<div class="row"><span class="" style="font-weight:700;color:#f472b6">  ❯ </span><span class="" style="font-weight:700;color:#d9dbe8">why does TestLeaderStale fail on CI?</span><span class="" style="">                                 </span><span class="" style="color:#4c4f66">14:02</span><span class="" style="">  </span></div>
+<div class="row"><span class="" style="">                                                                                </span></div>
+<div class="row"><span class="" style="">  The test waits for the stale socket check, but CI runs it with a 1 s</span><span class="" style="">          </span></div>
+<div class="row"><span class="" style="">  deadline. The leader removes the stale socket after the lock probe, and the</span><span class="" style="">   </span></div>
+<div class="row"><span class="" style="">  probe can take 1.2 s.</span><span class="" style="">                                                         </span></div>
+<div class="row"><span class="" style="">                                                                                </span></div>
+<div class="row"><span class="" style="color:#6f7390">  gpt-5.5 · 4.2s · ↑12.4k ↓1.8k · $0.040</span><span class="" style="">                                        </span></div>
+<div class="row"><span class="" style="">                                                                                </span></div>
+<div class="row"><span class="" style="font-weight:700;color:#f472b6">  ❯ </span><span class="" style="font-weight:700;color:#d9dbe8">show me the probe code</span><span class="" style="">                                               </span><span class="" style="color:#4c4f66">14:03</span><span class="" style="">  </span></div>
+<div class="row"><span class="" style="">                                                                                </span></div>
+<div class="row"><span class="" style="color:#facc15">  ◆ </span><span class="" style="color:#d9dbe8">Reading internal/leader/client.go</span><span class="" style="">                                        </span><span class="" style="color:#facc15">⠋</span><span class="" style="">  </span></div>
+<div class="row"><span class="" style="">                                                                                </span></div>
+<div class="row"><span class="" style="">                                                                                </span></div>
+<div class="row"><span class="" style="">                                                                                </span></div>
+<div class="row"><span class="" style="">                                                                                </span></div>
+<div class="row"><span class="" style="">                                                                                </span></div>
+<div class="row"><span class="" style="color:#4c4f66">┊ </span><span class="" style="color:#4c4f66">Thinking level can change when the run ends.</span><span class="" style="">                                  </span></div>
+<div class="row"><span class="" style="color:#4c4f66">────────────────────────────────────────────────────────────────────────────────</span><span class="" style=""></span></div>
+<div class="row"><span class="" style="color:#f472b6"> ❯ </span><span class="" style="color:#6f7390">Ask anything  ·  / commands  ·  ctrl+l model</span><span class="" style="">                                 </span></div>
+<div class="row"><span class="" style="color:#4c4f66">────────────────────────────────────────────────────────────────────────────────</span><span class="" style=""></span></div>
+<div class="row"><span class="" style="color:#6f7390"> ⌂ ~/src/askcore</span><span class="" style="">                          </span><span class="" style="color:#a78bfa">openai/gpt-5.5</span><span class="" style="color:#a78bfa"> ◐ default</span><span class="" style="">  </span><span class="" style="color:#f472b6">▱▱▱▱▱▱▱▱ 4%</span><span class="" style=""> </span></div>
+<div class="row"><span class="" style="color:#4c4f66"> Tab blocks · ctrl+t thinking · ctrl+l model · / commands</span><span class="" style="">                       </span></div></div></div></section><section id="D7"><h2>D7. An older leader refuses default</h2><p class="cap">A leader that was started by hand from an older build answers invalid_params for the word default. The level stays max. The next press skips default and asks off, so the cycle does not stop.</p><div class="size">80×24</div><div class="pair"><div class="labels"><div class="lab">header</div><div class="lab">rule</div><div class="lab">block pane</div><div class="lab"></div><div class="lab"></div><div class="lab"></div><div class="lab"></div><div class="lab"></div><div class="lab"></div><div class="lab"></div><div class="lab"></div><div class="lab"></div><div class="lab"></div><div class="lab"></div><div class="lab"></div><div class="lab"></div><div class="lab"></div><div class="lab">status</div><div class="lab"></div><div class="lab">rule</div><div class="lab">prompt pane</div><div class="lab">rule</div><div class="lab">footer</div><div class="lab">bar</div></div><div class="term" style="width:80ch"><div class="row"><span class="logo" style=""> ◢◤ ask</span><span class="" style="">                                                                         </span></div>
+<div class="row"><span class="" style="color:#4c4f66">────────────────────────────────────────────────────────────────────────────────</span><span class="" style=""></span></div>
+<div class="row"><span class="" style="font-weight:700;color:#f472b6">  ❯ </span><span class="" style="font-weight:700;color:#d9dbe8">why does TestLeaderStale fail on CI?</span><span class="" style="">                                 </span><span class="" style="color:#4c4f66">14:02</span><span class="" style="">  </span></div>
+<div class="row"><span class="" style="">                                                                                </span></div>
+<div class="row"><span class="" style="">  The test waits for the stale socket check, but CI runs it with a 1 s</span><span class="" style="">          </span></div>
+<div class="row"><span class="" style="">  deadline. The leader removes the stale socket after the lock probe, and the</span><span class="" style="">   </span></div>
+<div class="row"><span class="" style="">  probe can take 1.2 s.</span><span class="" style="">                                                         </span></div>
+<div class="row"><span class="" style="">                                                                                </span></div>
+<div class="row"><span class="" style="color:#6f7390">  gpt-5.5 · 4.2s · ↑12.4k ↓1.8k · $0.040</span><span class="" style="">                                        </span></div>
+<div class="row"><span class="" style="">                                                                                </span></div>
+<div class="row"><span class="" style="">                                                                                </span></div>
+<div class="row"><span class="" style="">                                                                                </span></div>
+<div class="row"><span class="" style="">                                                                                </span></div>
+<div class="row"><span class="" style="">                                                                                </span></div>
+<div class="row"><span class="" style="">                                                                                </span></div>
+<div class="row"><span class="" style="">                                                                                </span></div>
+<div class="row"><span class="" style="">                                                                                </span></div>
+<div class="row"><span class="" style="color:#4c4f66">┊ </span><span class="" style="color:#f87171">Could not change the thinking level: the leader does not know default.</span><span class="" style="">        </span></div>
+<div class="row"><span class="" style="color:#4c4f66">┊ </span><span class="" style="color:#f87171">Restart it with this build: ask leader stop</span><span class="" style="">                                   </span></div>
+<div class="row"><span class="" style="color:#4c4f66">────────────────────────────────────────────────────────────────────────────────</span><span class="" style=""></span></div>
+<div class="row"><span class="" style="color:#f472b6"> ❯ </span><span class="" style="color:#6f7390">Ask anything  ·  / commands  ·  ctrl+l model</span><span class="" style="">                                 </span></div>
+<div class="row"><span class="" style="color:#4c4f66">────────────────────────────────────────────────────────────────────────────────</span><span class="" style=""></span></div>
+<div class="row"><span class="" style="color:#6f7390"> ⌂ ~/src/askcore</span><span class="" style="">                              </span><span class="" style="color:#a78bfa">openai/gpt-5.5</span><span class="" style="color:#a78bfa"> ◐ max</span><span class="" style="">  </span><span class="" style="color:#f472b6">▱▱▱▱▱▱▱▱ 4%</span><span class="" style=""> </span></div>
+<div class="row"><span class="" style="color:#4c4f66"> Tab blocks · ctrl+t thinking · ctrl+l model · / commands</span><span class="" style="">                       </span></div></div></div></section><section id="D8"><h2>D8. Narrow terminal: ctrl+p notice and footer row</h2><p class="cap">Under 60 columns the footer row shows no level (unchanged). The short cycle notice names default.</p><div class="size">40×14</div><div class="pair"><div class="labels"><div class="lab">header</div><div class="lab">rule</div><div class="lab">block pane</div><div class="lab"></div><div class="lab"></div><div class="lab"></div><div class="lab"></div><div class="lab"></div><div class="lab">status</div><div class="lab">rule</div><div class="lab">prompt pane</div><div class="lab">rule</div><div class="lab">footer</div><div class="lab">bar</div></div><div class="term" style="width:40ch"><div class="row"><span class="logo" style=""> ◢◤ ask</span><span class="" style="">                                 </span></div>
+<div class="row"><span class="" style="color:#4c4f66">────────────────────────────────────────</span><span class="" style=""></span></div>
+<div class="row"><span class="" style="">  check, but CI runs it with a 1 s</span><span class="" style="">      </span></div>
+<div class="row"><span class="" style="">  deadline. The leader removes the</span><span class="" style="">      </span></div>
+<div class="row"><span class="" style="">  stale socket after the lock probe,</span><span class="" style="">    </span></div>
+<div class="row"><span class="" style="">  and the probe can take 1.2 s.</span><span class="" style="">         </span></div>
+<div class="row"><span class="" style="">                                        </span></div>
+<div class="row"><span class="" style="color:#6f7390">  gpt-5.5 · 4.2s · ↑12.4k ↓1.8k …</span><span class="" style="">       </span></div>
+<div class="row"><span class="" style="color:#4c4f66">┊ </span><span class="" style="color:#4ade80">✓ </span><span class="" style="color:#4c4f66">openai/gpt-5.5 · default</span><span class="" style="">            </span></div>
+<div class="row"><span class="" style="color:#4c4f66">────────────────────────────────────────</span><span class="" style=""></span></div>
+<div class="row"><span class="" style="color:#f472b6"> ❯ </span><span class="" style="color:#6f7390">Ask anything</span><span class="" style="">                         </span></div>
+<div class="row"><span class="" style="color:#4c4f66">────────────────────────────────────────</span><span class="" style=""></span></div>
+<div class="row"><span class="" style="">                      </span><span class="" style="color:#a78bfa">openai/gpt-5.5</span><span class="" style=""> </span><span class="" style="color:#f472b6">4%</span><span class="" style=""> </span></div>
+<div class="row"><span class="" style="color:#4c4f66"> Tab blocks · / commands</span><span class="" style="">                </span></div></div></div></section>
+</main></body></html>

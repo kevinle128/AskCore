@@ -316,3 +316,56 @@ func TestReadJPEGWithExifOrientationWithinLimitsIsKept(t *testing.T) {
 	require.NoError(t, err)
 	assert.Equal(t, data, got.data, "the tag stays in the file for the consumer")
 }
+
+func pngBytes(t *testing.T, im image.Image) []byte {
+	t.Helper()
+	var b bytes.Buffer
+	require.NoError(t, png.Encode(&b, im))
+	return b.Bytes()
+}
+
+func TestToInlineRefusesMoreThan16MillionPixels(t *testing.T) {
+	t.Parallel()
+	// A flat gray canvas compresses to a small file, so the file size does
+	// not warn of the decode cost.
+	huge := pngBytes(t, image.NewGray(image.Rect(0, 0, 4097, 4097)))
+	require.Less(t, len(huge), 1<<20)
+
+	_, err := toInline(huge, "image/png", defaultImageLimits)
+	var ie *imageError
+	require.ErrorAs(t, err, &ie)
+	assert.Equal(t, imageTooManyPixels, ie.msg)
+
+	_, err = toInline(huge, "image/png", imageLimits{})
+	require.ErrorAs(t, err, &ie, "the check runs without automatic resizing too")
+	assert.Equal(t, imageTooManyPixels, ie.msg)
+
+	ok, err := toInline(pngBytes(t, image.NewGray(image.Rect(0, 0, 2000, 2000))), "image/png", defaultImageLimits)
+	require.NoError(t, err)
+	assert.Equal(t, "image/png", ok.mime)
+}
+
+func TestToInlineRefusesHugeBMPBeforeDecode(t *testing.T) {
+	t.Parallel()
+	var b bytes.Buffer
+	require.NoError(t, bmp.Encode(&b, image.NewGray(image.Rect(0, 0, 8, 8))))
+	data := b.Bytes()
+	// Claim a 100000 x 100000 canvas in the header of a tiny file.
+	for i, v := range []uint32{100000, 100000} {
+		off := 18 + 4*i
+		data[off], data[off+1], data[off+2], data[off+3] = byte(v), byte(v>>8), byte(v>>16), byte(v>>24)
+	}
+
+	_, err := toInline(data, "image/bmp", defaultImageLimits)
+	var ie *imageError
+	require.ErrorAs(t, err, &ie)
+	assert.Equal(t, imageTooManyPixels, ie.msg)
+}
+
+func TestToInlineReportsUnreadableHeader(t *testing.T) {
+	t.Parallel()
+	_, err := toInline([]byte("\x89PNG\r\n\x1a\nnot a header"), "image/png", defaultImageLimits)
+	var ie *imageError
+	require.ErrorAs(t, err, &ie)
+	assert.Equal(t, imageNotConvertible, ie.msg)
+}

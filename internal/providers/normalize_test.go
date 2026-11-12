@@ -83,8 +83,20 @@ func TestNormalizeResponsesToolCallID(t *testing.T) {
 		{
 			name:   "same model keeps item",
 			id:     "call1|" + item,
-			source: protocol.AssistantMessage{Provider: ProviderOpenAI, Model: ModelGPT55},
+			source: protocol.AssistantMessage{Provider: ProviderOpenAI, API: string(APIOpenAIResponses), Model: ModelGPT55},
 			want:   "call1|" + item,
+		},
+		{
+			name:   "same model id from another native provider gets a hashed item",
+			id:     "call1|" + item,
+			source: protocol.AssistantMessage{Provider: "openai-codex", API: string(APIOpenAIResponses), Model: ModelGPT55},
+			want:   "call1|fc_" + ShortHash(item),
+		},
+		{
+			name:   "same model id on another api gets a hashed item",
+			id:     "call1|" + item,
+			source: protocol.AssistantMessage{Provider: ProviderOpenAI, API: string(APIOpenAICompletions), Model: ModelGPT55},
+			want:   "call1|fc_" + ShortHash(item),
 		},
 		{
 			name:   "other provider turns pipe into underscore",

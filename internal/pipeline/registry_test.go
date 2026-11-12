@@ -89,6 +89,50 @@ func TestPrepareRequestInnerHandlerSeesOuterModelSwitch(t *testing.T) {
 	assert.Equal(t, "switched", got.Model.ID)
 }
 
+func TestPrepareRequestKeepsInPlaceMessageEdit(t *testing.T) {
+	r := NewRegistry()
+	r.OnPrepareRequest(func(ctx context.Context, req Request, next Next[Request, *RequestUpdate]) (*RequestUpdate, error) {
+		req.Context.Messages[0] = userMsg("edited")
+		return next(ctx, req)
+	})
+	msgs := []protocol.Message{userMsg("original")}
+
+	got, err := r.PrepareRequest(context.Background(), Request{Context: AgentContext{Messages: msgs}})
+
+	require.NoError(t, err)
+	require.NotNil(t, got, "an edit in place is a change")
+	require.NotNil(t, got.Context)
+	assert.Equal(t, []protocol.Message{userMsg("edited")}, got.Context.Messages)
+	assert.Equal(t, []protocol.Message{userMsg("original")}, msgs, "the caller's slice is unchanged")
+}
+
+func TestPrepareRequestUntouchedMessagesGiveNoUpdate(t *testing.T) {
+	r := NewRegistry()
+	r.OnPrepareRequest(func(ctx context.Context, req Request, next Next[Request, *RequestUpdate]) (*RequestUpdate, error) {
+		return next(ctx, req)
+	})
+
+	got, err := r.PrepareRequest(context.Background(), Request{Context: AgentContext{Messages: []protocol.Message{userMsg("a")}}})
+
+	require.NoError(t, err)
+	assert.Nil(t, got)
+}
+
+func TestAfterToolKeepsInPlaceResultEdit(t *testing.T) {
+	r := NewRegistry()
+	r.OnAfterTool(func(ctx context.Context, in ToolResultInfo, next Next[ToolResultInfo, *AfterToolCallResult]) (*AfterToolCallResult, error) {
+		in.Result.Content[0] = protocol.Text{Text: "edited"}
+		return next(ctx, in)
+	})
+	content := []protocol.UserBlock{protocol.Text{Text: "original"}}
+
+	got, err := r.AfterTool(context.Background(), ToolResultInfo{Result: protocol.ToolExecutionResult{Content: content}})
+
+	require.NoError(t, err)
+	require.NotNil(t, got, "an edit in place is a change")
+	assert.Equal(t, []protocol.UserBlock{protocol.Text{Text: "edited"}}, got.Content)
+}
+
 func TestAfterToolCallResultApply(t *testing.T) {
 	base := protocol.ToolExecutionResult{Content: text("orig"), StructuredContent: json.RawMessage(`{"s":0}`), Details: json.RawMessage(`{"d":0}`)}
 
@@ -265,4 +309,53 @@ func TestAfterToolPassedOnResultReachesTerminalAndOuterOverrideWins(t *testing.T
 	_, err = r.AfterTool(context.Background(), ToolResultInfo{Result: base})
 	require.NoError(t, err)
 	assert.False(t, innerRan, "a handler without next short-circuits")
+}
+
+func TestPrepareRequestKeepsEditThroughPointerMessage(t *testing.T) {
+	r := NewRegistry()
+	r.OnPrepareRequest(func(ctx context.Context, req Request, next Next[Request, *RequestUpdate]) (*RequestUpdate, error) {
+		req.Context.Messages[0].(*protocol.CustomMessage).CustomType = "edited"
+		return next(ctx, req)
+	})
+	orig := &protocol.CustomMessage{CustomType: "note", Content: text("a")}
+
+	got, err := r.PrepareRequest(context.Background(), Request{Context: AgentContext{Messages: []protocol.Message{orig}}})
+
+	require.NoError(t, err)
+	require.NotNil(t, got, "an edit through a pointer is a change")
+	require.NotNil(t, got.Context)
+	assert.Equal(t, "edited", got.Context.Messages[0].(*protocol.CustomMessage).CustomType)
+	assert.Equal(t, "note", orig.CustomType, "the stored message is unchanged")
+}
+
+func TestPrepareRequestKeepsEditOfContentElement(t *testing.T) {
+	r := NewRegistry()
+	r.OnPrepareRequest(func(ctx context.Context, req Request, next Next[Request, *RequestUpdate]) (*RequestUpdate, error) {
+		req.Context.Messages[0].(protocol.UserMessage).Content[0] = protocol.Text{Text: "edited"}
+		return next(ctx, req)
+	})
+	orig := protocol.UserMessage{Content: text("original")}
+
+	got, err := r.PrepareRequest(context.Background(), Request{Context: AgentContext{Messages: []protocol.Message{orig}}})
+
+	require.NoError(t, err)
+	require.NotNil(t, got, "an edit of a content element is a change")
+	require.NotNil(t, got.Context)
+	assert.Equal(t, []protocol.Message{userMsg("edited")}, got.Context.Messages)
+	assert.Equal(t, text("original"), orig.Content, "the stored content is unchanged")
+}
+
+func TestPrepareRequestHandlerWithoutChangeLeavesOriginalIntact(t *testing.T) {
+	r := NewRegistry()
+	r.OnPrepareRequest(func(ctx context.Context, req Request, next Next[Request, *RequestUpdate]) (*RequestUpdate, error) {
+		return next(ctx, req)
+	})
+	ptr := &protocol.CustomMessage{CustomType: "note", Content: text("a")}
+	msgs := []protocol.Message{userMsg("a"), ptr}
+
+	got, err := r.PrepareRequest(context.Background(), Request{Context: AgentContext{Messages: msgs}})
+
+	require.NoError(t, err)
+	assert.Nil(t, got)
+	assert.Equal(t, []protocol.Message{userMsg("a"), &protocol.CustomMessage{CustomType: "note", Content: text("a")}}, msgs)
 }

@@ -50,9 +50,9 @@ func (b Budget) lineCost(text string) int {
 // bytes.
 func (b Budget) cost(e *entry, runes, bytes int) int {
 	if b.Tokens > 0 {
-		return (e.fixedBytes+bytes+3)/4 + 1
+		return (e.fixedBytes+bytes+e.escaped(runes)+3)/4 + 1
 	}
-	return e.fixedRunes + runes + 1
+	return e.fixedRunes + runes + e.escaped(runes) + 1
 }
 
 // shareDescriptions gives each entry description runes round-robin, one rune

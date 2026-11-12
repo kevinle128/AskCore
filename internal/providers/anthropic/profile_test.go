@@ -126,3 +126,37 @@ func TestBoundAnthropicDoesNotFollowRedirects(t *testing.T) {
 	require.Error(t, err)
 	require.Equal(t, 1, calls)
 }
+
+type closeRecorder struct {
+	io.Reader
+	closed bool
+}
+
+func (c *closeRecorder) Close() error { c.closed = true; return nil }
+
+func TestOAuthTransportClosesBodyAndKeepsCallerRequest(t *testing.T) {
+	payload := `{"system":[{"type":"text","text":"You are Claude Code, Anthropic's official CLI for Claude."}]}`
+	body := &closeRecorder{Reader: strings.NewReader(payload)}
+	req, err := http.NewRequest(http.MethodPost, oauthOrigin+"/v1/messages", body)
+	require.NoError(t, err)
+	req.Header.Set("Authorization", "Bearer secret")
+	req.Header.Set("Anthropic-Version", "2023-06-01")
+	req.Header.Set("Anthropic-Dangerous-Direct-Browser-Access", "true")
+	req.Header.Set("X-App", "cli")
+	req.Header.Set("User-Agent", oauthUserAgent)
+	req.Header.Set("Anthropic-Beta", oauthBeta)
+	var sent *http.Request
+	rt := oauthTransport{token: "secret", base: roundTripFunc(func(r *http.Request) (*http.Response, error) {
+		sent = r
+		got, err := io.ReadAll(r.Body)
+		require.NoError(t, err)
+		require.Equal(t, payload, string(got))
+		return &http.Response{StatusCode: 200, Body: io.NopCloser(strings.NewReader("")), Request: r}, nil
+	})}
+	resp, err := rt.RoundTrip(req)
+	require.NoError(t, err)
+	_ = resp.Body.Close()
+	require.True(t, body.closed, "the original body is closed")
+	require.Same(t, body, req.Body, "the caller request keeps its body")
+	require.NotSame(t, req, sent)
+}

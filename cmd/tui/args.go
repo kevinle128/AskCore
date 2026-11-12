@@ -55,8 +55,9 @@ type options struct {
 	// maxTurns ends a print-mode run after that many turns, turns that a
 	// notice wakes included. Zero means no limit.
 	maxTurns int
-	// bgLimit is the background limit of the job table. Only print mode sets
-	// it; the TUI, the leader and ask acp have none.
+	// bgLimit is the background limit of the job table. Print mode sets it from
+	// its own env; the leader, ask acp and the in-process TUI get theirs from
+	// sessionOptions.
 	bgLimit jobs.BackgroundLimit
 	// noLeader makes the TUI run its agent in this process. It never connects
 	// to a leader and never starts one, so a debugger on this process sees the
@@ -102,8 +103,10 @@ const (
 	defaultModel    = "faux-1"
 )
 
+// thinkingLevels are the words of --thinking. default removes a level that a
+// pattern or a scope entry chose.
 var thinkingLevels = []protocol.ThinkingLevel{
-	protocol.ThinkingOff, protocol.ThinkingMinimal, protocol.ThinkingLow, protocol.ThinkingMedium,
+	protocol.ThinkingDefault, protocol.ThinkingOff, protocol.ThinkingMinimal, protocol.ThinkingLow, protocol.ThinkingMedium,
 	protocol.ThinkingHigh, protocol.ThinkingXHigh, protocol.ThinkingMax,
 }
 
@@ -361,7 +364,7 @@ Options:
                         * does not match /, so openai/* matches openai/gpt-5.5 but not
                         openrouter/qwen/qwen3; use openrouter/*/* for that. Replaces enabledModels
   --api-key <key>       API key for the provider (requires --model)
-  --thinking <level>    Thinking level: off, minimal, low, medium, high, xhigh, max; wins over :level
+  --thinking <level>    Thinking level: default, off, minimal, low, medium, high, xhigh, max; wins over :level
   --offline             Do not refresh the model list from the network (as ASK_DISABLE_MODEL_REFRESH=1);
                         a leader that this command starts gets it too, a running leader keeps its setting
   --max-turns <n>       Print mode: end the run after n turns, turns of background notices included
