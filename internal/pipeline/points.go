@@ -156,6 +156,13 @@ func (r *AfterToolCallResult) Clone() *AfterToolCallResult {
 	return &out
 }
 
+// CloneToolResult returns a deep copy of r, so a holder can change the copy
+// without a change to the original.
+func CloneToolResult(r protocol.ToolExecutionResult) protocol.ToolExecutionResult {
+	c := (&AfterToolCallResult{Content: r.Content, Details: r.Details, StructuredContent: r.StructuredContent, IsError: r.IsError, Terminate: r.Terminate, Usage: r.Usage}).Clone()
+	return protocol.ToolExecutionResult{Content: c.Content, Details: c.Details, StructuredContent: c.StructuredContent, IsError: c.IsError, Terminate: c.Terminate, Usage: c.Usage}
+}
+
 // Apply returns res with the overrides of r and the new error flag. A nil r
 // returns the input unchanged. Handlers and the loop both use it, so the
 // override rule has one copy.

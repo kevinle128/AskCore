@@ -89,6 +89,50 @@ func TestPrepareRequestInnerHandlerSeesOuterModelSwitch(t *testing.T) {
 	assert.Equal(t, "switched", got.Model.ID)
 }
 
+func TestPrepareRequestKeepsInPlaceMessageEdit(t *testing.T) {
+	r := NewRegistry()
+	r.OnPrepareRequest(func(ctx context.Context, req Request, next Next[Request, *RequestUpdate]) (*RequestUpdate, error) {
+		req.Context.Messages[0] = userMsg("edited")
+		return next(ctx, req)
+	})
+	msgs := []protocol.Message{userMsg("original")}
+
+	got, err := r.PrepareRequest(context.Background(), Request{Context: AgentContext{Messages: msgs}})
+
+	require.NoError(t, err)
+	require.NotNil(t, got, "an edit in place is a change")
+	require.NotNil(t, got.Context)
+	assert.Equal(t, []protocol.Message{userMsg("edited")}, got.Context.Messages)
+	assert.Equal(t, []protocol.Message{userMsg("original")}, msgs, "the caller's slice is unchanged")
+}
+
+func TestPrepareRequestUntouchedMessagesGiveNoUpdate(t *testing.T) {
+	r := NewRegistry()
+	r.OnPrepareRequest(func(ctx context.Context, req Request, next Next[Request, *RequestUpdate]) (*RequestUpdate, error) {
+		return next(ctx, req)
+	})
+
+	got, err := r.PrepareRequest(context.Background(), Request{Context: AgentContext{Messages: []protocol.Message{userMsg("a")}}})
+
+	require.NoError(t, err)
+	assert.Nil(t, got)
+}
+
+func TestAfterToolKeepsInPlaceResultEdit(t *testing.T) {
+	r := NewRegistry()
+	r.OnAfterTool(func(ctx context.Context, in ToolResultInfo, next Next[ToolResultInfo, *AfterToolCallResult]) (*AfterToolCallResult, error) {
+		in.Result.Content[0] = protocol.Text{Text: "edited"}
+		return next(ctx, in)
+	})
+	content := []protocol.UserBlock{protocol.Text{Text: "original"}}
+
+	got, err := r.AfterTool(context.Background(), ToolResultInfo{Result: protocol.ToolExecutionResult{Content: content}})
+
+	require.NoError(t, err)
+	require.NotNil(t, got, "an edit in place is a change")
+	assert.Equal(t, []protocol.UserBlock{protocol.Text{Text: "edited"}}, got.Content)
+}
+
 func TestAfterToolCallResultApply(t *testing.T) {
 	base := protocol.ToolExecutionResult{Content: text("orig"), StructuredContent: json.RawMessage(`{"s":0}`), Details: json.RawMessage(`{"d":0}`)}
 

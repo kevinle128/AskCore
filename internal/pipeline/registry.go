@@ -274,10 +274,19 @@ func (r *Registry) PrepareRequest(ctx context.Context, in Request) (*RequestUpda
 	// still as it was stays out of the update, so no handler means a nil
 	// update.
 	orig := in
+	if len(hs) > 0 {
+		// A handler may edit an element in place. It gets its own slice, so the
+		// original stays the comparison base and the caller's slice stays as
+		// it was.
+		in.Context.Messages = slices.Clone(orig.Context.Messages)
+	}
 	terminal := func(_ context.Context, in Request) (*RequestUpdate, error) {
 		var upd RequestUpdate
 		changed := false
-		if !sameMessages(in.Context.Messages, orig.Context.Messages) || in.Context.Tools != orig.Context.Tools {
+		// DeepEqual, not ==: a message holds slices, and == on them panics. It
+		// returns early for the same slice header, so an unchanged request
+		// costs one pass.
+		if !reflect.DeepEqual(in.Context.Messages, orig.Context.Messages) || in.Context.Tools != orig.Context.Tools {
 			upd.Context, changed = &in.Context, true
 		}
 		if !reflect.DeepEqual(in.Model, orig.Model) {
@@ -292,12 +301,6 @@ func (r *Registry) PrepareRequest(ctx context.Context, in Request) (*RequestUpda
 		return &upd, nil
 	}
 	return runAround(ctx, hs, in, terminal, nil)
-}
-
-// sameMessages reports whether a and b are the same slice view. A handler that
-// copies equal messages counts as a change, which is harmless.
-func sameMessages(a, b []protocol.Message) bool {
-	return len(a) == len(b) && (len(a) == 0 || &a[0] == &b[0])
 }
 
 // ExecuteModel runs handlers around a complete, settled model attempt.
@@ -359,8 +362,11 @@ func (r *Registry) AfterTool(ctx context.Context, in ToolResultInfo) (*AfterTool
 			return out.Clone(), err
 		}
 	}
-	// The terminal keeps the result that the innermost handler passed on.
+	// The terminal keeps the result that the innermost handler passed on. The
+	// comparison base is a deep copy, so a handler that edits the content in
+	// place cannot change it.
 	orig := in
+	orig.Result = CloneToolResult(in.Result)
 	terminal := func(_ context.Context, in ToolResultInfo) (*AfterToolCallResult, error) {
 		if in.IsError == orig.IsError && reflect.DeepEqual(in.Result, orig.Result) {
 			return nil, nil

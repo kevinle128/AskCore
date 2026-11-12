@@ -6,6 +6,7 @@ import (
 	"errors"
 	"strings"
 	"testing"
+	"testing/synctest"
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -397,4 +398,73 @@ func TestPrepareRequestModelSwitchStaysForLaterRequests(t *testing.T) {
 	assert.Equal(t, "faux-2", reqs[0].Model.ID, "the switch applies to the request it was made for")
 	assert.Equal(t, "faux-2", reqs[1].Model.ID, "and stays for the later request with no new update")
 	assert.Equal(t, 2, calls)
+}
+
+func TestContinueRunsInputQueuedBeforeTheCheck(t *testing.T) {
+	synctest.Test(t, func(t *testing.T) {
+		p, m := newFaux(t)
+		p.Set(faux.Say("answer"))
+		a := newAgent(t, p, m, nil)
+		rec := &recorder{}
+		a.Subscribe(rec.emit)
+		a.SetContinueProbe(func(after bool) {
+			if !after {
+				_, err := a.FollowUp(user("queued early"))
+				assert.NoError(t, err)
+			}
+		})
+
+		require.NoError(t, a.Continue(context.Background()))
+		require.NoError(t, a.WaitForQuiescence(context.Background()))
+
+		require.Equal(t, 1, p.Calls(), "the queued input reached the model once")
+		assert.Equal(t, []string{"queued early"}, userTexts(a.State().Messages))
+		assert.Equal(t, 1, countOf(rec.eventLabels(), "agent_settled"))
+		require.NoError(t, a.Dispose())
+	})
+}
+
+func TestContinueWakesForInputQueuedAfterTheCheck(t *testing.T) {
+	synctest.Test(t, func(t *testing.T) {
+		p, m := newFaux(t)
+		p.Set(faux.Say("answer"))
+		a := newAgent(t, p, m, nil)
+		a.SetContinueProbe(func(after bool) {
+			if after {
+				_, err := a.Steer(user("queued late"))
+				assert.NoError(t, err)
+			}
+		})
+
+		require.ErrorIs(t, a.Continue(context.Background()), agent.ErrContinueEmpty)
+		require.NoError(t, a.WaitForQuiescence(context.Background()))
+
+		require.Equal(t, 1, p.Calls(), "a second run took the steer message")
+		assert.Equal(t, []string{"queued late"}, userTexts(a.State().Messages))
+		require.NoError(t, a.Dispose())
+	})
+}
+
+func TestContinueQueuedRunWithoutModelDoesNotRespawn(t *testing.T) {
+	synctest.Test(t, func(t *testing.T) {
+		p, m := newFaux(t)
+		a := newAgent(t, p, m, nil)
+		rec := &recorder{}
+		a.Subscribe(rec.emit)
+		a.SetContinueProbe(func(after bool) {
+			if after {
+				assert.True(t, a.ClearModel())
+				_, err := a.FollowUp(user("no model"))
+				assert.NoError(t, err)
+			}
+		})
+
+		require.ErrorIs(t, a.Continue(context.Background()), agent.ErrContinueEmpty)
+		require.NoError(t, a.WaitForIdle(context.Background()))
+		synctest.Wait()
+
+		assert.Equal(t, 1, countOf(rec.eventLabels(), "agent_settled"), "one failed run, no respawn")
+		assert.Equal(t, 0, p.Calls())
+		require.NoError(t, a.Dispose())
+	})
 }

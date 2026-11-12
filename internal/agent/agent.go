@@ -99,6 +99,10 @@ type Agent struct {
 	// quiescenceProbe is a test seam, nil in production. WaitForQuiescence calls
 	// it after its checks and before it reads work again.
 	quiescenceProbe func()
+	// continueProbe is a test seam, nil in production. Continue calls it with
+	// false before it decides, and with true after it decided, before it
+	// returns or runs.
+	continueProbe func(afterDecision bool)
 	// life is the lifetime context of the Agent: only Dispose cancels it, with
 	// endLife. tasks is the registry of the current generation, taskGen. Reset
 	// replaces the registry and raises the generation, so a notice or an event
@@ -235,22 +239,49 @@ func (a *Agent) Prompt(ctx context.Context, msgs ...protocol.Message) error {
 }
 
 // Continue runs the loop on the current context without a new message, like
-// Prompt. It fails before any event when the context is empty or ends with
-// an assistant message.
+// Prompt. When the context is empty or ends with an assistant message, it
+// runs the queued input instead; with no queued input it fails before any
+// event with ErrContinueEmpty or ErrContinueFromAssistant. The run is then
+// marked closing, so input that arrives after that decision starts the next
+// run and is not left in an idle Agent.
 func (a *Agent) Continue(ctx context.Context) error {
 	r, err := a.begin(ctx)
 	if err != nil {
 		return err
 	}
 	defer a.end(r)
-	msgs := r.source.Messages()
-	if !hasConversation(msgs) {
-		return ErrContinueEmpty
+	if a.continueProbe != nil {
+		a.continueProbe(false)
 	}
-	if msgs[len(msgs)-1].Role() == protocol.RoleAssistant {
-		return ErrContinueFromAssistant
+	msgs := r.source.Messages()
+	var failure error
+	switch {
+	case !hasConversation(msgs):
+		failure = ErrContinueEmpty
+	case msgs[len(msgs)-1].Role() == protocol.RoleAssistant:
+		failure = ErrContinueFromAssistant
+	}
+	queued := false
+	if failure != nil {
+		// One critical section decides: input that is queued now runs in this
+		// run, and input that arrives later sees a closing run and wakes the
+		// next one.
+		a.mu.Lock()
+		if queued = a.in.len() > 0; !queued {
+			r.closing = true
+		}
+		a.mu.Unlock()
+	}
+	if a.continueProbe != nil {
+		a.continueProbe(true)
+	}
+	if failure != nil && !queued {
+		return failure
 	}
 	notifyRunStart(ctx, r.id)
+	if queued {
+		return a.execute(r, a.queuedLoop(r))
+	}
 	return a.execute(r, func(ctx context.Context, ac pipeline.AgentContext, cfg LoopConfig, d driver, emit Emit) error {
 		_, err := continueLoop(ctx, ac, cfg, d, emit)
 		return err
@@ -375,6 +406,12 @@ func (a *Agent) dispose() error {
 // it. An empty level stays empty. It is idle-only: a busy agent returns
 // ErrBusy and does not change the model or thinking level.
 func (a *Agent) SetModel(ctx context.Context, model providers.Model) error {
+	a.mu.Lock()
+	if a.disposed {
+		a.mu.Unlock()
+		return ErrDisposed
+	}
+	a.mu.Unlock()
 	if err := providers.Validate(model); err != nil {
 		return err
 	}
@@ -461,6 +498,9 @@ func (a *Agent) clearModelLocked() {
 func (a *Agent) SetThinkingLevel(level protocol.ThinkingLevel) error {
 	a.mu.Lock()
 	defer a.mu.Unlock()
+	if a.disposed {
+		return ErrDisposed
+	}
 	if a.active != nil {
 		return ErrBusy
 	}
@@ -663,7 +703,12 @@ func (a *Agent) drive(r *run) {
 		// goroutine. The run has no input to take, so it publishes nothing.
 		return
 	}
-	_ = a.execute(r, func(ctx context.Context, ac pipeline.AgentContext, cfg LoopConfig, d driver, emit Emit) error {
+	_ = a.execute(r, a.queuedLoop(r))
+}
+
+// queuedLoop is the loop of a run that takes input which is already queued.
+func (a *Agent) queuedLoop(r *run) loopFunc {
+	return func(ctx context.Context, ac pipeline.AgentContext, cfg LoopConfig, d driver, emit Emit) error {
 		if cfg.Model.ID == "" {
 			// The queued input has no model to run on. The run ends with the
 			// error and a settled event, and the input stays queued. The empty
@@ -673,7 +718,7 @@ func (a *Agent) drive(r *run) {
 		}
 		_, err := runQueued(ctx, ac, cfg, d, emit)
 		return err
-	})
+	}
 }
 
 // execute runs one loop and owns its ending: the run-failure path of Pi's

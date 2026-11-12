@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"reflect"
 	"strconv"
 
 	"AskCore/internal/tasks"
@@ -157,13 +158,16 @@ func (a *Agent) Notify(n tasks.Notice) (string, error) {
 // The error is plain: it does not match tasks.ErrNotDelivered, so the registry
 // records the notice as failed and keeps the text.
 func checkNoticeMessage(m protocol.Message) error {
-	switch v := m.(type) {
-	case nil:
+	// A typed nil pointer is not equal to nil. Calling Role on a nil pointer of
+	// a type with a value receiver panics, so every nil pointer is refused here.
+	if m == nil {
 		return ErrNoInput
+	}
+	if rv := reflect.ValueOf(m); rv.Kind() == reflect.Pointer && rv.IsNil() {
+		return ErrNoInput
+	}
+	switch v := m.(type) {
 	case *protocol.CustomMessage:
-		if v == nil {
-			return ErrNoInput
-		}
 		if v.CustomType == "" {
 			return errBadNotice
 		}
