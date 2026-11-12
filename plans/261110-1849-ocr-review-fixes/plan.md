@@ -1,7 +1,7 @@
 ---
 title: "Fix the 46 confirmed defects of the ocr review"
 description: "Fix every real defect that the two triage rounds of the ocr review of master..develop confirmed, with one test for each behavior bug and the docs that the user-visible changes need."
-status: in-progress
+status: completed
 priority: P2
 effort: 32h
 branch: develop
