@@ -64,7 +64,7 @@ func TestReadDetectsImagesByMagicBytes(t *testing.T) {
 
 func TestReadLargeImageIsResizedUnderLimit(t *testing.T) {
 	h := newFileHarness(t, nil)
-	src := image.NewNRGBA(image.Rect(0, 0, 4000, 3000))
+	src := image.NewNRGBA(image.Rect(0, 0, 2400, 1800))
 	rng := rand.New(rand.NewPCG(3, 5))
 	for i := 0; i < len(src.Pix); i += 4 {
 		v := rng.Uint32()
@@ -88,7 +88,7 @@ func TestReadLargeImageIsResizedUnderLimit(t *testing.T) {
 	assert.LessOrEqual(t, cfg.Height, 2000)
 	assert.Equal(t, [2]int{2000, 1500}, [2]int{cfg.Width, cfg.Height})
 	assert.Contains(t, resultText(t, res),
-		"[Image: original 4000x3000, displayed at 2000x1500. Multiply coordinates by 2.00 to map to original image.]")
+		"[Image: original 2400x1800, displayed at 2000x1500. Multiply coordinates by 1.20 to map to original image.]")
 }
 
 func TestReadImageForNonVisionModelAddsNote(t *testing.T) {

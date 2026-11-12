@@ -297,12 +297,8 @@ func toolTruncation(tr sandbox.Truncation) *protocol.ToolTruncation {
 	if !tr.Truncated {
 		return nil
 	}
-	by := "bytes"
-	if tr.ShownLines >= sandbox.DefaultMaxLines {
-		by = "lines"
-	}
 	return &protocol.ToolTruncation{
-		TruncatedBy: by,
+		TruncatedBy: tr.TruncatedBy,
 		TotalBytes:  int(tr.TotalBytes),
 		OutputLines: tr.ShownLines,
 		OutputBytes: tr.ShownBytes,

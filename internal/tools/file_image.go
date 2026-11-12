@@ -34,7 +34,12 @@ var jpegQualities = []int{80, 85, 70, 55, 40}
 const (
 	imageNotConvertible = "[Image omitted: could not be converted to a supported inline image format.]"
 	imageNotResizable   = "[Image omitted: could not be resized below the inline image size limit.]"
+	imageTooManyPixels  = "[Image omitted: the image has more than 16 million pixels.]"
 )
+
+// inlineMaxPixels is the largest canvas that read decodes. A small file can
+// claim a huge canvas, and the decode would allocate for all of it.
+const inlineMaxPixels = 16 << 20
 
 // imageLimits holds the resize settings of read. The zero value is not
 // usable; defaultImageLimits has the defaults. Automatic resizing is on and
@@ -222,6 +227,13 @@ func exifOrientation(data []byte) int {
 // until it fits. The returned error is an *imageError whose text is shown to
 // the model.
 func toInline(data []byte, mime string, lim imageLimits) (inlineImage, error) {
+	cfg, err := decodeImageConfig(data, mime)
+	if err != nil {
+		return inlineImage{}, &imageError{imageNotConvertible}
+	}
+	if cfg.Width <= 0 || cfg.Height <= 0 || cfg.Width > inlineMaxPixels/cfg.Height {
+		return inlineImage{}, &imageError{imageTooManyPixels}
+	}
 	out := inlineImage{data: data, mime: mime}
 	var decoded image.Image
 
@@ -321,6 +333,24 @@ func shrinkToFit(src *image.NRGBA, lim imageLimits) (shrunkImage, error) {
 		}
 		w, h = nw, nh
 	}
+}
+
+// decodeImageConfig reads the header of an image without decoding its pixels.
+func decodeImageConfig(data []byte, mime string) (image.Config, error) {
+	r := bytes.NewReader(data)
+	switch mime {
+	case "image/png":
+		return png.DecodeConfig(r)
+	case "image/jpeg":
+		return jpeg.DecodeConfig(r)
+	case "image/gif":
+		return gif.DecodeConfig(r)
+	case "image/webp":
+		return webp.DecodeConfig(r)
+	case "image/bmp":
+		return bmp.DecodeConfig(r)
+	}
+	return image.Config{}, errors.New("unsupported image type " + mime)
 }
 
 func decodeImage(data []byte, mime string) (image.Image, error) {

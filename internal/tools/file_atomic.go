@@ -12,7 +12,15 @@ import (
 // keeps its mode; a new file gets perm. When path is a symbolic link, the file
 // it points to is replaced and the link stays. The temp file is removed on
 // every error.
-func WriteFileAtomic(path string, data []byte, perm os.FileMode) (err error) {
+func WriteFileAtomic(path string, data []byte, perm os.FileMode) error {
+	return writeFileAtomicChecked(path, data, perm, nil)
+}
+
+// writeFileAtomicChecked is WriteFileAtomic with a last check. check runs
+// after the temp file is closed and before the rename; an error from it stops
+// the write, removes the temp file and is returned as it is. A nil check does
+// nothing.
+func writeFileAtomicChecked(path string, data []byte, perm os.FileMode, check func() error) (err error) {
 	target := canonicalPath(path)
 	mode := perm.Perm()
 	if info, statErr := os.Stat(target); statErr == nil && info.Mode().IsRegular() {
@@ -40,6 +48,11 @@ func WriteFileAtomic(path string, data []byte, perm os.FileMode) (err error) {
 	}
 	if err = tmp.Close(); err != nil {
 		return fmt.Errorf("tools: write %s: %w", path, err)
+	}
+	if check != nil {
+		if err = check(); err != nil {
+			return err
+		}
 	}
 	if err = os.Rename(tmp.Name(), target); err != nil {
 		return fmt.Errorf("tools: write %s: %w", path, err)

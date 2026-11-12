@@ -2,6 +2,7 @@ package bootstrap
 
 import (
 	"errors"
+	"fmt"
 	"io/fs"
 	"path/filepath"
 	"strings"
@@ -37,6 +38,9 @@ const (
 	SkipBudget
 	// SkipTruncated is the most specific file, cut at a UTF-8 boundary.
 	SkipTruncated
+	// SkipOutsideProject is a project file whose link target lies outside the
+	// project root. Nothing is read from it.
+	SkipOutsideProject
 )
 
 type Skip struct {
@@ -67,9 +71,21 @@ func LoadContext(in ContextInput) (Context, error) {
 	if err != nil {
 		return Context{}, err
 	}
+	// The first project folder is the git root, or cwd without a git root.
+	// Resolve it once so a root reached through a link still contains its own
+	// files. A failure must not fall back to a guessed root.
+	projectRoot, err := filepath.EvalSymlinks(dirs[0])
+	switch {
+	case errors.Is(err, fs.ErrNotExist):
+		// No file can exist under a missing folder, so nothing is read.
+		projectRoot = filepath.Clean(dirs[0])
+	case err != nil:
+		return Context{}, fmt.Errorf("resolve project root %s: %w", dirs[0], err)
+	}
+	userDir := ""
 	if in.UserDir != "" {
-		user := filepath.Clean(in.UserDir)
-		dirs = append([]string{user}, withoutDir(dirs, user)...)
+		userDir = filepath.Clean(in.UserDir)
+		dirs = append([]string{userDir}, withoutDir(dirs, userDir)...)
 	}
 
 	var files []loaded
@@ -78,7 +94,24 @@ func LoadContext(in ContextInput) (Context, error) {
 		seen := make(map[string]struct{}, len(contextNames))
 		for _, name := range contextNames {
 			path := filepath.Join(dir, name)
-			data, size, err := readRegular(path)
+			readPath := path
+			if dir != userDir {
+				// Read the file that was checked: a link could change between
+				// the check and the read.
+				real, err := filepath.EvalSymlinks(path)
+				switch {
+				case errors.Is(err, fs.ErrNotExist):
+					continue
+				case err != nil:
+					skipped = append(skipped, Skip{Path: path, Reason: SkipUnreadable})
+					continue
+				case !within(projectRoot, real):
+					skipped = append(skipped, Skip{Path: path, Reason: SkipOutsideProject})
+					continue
+				}
+				readPath = real
+			}
+			data, size, err := readRegular(readPath)
 			switch {
 			case errors.Is(err, fs.ErrNotExist), errors.Is(err, errNotRegular):
 				continue
@@ -109,6 +142,15 @@ func LoadContext(in ContextInput) (Context, error) {
 	}
 	out.Text = render(kept, budget)
 	return out, nil
+}
+
+// within reports whether path is root or lies under it. Both are resolved.
+func within(root, path string) bool {
+	rel, err := filepath.Rel(root, path)
+	if err != nil {
+		return false
+	}
+	return rel != ".." && !strings.HasPrefix(rel, ".."+string(filepath.Separator))
 }
 
 func withoutDir(dirs []string, drop string) []string {
