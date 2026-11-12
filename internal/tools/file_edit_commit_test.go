@@ -73,6 +73,26 @@ func TestEditFailsWhenFileChangesBeforeRename(t *testing.T) {
 		assert.Equal(t, "hello there, longer", string(got))
 	})
 
+	t.Run("a replacement by rename with the same size and mtime", func(t *testing.T) {
+		e, _, dir, path := editSetup(t, "hello there")
+		before, err := os.Stat(path)
+		require.NoError(t, err)
+		e.beforeCommit = func(p string) {
+			other := filepath.Join(filepath.Dir(p), "other.tmp")
+			require.NoError(t, os.WriteFile(other, []byte("HELLO there"), 0o644))
+			require.NoError(t, os.Chtimes(other, before.ModTime(), before.ModTime()))
+			require.NoError(t, os.Rename(other, p))
+		}
+
+		err = runEdit(e, dir)
+
+		require.Error(t, err)
+		assert.Contains(t, err.Error(), "changed on disk since you last read it")
+		got, rerr := os.ReadFile(path)
+		require.NoError(t, rerr)
+		assert.Equal(t, "HELLO there", string(got), "the replacing file stays")
+	})
+
 	t.Run("no change writes the edit", func(t *testing.T) {
 		e, _, dir, path := editSetup(t, "hello there")
 		called := false

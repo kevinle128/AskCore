@@ -264,7 +264,9 @@ func (e *Edit) Execute(ctx context.Context, tc Context, args json.RawMessage) (p
 		if err != nil {
 			return fmt.Errorf("%w: %s: %s", ErrFileChanged, abs, reason(err))
 		}
-		if now.Size() != readInfo.Size() || now.ModTime().UnixNano() != readInfo.ModTime().UnixNano() {
+		// Size and mtime alone miss a copy that keeps both (cp -p, rsync -t,
+		// coarse timestamps); a replacement by rename shows as another file.
+		if !os.SameFile(readInfo, now) || now.Size() != readInfo.Size() || now.ModTime().UnixNano() != readInfo.ModTime().UnixNano() {
 			return fmt.Errorf("%w: %s", ErrFileChanged, abs)
 		}
 		return nil

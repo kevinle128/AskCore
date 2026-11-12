@@ -336,3 +336,11 @@ func TestOAuthTokenWinsOverUserAuthorizationHeader(t *testing.T) {
 		})
 	}
 }
+
+func TestProfileAuthorizationFoldedDuplicateKeysAreDeterministic(t *testing.T) {
+	m := providers.Model{Headers: map[string]string{"authorization": "Bearer lower", "Authorization": "Bearer canonical", "AUTHORIZATION": "Bearer upper"}}
+	for i := 0; i < 50; i++ {
+		require.Equal(t, "Bearer canonical", profileAuthorization(m, "static", true))
+	}
+	require.Equal(t, "Bearer oauth", profileAuthorization(m, "oauth", false), "a saved OAuth credential wins over the header")
+}

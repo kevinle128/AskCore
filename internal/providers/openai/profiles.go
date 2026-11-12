@@ -7,6 +7,7 @@ import (
 	"io"
 	"net/http"
 	"net/url"
+	"sort"
 
 	"AskCore/internal/providers"
 )
@@ -126,8 +127,15 @@ func authorizationOr(authorization, token string) string {
 // proxy keeps its own credential; an OAuth token always wins over the header.
 func profileAuthorization(m providers.Model, token string, staticKey bool) string {
 	if staticKey {
-		for k, v := range m.Headers {
-			if http.CanonicalHeaderKey(k) == "Authorization" && v != "" {
+		// Map order is random, so the spellings are tried in sorted order: the
+		// same models.json always gives the same value.
+		keys := make([]string, 0, len(m.Headers))
+		for k := range m.Headers {
+			keys = append(keys, k)
+		}
+		sort.Strings(keys)
+		for _, k := range keys {
+			if v := m.Headers[k]; v != "" && http.CanonicalHeaderKey(k) == "Authorization" {
 				return v
 			}
 		}
