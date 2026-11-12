@@ -23,6 +23,7 @@ The Agent dispatch sites are in [turn stages](../agent/loop_stage.go), [attempt 
 
 Around handlers form a waterfall: the outermost handler has the final result.
 Keeping a downstream answer requires returning it or changing its copied result explicitly.
+A handler may change the messages of a request or a tool result in place. The dispatch compares them with a copy taken before the call, so the change counts.
 AfterTool context is not merged automatically because that would change override precedence.
 Returned model outcomes and AfterTool results cross private-copy boundaries.
 See [copy tests](after_tool_context_test.go) and [model dispatch](registry.go).

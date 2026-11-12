@@ -102,6 +102,8 @@ The format follows [Keep a Changelog 1.1.0](https://keepachangelog.com/en/1.1.0/
 - **Providers:** The ids `gpt-6-terra` and `gpt-6.1-luna` no longer show in `/model`, because the model metadata has no row for them.
 - **TUI:** The header row and its rule take one row from a box in the prompt pane slot. On a terminal of 14 rows, the browser sign-in box shows two rows of the address and not three.
 - **Dependencies:** `charm.land/fantasy` uses the fork commit `f9c19ad` (upstream `v0.46.0` and later). A reasoning effort that the caller sets now reaches the request for model ids that the library does not know, such as `gpt-6` and `grok-4.7`. On ids that are not OpenAI reasoning models, such as `grok-4.7`, the system prompt keeps the `system` role and a set temperature or top_p is sent, not dropped ([upstream pull request](https://github.com/charmbracelet/fantasy/pull/443)).
+- **Providers:** On the OpenAI wires, an `Authorization` header in `models.json` now wins over a static API key (saved key, `apiKey`, environment, or `--api-key`), and a saved OAuth sign-in wins over the header. The other credential headers are removed.
+- **Providers:** `supportsReasoningEffort` in the `compat` of an `openai-completions` provider is now read. It is true by default; `false` means Ask does not send `reasoning_effort`.
 
 ### Fixed
 
@@ -113,6 +115,17 @@ The format follows [Keep a Changelog 1.1.0](https://keepachangelog.com/en/1.1.0/
 - **Auth:** A saved sign-in whose last refresh has no known result no longer shows `none` in `ask settings show` and no longer gives `unknown model`. Ask shows `saved:<method>` with the recovery commands (`ask auth login` or `ask auth logout`), and a request fails with `refresh result uncertain; sign in again`. Such a sign-in still blocks the environment key.
 - **Editors:** A prompt over ACP binds only to its own run. A run that a background notice started is no longer taken for the prompt.
 - **Tools:** Output lines of a `monitor` are escaped, so command output cannot close the `monitor-event` element or the `<system-reminder>` around it.
+- **Agent:** `Continue` with nothing to continue now runs the input that is already queued. Input that arrives later starts the next run and does not wait in an idle Agent.
+- **Context files:** A project `AGENTS.md` or `CLAUDE.md` whose link target is outside the project is left out with the reason `outside_project`. `ask settings show` names it.
+- **Tools:** `read` scans a text file above 4 MiB page by page, with the same page text. It refuses an image file above 20 MiB and an image of more than 16 million pixels.
+- **Tools:** `edit` fails when the file changes between its read and its write.
+- **Tools:** A string with an integer value, such as `"9007199254740993"`, keeps its exact value in a tool argument.
+- **Providers:** An empty reply, one with only empty blocks or only thinking, is no longer a success. A reply that stops for a content filter is exempt.
+- **Settings:** A trailing `/` of `baseUrl` in `models.json` is removed.
+- **CLI:** `ASK_CAPTURE` makes the folder with mode 0700 and writes the cassette with mode 0600. It also records when only `--model` selects the provider.
+- **CLI:** A bad `ASK_FAUX_TPS` no longer breaks a run with a real provider.
+- **CLI:** A signal during the setup of `ask connect` ends it with 130, 143, or 129. It exits 1 when the leader closes with a prompt in flight.
+- **CLI:** `ask leader status --json` and `ask leader list --json` exit 1 when the output cannot be written.
 
 ## [0.1.0] - 2026-10-15
 

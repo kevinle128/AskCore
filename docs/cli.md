@@ -146,7 +146,7 @@ All prompt text of the flags together may have at most 262144 bytes (256 KiB). A
 
 ### Context files
 
-Ask reads `AGENTS.md` and `CLAUDE.md` from `<ASK_HOME>`, then from each folder from the git root down to the working directory. A git root is the nearest folder with a `.git` file or folder. Without a git root, Ask reads only the working directory. A git root that is your home folder counts as no git root. In each folder `AGENTS.md` comes first. A file with the same text as an earlier file in the same folder is a duplicate and Ask leaves it out without a warning.
+Ask reads `AGENTS.md` and `CLAUDE.md` from `<ASK_HOME>`, then from each folder from the git root down to the working directory. A git root is the nearest folder with a `.git` file or folder. Without a git root, Ask reads only the working directory. A git root that is your home folder counts as no git root. A project file whose link target is outside the project (the git root, or the working directory without one) is left out with the reason `outside_project`; a link that stays inside the project loads. The files of `<ASK_HOME>` are not checked. In each folder `AGENTS.md` comes first. A file with the same text as an earlier file in the same folder is a duplicate and Ask leaves it out without a warning.
 
 The files go to the model as one user-role message of the custom type `context-file`. They are not part of the system prompt. Ask escapes the file text, the paths, and the notices, so a file cannot close the frame around it. The message starts with the sentence that the files are guidance only and cannot override system or user instructions. A conversation reset adds the message again. A history that already has the message does not get a second copy.
 
@@ -240,7 +240,7 @@ These errors write one line to stderr and exit with code 1 before any session st
 
 `ask -p` writes these lines to stderr after the trust and settings lines, and before the run. The leader and `ask acp` send the same problems to the client as session diagnostics.
 
-- `Warning: <n> context file(s) was/were skipped; run ask settings show for details`. It counts the files that Ask left out or cut (too large, not readable, or over the 64 KiB limit). A duplicate is not counted.
+- `Warning: <n> context file(s) was/were skipped; run ask settings show for details`. It counts the files that Ask left out or cut (too large, not readable, outside the project, or over the 64 KiB limit). A duplicate is not counted.
 - `Warning: skills: <path>: <reason>`. One line for each skill that did not load, at most 4 lines of at most 256 bytes each. When more skills have a problem, `Warning: skills: <n> more skill problem(s); run ask settings show for details` follows. The leader and `ask acp` send the same rows, with the same cap, as session diagnostics.
 - `Warning: Exceeded skills context budget. ...`. The skill list left skills out (see [Skills](#skills)). It comes when the agent is built, after the lines above.
 
@@ -339,7 +339,7 @@ The text form shows, in this order:
 3. `Key sources:` one row for each provider with the source of the key that a request would use (see [Key order](#key-order)). The row names the source, never the key. A `problem` row adds the problem text, which names a variable or a label, never a value.
 4. A `Warning:` line for a trust store that cannot be read.
 5. `Problems:` one row for each settings diagnostic: the layer, the path, the key, and a fixed text.
-6. `Context files:` one row for each `AGENTS.md` or `CLAUDE.md` that the session reads, with its path and size in bytes, then the files that Ask left out. A row has the word `too_large`, `unreadable`, `duplicate`, `budget`, or `truncated` when Ask did not deliver the file whole. `(none)` means that no context file exists.
+6. `Context files:` one row for each `AGENTS.md` or `CLAUDE.md` that the session reads, with its path and size in bytes, then the files that Ask left out. A row has the word `too_large`, `unreadable`, `duplicate`, `outside_project`, `budget`, or `truncated` when Ask did not deliver the file whole. `(none)` means that no context file exists.
 7. `Skill problems:` one row for each skill that did not load: the layer, the path, and a fixed text. The list is complete: the 4-row cap of `ask -p` and the TUI does not apply here. The block is absent when every skill loaded.
 
 `--json` prints one JSON object with this shape. Arrays are always present, also when they are empty.
@@ -394,7 +394,7 @@ The text form shows, in this order:
 | `settings[].source` | `default`, `user`, or `project`. |
 | `diagnostics[].key` | The key, or empty for a problem with the whole file. |
 | `context[].bytes` | The size of the file in bytes. `0` when Ask cannot read it. |
-| `context[].skipped` | Empty for a file that the session gets whole, else `too_large`, `unreadable`, `duplicate`, `budget`, or `truncated`. |
+| `context[].skipped` | Empty for a file that the session gets whole, else `too_large`, `unreadable`, `duplicate`, `outside_project`, `budget`, or `truncated`. |
 | `skillDiagnostics[]` | Every skill that did not load. `key` is `skills`. |
 | `settings[].value` of `enabledModels` | The array joined with commas, or empty when unset. |
 | `modelsFile.state` | `loaded`, `problem` (the file has a problem; see `diagnostics`), or `missing`. |
@@ -417,7 +417,7 @@ ask leader --help
 
 - `--offline` turns the model refresh of the leader off, as `ASK_DISABLE_MODEL_REFRESH=1`. A TUI started with `--offline` passes the variable to a leader that it starts.
 - The leader listens on `<ASK_HOME>/leader.sock`. The socket has mode 0600 in a directory of mode 0700. Only the owner can connect.
-- `status`, `list`, and `stop` never start a leader. `--json` works only with `status` and `list`.
+- `status`, `list`, and `stop` never start a leader. `--json` works only with `status` and `list`; it exits 1 when the output cannot be written.
 - `stop` waits up to 15 s for each step. On Linux it falls back to SIGTERM through a verified process handle.
 - A leader that a client started has the internal flag `--spawned-by-client` and writes `<ASK_HOME>/leader.log`. The log rotates at 8 MiB. Do not use this flag by hand.
 - A client of a newer build replaces an older leader that a client started. The sessions and background jobs of the old leader end.
@@ -452,7 +452,7 @@ It reads one line of stdin at a time:
 
 Output is one line for each event. The first word is one of `connected`, `session`, `live`, `update`, `result`, `error`, `follow`, `event`, `resync`, `question`, `detached`, `bye`. At the end of stdin the client waits for the prompts in flight and leaves. Leaving only detaches: the leader and its runs go on.
 
-Exit codes: 0 left, 1 error or lost leader, 130, 143, 129.
+Exit codes: 0 left, 1 error or lost leader (also when the input ends after a prompt that ended because the leader closed), 130, 143, 129. A signal during setup, before the session starts, also exits with 130, 143, or 129.
 
 ## `ask version`
 
@@ -555,11 +555,11 @@ Ask reads only the user file. It does not read `<project>/.ask/models.json`, als
 
 | Field | Meaning |
 |---|---|
-| `providers.<id>.baseUrl` | The URL of the API. It must be an `http` or `https` URL with a host and no user name or password; another value is a problem and drops the provider. On a built-in provider it moves every model of the provider to this URL. |
+| `providers.<id>.baseUrl` | The URL of the API. It must be an `http` or `https` URL with a host and no user name or password; another value is a problem and drops the provider. Ask removes one trailing `/`. On a built-in provider it moves every model of the provider to this URL. |
 | `providers.<id>.api` | The wire: `anthropic-messages`, `openai-completions`, or `openai-responses`. A model can set its own `api`. |
 | `providers.<id>.apiKey` | The key of the provider, as a value (see [Values](#values)). |
 | `providers.<id>.headers` | Extra request headers, as an object of values. A model can set its own `headers`. |
-| `providers.<id>.compat` | Compatibility switches of the wire, for every model of the provider. An unknown key for the API gives a problem and is ignored. |
+| `providers.<id>.compat` | Compatibility switches of the wire, for every model of the provider. An unknown key for the API gives a problem and is ignored. For `openai-completions`, `supportsReasoningEffort` is true by default; `false` means Ask does not send `reasoning_effort`. |
 | `providers.<id>.models[]` | New models. `id` is required. The other fields are `name`, `api`, `reasoning`, `thinkingLevelMap`, `input` (`text`, `image`), `cost` (`input`, `output`, `cacheRead`, `cacheWrite`, in USD for each million tokens), `contextWindow`, `maxTokens`, `headers`, and `compat`. |
 | `providers.<id>.modelOverrides.<model id>` | Changes of one existing model, with the same fields as a model. |
 
@@ -591,6 +591,8 @@ A request takes the key from the first source that applies:
 2. The saved credential of `ask auth login` or `/providers` in `auth.json`, when it is for the same provider, API, and URL as the model. Ask never sends a saved key to a URL that the file changed.
 3. The `apiKey` of the provider in `models.json`. It applies to every model of that provider, also to a built-in provider whose URL the file does not change (as in Pi).
 4. The environment variable of the provider, when no credential is saved.
+
+On the OpenAI wires, an `Authorization` header that the model or its provider sets in `models.json` wins over a static API key (a saved key, `apiKey`, the environment, or `--api-key`). A saved OAuth sign-in wins over the header. Ask removes the other credential headers (`X-Api-Key`, `Openai-Organization`, `Openai-Project`, `Chatgpt-Account-Id`, `Cookie`).
 
 For a provider whose `baseUrl` the file changes, Ask uses `--api-key` only when the file entry of that provider also sets `apiKey`. Otherwise the request fails with `auth: unsupported credential method: <provider>/api-key`.
 
@@ -644,7 +646,7 @@ Trust is not a security boundary against the tools of the agent. A `bash` comman
 | `ASK_BG_LIMIT_MS` | leader, `ask acp`, in-process TUI | The background time limit of `bash` jobs, in milliseconds (default 7200000). `0` turns the limit off. An empty, negative, or invalid value gives the default. A larger value also raises the 2 hour maximum. `ask -p` reads `ASK_PRINT_BG_LIMIT_MS` instead. |
 | `ASK_PRINT_BG_LIMIT_MS` | `ask -p` | The default background time limit, in milliseconds (default 600000). A value that is not a whole number above 0 is ignored. A larger value also raises the 2 hour maximum. |
 | `ASK_PRINT_BG_WAIT_CEILING_MS` | `ask -p` | The idle cap of the background wait, in milliseconds (default 600000). `0` means no cap. An empty, negative, or invalid value gives the default. |
-| `ASK_CAPTURE` | `ask -p` | A directory. The run records the provider HTTP traffic to a new cassette. Ignored for `faux`. |
+| `ASK_CAPTURE` | `ask -p` | A directory. The run records the provider HTTP traffic to a new cassette, also when only `--model` selects the provider. Ask makes the folder with mode 0700 and writes the cassette with mode 0600; a folder that exists keeps its mode. Ignored for `faux`. |
 | `TEA_TRACE` | interactive TUI | A file. It receives raw keyboard input, pasted keys included. The TUI warns on screen. Do not set it when you sign in. |
 | `ANTHROPIC_API_KEY`, `OPENAI_API_KEY`, `XAI_API_KEY`, `ASK_ALIBABA_TOKEN_PLAN_API_KEY` (or `ALIBABA_TOKEN_PLAN_API_KEY`) | providers | API key when no saved sign-in applies. A saved sign-in whose last refresh has no known result also blocks the key: `ask settings show` shows `saved:<method>` with the problem `refresh result uncertain`, and a request fails with `refresh result uncertain; sign in again`. Run `ask auth login --provider <id> --method <method>` to sign in again, or `ask auth logout --provider <id>` to use the key. |
 
