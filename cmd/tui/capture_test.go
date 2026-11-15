@@ -1,6 +1,7 @@
 package main
 
 import (
+	"bytes"
 	"net/http"
 	"os"
 	"path/filepath"
@@ -91,4 +92,47 @@ func TestCaptureClosesAnExistingFolder(t *testing.T) {
 	info, err := os.Stat(dir)
 	require.NoError(t, err)
 	assert.Equal(t, os.FileMode(0o700), info.Mode().Perm())
+}
+
+// TestCaptureRefusesASymlinkFolder checks that a capture folder that is a
+// symlink is refused and the folder it points to keeps its mode.
+func TestCaptureRefusesASymlinkFolder(t *testing.T) {
+	root := t.TempDir()
+	target := filepath.Join(root, "target")
+	require.NoError(t, os.Mkdir(target, 0o755))
+	require.NoError(t, os.Chmod(target, 0o755))
+	link := filepath.Join(root, "link")
+	require.NoError(t, os.Symlink(target, link))
+	o := options{provider: providers.ProviderAnthropic, model: providers.AnthropicSonnet46().ID}
+	_, err := startCapture(&o, func(k string) string {
+		if k == captureEnv {
+			return link
+		}
+		return ""
+	}, os.Stderr, sseResponse(http.StatusOK, sseText("pong")))
+	require.Error(t, err)
+
+	info, err := os.Stat(target)
+	require.NoError(t, err)
+	assert.Equal(t, os.FileMode(0o755), info.Mode().Perm())
+	files, err := filepath.Glob(filepath.Join(target, "*.yaml"))
+	require.NoError(t, err)
+	assert.Empty(t, files)
+}
+
+// TestCaptureRecordsACustomProvider checks that a provider of models.json,
+// which sends HTTP, is captured and not skipped.
+func TestCaptureRecordsACustomProvider(t *testing.T) {
+	var errb bytes.Buffer
+	o := options{provider: "local", model: "gamma"}
+	path, err := startCapture(&o, func(k string) string {
+		if k == captureEnv {
+			return t.TempDir()
+		}
+		return ""
+	}, &errb, sseResponse(http.StatusOK, sseText("pong")))
+	require.NoError(t, err)
+	assert.NotEmpty(t, path)
+	assert.NotNil(t, o.transport)
+	assert.NotContains(t, errb.String(), "ignored")
 }

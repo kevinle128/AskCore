@@ -418,10 +418,14 @@ func TestCompletionsReasoningEffortFollowsCompat(t *testing.T) {
 			_, err := resultOf(t, completionsProvider(srv.srv, 0).Stream(context.Background(), m, helloReq(), providers.StreamOptions{Reasoning: protocol.ThinkingHigh}))
 			require.NoError(t, err)
 			body := srv.take(t).body(t)
+			pr, err := NewCompletions().(providers.Preparer).Prepare(m, helloReq(), providers.StreamOptions{Reasoning: protocol.ThinkingHigh})
+			require.NoError(t, err)
 			if tc.want {
 				assert.Equal(t, "high", body["reasoning_effort"])
+				assert.Equal(t, "high", pr.Effort)
 			} else {
 				assert.NotContains(t, body, "reasoning_effort")
+				assert.Empty(t, pr.Effort, "the logged effort follows the wire")
 			}
 		})
 	}

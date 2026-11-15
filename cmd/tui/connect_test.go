@@ -231,3 +231,36 @@ func TestConnectFinishExitsOneWhenLeaderSendsAnErrorFrame(t *testing.T) {
 	require.Equal(t, 1, c.finish(context.Background(), &stderr))
 	require.Contains(t, stderr.String(), "the leader closed the connection")
 }
+
+// A signal that ends a pending prompt after the end of stdin is a signal
+// exit, not a lost leader: the prompt neither marks the link lost nor prints
+// connection_lost, whichever case of the wait in finish runs first.
+func TestConnectFinishSignalDuringPromptIsNotConnectionLost(t *testing.T) {
+	for range 20 {
+		pr, pw := io.Pipe()
+		var out syncBuffer
+		c := newLineClient(&leader.Client{Registered: &leader.Registered{
+			Writer: leader.NewFrameWriter(io.Discard, protocol.LeaderMaxFrame),
+			Reader: leader.NewFrameReader(pr, protocol.LeaderMaxFrame),
+		}}, &out)
+		c.view = "s1"
+		go c.readLoop()
+		sigs := make(chan os.Signal, 1)
+		ctx, stop := withSignalContext(sigs)
+		c.ctx = ctx
+
+		c.prompt("hello")
+		sigs <- syscall.SIGTERM
+		var stderr strings.Builder
+		code := c.finish(ctx, &stderr)
+		c.inflight.Wait()
+
+		require.Equal(t, 143, code, stderr.String())
+		require.False(t, c.lost.Load())
+		require.NotContains(t, out.String(), "connection_lost")
+		require.NotContains(t, stderr.String(), "the leader closed the connection")
+		stop()
+		_ = pw.Close()
+	}
+}
+

@@ -118,6 +118,18 @@ func TestPrepareRequestUntouchedMessagesGiveNoUpdate(t *testing.T) {
 	assert.Nil(t, got)
 }
 
+func TestPrepareRequestNilMessagesGiveNoUpdate(t *testing.T) {
+	r := NewRegistry()
+	r.OnPrepareRequest(func(ctx context.Context, req Request, next Next[Request, *RequestUpdate]) (*RequestUpdate, error) {
+		return next(ctx, req)
+	})
+
+	got, err := r.PrepareRequest(context.Background(), Request{})
+
+	require.NoError(t, err)
+	assert.Nil(t, got)
+}
+
 func TestAfterToolKeepsInPlaceResultEdit(t *testing.T) {
 	r := NewRegistry()
 	r.OnAfterTool(func(ctx context.Context, in ToolResultInfo, next Next[ToolResultInfo, *AfterToolCallResult]) (*AfterToolCallResult, error) {

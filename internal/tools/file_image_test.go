@@ -369,3 +369,20 @@ func TestToInlineReportsUnreadableHeader(t *testing.T) {
 	require.ErrorAs(t, err, &ie)
 	assert.Equal(t, imageNotConvertible, ie.msg)
 }
+
+func TestToInlineReportsEmptyCanvasAsNotConvertible(t *testing.T) {
+	t.Parallel()
+	var b bytes.Buffer
+	require.NoError(t, bmp.Encode(&b, image.NewGray(image.Rect(0, 0, 8, 8))))
+	data := b.Bytes()
+	// Claim a 0 x 0 canvas in the header.
+	for i := range 2 {
+		off := 18 + 4*i
+		data[off], data[off+1], data[off+2], data[off+3] = 0, 0, 0, 0
+	}
+
+	_, err := toInline(data, "image/bmp", defaultImageLimits)
+	var ie *imageError
+	require.ErrorAs(t, err, &ie)
+	assert.Equal(t, imageNotConvertible, ie.msg)
+}

@@ -231,7 +231,10 @@ func toInline(data []byte, mime string, lim imageLimits) (inlineImage, error) {
 	if err != nil {
 		return inlineImage{}, &imageError{imageNotConvertible}
 	}
-	if cfg.Width <= 0 || cfg.Height <= 0 || cfg.Width > inlineMaxPixels/cfg.Height {
+	if cfg.Width <= 0 || cfg.Height <= 0 {
+		return inlineImage{}, &imageError{imageNotConvertible}
+	}
+	if cfg.Width > inlineMaxPixels/cfg.Height {
 		return inlineImage{}, &imageError{imageTooManyPixels}
 	}
 	out := inlineImage{data: data, mime: mime}

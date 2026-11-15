@@ -274,10 +274,11 @@ func (r *Registry) PrepareRequest(ctx context.Context, in Request) (*RequestUpda
 	// still as it was stays out of the update, so no handler means a nil
 	// update.
 	orig := in
-	if len(hs) > 0 {
+	if len(hs) > 0 && orig.Context.Messages != nil {
 		// A handler may edit a message through a pointer or an element of its
 		// content. It gets a deep copy, so the original stays the comparison
-		// base and the stored messages stay as they were.
+		// base and the stored messages stay as they were. A nil list stays
+		// nil, so an unchanged request still gives a nil update.
 		msgs := make([]protocol.Message, len(orig.Context.Messages))
 		for i, m := range orig.Context.Messages {
 			msgs[i] = protocol.CloneMessage(m)

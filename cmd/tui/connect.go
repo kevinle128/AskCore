@@ -242,6 +242,10 @@ func (c *lineClient) callForSession(method string, params any, followSession str
 	if errors.As(err, &f) {
 		return nil, &fault{Code: f.Code, Kind: f.Kind, Message: f.Message}
 	}
+	if _, signalled := signalExit(c.ctx); signalled {
+		// A signal ended the call, not the leader.
+		return nil, &fault{Kind: "cancelled", Message: "a signal ended the call"}
+	}
 	return nil, &fault{Kind: "connection_lost", Message: "the leader closed the connection"}
 }
 
@@ -537,6 +541,9 @@ func (c *lineClient) prompt(text string) {
 		defer c.inflight.Done()
 		res, f := c.call("session/prompt", map[string]any{"sessionId": sid, "prompt": []any{map[string]any{"type": "text", "text": text}}})
 		if f != nil {
+			if f.Kind == "cancelled" {
+				return
+			}
 			if f.Kind == "connection_lost" {
 				c.lost.Store(true)
 			}
@@ -665,7 +672,7 @@ func runConnect(argv []string, stdin io.Reader, stdout, stderr io.Writer, deps r
 			report(stderr, "ask connect: the leader closed the connection")
 			return 1
 		case <-ctx.Done():
-			c.out.printf("bye")
+			c.out.tryPrintf("bye")
 			code, _ := signalExit(ctx)
 			return code
 		case line, open := <-lines:
@@ -710,6 +717,10 @@ func (c *lineClient) finish(ctx context.Context, stderr io.Writer) int {
 	case <-ctx.Done():
 		c.out.tryPrintf("bye")
 		code, _ := signalExit(ctx)
+		return code
+	}
+	if code, signalled := signalExit(ctx); signalled {
+		c.out.tryPrintf("bye")
 		return code
 	}
 	if c.lost.Load() {

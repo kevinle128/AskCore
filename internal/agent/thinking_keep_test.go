@@ -103,8 +103,8 @@ func TestSetModelBackKeepsAnEmptyLevel(t *testing.T) {
 // The hook level goes through ClampThinkingLevel like SetThinkingLevel: off
 // stays off, so a model that cannot turn thinking off gets its lowest level.
 // When the update also changes the model, the level is clamped to the new
-// model. The run starts with a chosen level, because the hook sees an empty
-// level as off and an equal level makes no update.
+// model. The run starts with a chosen level, so the level of the hook is a
+// change from the level of the session.
 func TestPrepareRequestLevelIsClamped(t *testing.T) {
 	grok := providers.XAIGrok47()
 	gpt := catalogGPT55(t)

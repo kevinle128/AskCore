@@ -313,3 +313,35 @@ func TestDurationText(t *testing.T) {
 		assert.Equal(t, want, durationText(d))
 	}
 }
+
+// A stall notice that is being sent when the job ends comes before the end:
+// Kill, done and the idle signal wait for it, so no stall notice follows.
+func TestStallNoticeInFlightPrecedesEnd(t *testing.T) {
+	r := newRig(t, withFakeClock(), withStall(time.Minute))
+	owner := &blockingOwner{fakeNotifier: r.n, entered: make(chan struct{}, 1), release: make(chan struct{})}
+	j := r.startFor(owner, r.gateForever())
+
+	go r.clock.Advance(time.Minute)
+	<-owner.entered
+	killed := make(chan error, 1)
+	go func() {
+		_, err := r.tb.Kill(r.gen(), j.ID(), "")
+		killed <- err
+	}()
+	select {
+	case <-j.Done():
+		t.Fatal("the job ended while its stall notice was being sent")
+	case <-killed:
+		t.Fatal("Kill returned while the stall notice was being sent")
+	case <-time.After(200 * time.Millisecond):
+	}
+
+	close(owner.release)
+	select {
+	case err := <-killed:
+		require.NoError(t, err)
+	case <-time.After(5 * time.Second):
+		t.Fatal("Kill did not return after the stall notice")
+	}
+	assert.Len(t, r.stallNotices(), 1)
+}

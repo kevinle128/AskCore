@@ -191,6 +191,8 @@ func TestEnvMillis(t *testing.T) {
 		{"zero", "0", 0},
 		{"negative", "-5", def},
 		{"text", "soon", def},
+		{"largest", "9223372036854", 9223372036854 * time.Millisecond},
+		{"overflow", "9223372036855", def},
 	} {
 		got := envMillis(func(string) string { return tc.val }, name, def)
 		assert.Equal(t, tc.want, got, tc.name)

@@ -231,6 +231,11 @@ type Job struct {
 	lastOut   atomic.Int64                // nanoseconds since started of the last output chunk, 0 for none
 	stall     atomic.Int32                // stallOff, stallArmed or stallQuiet
 	stopStall atomic.Pointer[func() bool] // stop func of the one armed stall timer
+	// stallMu is held by a stall timer callback until its notice is sent.
+	// The owner goroutine sets stallEnded and then takes stallMu once, so no
+	// stall notice follows the end of the job. Order: stallMu before t.mu.
+	stallMu    sync.Mutex
+	stallEnded atomic.Bool
 
 	owner Owner  // set at start, never changed
 	gen   uint64 // generation of owner
@@ -459,6 +464,11 @@ func (t *Table) armStall(j *Job, d time.Duration) {
 // each chunk, so it checks how long the job was silent and arms again for the
 // rest when output came in the meantime.
 func (t *Table) stallFire(j *Job) {
+	j.stallMu.Lock()
+	defer j.stallMu.Unlock()
+	if j.stallEnded.Load() {
+		return
+	}
 	t.mu.Lock()
 	if j.finishedLocked() || j.killReason != "" || j.killedByModel || j.muted || t.closing {
 		t.mu.Unlock()
@@ -665,6 +675,11 @@ func cutRunes(s string, n int) string {
 func (t *Table) own(j *Job) {
 	defer t.owners.Done()
 	<-j.proc.Done()
+	// Wait for a stall notice that is being sent, so it comes before the end
+	// of the job: before done, the completion notice and the idle signal.
+	j.stallEnded.Store(true)
+	j.stallMu.Lock() //nolint:staticcheck // the empty critical section waits for the callback
+	j.stallMu.Unlock()
 	if j.mon != nil {
 		j.mon.finish()
 	}

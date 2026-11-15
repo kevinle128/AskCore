@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"math"
 	"strconv"
 	"strings"
 	"sync"
@@ -72,15 +73,15 @@ func interactiveBackgroundLimit(getenv func(string) string) jobs.BackgroundLimit
 }
 
 // envMillis reads a duration in milliseconds from the environment. An empty,
-// negative or invalid value gives def; 0 gives zero, which each caller reads as
-// "off".
+// negative, invalid or too large value gives def; 0 gives zero, which each
+// caller reads as "off".
 func envMillis(getenv func(string) string, name string, def time.Duration) time.Duration {
 	v := getenv(name)
 	if v == "" {
 		return def
 	}
 	ms, err := strconv.ParseInt(v, 10, 64)
-	if err != nil || ms < 0 {
+	if err != nil || ms < 0 || ms > math.MaxInt64/int64(time.Millisecond) {
 		return def
 	}
 	return time.Duration(ms) * time.Millisecond

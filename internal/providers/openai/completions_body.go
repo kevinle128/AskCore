@@ -68,7 +68,8 @@ func buildCompletionsBody(msgs []protocol.Message, model providers.Model, pr *pr
 }
 
 // effectiveCompletionsThinking is the thinking level and the effort word of a
-// request. A model without reasoning has neither.
+// request. A model without reasoning has neither; a model that takes no
+// reasoning_effort has no effort word.
 func effectiveCompletionsThinking(model providers.Model, level protocol.ThinkingLevel) (protocol.ThinkingLevel, string) {
 	if !model.Reasoning {
 		return "", ""
@@ -77,6 +78,11 @@ func effectiveCompletionsThinking(model providers.Model, level protocol.Thinking
 		level = protocol.ThinkingMedium
 	}
 	if level == protocol.ThinkingOff {
+		return level, ""
+	}
+	// The effort word is what goes on the wire: none when the model takes no
+	// reasoning_effort.
+	if compat, _ := model.Completions(); !compat.SupportsReasoningEffort {
 		return level, ""
 	}
 	word, _ := thinkingEffort(model, level)

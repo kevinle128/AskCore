@@ -247,3 +247,16 @@ func TestRecordMakesTheOwnerOnlyFileBeforeTheFirstSave(t *testing.T) {
 	require.NoError(t, err)
 	assert.Equal(t, os.FileMode(0o700), dirInfo.Mode().Perm())
 }
+
+// TestReplayRefusesTheEmptyFileOfAFailedRecord checks that the empty file
+// that a record run leaves before its first response is not a cassette.
+func TestReplayRefusesTheEmptyFileOfAFailedRecord(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "failed.yaml")
+	_, err := cassette.New(path, cassette.Record)
+	require.NoError(t, err)
+
+	_, err = cassette.New(path, cassette.Replay)
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "empty")
+	assert.Contains(t, err.Error(), "ASK_RECORD=1")
+}

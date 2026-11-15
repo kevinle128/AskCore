@@ -46,6 +46,10 @@ type oauthTransport struct {
 }
 
 func (t oauthTransport) RoundTrip(req *http.Request) (*http.Response, error) {
+	// A RoundTripper closes the request body, also when it returns an error.
+	if req.Body != nil {
+		defer func() { _ = req.Body.Close() }()
+	}
 	u, err := url.Parse(oauthOrigin)
 	if err != nil {
 		return nil, err
@@ -59,8 +63,10 @@ func (t oauthTransport) RoundTrip(req *http.Request) (*http.Response, error) {
 			return nil, errors.New("anthropic subscription beta profile is invalid")
 		}
 	}
+	if req.Body == nil {
+		return nil, errors.New("anthropic subscription system profile is invalid")
+	}
 	body, err := io.ReadAll(req.Body)
-	_ = req.Body.Close()
 	if err != nil {
 		return nil, err
 	}

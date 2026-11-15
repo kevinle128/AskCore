@@ -160,3 +160,16 @@ func TestOAuthTransportClosesBodyAndKeepsCallerRequest(t *testing.T) {
 	require.Same(t, body, req.Body, "the caller request keeps its body")
 	require.NotSame(t, req, sent)
 }
+
+func TestOAuthTransportClosesBodyOnProfileError(t *testing.T) {
+	body := &closeRecorder{Reader: strings.NewReader("{}")}
+	req, err := http.NewRequest(http.MethodPost, oauthOrigin+"/v1/messages", body)
+	require.NoError(t, err)
+	rt := oauthTransport{token: "secret", base: roundTripFunc(func(*http.Request) (*http.Response, error) {
+		t.Fatal("an invalid request must not be sent")
+		return nil, nil
+	})}
+	_, err = rt.RoundTrip(req)
+	require.Error(t, err)
+	require.True(t, body.closed, "the body is closed on an error too")
+}

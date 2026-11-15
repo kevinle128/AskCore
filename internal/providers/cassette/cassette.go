@@ -102,6 +102,11 @@ func New(path string, mode Mode, opts ...Option) (*Recorder, error) {
 	}
 	if mode == Replay {
 		vcrMode = recorder.ModeReplayOnly
+		// Record makes the file empty at once, so a record run that failed
+		// before its first response leaves an empty file. That is no cassette.
+		if info, err := os.Stat(path); err == nil && info.Size() == 0 {
+			return nil, fmt.Errorf("cassette %s: the cassette is empty; %s", path, rerecordHint)
+		}
 		c, err := vcr.Load(name)
 		if err != nil {
 			return nil, fmt.Errorf("cassette %s: %w; %s", path, err, rerecordHint)
