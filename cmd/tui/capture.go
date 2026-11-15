@@ -26,6 +26,8 @@ func startCapture(o *options, getenv func(string) string, stderr io.Writer, real
 	if dir == "" {
 		return "", nil
 	}
+	// Clean drops a trailing "/" or "/.", which would make Lstat follow a symlink.
+	dir = filepath.Clean(dir)
 	// Every provider but faux sends HTTP, custom providers of models.json too.
 	if o.provider == "" || o.provider == defaultProvider {
 		report(stderr, "ask: "+captureEnv+" ignored: provider", o.provider, "makes no HTTP requests")

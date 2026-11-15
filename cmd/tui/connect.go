@@ -164,6 +164,8 @@ type fault struct {
 	Code    int
 	Kind    string
 	Message string
+	// signalled is true when a local signal ended the call, not the leader.
+	signalled bool
 }
 
 type lineClient struct {
@@ -244,7 +246,7 @@ func (c *lineClient) callForSession(method string, params any, followSession str
 	}
 	if _, signalled := signalExit(c.ctx); signalled {
 		// A signal ended the call, not the leader.
-		return nil, &fault{Kind: "cancelled", Message: "a signal ended the call"}
+		return nil, &fault{Kind: "cancelled", Message: "a signal ended the call", signalled: true}
 	}
 	return nil, &fault{Kind: "connection_lost", Message: "the leader closed the connection"}
 }
@@ -348,6 +350,9 @@ func (c *lineClient) setView(sid string) {
 }
 
 func (c *lineClient) printFault(op string, f *fault) {
+	if f.signalled {
+		return
+	}
 	c.out.printf("error op=%s code=%d kind=%s", op, f.Code, f.Kind)
 }
 
@@ -541,7 +546,7 @@ func (c *lineClient) prompt(text string) {
 		defer c.inflight.Done()
 		res, f := c.call("session/prompt", map[string]any{"sessionId": sid, "prompt": []any{map[string]any{"type": "text", "text": text}}})
 		if f != nil {
-			if f.Kind == "cancelled" {
+			if f.signalled {
 				return
 			}
 			if f.Kind == "connection_lost" {
