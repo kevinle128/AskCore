@@ -100,6 +100,32 @@ func TestLeaderManagementWithoutLeader(t *testing.T) {
 	require.NoFileExists(t, filepath.Join(home, "leader.lock"))
 }
 
+func TestLeaderJSONWriteErrorGivesExit1(t *testing.T) {
+	home := leaderHome(t)
+	var errb bytes.Buffer
+	deps := runDependencies{getenv: func(k string) string {
+		if k == "ASK_HOME" {
+			return home
+		}
+		return ""
+	}}
+	code := runWithDependencies([]string{"leader", "list", "--json"}, bytes.NewReader(nil), &failingWriter{err: syscall.EPIPE}, &errb, deps)
+	require.Equal(t, 1, code)
+	require.Contains(t, errb.String(), "Error:")
+	require.Contains(t, errb.String(), "broken pipe")
+
+	// The status command shares the writer.
+	errb.Reset()
+	require.Equal(t, 1, writeJSONLine(&failingWriter{err: syscall.EPIPE}, &errb, map[string]int{"a": 1}))
+	require.Contains(t, errb.String(), "broken pipe")
+	errb.Reset()
+	require.Equal(t, 1, writeJSONLine(&bytes.Buffer{}, &errb, make(chan int)))
+	require.Contains(t, errb.String(), "Error:")
+	var ok bytes.Buffer
+	require.Zero(t, writeJSONLine(&ok, &errb, []int{1}))
+	require.Equal(t, "[1]\n", ok.String())
+}
+
 func TestVersionIsNotStarted(t *testing.T) {
 	var out bytes.Buffer
 	require.Zero(t, run([]string{"version", "--json"}, bytes.NewReader(nil), &out, &bytes.Buffer{}))

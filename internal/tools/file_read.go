@@ -1,6 +1,8 @@
 package tools
 
 import (
+	"bufio"
+	"bytes"
 	"context"
 	"encoding/base64"
 	"encoding/json"
@@ -28,6 +30,16 @@ const (
 	// binaryControlShare is the share of control bytes above which a file is
 	// treated as binary.
 	binaryControlShare = 0.3
+
+	// readWholeMax is the largest text file that read loads whole. A larger
+	// file is scanned through a small buffer, so one read cannot grow the
+	// memory of a shared process with the file size.
+	readWholeMax = 4 << 20
+	// readImageMax is the largest image file that read loads. A larger image
+	// is refused before it is read.
+	readImageMax = 20 << 20
+	// readScanBuffer is the size of the buffer that the page scan reuses.
+	readScanBuffer = 64 << 10
 
 	nonVisionNote = "[Current model does not support images. The image will be omitted from this request.]"
 )
@@ -120,22 +132,72 @@ func (r *Read) Execute(ctx context.Context, tc Context, args json.RawMessage) (p
 	if !info.Mode().IsRegular() {
 		return protocol.ToolExecutionResult{}, failf("Cannot read %s: it is not a regular file.", in.Path)
 	}
-	data, err := io.ReadAll(f)
-	if err != nil {
+	head := make([]byte, binarySniffBytes)
+	n, err := io.ReadFull(f, head)
+	if err != nil && !errors.Is(err, io.EOF) && !errors.Is(err, io.ErrUnexpectedEOF) {
 		return protocol.ToolExecutionResult{}, failf("Cannot read %s: %s.", in.Path, reason(err))
 	}
+	head = head[:n]
 	if err := ctx.Err(); err != nil {
 		return protocol.ToolExecutionResult{}, err
 	}
 	r.fs.Record(abs, info)
 
-	if mime := detectImage(data[:min(len(data), imageSniffBytes)]); mime != "" {
+	if mime := detectImage(head[:min(len(head), imageSniffBytes)]); mime != "" {
+		if info.Size() > readImageMax {
+			return protocol.ToolExecutionResult{}, failf("Cannot read %s: the image is %s, over the %s image limit.",
+				in.Path, formatSize(int(info.Size())), formatSize(readImageMax))
+		}
+		data, err := readRest(f, head, readImageMax)
+		if err != nil {
+			return protocol.ToolExecutionResult{}, failf("Cannot read %s: %s.", in.Path, reason(err))
+		}
+		if len(data) > readImageMax {
+			return protocol.ToolExecutionResult{}, failf("Cannot read %s: the image is over the %s image limit.",
+				in.Path, formatSize(readImageMax))
+		}
+		if err := ctx.Err(); err != nil {
+			return protocol.ToolExecutionResult{}, err
+		}
 		return r.imageResult(data, mime, abs), nil
 	}
-	if looksBinary(data[:min(len(data), binarySniffBytes)]) {
+	if looksBinary(head) {
 		return protocol.ToolExecutionResult{}, failf("%s appears to be a binary file and cannot be read as text.", in.Path)
 	}
-	return readText(string(data), in, abs), nil
+	src := io.MultiReader(bytes.NewReader(head), f)
+	if info.Size() <= readWholeMax {
+		data, err := readRest(f, head, readWholeMax)
+		if err != nil {
+			return protocol.ToolExecutionResult{}, failf("Cannot read %s: %s.", in.Path, reason(err))
+		}
+		if err := ctx.Err(); err != nil {
+			return protocol.ToolExecutionResult{}, err
+		}
+		if len(data) <= readWholeMax {
+			return readText(string(data), in, abs), nil
+		}
+		// The file grew after the stat. Scan what was read, then the rest.
+		src = io.MultiReader(bytes.NewReader(data), f)
+	}
+	res, err := scanPage(ctx, src, in, abs)
+	if err != nil {
+		if ctx.Err() != nil {
+			return protocol.ToolExecutionResult{}, ctx.Err()
+		}
+		return protocol.ToolExecutionResult{}, failf("Cannot read %s: %s.", in.Path, reason(err))
+	}
+	return res, nil
+}
+
+// readRest returns head followed by the rest of f. It reads at most limit+1
+// bytes in all, so a file that grows after the stat cannot grow the buffer
+// without bound; a result longer than limit tells the caller that it grew.
+func readRest(f io.Reader, head []byte, limit int) ([]byte, error) {
+	rest, err := io.ReadAll(io.LimitReader(f, int64(limit)-int64(len(head))+1))
+	if err != nil {
+		return nil, err
+	}
+	return append(head, rest...), nil
 }
 
 // imageResult returns an image as a text note and one image block.
@@ -170,14 +232,143 @@ func (r *Read) imageResult(data []byte, mime, abs string) protocol.ToolExecution
 // readText numbers the lines of content, applies offset and limit, and cuts
 // the output at the default limits.
 func readText(content string, in readInput, abs string) protocol.ToolExecutionResult {
-	var lines []string
-	if content != "" {
-		lines = strings.Split(content, "\n")
-		if lines[len(lines)-1] == "" {
-			lines = lines[:len(lines)-1]
+	// A string reader cannot fail and the context is never cancelled, so the
+	// error is always nil.
+	res, _ := scanPage(context.Background(), strings.NewReader(content), in, abs)
+	return res
+}
+
+// pageScan is what one pass over a file keeps: the counts of the whole file
+// and of the requested page, and the lines of the page that the output can
+// show. It never holds the whole file.
+type pageScan struct {
+	// total is the number of lines of the file. A final empty segment after
+	// the last newline is not a line.
+	total int
+	// lines are the page lines without a trailing CR, from the first page
+	// line. They stop after the line that crosses a default output limit, so
+	// they are the whole page or enough of it to decide the cut.
+	lines []string
+	// pageLines and pageBytes are the size of the whole numbered page, as
+	// TruncateHead would count it, also for lines that were not kept.
+	pageLines, pageBytes int
+	// firstLen is the byte length of the first page line, with its CR.
+	firstLen int
+}
+
+// scanPage reads r once and formats the page that in asks for.
+func scanPage(ctx context.Context, r io.Reader, in readInput, abs string) (protocol.ToolExecutionResult, error) {
+	start := 0
+	if in.Offset != nil && *in.Offset > 1 {
+		start = int(min(*in.Offset, 1<<40)) - 1
+	}
+	pageEnd := math.MaxInt
+	if in.Limit != nil && *in.Limit >= 1 {
+		pageEnd = start + int(min(*in.Limit, 1<<40))
+	}
+	ps, err := collectPage(ctx, r, start, pageEnd)
+	if err != nil {
+		return protocol.ToolExecutionResult{}, err
+	}
+	return formatPage(ps, in, abs, start), nil
+}
+
+// collectPage counts the lines of r and keeps those from start up to pageEnd
+// (exclusive, 0-based) that the output can show.
+func collectPage(ctx context.Context, r io.Reader, start, pageEnd int) (pageScan, error) {
+	var (
+		ps      pageScan
+		br      = bufio.NewReaderSize(r, readScanBuffer)
+		idx     int    // index of the line being read
+		rawLen  int    // bytes of the line so far, without the newline
+		inLine  bool   // some byte of the line was seen
+		cur     []byte // kept bytes of the line, capped
+		keptNum int    // numbered bytes of the kept lines, with separators
+		full    bool   // the kept lines already cross a default limit
+		lastCR  bool
+	)
+	inPage := func() bool { return idx >= start && idx < pageEnd }
+	finish := func() {
+		if inPage() {
+			trimmed := rawLen
+			if lastCR {
+				trimmed--
+			}
+			numbered := digits(idx+1) + 1 + trimmed
+			if ps.pageLines > 0 {
+				ps.pageBytes++
+			}
+			ps.pageBytes += numbered
+			ps.pageLines++
+			if ps.pageLines == 1 {
+				ps.firstLen = rawLen
+			}
+			if !full {
+				line := strings.TrimSuffix(string(cur), "\r")
+				if keptNum > 0 {
+					keptNum++
+				}
+				keptNum += digits(idx+1) + 1 + len(line)
+				ps.lines = append(ps.lines, line)
+				if len(ps.lines) > DefaultMaxLines || keptNum > DefaultMaxBytes {
+					full = true
+				}
+			}
+		}
+		ps.total++
+		idx++
+		rawLen, inLine, cur, lastCR = 0, false, cur[:0], false
+	}
+	for {
+		if err := ctx.Err(); err != nil {
+			return pageScan{}, err
+		}
+		chunk, err := br.ReadSlice('\n')
+		if len(chunk) > 0 {
+			body := chunk
+			nl := chunk[len(chunk)-1] == '\n'
+			if nl {
+				body = chunk[:len(chunk)-1]
+			}
+			inLine = true
+			if inPage() && !full && len(cur) <= DefaultMaxBytes {
+				cur = append(cur, body[:min(len(body), DefaultMaxBytes+1-len(cur))]...)
+			}
+			rawLen += len(body)
+			if len(body) > 0 {
+				lastCR = body[len(body)-1] == '\r'
+			}
+			if nl {
+				finish()
+			}
+		}
+		switch {
+		case err == nil, errors.Is(err, bufio.ErrBufferFull):
+		case errors.Is(err, io.EOF):
+			if inLine {
+				finish()
+			}
+			return ps, nil
+		default:
+			return pageScan{}, err
 		}
 	}
-	total := len(lines)
+}
+
+// digits is the number of decimal digits of n, which is positive. It counts
+// without the allocation that formatting the number would make for each line.
+func digits(n int) int {
+	d := 1
+	for ; n >= 10; n /= 10 {
+		d++
+	}
+	return d
+}
+
+// formatPage writes the text of a page that collectPage kept. start is the
+// 0-based first line that the offset asked for.
+func formatPage(ps pageScan, in readInput, abs string, start int) protocol.ToolExecutionResult {
+	total := ps.total
 	if in.Offset != nil && *in.Offset >= 1 && math.Floor(*in.Offset) > float64(total) {
 		return protocol.ToolExecutionResult{
 			Content: []protocol.UserBlock{protocol.Text{Text: fmt.Sprintf("Offset %.0f is beyond end of file (%d lines total)", math.Floor(*in.Offset), total)}},
@@ -185,10 +376,6 @@ func readText(content string, in readInput, abs string) protocol.ToolExecutionRe
 		}
 	}
 
-	start := 0
-	if in.Offset != nil && *in.Offset > 1 {
-		start = int(*in.Offset) - 1
-	}
 	details := protocol.ToolResultDetails{
 		Kind:      protocol.ToolKindRead,
 		Path:      abs,
@@ -210,21 +397,26 @@ func readText(content string, in readInput, abs string) protocol.ToolExecutionRe
 		end, limited = start+int(min(*in.Limit, float64(total-start))), true
 	}
 	var numbered strings.Builder
-	for i := start; i < end; i++ {
-		if i > start {
+	for i, line := range ps.lines {
+		if i > 0 {
 			numbered.WriteByte('\n')
 		}
-		numbered.WriteString(strconv.Itoa(i + 1))
+		numbered.WriteString(strconv.Itoa(start + i + 1))
 		numbered.WriteByte('|')
-		numbered.WriteString(strings.TrimSuffix(lines[i], "\r"))
+		numbered.WriteString(line)
 	}
 	head := TruncateHead(numbered.String(), 0, 0)
+	if head.Truncated {
+		// The kept lines may be only the start of the page; the counts are
+		// those of the whole page.
+		head.Truncation.TotalLines, head.Truncation.TotalBytes = ps.pageLines, ps.pageBytes
+	}
 
 	switch {
 	case head.FirstLineExceedsLimit:
 		details.Truncation = &head.Truncation
 		return text(fmt.Sprintf("[Line %d is %s, exceeds %s limit. Use bash: sed -n '%dp' %s | head -c %d]",
-			start+1, formatSize(len(lines[start])), formatSize(DefaultMaxBytes), start+1, displayPath(abs, in.Path), DefaultMaxBytes))
+			start+1, formatSize(ps.firstLen), formatSize(DefaultMaxBytes), start+1, displayPath(abs, in.Path), DefaultMaxBytes))
 	case head.Truncated:
 		last := start + head.Truncation.OutputLines
 		limit := ""

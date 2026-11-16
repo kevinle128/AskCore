@@ -253,7 +253,7 @@ def product_hashes():
 ASK_CASES = ['ask-idle', 'ask-turn', 'ask-resize', 'ask-selector', 'ask-providers', 'ask-mouse',
              'ask-exit-quit', 'ask-exit-ctrl-c', 'ask-exit-sigterm', 'ask-exit-sighup',
              'ask-copy', 'ask-in-process', 'ask-trust-prompt', 'ask-trust-prompt-no-leader',
-             'ask-model-cycle']
+             'ask-model-cycle', 'ask-thinking-default']
 # Cases that run with the in-process agent and start no leader.
 IN_PROCESS_CASES = {'ask-in-process', 'ask-trust-prompt-no-leader'}
 # In-process cases whose ASK_HOME is a symlink, which the leader connect refuses as an unsafe
@@ -261,7 +261,8 @@ IN_PROCESS_CASES = {'ask-in-process', 'ask-trust-prompt-no-leader'}
 SYMLINK_HOME_CASES = {'ask-in-process'}
 # Arguments of `ask` for a case; the other cases start `ask` with no arguments.
 CASE_ARGS = {'ask-trust-prompt-no-leader': ('--no-leader',),
-             'ask-model-cycle': ('--models', 'faux/faux-1,local/*')}
+             'ask-model-cycle': ('--models', 'faux/faux-1,local/*'),
+             'ask-thinking-default': ('--model', 'local/gamma')}
 # Files in ASK_HOME that a leader creates: its socket, its lock and its log.
 LEADER_FILES = ('leader.sock', 'leader.lock', 'leader.log')
 # Cases that run as if over SSH, so /copy skips the native clipboard command and uses OSC 52.
@@ -1351,6 +1352,64 @@ def ask_model_cycle(session):
     return {'scope': ['faux/faux-1', 'local/alpha', 'local/beta'], 'forward': True, 'back': True, 'wrap': True}
 
 
+# The model of the `ask-thinking-default` case: a provider that only the user models.json
+# defines, with one model that has thinking and no level map (levels off to high). The case
+# sends no prompt, so nothing connects to its URL.
+THINKING_MODELS_FILE = {'providers': {'local': {
+    'baseUrl': 'http://127.0.0.1:9/v1', 'api': 'openai-completions', 'apiKey': 'local-runner-key',
+    'models': [{'id': 'gamma', 'reasoning': True}]}}}
+THINKING_FOOTER = 'local/gamma ◐ '
+
+
+def prepare_thinking_home(home):
+    """A private ASK_HOME with a user models.json; the loader needs mode 0700 and 0600."""
+    home.mkdir(mode=0o700)
+    path = home / 'models.json'
+    path.write_text(json.dumps(THINKING_MODELS_FILE) + '\n')
+    path.chmod(0o600)
+
+
+def thinking_ready(state):
+    """The header row is on row 1, the footer row names local/gamma and the prompt is empty."""
+    lines = screen_lines(state)
+    return (lines[0].rstrip() == HEADER and THINKING_FOOTER in footer_row(lines) and
+            any(line.startswith(' ❯ Ask anything') for line in lines))
+
+
+def thinking_level(state):
+    """The level word of the footer row, after the model and the thinking glyph."""
+    row = footer_row(screen_lines(state))
+    assert THINKING_FOOTER in row, f'the footer row has no level of local/gamma: {row!r}'
+    return row.split(THINKING_FOOTER, 1)[1].split()[0]
+
+
+def thinking_step(session, level):
+    """Press shift+tab and wait for the footer row to show level."""
+    session.key('shift+tab')
+    return session.wait(lambda s: THINKING_FOOTER + level + ' ' in footer_row(screen_lines(s)))
+
+
+def ask_thinking_default(session):
+    """A session with no chosen level shows default; shift+tab cycles away from it and back."""
+    assert_link(session.binary, session.env, False)
+    state = session.state()
+    assert thinking_level(state) == 'default', footer_row(screen_lines(state))
+    assert '◐ off' not in footer_row(screen_lines(state))
+    session.capture('start')
+    thinking_step(session, 'off')
+    session.capture('off')
+    # gamma has the levels off to high, so xhigh and max answer high; the cycle goes on from
+    # the asked level and comes back to default after seven more presses.
+    for level in ('minimal', 'low', 'medium', 'high', 'high', 'high'):
+        thinking_step(session, level)
+        session.settle()
+    state = thinking_step(session, 'default')
+    assert thinking_level(state) == 'default'
+    session.capture('back')
+    session.quit()
+    return {'start': 'default', 'after_one_press': 'off', 'after_eight_presses': 'default'}
+
+
 CASES = {
     'ask-idle': (ask_idle, ASK_COLUMNS, ASK_ROWS, {}),
     'ask-turn': (ask_turn, ASK_COLUMNS, ASK_ROWS, {}),
@@ -1369,6 +1428,7 @@ CASES = {
     'ask-trust-prompt-no-leader': (ask_trust_prompt_no_leader, ASK_COLUMNS, ASK_ROWS, {}),
     # The leader gets no model list from the network, so the scope comes from the file only.
     'ask-model-cycle': (ask_model_cycle, ASK_COLUMNS, ASK_ROWS, {'ASK_DISABLE_MODEL_REFRESH': '1'}),
+    'ask-thinking-default': (ask_thinking_default, ASK_COLUMNS, ASK_ROWS, {'ASK_DISABLE_MODEL_REFRESH': '1'}),
 }
 assert list(CASES) == ASK_CASES
 
@@ -1377,9 +1437,11 @@ assert list(CASES) == ASK_CASES
 CASE_PREPARE = {'ask-trust-prompt': prepare_gated_project, 'ask-trust-prompt-no-leader': prepare_gated_project}
 # Cases that start on another screen than the idle prompt. No session exists on that
 # screen yet, so the case checks the link itself after the first session starts.
-CASE_READY = {'ask-trust-prompt': trust_prompt_ready, 'ask-trust-prompt-no-leader': trust_prompt_ready}
+# A case on another model than faux-1 waits for that model in the footer row.
+CASE_READY = {'ask-trust-prompt': trust_prompt_ready, 'ask-trust-prompt-no-leader': trust_prompt_ready,
+              'ask-thinking-default': thinking_ready}
 # Cases that need files in ASK_HOME before `ask` starts.
-CASE_HOME = {'ask-model-cycle': prepare_model_home}
+CASE_HOME = {'ask-model-cycle': prepare_model_home, 'ask-thinking-default': prepare_thinking_home}
 
 
 def compile_ask(base, artifacts):

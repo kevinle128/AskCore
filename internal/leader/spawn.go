@@ -166,7 +166,8 @@ func FindAsk(callerExe string, lookPath func(string) (string, error)) (string, e
 }
 
 // checkExecutable returns the absolute path of a file that the current user can
-// run safely: a regular file, executable, not writable by others, owned by the
+// run safely: a regular file, executable, not writable by everyone (other);
+// group write is allowed, so a build under umask 002 still runs; owned by the
 // current user or by root.
 func checkExecutable(path string) (string, error) {
 	abs, err := filepath.Abs(path)

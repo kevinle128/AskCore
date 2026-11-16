@@ -534,3 +534,27 @@ func TestAdapterCloseSessionDisposesTheSession(t *testing.T) {
 	f = p.call("session/close", map[string]any{"sessionId": sid})
 	require.Equal(t, protocol.ACPErrUnknownSession, f.errKind(t), "a second close finds no session")
 }
+
+func TestAdapterFailedHostRefusesMutations(t *testing.T) {
+	p := newAdapterPeer(t, testConfig(says("x"), nil), nil)
+	sid := p.start()
+	s, ok := p.a.host.Session(sid)
+	require.True(t, ok)
+	before := s.Agent().State().Model
+	cause := errors.New("stdout lost")
+	p.a.Fail(cause)
+
+	release, err := s.guard(nil)
+	require.ErrorIs(t, err, ErrOutputFailed, "an admitted change needs a usable host")
+	require.Nil(t, release)
+
+	commit, err := s.mutationCommit(nil)
+	require.ErrorIs(t, err, ErrOutputFailed)
+	require.ErrorIs(t, err, cause)
+	require.Nil(t, commit)
+
+	target := providers.AnthropicSonnet46()
+	err = s.Agent().SetModel(s.mutationContext(context.Background(), nil), target)
+	require.ErrorIs(t, err, ErrOutputFailed, "the model change goes through the commit check")
+	require.Equal(t, before, s.Agent().State().Model, "a refused change keeps the model")
+}

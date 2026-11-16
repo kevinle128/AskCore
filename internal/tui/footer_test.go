@@ -116,6 +116,14 @@ func TestFooterRowGoldens(t *testing.T) {
 		require.Equal(t, "                 openai/gpt-5.4-mini 4%", rows[12])
 		require.Equal(t, " Tab blocks · / commands", rows[13])
 	})
+	t.Run("default_80x24", func(t *testing.T) {
+		r := startView(t, 80, 24, withFake(defaultFake(openaiGPT55, accountRows(), nil)))
+		r.h.waitText("◐ default")
+		requireContentGolden(t, r.h)
+		require.Equal(t, ` ⌂ ~/src/askcore                          openai/gpt-5.5 ◐ default  ▱▱▱▱▱▱▱▱ 0%`, r.footerOf())
+		require.NotContains(t, r.footerOf(), "◐ off")
+		require.Empty(t, r.railLines(), "no notice")
+	})
 }
 
 // The queue rows and the status row stay above the prompt pane while a tool

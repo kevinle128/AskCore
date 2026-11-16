@@ -35,7 +35,9 @@ At most 10 jobs run or stop at the same time (monitors count). The 11th start re
 ## Background limit and quiescence
 
 - `Options.BackgroundLimit` stops a job that runs too long in the background, with the kill reason `background time limit` and the notice `Background command "<label>" was stopped after reaching its background time limit`. A background start asks for a limit (`StartSpec.BackgroundLimit`, zero takes `Default`, `Max` caps it); a foreground job that moves to the background gets `Default` from the move. The zero value means no limit: only `ask -p` sets one.
-- With a limit set, every monitor gets a deadline of at most `Default`, a `persistent` one included.
+- With a limit set, every monitor gets a deadline of at most `Default`, a `persistent` one included. `BackgroundLimit.BashOnly` keeps the limit off monitors: they keep their own timeouts, and only bash jobs are stopped.
+- `Options.StallAfter` sends one stall notice when a background bash job prints no output for that time: `Background command "<label>" (job <id>) printed no output for <duration>. It still runs. Read it with job_output, stop it with job_kill, or leave it running.` The job keeps running. The silence counts from the later of the move to the background and the last output chunk, so output during the foreground wait does not count. After a notice, the next output starts a new silence period; until then no timer runs. A monitor, a foreground job inside its wait budget, a job that a `job_output` wait call watches (the timer starts a full period again), a killed or muted job and a closing table get none. Zero turns it off, and `DisableBackground` turns it off too; the composition sets the default.
+  Cost: a bash job has an output hook only when the notice is on. The hook does one atomic store and takes no lock. A job has at most one stall timer, armed at the move to the background and again only when it fires, never for each chunk. `own` stops it when the job ends.
 - `Options.DisableBackground` (`ASK_DISABLE_BACKGROUND_TASKS=1`) stops a foreground command at its wait budget and refuses a background start and a monitor with `ErrBackgroundDisabled`.
 - `Table.Idle` is closed while every job has handed off its completion notice or has none to send. A job counts from its start until `own` has run `sendNotice`, so `Agent.WaitForQuiescence` (through `agent.Config.Background`) never sees the end of a job before its notice is queued.
 
@@ -50,6 +52,7 @@ Each job keeps the generation of its owner (`Owner.Gen`). `Read`, `Kill` and `Li
   A foreground `bash` call starts its job with `StartSpec.Foreground`: the wait of the call is registered before the process can end, so a command that ends before `Wait` runs still gets no notice.
   If the wait budget ends before the job ends, the completion notice is still sent.
 - A refusal that `Options.IsExpectedDrop` accepts (a reset conversation or a disposed Agent) mutes the job: no report and no more monitor events. Any other refusal, or a job with no owner, goes to `Options.OnError`. The job stays readable with `job_list` and `job_output`.
+- The stall notice is not a completion notice. It does not claim the one notice at the end of a job: the completion notice still follows.
 - `job_output` on a running job answers at once and says that a notice will arrive.
   It tells the model not to poll.
 - A canceled output read keeps the read cursor and the finished job. A later read can still report the output and the final status.

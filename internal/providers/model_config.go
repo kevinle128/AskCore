@@ -361,7 +361,7 @@ func (st *configState) applyPatch(path string, m Model, p ModelPatch) (Model, bo
 			out.Cost, out.CostUnknown, applied = Cost{Tiers: []Tier{{Above: 0, Price: price}}}, m.CostUnknown && !all, true
 		}
 	}
-	if p.Input != nil {
+	if len(p.Input) > 0 {
 		if !validInput(p.Input) {
 			st.problem(path+".input", "input must list text or image")
 		} else {
@@ -428,7 +428,7 @@ func zeroCompat(api API) Compat {
 	case APIAnthropicMessages:
 		return AnthropicCompat{}
 	case APIOpenAICompletions:
-		return CompletionsCompat{}
+		return CompletionsCompat{SupportsReasoningEffort: true}
 	case APIOpenAIResponses:
 		return ResponsesCompat{}
 	default:

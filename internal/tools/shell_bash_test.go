@@ -581,12 +581,25 @@ func TestBashBigOutputKeepsHeadTailAndSpill(t *testing.T) {
 	require.NotNil(t, d.Truncation)
 	assert.Equal(t, want.Len(), d.Truncation.TotalBytes)
 	assert.Positive(t, d.Truncation.OutputBytes)
+	assert.Equal(t, "lines", d.Truncation.TruncatedBy, "many short lines hit the line limit")
 	info, err := os.Stat(d.SpillPath)
 	require.NoError(t, err)
 	assert.Equal(t, os.FileMode(0o600), info.Mode().Perm())
 	spilled, err := os.ReadFile(d.SpillPath)
 	require.NoError(t, err)
 	assert.Equal(t, want.String(), string(spilled))
+}
+
+func TestBashTruncationNamesTheByteLimitForLongLines(t *testing.T) {
+	h := newShellHarness(t)
+
+	res := h.mustRun("bash", map[string]any{
+		"command": "i=0; while [ $i -lt 600 ]; do printf '%0200d\\n' $i; i=$((i+1)); done",
+	})
+
+	d := shellDetails(t, res)
+	require.NotNil(t, d.Truncation)
+	assert.Equal(t, "bytes", d.Truncation.TruncatedBy)
 }
 
 func TestBashDetailsCarryJobAndExit(t *testing.T) {

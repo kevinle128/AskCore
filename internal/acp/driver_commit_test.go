@@ -168,7 +168,7 @@ func TestDriverMutationCommitChecksGenerationAfterAdmission(t *testing.T) {
 				require.Empty(t, s.Agent().State().Messages)
 			}
 			require.Equal(t, beforeEpoch, s.Epoch(), "the old reset did not change the epoch")
-			require.Equal(t, protocol.ThinkingOff, s.Agent().State().ThinkingLevel)
+			require.Equal(t, protocol.ThinkingDefault, s.Agent().State().ThinkingLevel)
 		})
 	}
 }

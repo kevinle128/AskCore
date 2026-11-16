@@ -22,13 +22,21 @@ import (
 // reminder draws a system reminder that the agent took.
 func (t *Translator) reminder(body string, out *[]tea.Msg) {
 	if n, ok := protocol.ParseJobNotice(body); ok {
-		t.dropJob(n.JobID)
+		// A stall notice reports a job that still runs, so the job stays in
+		// the running list.
+		stalled := n.Status == "running"
+		if !stalled {
+			t.dropJob(n.JobID)
+		}
 		status := n.Status
+		if stalled {
+			status = "still running"
+		}
 		if n.Detail != "" {
 			status += " · " + n.Detail
 		}
 		name := "job " + n.JobID
-		if n.Status == "completed" {
+		if n.Status == "completed" || stalled {
 			emitAppend(out, t.nextID("j"), newJobNotice(name, n.Label, ToolNoted, status, "", t.view), true)
 		} else {
 			emitAppend(out, t.nextID("j"), newJobNotice(name, n.Label, ToolFailed, "", status, t.view), true)

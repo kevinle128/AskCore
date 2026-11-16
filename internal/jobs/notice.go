@@ -5,6 +5,7 @@ package jobs
 import (
 	"fmt"
 	"strings"
+	"time"
 
 	"AskCore/pkg/protocol"
 )
@@ -86,14 +87,44 @@ func (t *Table) sendNotice(j *Job) {
 		return
 	}
 	j.noticeStarted = true
-	id, text := j.id, j.noticeLocked()
+	text := j.noticeLocked()
 	t.mu.Unlock()
+	t.deliver(j, "notice", text)
+}
+
+// stallText is the text of the stall notice: j printed no output for d.
+func (j *Job) stallText(d time.Duration) string {
+	return fmt.Sprintf("Background command %q (job %s) printed no output for %s. It still runs. Read it with job_output, stop it with job_kill, or leave it running.",
+		j.label, j.id, durationText(d))
+}
+
+// durationText writes d in whole minutes, else in whole seconds, else as
+// time.Duration does.
+func durationText(d time.Duration) string {
+	unit, n := "", int64(0)
+	switch {
+	case d >= time.Minute && d%time.Minute == 0:
+		unit, n = "minute", int64(d/time.Minute)
+	case d >= time.Second && d%time.Second == 0:
+		unit, n = "second", int64(d/time.Second)
+	default:
+		return d.String()
+	}
+	if n == 1 {
+		return "1 " + unit
+	}
+	return fmt.Sprintf("%d %ss", n, unit)
+}
+
+// deliver queues text for the owner of j. The caller does not hold t.mu. A
+// refusal goes to refused; what names the notice in the error.
+func (t *Table) deliver(j *Job, what, text string) {
 	if j.owner == nil {
-		t.report(fmt.Errorf("notice for job %s: %w", id, ErrNoOwner))
+		t.report(fmt.Errorf("%s for job %s: %w", what, j.id, ErrNoOwner))
 		return
 	}
 	if _, err := j.owner.Notify(t.reminderMessage(text)); err != nil {
-		t.refused(j, fmt.Errorf("notice for job %s: %w", id, err))
+		t.refused(j, fmt.Errorf("%s for job %s: %w", what, j.id, err))
 	}
 }
 

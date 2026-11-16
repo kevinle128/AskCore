@@ -58,6 +58,9 @@ type toolBlock struct {
 	index int
 	id    string
 	input string
+	// done is set by the final ToolCall part; a started call without it
+	// carries no usable content.
+	done bool
 }
 
 // Fold maps fantasy StreamParts onto Assembler. Tool-argument text comes
@@ -172,6 +175,7 @@ func Fold(a *providers.Assembler, parts fantasy.StreamResponse, opt Options) {
 		case fantasy.StreamPartTypeToolCall:
 			if b := tools[part.ID]; b != nil {
 				sawTool = true
+				b.done = true
 				id := toolID(opt.Tool, part.ID, part.ProviderMetadata)
 				if id != b.id {
 					// A final block replaces arguments. Keep them when only the item ID changes.
@@ -204,9 +208,14 @@ func Fold(a *providers.Assembler, parts fantasy.StreamResponse, opt Options) {
 					raw = "stop"
 				}
 			}
-			blocks := len(texts) + len(tools)
-			for _, tb := range thinks {
-				if tb.index >= 0 {
+			blocks := 0
+			for _, b := range texts {
+				if strings.TrimSpace(b.text) != "" {
+					blocks++
+				}
+			}
+			for _, b := range tools {
+				if b.done {
 					blocks++
 				}
 			}
@@ -254,8 +263,9 @@ func rawStop(w interface{ StopReason() string }) string {
 	return w.StopReason()
 }
 
-// finish settles the stream at the finish part. blocks counts the content
-// blocks of the message; a completed stop with none of them is an empty
+// finish settles the stream at the finish part. blocks counts the blocks that
+// carry content: text with a visible character and complete tool calls.
+// Thinking does not count. A completed stop with none of them is an empty
 // response and not a success.
 func finish(a *providers.Assembler, part fantasy.StreamPart, raw string, blocks int, opt Options) {
 	u := protocol.Usage{

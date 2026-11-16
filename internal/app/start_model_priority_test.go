@@ -91,6 +91,15 @@ func TestStartModelLevelRules(t *testing.T) {
 	got, err = choiceOf(demo, "").choose(ctx, ModelOptions{Pattern: "faux/faux-1:off"}, settings.Effective{})
 	require.NoError(t, err)
 	assert.Nil(t, got.Dropped, "off is never dropped")
+
+	got, err = choiceOf(demo, "").choose(ctx, ModelOptions{Pattern: "faux/faux-1:default"}, settings.Effective{})
+	require.NoError(t, err)
+	assert.Nil(t, got.Dropped, "default is never dropped")
+	assert.Equal(t, protocol.ThinkingDefault, got.Level, "a model with no thinking keeps no chosen level")
+
+	got, err = choiceOf(providers.Model{}, "", "openai").choose(ctx, ModelOptions{Pattern: "openai/" + gpt.ID + ":high", Thinking: protocol.ThinkingDefault}, settings.Effective{})
+	require.NoError(t, err)
+	assert.Equal(t, protocol.ThinkingDefault, got.Level, "--thinking default wins over the level of the pattern")
 }
 
 func TestStartModelPatternErrors(t *testing.T) {

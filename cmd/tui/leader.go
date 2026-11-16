@@ -148,12 +148,25 @@ func leaderStatus(paths leader.Paths, asJSON bool, stdout, stderr io.Writer) int
 		return 1
 	}
 	if asJSON {
-		data, _ := json.Marshal(st)
-		_, _ = fmt.Fprintf(stdout, "%s\n", data)
-		return 0
+		return writeJSONLine(stdout, stderr, st)
 	}
 	_, _ = fmt.Fprintf(stdout, "leader:            running\ninstance:          %s\npid:               %d\nbuild:             %s\nprotocol:          %d\nclients:           %d\nsessions:          %d\nactive runs:       %d\nspawned by client: %s\n",
 		st.InstanceID, st.PID, st.Build, st.ProtocolVersion, st.Clients, st.Sessions, st.ActiveRuns, yesNo(st.SpawnedByClient))
+	return 0
+}
+
+// writeJSONLine writes v as one JSON line. A script that reads the line must
+// see exit 1 when the line is lost, for example on a closed pipe.
+func writeJSONLine(stdout, stderr io.Writer, v any) int {
+	data, err := json.Marshal(v)
+	if err != nil {
+		report(stderr, "Error:", err)
+		return 1
+	}
+	if _, err := fmt.Fprintf(stdout, "%s\n", data); err != nil {
+		report(stderr, "Error:", err)
+		return 1
+	}
 	return 0
 }
 
@@ -177,9 +190,7 @@ func leaderList(paths leader.Paths, asJSON bool, stdout, stderr io.Writer) int {
 		return 1
 	}
 	if asJSON {
-		data, _ := json.Marshal(rows)
-		_, _ = fmt.Fprintf(stdout, "%s\n", data)
-		return 0
+		return writeJSONLine(stdout, stderr, rows)
 	}
 	if len(rows) == 0 {
 		_, _ = fmt.Fprintln(stdout, "no leader is running")

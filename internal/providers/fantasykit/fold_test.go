@@ -212,3 +212,60 @@ func TestFoldUsageUsesZeroBucketsAndDerivedTotal(t *testing.T) {
 		})
 	}
 }
+
+func TestFoldEmptyReplyIsNotASuccess(t *testing.T) {
+	text := func(id, delta string) []fantasy.StreamPart {
+		out := []fantasy.StreamPart{{Type: fantasy.StreamPartTypeTextStart, ID: id}}
+		if delta != "" {
+			out = append(out, fantasy.StreamPart{Type: fantasy.StreamPartTypeTextDelta, ID: id, Delta: delta})
+		}
+		return append(out, fantasy.StreamPart{Type: fantasy.StreamPartTypeTextEnd, ID: id})
+	}
+	cases := []struct {
+		name    string
+		parts   []fantasy.StreamPart
+		reason  protocol.StopReason
+		isEmpty bool
+	}{
+		{name: "text start and end only", parts: text("t", ""), reason: protocol.StopStop, isEmpty: true},
+		{name: "whitespace text", parts: text("t", " \n\t "), reason: protocol.StopStop, isEmpty: true},
+		{name: "thinking only", parts: []fantasy.StreamPart{
+			{Type: fantasy.StreamPartTypeReasoningStart, ID: "r"},
+			{Type: fantasy.StreamPartTypeReasoningDelta, ID: "r", Delta: "hmm"},
+			{Type: fantasy.StreamPartTypeReasoningEnd, ID: "r"},
+		}, reason: protocol.StopStop, isEmpty: true},
+		{name: "tool call that never completes", parts: []fantasy.StreamPart{
+			{Type: fantasy.StreamPartTypeToolInputStart, ID: "c", ToolCallName: "echo"},
+		}, reason: protocol.StopStop, isEmpty: true},
+		{name: "visible text", parts: text("t", "hi"), reason: protocol.StopStop},
+		{name: "complete tool call", parts: []fantasy.StreamPart{
+			{Type: fantasy.StreamPartTypeToolInputStart, ID: "c", ToolCallName: "echo"},
+			{Type: fantasy.StreamPartTypeToolCall, ID: "c", ToolCallName: "echo", ToolCallInput: "{}"},
+		}, reason: protocol.StopToolUse},
+		{name: "empty block with length stop", parts: text("t", ""), reason: protocol.StopLength},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			parts := func(yield func(fantasy.StreamPart) bool) {
+				for _, p := range append(tc.parts, fantasy.StreamPart{Type: fantasy.StreamPartTypeFinish}) {
+					if !yield(p) {
+						return
+					}
+				}
+			}
+			s := providers.NewStream(context.Background(), 64, protocol.AssistantMessage{}, func(a *providers.Assembler) {
+				a.Start()
+				Fold(a, parts, Options{MapStop: func(string) (protocol.StopReason, error) { return tc.reason, nil }})
+			})
+			for range s.Events() {
+			}
+			_, err := s.Result(context.Background())
+			if tc.isEmpty {
+				require.Error(t, err)
+				assert.Equal(t, providers.CodeEmptyResponse, providers.CodeOf(err))
+				return
+			}
+			require.NoError(t, err)
+		})
+	}
+}

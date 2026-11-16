@@ -6,10 +6,9 @@ import (
 	"net/http"
 	"os"
 	"path/filepath"
+	"syscall"
 	"time"
 
-	"AskCore/internal/providers"
-	"AskCore/internal/providers/anthropic"
 	"AskCore/internal/providers/cassette"
 )
 
@@ -21,18 +20,34 @@ const captureEnv = "ASK_CAPTURE"
 // startCapture sets a recording transport on o when ASK_CAPTURE is set and
 // tells stderr where the cassette goes. It returns the cassette path, or ""
 // when capture is off or the provider makes no HTTP requests. real sends the requests; nil means
-// http.DefaultTransport. The cassette is saved after each response, so it
-// exists only after the first provider request.
+// http.DefaultTransport. The cassette file is made empty now and filled after each response.
 func startCapture(o *options, getenv func(string) string, stderr io.Writer, real http.RoundTripper) (string, error) {
 	dir := getenv(captureEnv)
 	if dir == "" {
 		return "", nil
 	}
-	if o.provider != anthropic.ProviderID && o.provider != providers.ProviderAnthropic && o.provider != providers.ProviderOpenAI && o.provider != providers.ProviderXAI {
+	// Clean drops a trailing "/" or "/.", which would make Lstat follow a symlink.
+	dir = filepath.Clean(dir)
+	// Every provider but faux sends HTTP, custom providers of models.json too.
+	if o.provider == "" || o.provider == defaultProvider {
 		report(stderr, "ask: "+captureEnv+" ignored: provider", o.provider, "makes no HTTP requests")
 		return "", nil
 	}
-	if err := os.MkdirAll(dir, 0o755); err != nil {
+	if err := os.MkdirAll(dir, 0o700); err != nil {
+		return "", fmt.Errorf("%s: %w", captureEnv, err)
+	}
+	// MkdirAll leaves the mode of an existing folder alone, and both it and
+	// chmod follow a symlink. Capture writes only to a real folder that the
+	// user owns, then closes that folder to others.
+	info, err := os.Lstat(dir)
+	if err != nil {
+		return "", fmt.Errorf("%s: %w", captureEnv, err)
+	}
+	stat, owned := info.Sys().(*syscall.Stat_t)
+	if !info.IsDir() || info.Mode()&os.ModeSymlink != 0 || !owned || stat.Uid != uint32(os.Geteuid()) {
+		return "", fmt.Errorf("%s: %s must be a folder that you own, not a symlink", captureEnv, dir)
+	}
+	if err := os.Chmod(dir, 0o700); err != nil {
 		return "", fmt.Errorf("%s: %w", captureEnv, err)
 	}
 	path := filepath.Join(dir, time.Now().Format("20060102-150405.000")+".yaml")

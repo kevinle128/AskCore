@@ -39,7 +39,7 @@ func TestCustomModelGetsPiDefaults(t *testing.T) {
 		API: providers.APIOpenAICompletions, BaseURL: localURL,
 		Input: []string{"text"}, ContextWindow: 128_000, MaxTokens: 16_384,
 		Cost:   providers.Cost{Tiers: []providers.Tier{{}}},
-		Compat: providers.CompletionsCompat{},
+		Compat: providers.CompletionsCompat{SupportsReasoningEffort: true},
 	}, m)
 	assert.Nil(t, m.Headers)
 	assert.Equal(t, providers.OriginUser, set.Origin(refOf(m)))
@@ -241,7 +241,7 @@ func TestOverrideRefusesBadValuesAndKeepsTheRow(t *testing.T) {
 	cfg := providers.ModelConfig{Providers: []providers.ProviderConfig{{
 		ID: providers.ProviderOpenAI,
 		Overrides: map[string]providers.ModelPatch{
-			providers.ModelGPT55: {ContextWindow: ptr(0), MaxTokens: ptr(-1), Name: ptr(""), Input: []string{}},
+			providers.ModelGPT55: {ContextWindow: ptr(0), MaxTokens: ptr(-1), Name: ptr(""), Input: []string{"audio"}},
 			"not-a-row":          {ContextWindow: ptr(1)},
 		},
 	}}}
@@ -279,4 +279,28 @@ func TestModelSetDoesNotShareConfigStorage(t *testing.T) {
 	require.NoError(t, err)
 	assert.Equal(t, []string{"text", "image"}, m.Input)
 	assert.Equal(t, "high", *m.ThinkingLevelMap[protocol.ThinkingHigh])
+}
+
+func TestOverrideWithEmptyInputChangesNothing(t *testing.T) {
+	t.Parallel()
+	cfg := providers.ModelConfig{Providers: []providers.ProviderConfig{{
+		ID:        providers.ProviderOpenAI,
+		Overrides: map[string]providers.ModelPatch{providers.ModelGPT55: {Input: []string{}}},
+	}}}
+	set := providers.NewModelSet([]providers.Model{providers.OpenAIGPT55()}, nil, nil, cfg)
+	require.Empty(t, set.Problems())
+	m, err := set.Find(providers.Ref{Provider: providers.ProviderOpenAI, ID: providers.ModelGPT55})
+	require.NoError(t, err)
+	assert.Equal(t, providers.OpenAIGPT55().Input, m.Input)
+}
+
+func TestNewCompletionsRowSendsReasoningEffortByDefault(t *testing.T) {
+	t.Parallel()
+	set := providers.NewModelSet(nil, nil, nil, localConfig(providers.ModelSpec{ID: "m"}))
+	require.Empty(t, set.Problems())
+	m, err := set.Find(providers.Ref{Provider: "local", ID: "m"})
+	require.NoError(t, err)
+	compat, ok := m.Completions()
+	require.True(t, ok)
+	assert.True(t, compat.SupportsReasoningEffort)
 }

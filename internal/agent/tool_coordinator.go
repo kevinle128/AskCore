@@ -293,16 +293,16 @@ func (b *toolCoordinator) execute(ctx context.Context, p preparedCall, u *update
 					body = errorOutcome(p.call, bodyErr.Error()).result
 					body.IsError = ptr(true)
 				}
-				terminal = cloneToolResult(body)
+				terminal = pipeline.CloneToolResult(body)
 			})
-			return cloneToolResult(terminal), nil
+			return pipeline.CloneToolResult(terminal), nil
 		})
 		return err
 	})
 	if executeErr != nil {
 		return errorOutcome(p.call, executeErr.Error()), false, invoked
 	}
-	out = toolOutcome{call: p.call, result: cloneToolResult(res), isError: res.IsError != nil && *res.IsError}
+	out = toolOutcome{call: p.call, result: pipeline.CloneToolResult(res), isError: res.IsError != nil && *res.IsError}
 	if b.ctx.Err() != nil && !out.isError {
 		out = errorOutcome(p.call, textAborted)
 	}
@@ -313,7 +313,7 @@ func (b *toolCoordinator) afterTool(p preparedCall, o toolOutcome) (toolOutcome,
 	var r *pipeline.AfterToolCallResult
 	err := toolGuarded(func() error {
 		var e error
-		r, e = b.cfg.Pipeline.AfterTool(b.ctx, pipeline.ToolResultInfo{ToolCallInfo: b.info(p), Result: cloneToolResult(o.result), IsError: o.isError})
+		r, e = b.cfg.Pipeline.AfterTool(b.ctx, pipeline.ToolResultInfo{ToolCallInfo: b.info(p), Result: pipeline.CloneToolResult(o.result), IsError: o.isError})
 		return e
 	})
 	if err != nil {
@@ -360,7 +360,7 @@ func (u *updater) send(p protocol.ToolExecutionResult) {
 	if !u.open {
 		return
 	}
-	p = cloneToolResult(p)
+	p = pipeline.CloneToolResult(p)
 	select {
 	case <-u.partial:
 	default:
@@ -372,11 +372,6 @@ func (u *updater) send(p protocol.ToolExecutionResult) {
 	}
 }
 func (u *updater) close() { u.mu.Lock(); u.open = false; u.mu.Unlock() }
-
-func cloneToolResult(r protocol.ToolExecutionResult) protocol.ToolExecutionResult {
-	c := (&pipeline.AfterToolCallResult{Content: r.Content, Details: r.Details, StructuredContent: r.StructuredContent, IsError: r.IsError, Terminate: r.Terminate, Usage: r.Usage}).Clone()
-	return protocol.ToolExecutionResult{Content: c.Content, Details: c.Details, StructuredContent: c.StructuredContent, IsError: c.IsError, Terminate: c.Terminate, Usage: c.Usage}
-}
 
 func toolGuarded(fn func() error) (err error) {
 	defer func() {

@@ -8,6 +8,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"reflect"
 	"strings"
 	"sync"
 	"testing"
@@ -761,5 +762,38 @@ func TestAuthStoreReaderCreatesNothingAndRefusesWrites(t *testing.T) {
 	}
 	if _, err := os.Stat(filepath.Join(home, "auth.json.lock")); !errors.Is(err, os.ErrNotExist) {
 		t.Fatalf("the reader took the lock: %v", err)
+	}
+}
+
+func TestAuthStoreCommitRefreshRefusesForeignReplacement(t *testing.T) {
+	ctx := context.Background()
+	s, err := NewAuthStore(filepath.Join(t.TempDir(), "ask"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err = s.Replace(ctx, "openai", 0, Credential{Method: "openai-chatgpt", OAuth: &OAuthCredential{AccessToken: "access", RefreshToken: "refresh"}}); err != nil {
+		t.Fatal(err)
+	}
+	if _, err = s.FenceRefresh(ctx, "openai", 1, "attempt"); err != nil {
+		t.Fatal(err)
+	}
+	before, rev, err := s.Read(ctx, "openai")
+	if err != nil || before.RefreshState == nil {
+		t.Fatalf("fence: %#v %v", before, err)
+	}
+	for name, repl := range map[string]Credential{
+		"other method": {Method: "api-key", APIKey: "key"},
+		"no oauth":     {Method: "openai-chatgpt"},
+	} {
+		if _, err := s.CommitRefresh(ctx, "openai", 1, "attempt", repl); err == nil {
+			t.Fatalf("%s: commit accepted", name)
+		}
+		got, gotRev, err := s.Read(ctx, "openai")
+		if err != nil || gotRev != rev || !reflect.DeepEqual(got, before) {
+			t.Fatalf("%s: stored credential changed: %#v %v", name, got, err)
+		}
+	}
+	if _, err = s.CommitRefresh(ctx, "openai", 1, "attempt", Credential{Method: "openai-chatgpt", OAuth: &OAuthCredential{AccessToken: "new", RefreshToken: "r2"}}); err != nil {
+		t.Fatal(err)
 	}
 }

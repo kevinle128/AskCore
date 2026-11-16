@@ -35,6 +35,7 @@ There are no `Sandbox` or `Manager` interfaces yet and no isolation beyond the p
 ## Main types
 
 - `Spec`, `Result`, `Process`, `Output`, `Truncation`, `Stream`, `Clock`
+- `Truncation.TruncatedBy` names the limit that cut the output (`lines` or `bytes`).
 
 ## File names
 

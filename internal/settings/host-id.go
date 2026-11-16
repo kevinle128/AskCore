@@ -14,6 +14,9 @@ import (
 
 // HostID returns the durable UUID of this local installation.
 func (s *AuthStore) HostID(ctx context.Context) (string, error) {
+	if s.readOnly {
+		return "", ErrReadOnlyStore
+	}
 	if err := ensureHome(s.home); err != nil {
 		return "", err
 	}

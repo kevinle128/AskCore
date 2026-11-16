@@ -27,6 +27,11 @@ func parseMessage(raw json.RawMessage) (*rpcMessage, error) {
 	if err != nil {
 		return nil, err
 	}
+	// The router writes its route data into params; a second spelling of a
+	// top-level key could carry the field the SDK decodes instead.
+	if hasFoldDuplicate(fields) {
+		return nil, fmt.Errorf("%w: two keys differ only in case", ErrInvalidMessage)
+	}
 	var version string
 	if json.Unmarshal(fields["jsonrpc"], &version) != nil || version != "2.0" {
 		return nil, fmt.Errorf("%w: jsonrpc must be \"2.0\"", ErrInvalidMessage)

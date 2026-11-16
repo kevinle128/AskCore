@@ -3,6 +3,7 @@ package jobs
 import (
 	"errors"
 	"testing"
+	"time"
 
 	"AskCore/pkg/protocol"
 
@@ -14,22 +15,38 @@ import (
 func TestNoticeTextParsesInTheProtocol(t *testing.T) {
 	zero, two := 0, 2
 	for _, tc := range []struct {
-		job  Job
+		job  *Job
 		want protocol.JobNotice
 	}{
-		{Job{id: "bash-1", kind: KindBash, label: "npm run build", status: StatusCompleted, exitCode: &zero},
+		{&Job{id: "bash-1", kind: KindBash, label: "npm run build", status: StatusCompleted, exitCode: &zero},
 			protocol.JobNotice{JobID: "bash-1", Kind: "bash", Label: "npm run build", Status: "completed", Detail: "exit 0"}},
-		{Job{id: "bash-2", kind: KindBash, label: "make", status: StatusFailed, exitCode: &two},
+		{&Job{id: "bash-2", kind: KindBash, label: "make", status: StatusFailed, exitCode: &two},
 			protocol.JobNotice{JobID: "bash-2", Kind: "bash", Label: "make", Status: "failed", Detail: "exit 2"}},
-		{Job{id: "bash-3", kind: KindBash, label: "sleep 9", status: StatusKilled, killReason: "timeout"},
+		{&Job{id: "bash-3", kind: KindBash, label: "sleep 9", status: StatusKilled, killReason: "timeout"},
 			protocol.JobNotice{JobID: "bash-3", Kind: "bash", Label: "sleep 9", Status: "killed", Detail: "timeout"}},
-		{Job{id: "bash-4", kind: KindBash, label: "./crash", status: StatusFailed, signal: "SIGSEGV", failure: errors.New("boom")},
+		{&Job{id: "bash-4", kind: KindBash, label: "./crash", status: StatusFailed, signal: "SIGSEGV", failure: errors.New("boom")},
 			protocol.JobNotice{JobID: "bash-4", Kind: "bash", Label: "./crash", Status: "failed", Detail: "signal: SIGSEGV, error: boom"}},
+		{&Job{id: "bash-5", kind: KindBash, label: `echo "a)" (x)`, status: StatusKilled, killReason: limitReason},
+			protocol.JobNotice{JobID: "bash-5", Kind: "bash", Label: `echo "a)" (x)`, Status: "killed", Detail: "background time limit"}},
 	} {
 		text := tc.job.noticeLocked()
 		got, ok := protocol.ParseJobNotice(text)
 		require.True(t, ok, text)
 		require.Equal(t, tc.want, got, text)
+	}
+}
+
+func TestStallTextParsesInTheProtocol(t *testing.T) {
+	j := &Job{id: "bash-6", kind: KindBash, label: `grep "a)" (log)`}
+	for d, detail := range map[time.Duration]string{
+		5 * time.Minute:        "no output for 5 minutes",
+		time.Second:            "no output for 1 second",
+		200 * time.Millisecond: "no output for 200ms",
+	} {
+		text := j.stallText(d)
+		got, ok := protocol.ParseJobNotice(text)
+		require.True(t, ok, text)
+		require.Equal(t, protocol.JobNotice{JobID: "bash-6", Kind: "bash", Label: j.label, Status: "running", Detail: detail}, got, text)
 	}
 }
 

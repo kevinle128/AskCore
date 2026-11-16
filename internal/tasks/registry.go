@@ -130,6 +130,15 @@ func (r *Registry) Start(spec Spec) (Handle, error) {
 	if spec.Kind != KindTimer && r.cfg.Dir == "" {
 		return Handle{}, ErrNoTaskDir
 	}
+	// A closed registry takes no ID: NextID counts, so a refused start must not
+	// use up a number. Close can still run after this read, so the locked check
+	// below stays.
+	r.mu.Lock()
+	closed := r.closed
+	r.mu.Unlock()
+	if closed {
+		return Handle{}, ErrClosed
+	}
 	id := r.cfg.NextID(spec.Kind)
 	if !validID(id) {
 		return Handle{}, fmt.Errorf("%w: task id %q is not a plain name", ErrInvalidSpec, id)

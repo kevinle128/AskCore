@@ -45,8 +45,11 @@ func (r StopReason) valid() bool {
 // ThinkingLevel is the reasoning effort that the agent loop asked for.
 type ThinkingLevel string
 
-// Thinking levels.
+// Thinking levels. ThinkingDefault means that no level is chosen: the
+// request sends no level of Ask, and the provider path picks one. ThinkingOff
+// asks for the lowest level of the model.
 const (
+	ThinkingDefault ThinkingLevel = "default"
 	ThinkingOff     ThinkingLevel = "off"
 	ThinkingMinimal ThinkingLevel = "minimal"
 	ThinkingLow     ThinkingLevel = "low"

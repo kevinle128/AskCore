@@ -160,10 +160,6 @@ func runWithDependencies(argv []string, stdin io.Reader, stdout, stderr io.Write
 		o.transport = deps.inferenceHTTP.Transport
 	}
 	o.environ = deps.environ
-	if _, err := startCapture(&o, deps.getenv, stderr, nil); err != nil {
-		report(stderr, "Error:", err)
-		return 1
-	}
 	newAuth := func() (*auth.Service, error) {
 		return app.NewNativeAuth(deps.getenv("ASK_HOME"), env, auth.NativeOptions{HTTPClient: deps.authHTTP, Now: deps.now, Wait: deps.wait})
 	}
@@ -188,6 +184,12 @@ func runWithDependencies(argv []string, stdin io.Reader, stdout, stderr io.Write
 		report(stderr, "Error:", err)
 		return 1
 	}
+	// The provider is known only after the start model is chosen, so a run
+	// that picks its provider with --model alone is captured too.
+	if _, err := startCapture(&o, deps.getenv, stderr, nil); err != nil {
+		report(stderr, "Error:", err)
+		return 1
+	}
 	o.bgLimit = printBackgroundLimit(deps.getenv)
 	ag, jt, err := newPrintAgent(o, deps.getenv, service, app.AgentSpec{
 		SessionID: newSessionID(), Cwd: cwd, Start: start, Session: session,
@@ -207,7 +209,7 @@ func runWithDependencies(argv []string, stdin io.Reader, stdout, stderr io.Write
 		return 1
 	}
 
-	w := waitConfig{jobs: jt, maxTurns: o.maxTurns, ceiling: printWaitCeiling(deps.getenv)}
+	w := waitConfig{jobs: jt, maxTurns: o.maxTurns, ceiling: envMillis(deps.getenv, printBgCeilingEnv, printCeiling)}
 	if isTerminal(stderr) && (mode != modeJSON || !isTerminal(stdout)) {
 		w.progress = stderr
 	}
@@ -261,7 +263,14 @@ func printStartModel(o *options, getenv func(string) string, newAuth func() (*au
 			return providers.Model{}, nil, nil, fmt.Errorf("provider %q is not available", o.provider)
 		}
 	}
-	_, demo, err := fauxStream(defaultModel, getenv)
+	// The demo model does not depend on the pace, and the pace variable is for
+	// the faux provider only, so a bad value must not stop a real-provider run.
+	_, demo, err := fauxStream(defaultModel, func(k string) string {
+		if k == fauxPaceEnv {
+			return ""
+		}
+		return getenv(k)
+	})
 	if err != nil {
 		return providers.Model{}, nil, nil, err
 	}
@@ -466,6 +475,7 @@ func newNativeAgentOn(o options, getenv func(string) string, service *auth.Servi
 		// purpose; the job is muted and nothing is reported.
 		IsExpectedDrop:    func(err error) bool { return errors.Is(err, tasks.ErrNotDelivered) },
 		BackgroundLimit:   o.bgLimit,
+		StallAfter:        envMillis(getenv, bgStallEnv, bgStallDefault),
 		DisableBackground: getenv(disableBackgroundEnv) == "1",
 		Env: func() []string {
 			st := ag.State()

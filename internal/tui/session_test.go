@@ -572,8 +572,8 @@ func TestThinkingCycleDoesNotStickOnClampedLevel(t *testing.T) {
 	r.key("shift+tab")
 	r.waitCall("set_thinking:max")
 	r.key("shift+tab")
-	r.waitCall("set_thinking:off")
-	r.h.waitText("◐ off")
+	r.waitCall("set_thinking:default")
+	r.h.waitText("◐ default")
 }
 
 func TestCtrlTExpandsAndCollapsesThinkingBlocks(t *testing.T) {

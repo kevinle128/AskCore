@@ -75,12 +75,13 @@ func (*Bash) Decl() protocol.ToolDecl {
 			"Set run_in_background to true to start a long command, such as a server or a build, in the background at once. "+
 			"A notice arrives when a background job finishes, so do not poll job_output. Stop a job with job_kill. "+
 			"Do not end the command with &. Background jobs end when the session closes. "+
-			"In a non-interactive run the run waits for its background jobs, and a background job stops after a time limit "+
-			"(by default 10 minutes); with run_in_background, `timeout` sets that limit, up to 2 hours.",
+			"A background job stops after a time limit (by default 2 hours; 10 minutes in a non-interactive run, which waits for its background jobs); "+
+			"with run_in_background, `timeout` sets that limit, up to 2 hours. "+
+			"When a background job prints no output for 5 minutes, a notice says so; the job still runs.",
 			DefaultMaxLines, DefaultMaxBytes/1024, int(bashDefaultTimeout/time.Second), int(bashMaxTimeout/time.Second)),
 		Parameters: json.RawMessage(`{"type":"object","properties":{` +
 			`"command":{"type":"string","description":"Bash command to execute"},` +
-			`"timeout":{"type":"number","description":"Seconds to wait before the command moves to the background (default 120, maximum 600). With run_in_background, the seconds the job may run in the background in a non-interactive run (default 600, maximum 7200)"},` +
+			`"timeout":{"type":"number","description":"Seconds to wait before the command moves to the background (default 120, maximum 600). With run_in_background, the seconds the job may run in the background (default 7200, or 600 in a non-interactive run; maximum 7200)"},` +
 			`"run_in_background":{"type":"boolean","description":"Start the command as a background job and return at once"}},` +
 			`"required":["command"]}`),
 	}
@@ -89,7 +90,7 @@ func (*Bash) Decl() protocol.ToolDecl {
 func (*Bash) PromptSnippet() string { return "Execute bash commands (ls, grep, find, etc.)" }
 
 func (*Bash) PromptGuidelines() []string {
-	return []string{"Use run_in_background for servers and long builds. A notice arrives when the job ends, so do not poll job_output."}
+	return []string{"Use run_in_background for servers and long builds. A notice arrives when the job ends or goes silent, so do not poll job_output."}
 }
 
 func (b *Bash) Execute(ctx context.Context, tc Context, args json.RawMessage) (protocol.ToolExecutionResult, error) {
@@ -111,8 +112,8 @@ func (b *Bash) Execute(ctx context.Context, tc Context, args json.RawMessage) (p
 	clamped := false
 	var err error
 	if background {
-		// With run_in_background, timeout is the background limit of a session
-		// that has one (ask -p); the table caps it.
+		// With run_in_background, timeout is the background limit of the job; the
+		// table caps it, and a session without a limit ignores it.
 		limit, err = backgroundLimit(in.Timeout)
 	} else {
 		budget, clamped, err = waitBudget(in.Timeout)
@@ -296,12 +297,8 @@ func toolTruncation(tr sandbox.Truncation) *protocol.ToolTruncation {
 	if !tr.Truncated {
 		return nil
 	}
-	by := "bytes"
-	if tr.ShownLines >= sandbox.DefaultMaxLines {
-		by = "lines"
-	}
 	return &protocol.ToolTruncation{
-		TruncatedBy: by,
+		TruncatedBy: tr.TruncatedBy,
 		TotalBytes:  int(tr.TotalBytes),
 		OutputLines: tr.ShownLines,
 		OutputBytes: tr.ShownBytes,

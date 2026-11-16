@@ -59,6 +59,11 @@ func DecodeThinkingSignature(sig string) (ReasoningReplay, bool) {
 	if err := json.Unmarshal([]byte(sig), &r); err != nil {
 		return ReasoningReplay{}, false
 	}
+	// A signature without the type and the item id cannot rebuild a reasoning
+	// item, so the caller falls back to text.
+	if r.Type != "reasoning" || r.ID == "" {
+		return ReasoningReplay{}, false
+	}
 	return r, true
 }
 

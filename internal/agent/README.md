@@ -42,6 +42,7 @@ Seed items are `protocol.CustomMessage` values that the owner supplies (context 
 They are committed first in every fresh log, in `New` and in Reset, without an input ID and without events; the first Follow snapshot holds them and the request record rebuilds them like any other message.
 A seed item is skipped when the log already holds its `CustomType`, so a prefilled log is not seeded twice.
 A log that holds only seed items is empty for `Continue`.
+`Continue` with an empty context, or with an assistant message at the tail, runs the input that is already queued. When none is queued, the run is marked as closing, so input that arrives later starts the next run and does not wait in an idle Agent.
 
 Input uses claims rather than delivery modes.
 Steering is claimed at a turn boundary; a cycle claim also takes one follow-up.

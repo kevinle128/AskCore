@@ -622,7 +622,9 @@ func (b *Broker) runKey(l *login, key string) Outcome {
 func (b *Broker) Logout(ctx context.Context, provider, method string) (LogoutInfo, error) {
 	known := false
 	for _, o := range LoginOptions() {
-		known = known || o.Provider == provider
+		if o.Provider == provider && (method == "" || o.Method == method) {
+			known = true
+		}
 	}
 	if !known {
 		return LogoutInfo{}, ErrMethod

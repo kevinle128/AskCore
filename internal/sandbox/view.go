@@ -30,6 +30,10 @@ type Truncation struct {
 	ElidedBytes int64
 	// TotalBytes is the number of bytes the process wrote.
 	TotalBytes int64
+	// TruncatedBy names the limit that cut the kept head or tail: "lines"
+	// when a line limit stopped a cut, else "bytes". It is empty when nothing
+	// was cut.
+	TruncatedBy string
 	// ShownLines and ShownBytes measure the kept head and tail.
 	ShownLines int
 	ShownBytes int
@@ -60,14 +64,16 @@ func View(out Output, maxLines, maxBytes int) (string, Truncation) {
 		SpillCapped: out.SpillCapped,
 	}
 	var text string
+	var byLines bool
 	if out.Dropped == 0 {
 		full := sanitize(string(out.Head) + string(out.Tail))
 		if countLines(full) <= maxLines && len(full) <= maxBytes {
 			text = full
 			tr.ShownLines, tr.ShownBytes = countLines(full), len(full)
 		} else {
-			head := cutHead(full, headLines, headBytes)
-			tail := cutTail(full[len(head):], tailLines, tailBytes)
+			head, headByLines := cutHead(full, headLines, headBytes)
+			tail, tailByLines := cutTail(full[len(head):], tailLines, tailBytes)
+			byLines = headByLines || tailByLines
 			tr.ElidedBytes = int64(len(full) - len(head) - len(tail))
 			text = joinElided(head, tail, tr.ElidedBytes)
 			tr.ShownLines, tr.ShownBytes = countLines(head)+countLines(tail), len(head)+len(tail)
@@ -79,14 +85,21 @@ func View(out Output, maxLines, maxBytes int) (string, Truncation) {
 		trimmedTail := trimContinuationStart(tailRaw)
 		lost += int64(len(headRaw)-len(trimmedHead)) + int64(len(tailRaw)-len(trimmedTail))
 		headClean, tailClean := sanitize(trimmedHead), sanitize(trimmedTail)
-		head := cutHead(headClean, headLines, headBytes)
-		tail := cutTail(tailClean, tailLines, tailBytes)
+		head, headByLines := cutHead(headClean, headLines, headBytes)
+		tail, tailByLines := cutTail(tailClean, tailLines, tailBytes)
+		byLines = headByLines || tailByLines
 		lost += int64(len(headClean)-len(head)) + int64(len(tailClean)-len(tail))
 		tr.ElidedBytes = lost
 		text = joinElided(head, tail, lost)
 		tr.ShownLines, tr.ShownBytes = countLines(head)+countLines(tail), len(head)+len(tail)
 	}
 	tr.Truncated = tr.ElidedBytes > 0
+	if tr.Truncated {
+		tr.TruncatedBy = "bytes"
+		if byLines {
+			tr.TruncatedBy = "lines"
+		}
+	}
 
 	if out.SpillPath != "" {
 		text = endLine(text) + "[full output: " + out.SpillPath + "]"
@@ -150,8 +163,8 @@ func countLines(s string) int {
 }
 
 // cutHead keeps the first maxLines lines and at most maxBytes bytes of s, and
-// ends at a rune boundary.
-func cutHead(s string, maxLines, maxBytes int) string {
+// ends at a rune boundary. byLines is true when the line limit stopped the cut.
+func cutHead(s string, maxLines, maxBytes int) (head string, byLines bool) {
 	end := len(s)
 	if end > maxBytes {
 		end = maxBytes
@@ -163,16 +176,17 @@ func cutHead(s string, maxLines, maxBytes int) string {
 	for range maxLines {
 		i := strings.IndexByte(s[pos:end], '\n')
 		if i < 0 {
-			return s[:end]
+			return s[:end], false
 		}
 		pos += i + 1
 	}
-	return s[:pos]
+	return s[:pos], pos < end
 }
 
 // cutTail keeps the last maxLines lines and at most maxBytes bytes of s, and
-// starts at a rune boundary.
-func cutTail(s string, maxLines, maxBytes int) string {
+// starts at a rune boundary. byLines is true when the line limit stopped the
+// cut.
+func cutTail(s string, maxLines, maxBytes int) (tail string, byLines bool) {
 	start := 0
 	if len(s) > maxBytes {
 		start = len(s) - maxBytes
@@ -192,10 +206,11 @@ func cutTail(s string, maxLines, maxBytes int) string {
 		seen++
 		if seen == maxLines {
 			start = i + 1
+			byLines = true
 			break
 		}
 	}
-	return s[start:]
+	return s[start:], byLines
 }
 
 // trimIncompleteRuneEnd removes a rune that the buffer cut in two at the end

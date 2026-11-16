@@ -18,6 +18,7 @@ import (
 	"io/fs"
 	"net/http"
 	"os"
+	"path/filepath"
 	"strings"
 	"sync"
 
@@ -95,9 +96,17 @@ func New(path string, mode Mode, opts ...Option) (*Recorder, error) {
 		if err := os.Remove(path); err != nil && !errors.Is(err, fs.ErrNotExist) {
 			return nil, fmt.Errorf("cassette %s: %w", path, err)
 		}
+		if err := createPrivateFile(path); err != nil {
+			return nil, fmt.Errorf("cassette %s: %w", path, err)
+		}
 	}
 	if mode == Replay {
 		vcrMode = recorder.ModeReplayOnly
+		// Record makes the file empty at once, so a record run that failed
+		// before its first response leaves an empty file. That is no cassette.
+		if info, err := os.Stat(path); err == nil && info.Size() == 0 {
+			return nil, fmt.Errorf("cassette %s: the cassette is empty; %s", path, rerecordHint)
+		}
 		c, err := vcr.Load(name)
 		if err != nil {
 			return nil, fmt.Errorf("cassette %s: %w; %s", path, err, rerecordHint)
@@ -155,6 +164,13 @@ func (r *Recorder) RoundTrip(req *http.Request) (*http.Response, error) {
 		if err := r.vcr.Stop(); err != nil {
 			_ = resp.Body.Close()
 			return nil, r.fail(fmt.Errorf("cassette %s: save: %w", r.path, err))
+		}
+		// New made the file with mode 0600 and go-vcr truncates it at each
+		// save, which keeps the mode. This check is a second guard: a cassette
+		// can hold prompts and tool results, so only the owner may read it.
+		if err := os.Chmod(r.path, 0o600); err != nil {
+			_ = resp.Body.Close()
+			return nil, r.fail(fmt.Errorf("cassette %s: mode: %w", r.path, err))
 		}
 	}
 	return resp, nil
@@ -260,4 +276,19 @@ func keep(h http.Header, names []string) http.Header {
 		}
 	}
 	return out
+}
+
+// createPrivateFile makes an empty file that only the owner can open, and its
+// folder when it is missing. go-vcr saves with os.Create, which truncates an
+// existing file and keeps its mode, so the first save never writes the payload
+// into a file that others can read.
+func createPrivateFile(path string) error {
+	if err := os.MkdirAll(filepath.Dir(path), 0o700); err != nil {
+		return err
+	}
+	f, err := os.OpenFile(path, os.O_CREATE|os.O_EXCL|os.O_WRONLY, 0o600)
+	if err != nil {
+		return err
+	}
+	return f.Close()
 }

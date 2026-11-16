@@ -161,8 +161,89 @@ func TestLoadContext_FileKinds(t *testing.T) {
 	require.NoError(t, os.Symlink(target, filepath.Join(linkDir, "AGENTS.md")))
 	got, err = LoadContext(ContextInput{Cwd: linkDir, UserHome: t.TempDir()})
 	require.NoError(t, err)
-	assert.Equal(t, []string{filepath.Join(linkDir, "AGENTS.md")}, paths(got))
-	assert.Contains(t, got.Text, "linked rules")
+	assert.Empty(t, got.Files)
+	assert.Equal(t, []Skip{{Path: filepath.Join(linkDir, "AGENTS.md"), Reason: SkipOutsideProject}}, got.Skipped)
+	assert.NotContains(t, got.Text, "linked rules")
+}
+
+func TestLoadContext_LinkOutsideProjectIsSkipped(t *testing.T) {
+	t.Parallel()
+	root := t.TempDir()
+	require.NoError(t, os.MkdirAll(filepath.Join(root, ".git"), 0o755))
+	secret := filepath.Join(t.TempDir(), "credentials")
+	put(t, secret, "super-secret-token")
+	link := filepath.Join(root, "AGENTS.md")
+	require.NoError(t, os.Symlink(secret, link))
+
+	got, err := LoadContext(ContextInput{Cwd: root, UserHome: t.TempDir()})
+	require.NoError(t, err)
+	assert.Empty(t, got.Files)
+	assert.Equal(t, []Skip{{Path: link, Reason: SkipOutsideProject}}, got.Skipped)
+	assert.NotContains(t, got.Text, "super-secret-token")
+}
+
+func TestLoadContext_LinkInsideProjectLoads(t *testing.T) {
+	t.Parallel()
+	root := t.TempDir()
+	require.NoError(t, os.MkdirAll(filepath.Join(root, ".git"), 0o755))
+	put(t, filepath.Join(root, "docs", "rules.md"), "shared rules")
+	sub := filepath.Join(root, "sub")
+	require.NoError(t, os.MkdirAll(sub, 0o755))
+	link := filepath.Join(sub, "CLAUDE.md")
+	require.NoError(t, os.Symlink(filepath.Join(root, "docs", "rules.md"), link))
+
+	got, err := LoadContext(ContextInput{Cwd: sub, UserHome: t.TempDir()})
+	require.NoError(t, err)
+	assert.Equal(t, []string{link}, paths(got))
+	assert.Contains(t, got.Text, "shared rules")
+	assert.Empty(t, got.Skipped)
+}
+
+func TestLoadContext_NoGitRootContainsToCwd(t *testing.T) {
+	t.Parallel()
+	parent := t.TempDir()
+	cwd := filepath.Join(parent, "work")
+	put(t, filepath.Join(cwd, "notes.md"), "inside rules")
+	put(t, filepath.Join(parent, "up.md"), "parent rules")
+	require.NoError(t, os.Symlink(filepath.Join(cwd, "notes.md"), filepath.Join(cwd, "AGENTS.md")))
+	require.NoError(t, os.Symlink(filepath.Join(parent, "up.md"), filepath.Join(cwd, "CLAUDE.md")))
+
+	got, err := LoadContext(ContextInput{Cwd: cwd, UserHome: t.TempDir()})
+	require.NoError(t, err)
+	assert.Equal(t, []string{filepath.Join(cwd, "AGENTS.md")}, paths(got))
+	assert.Equal(t, map[string]SkipReason{filepath.Join(cwd, "CLAUDE.md"): SkipOutsideProject}, reasons(got))
+	assert.NotContains(t, got.Text, "parent rules")
+}
+
+func TestLoadContext_RootReachedThroughLinkedPath(t *testing.T) {
+	t.Parallel()
+	base := t.TempDir()
+	real := filepath.Join(base, "real")
+	require.NoError(t, os.MkdirAll(filepath.Join(real, ".git"), 0o755))
+	put(t, filepath.Join(real, "rules.md"), "repo rules")
+	require.NoError(t, os.Symlink("rules.md", filepath.Join(real, "AGENTS.md")))
+	alias := filepath.Join(base, "alias")
+	require.NoError(t, os.Symlink(real, alias))
+
+	got, err := LoadContext(ContextInput{Cwd: alias, UserHome: t.TempDir()})
+	require.NoError(t, err)
+	assert.Equal(t, []string{filepath.Join(alias, "AGENTS.md")}, paths(got))
+	assert.Contains(t, got.Text, "repo rules")
+}
+
+func TestLoadContext_UserDirLinkOutsideStillLoads(t *testing.T) {
+	t.Parallel()
+	base := t.TempDir()
+	user := filepath.Join(base, "ask")
+	target := filepath.Join(t.TempDir(), "mine.md")
+	put(t, target, "my global rules")
+	require.NoError(t, os.MkdirAll(user, 0o755))
+	require.NoError(t, os.Symlink(target, filepath.Join(user, "AGENTS.md")))
+
+	got, err := LoadContext(ContextInput{Cwd: t.TempDir(), UserDir: user, UserHome: base})
+	require.NoError(t, err)
+	assert.Equal(t, []string{filepath.Join(user, "AGENTS.md")}, paths(got))
+	assert.Contains(t, got.Text, "my global rules")
 }
 
 func TestLoadContext_EmptyWhenNoFile(t *testing.T) {
@@ -240,4 +321,15 @@ func TestLoadContext_Budget(t *testing.T) {
 			assert.Equal(t, tt.wantSkips, gotReasons)
 		})
 	}
+}
+
+func TestLoadContext_MissingProjectFolderLoadsNothing(t *testing.T) {
+	t.Parallel()
+	missing := filepath.Join(t.TempDir(), "gone", "project")
+
+	got, err := LoadContext(ContextInput{Cwd: missing, UserHome: t.TempDir()})
+	require.NoError(t, err)
+	assert.Empty(t, got.Files)
+	assert.Empty(t, got.Skipped)
+	assert.Empty(t, got.Text)
 }

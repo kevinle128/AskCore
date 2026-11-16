@@ -13,6 +13,7 @@ import (
 	"strconv"
 	"strings"
 	"sync"
+	"syscall"
 	"testing"
 	"time"
 
@@ -37,6 +38,8 @@ type connectProc struct {
 	stdin io.WriteCloser
 	done  chan struct{}
 	err   error
+	// stderr holds the standard error of the process; read it after done.
+	stderr *strings.Builder
 
 	mu    sync.Mutex
 	lines []string
@@ -53,7 +56,7 @@ func startConnect(t *testing.T, bin, home string, extraEnv []string, args ...str
 	var errOut strings.Builder
 	cmd.Stderr = &errOut
 	require.NoError(t, cmd.Start())
-	p := &connectProc{t: t, cmd: cmd, stdin: stdin, done: make(chan struct{})}
+	p := &connectProc{t: t, cmd: cmd, stdin: stdin, done: make(chan struct{}), stderr: &errOut}
 	go func() {
 		sc := bufio.NewScanner(stdout)
 		sc.Buffer(make([]byte, 0, 64<<10), 16<<20)
@@ -353,6 +356,25 @@ func TestLeaderE2EEndOfInputWaitsForThePrompt(t *testing.T) {
 	require.Contains(t, string(out), "result session=")
 	require.Contains(t, string(out), "stop=end_turn")
 	require.True(t, strings.HasSuffix(strings.TrimSpace(string(out)), "bye"))
+}
+
+// A leader that ends with a prompt in flight is an error, also after the end
+// of stdin; only a prompt that finished first gives exit 0.
+func TestLeaderE2ELeaderLostWithPromptInFlight(t *testing.T) {
+	bin, home := newE2EHome(t)
+	p := startConnect(t, bin, home, pacedEnv(4))
+	p.waitLine("connected", hasPrefix("connected "))
+	p.sessionID()
+	p.send("say a long reply so that the leader ends while the run is still going on")
+	p.waitLine("the reply starts", hasPrefix("update "))
+	require.NoError(t, p.stdin.Close())
+
+	st, err := leader.Status(context.Background(), e2eConnect(home, bin))
+	require.NoError(t, err)
+	require.NoError(t, syscall.Kill(st.PID, syscall.SIGKILL))
+
+	require.Equal(t, 1, p.exitCode())
+	require.Contains(t, p.stderr.String(), "ask connect: the leader closed the connection")
 }
 
 func TestLeaderE2ESessionSurvivesWithoutClients(t *testing.T) {

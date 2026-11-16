@@ -468,6 +468,10 @@ func (s *Session) guard(route *protocol.ACPRouteMeta) (release func(), err error
 	if route != nil && route.DriverGen == 0 {
 		return nil, errBadRoute
 	}
+	// Read the latch before any other lock: Failure takes h.mu.
+	if fail := s.host.Failure(); fail != nil {
+		return nil, fail
+	}
 	s.host.admit.RLock()
 	defer s.host.admit.RUnlock()
 	s.mu.Lock()
@@ -494,6 +498,11 @@ func (s *Session) guard(route *protocol.ACPRouteMeta) (release func(), err error
 // mutationCommit checks ownership and holds it until the Agent mutation commits.
 // Agent calls may publish events, so mu is released before the call.
 func (s *Session) mutationCommit(route *protocol.ACPRouteMeta) (func(), error) {
+	// A failed host keeps its model, thinking and queue state. Read the latch
+	// before s.commit because Failure takes h.mu.
+	if fail := s.host.Failure(); fail != nil {
+		return nil, fail
+	}
 	s.commit.Lock()
 	s.mu.Lock()
 	var err error

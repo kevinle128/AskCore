@@ -10,17 +10,17 @@ Prompt snippet: Execute bash commands (ls, grep, find, etc.)
 
 Description:
 
-> Execute a bash command in the current working directory and return its stdout and stderr. The command runs without a terminal and with a non-interactive environment: no pager, no prompt, no color. A result starts with the exit code. If the output is longer than 2000 lines or 50KB, the middle is left out and the full output is saved to a file that the result names. The command is a job. It runs in the foreground for at most `timeout` seconds (default 120, maximum 600). A command that runs longer moves to the background and goes on as a job; it is not stopped. Set run_in_background to true to start a long command, such as a server or a build, in the background at once. A notice arrives when a background job finishes, so do not poll job_output. Stop a job with job_kill. Do not end the command with &. Background jobs end when the session closes. In a non-interactive run the run waits for its background jobs, and a background job stops after a time limit (by default 10 minutes); with run_in_background, `timeout` sets that limit, up to 2 hours.
+> Execute a bash command in the current working directory and return its stdout and stderr. The command runs without a terminal and with a non-interactive environment: no pager, no prompt, no color. A result starts with the exit code. If the output is longer than 2000 lines or 50KB, the middle is left out and the full output is saved to a file that the result names. The command is a job. It runs in the foreground for at most `timeout` seconds (default 120, maximum 600). A command that runs longer moves to the background and goes on as a job; it is not stopped. Set run_in_background to true to start a long command, such as a server or a build, in the background at once. A notice arrives when a background job finishes, so do not poll job_output. Stop a job with job_kill. Do not end the command with &. Background jobs end when the session closes. A background job stops after a time limit (by default 2 hours; 10 minutes in a non-interactive run, which waits for its background jobs); with run_in_background, `timeout` sets that limit, up to 2 hours. When a background job prints no output for 5 minutes, a notice says so; the job still runs.
 
 Parameters:
 
 - `command` (string, required): Bash command to execute
 - `run_in_background` (boolean, optional): Start the command as a background job and return at once
-- `timeout` (number, optional): Seconds to wait before the command moves to the background (default 120, maximum 600). With run_in_background, the seconds the job may run in the background in a non-interactive run (default 600, maximum 7200)
+- `timeout` (number, optional): Seconds to wait before the command moves to the background (default 120, maximum 600). With run_in_background, the seconds the job may run in the background (default 7200, or 600 in a non-interactive run; maximum 7200)
 
 Guidelines:
 
-- Use run_in_background for servers and long builds. A notice arrives when the job ends, so do not poll job_output.
+- Use run_in_background for servers and long builds. A notice arrives when the job ends or goes silent, so do not poll job_output.
 
 ## `echo`
 

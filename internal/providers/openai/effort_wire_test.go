@@ -103,3 +103,24 @@ func TestGPT6RefusingNoneNeverSendsIt(t *testing.T) {
 		assert.False(t, ok, "%s: off sends no effort", id)
 	}
 }
+
+// TestGrok420SendsNoEffort checks that a request to the grok-4.20 ids has no
+// reasoning.effort at any thinking level, with and without the clamp. xAI
+// answers HTTP 400 for these ids when the request has an effort. The row has
+// the thinking data that the family rule gives: no thinking and no levels.
+func TestGrok420SendsNoEffort(t *testing.T) {
+	t.Parallel()
+	for _, id := range []string{"grok-4.20-0309-reasoning", "grok-4.20-0309-non-reasoning"} {
+		m := providers.Model{ID: id, Name: id, Provider: providers.ProviderXAI, API: providers.APIOpenAIResponses, BaseURL: providers.XAIURL,
+			Input: []string{"text"}, Compat: providers.ResponsesCompat{Store: false, SupportsMaxOutputTokens: true}}
+		for _, level := range []protocol.ThinkingLevel{
+			protocol.ThinkingOff, protocol.ThinkingMinimal, protocol.ThinkingLow, protocol.ThinkingMedium,
+			protocol.ThinkingHigh, protocol.ThinkingXHigh, protocol.ThinkingMax,
+		} {
+			for _, sent := range []protocol.ThinkingLevel{level, providers.ClampThinkingLevel(m, level)} {
+				got, ok := sentEffortFor(t, m, sent)
+				assert.False(t, ok, "%s %s sends no effort, got %q", id, sent, got)
+			}
+		}
+	}
+}

@@ -119,11 +119,15 @@ func TestNotifyRejectsMalformedMessage(t *testing.T) {
 	p, m := newFaux(t)
 	a := newAgent(t, p, m, nil)
 	var nilCustom *protocol.CustomMessage
+	var nilUser *protocol.UserMessage
+	var nilAssistant *protocol.AssistantMessage
 	bad := map[string]protocol.Message{
-		"nil":                nil,
-		"typed nil":          nilCustom,
-		"empty custom type":  protocol.CustomMessage{Content: []protocol.UserBlock{protocol.Text{Text: "x"}}},
-		"pointer empty type": &protocol.CustomMessage{},
+		"nil":                 nil,
+		"typed nil":           nilCustom,
+		"typed nil user":      nilUser,
+		"typed nil assistant": nilAssistant,
+		"empty custom type":   protocol.CustomMessage{Content: []protocol.UserBlock{protocol.Text{Text: "x"}}},
+		"pointer empty type":  &protocol.CustomMessage{},
 	}
 	for name, msg := range bad {
 		t.Run(name, func(t *testing.T) {

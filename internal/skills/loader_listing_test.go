@@ -236,3 +236,35 @@ func TestHostileNameCannotBreakTheFrame(t *testing.T) {
 	assert.True(t, strings.HasSuffix(text, "</system-reminder>"))
 	assert.NotContains(t, text, "\n</system-reminder>\n")
 }
+
+func TestListingBudgetCountsEscapedTags(t *testing.T) {
+	t.Parallel()
+	tag := strings.Repeat("a <system-reminder> b </SYSTEM_REMINDER> ", 12)
+	skills := func() []Skill {
+		return []Skill{listed("a", tag), listed("b", tag), listed("c", tag)}
+	}
+	for _, b := range []Budget{
+		{Chars: 1500}, {Chars: 2000}, {Chars: 2600}, {Chars: 3200},
+		{Tokens: 400}, {Tokens: 600}, {Tokens: 800},
+	} {
+		got, _ := Result{Skills: skills()}.Listing(b)
+		limit := b.Chars
+		if b.Tokens > 0 {
+			limit = b.Tokens
+		}
+		assert.LessOrEqual(t, spent(t, got, b), limit, "budget %+v", b)
+		assert.Zero(t, strings.Count(strings.ToLower(got), "<system-reminder>")-1, "only the wrapper keeps a raw tag")
+	}
+}
+
+func TestListingFullDescriptionsFitWhenEscapingGrowsThem(t *testing.T) {
+	t.Parallel()
+	desc := strings.Repeat("<system-reminder>", 20)
+	r := Result{Skills: []Skill{listed("a", desc), listed("b", "plain")}}
+	// The raw text fits this budget exactly; the escaped text does not.
+	rawFit := Budget{Chars: 100 + len(desc) + len("plain")}
+	got, rep := r.Listing(rawFit)
+
+	assert.LessOrEqual(t, spent(t, got, rawFit), rawFit.Chars)
+	assert.Equal(t, 2, rep.Included)
+}

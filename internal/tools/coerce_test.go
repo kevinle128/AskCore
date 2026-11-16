@@ -86,6 +86,30 @@ func TestCoerceTable(t *testing.T) {
 	})
 }
 
+func TestCoerceIntegerStringKeepsExactValue(t *testing.T) {
+	for _, typ := range []string{"integer", "number"} {
+		got, err := prepareWith(t, object(`{"n":{"type":"`+typ+`"}}`), `{"n":"9007199254740993"}`)
+		require.NoError(t, err, typ)
+		assert.Equal(t, `{"n":9007199254740993}`, got, typ)
+	}
+
+	got, err := prepareWith(t, object(`{"n":{"type":"integer"}}`), `{"n":"1e3"}`)
+	require.NoError(t, err)
+	assert.Equal(t, `{"n":1000}`, got)
+
+	got, err = prepareWith(t, object(`{"n":{"type":"integer"}}`), `{"n":" -42 "}`)
+	require.NoError(t, err)
+	assert.Equal(t, `{"n":-42}`, got)
+
+	_, err = prepareWith(t, object(`{"n":{"type":"integer"}}`), `{"n":"9223372036854775808"}`)
+	require.Error(t, err, "an integer above int64 is not rounded into a coerced value")
+	assert.Contains(t, err.Error(), "n: must be integer")
+
+	got, err = prepareWith(t, object(`{"n":{"type":"number"}}`), `{"n":"9223372036854775808"}`)
+	require.NoError(t, err, "a number may take the float path")
+	assert.Contains(t, got, `"n":`)
+}
+
 func TestCoerceFirstDeclaredTypeWins(t *testing.T) {
 	got, err := prepareWith(t, object(`{"v":{"type":["string","number"]}}`), `{"v":true}`)
 	require.NoError(t, err)

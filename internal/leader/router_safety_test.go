@@ -105,3 +105,19 @@ func TestForwardChecksRewrittenLineBoundary(t *testing.T) {
 		})
 	}
 }
+
+func TestParseMessageRefusesFoldDuplicateKeys(t *testing.T) {
+	for name, raw := range map[string]string{
+		"unicode folded params": `{"jsonrpc":"2.0","method":"a","params":{},"paramſ":{}}`,
+		"method":                `{"jsonrpc":"2.0","method":"a","METHOD":"b"}`,
+		"id":                    `{"jsonrpc":"2.0","method":"a","id":1,"ID":2}`,
+	} {
+		t.Run(name, func(t *testing.T) {
+			_, err := parseMessage(json.RawMessage(raw))
+			require.ErrorIs(t, err, ErrInvalidMessage)
+		})
+	}
+	m, err := parseMessage(json.RawMessage(`{"jsonrpc":"2.0","method":"a","id":1,"params":{}}`))
+	require.NoError(t, err)
+	require.Equal(t, "a", m.method)
+}

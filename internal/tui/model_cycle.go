@@ -207,7 +207,7 @@ func (s *sessionView) onCycleSet(msg cycleSetMsg) {
 	if s.reasoning() && s.thinking != "" {
 		n.level = string(s.thinking)
 	}
-	if e := msg.entry.level; e != "" && e != protocol.ThinkingOff && msg.res.ThinkingLevel == protocol.ThinkingOff {
+	if e := msg.entry.level; e != "" && e != protocol.ThinkingDefault && e != protocol.ThinkingOff && msg.res.ThinkingLevel == protocol.ThinkingOff {
 		n.dropped = protocol.ACPLevelDropped{ModelID: s.modelID, Level: e}.Text()
 	}
 	s.notice = noticeView{until: s.now().Add(noticeFor), ok: true, cycle: &n}

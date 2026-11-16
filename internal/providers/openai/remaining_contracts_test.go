@@ -300,6 +300,9 @@ func TestResponsesThinkingIncludeAndOpaqueReasoningRoundTripJSON(t *testing.T) {
 	}
 	sse := responsesEvent("response.output_item.added", `{"type":"response.output_item.added","output_index":0,"item":{"id":"rs_7","type":"reasoning","encrypted_content":"opaque-start","summary":[]}}`) +
 		responsesEvent("response.output_item.done", `{"type":"response.output_item.done","output_index":0,"item":{"id":"rs_7","type":"reasoning","encrypted_content":"opaque-final","summary":[{"type":"summary_text","text":"plan"}]}}`) +
+		responsesEvent("response.output_item.added", `{"type":"response.output_item.added","output_index":1,"item":{"id":"msg_7","type":"message","role":"assistant","content":[]}}`) +
+		responsesEvent("response.output_text.delta", `{"type":"response.output_text.delta","item_id":"msg_7","delta":"done"}`) +
+		responsesEvent("response.output_item.done", `{"type":"response.output_item.done","output_index":1,"item":{"id":"msg_7","type":"message","role":"assistant","content":[{"type":"output_text","text":"done"}]}}`) +
 		responsesEvent("response.completed", `{"type":"response.completed","response":{"id":"resp_7","status":"completed","output":[],"usage":{"input_tokens":1,"output_tokens":1,"total_tokens":2}}}`)
 	srv := newCaptureServer(t, sse)
 	m := responsesModel(srv.srv.URL)

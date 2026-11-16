@@ -227,7 +227,7 @@ func TestSessionWarningsCutALongSkillPathAndCountOneMore(t *testing.T) {
 
 	require.Len(t, lines, 5)
 	for _, line := range lines[:4] {
-		assert.LessOrEqual(t, len(strings.TrimPrefix(line, "Warning: skills: ")), 256)
+		assert.LessOrEqual(t, len(line), 256, "the prefix counts")
 		assert.True(t, utf8.ValidString(line))
 	}
 	assert.Equal(t, "Warning: skills: 1 more skill problem; run ask settings show for details", lines[4])
@@ -264,4 +264,48 @@ func TestStartErrorMapsClientCausedFailuresToInvalidParams(t *testing.T) {
 
 	plain := os.ErrPermission
 	assert.Equal(t, plain, startError(plain), "another error keeps its kind")
+}
+
+func TestSessionWarningsKeepEachSkillLineWithinTheByteLimitIncludingThePrefix(t *testing.T) {
+	// A multibyte name makes a cut inside a rune possible at any byte offset.
+	user := map[string]string{"skills/" + strings.Repeat("ü", 200) + "/SKILL.md": "no frontmatter"}
+	tree := newSessionTree(t, nil, user)
+	start := tree.prepare(t, workspace.OverrideDeny, protocol.ACPSessionOptions{})
+
+	lines := start.Warnings()
+
+	require.Len(t, lines, 1)
+	assert.LessOrEqual(t, len(lines[0]), 256)
+	assert.True(t, utf8.ValidString(lines[0]), "the cut falls on a rune boundary")
+	assert.True(t, strings.HasSuffix(lines[0], ": no frontmatter"))
+	rows := start.cappedSkillDiagnostics()
+	require.Len(t, rows, 1)
+	assert.LessOrEqual(t, len(rows[0].Path)+len(": ")+len(rows[0].Text), 256, "a row without a prefix keeps its larger room")
+}
+
+func TestContextLayerIsUserOnlyForAFileDirectlyInTheAskHome(t *testing.T) {
+	tree := newSessionTree(t, nil, map[string]string{"AGENTS.md": "user rules"})
+	work := filepath.Join(tree.home, "work")
+	require.NoError(t, os.Mkdir(work, 0o755))
+	require.NoError(t, os.WriteFile(filepath.Join(work, "AGENTS.md"), []byte(strings.Repeat("x", bootstrap.MaxFileBytes+1)), 0o644))
+	require.NoError(t, os.WriteFile(filepath.Join(tree.home, "CLAUDE.md"), []byte(strings.Repeat("x", bootstrap.MaxFileBytes+1)), 0o600))
+	tree.root = work
+
+	start := tree.prepare(t, workspace.OverrideDeny, protocol.ACPSessionOptions{})
+
+	layers := map[string]string{}
+	for _, d := range start.contextDiagnostics() {
+		layers[d.Path] = d.Layer
+	}
+	assert.Equal(t, "project", layers[filepath.Join(work, "AGENTS.md")], "a project below the Ask home is a project")
+	assert.Equal(t, "user", layers[filepath.Join(tree.home, "CLAUDE.md")])
+}
+
+func TestContextDiagnosticsReportAFileLinkedOutsideTheProject(t *testing.T) {
+	start := SessionStart{Context: bootstrap.Context{Skipped: []bootstrap.Skip{{Path: "/p/AGENTS.md", Reason: bootstrap.SkipOutsideProject}}}}
+
+	diags := start.contextDiagnostics()
+
+	require.Equal(t, []protocol.ACPDiagnostic{{Layer: "project", Path: "/p/AGENTS.md", Key: "context", Text: "left out: the file links to a path outside the project"}}, diags)
+	assert.Equal(t, []string{"Warning: 1 context file was skipped; run ask settings show for details"}, start.Warnings())
 }

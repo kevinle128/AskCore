@@ -257,8 +257,10 @@ func (p *parser) object(depth int) (any, error) {
 			return obj, nil
 		}
 		p.skipBlank()
-		// The byte at the colon position is skipped without a check.
-		p.i = min(p.i+1, len(p.s))
+		if p.i >= len(p.s) || p.s[p.i] != ':' {
+			return obj, nil
+		}
+		p.i++
 		val, err := p.value(depth + 1)
 		if err != nil {
 			return obj, nil

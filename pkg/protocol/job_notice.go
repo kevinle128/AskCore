@@ -3,6 +3,7 @@ package protocol
 import (
 	"html"
 	"regexp"
+	"strconv"
 	"strings"
 )
 
@@ -23,23 +24,50 @@ func SystemReminderBody(m UserMessage) (string, bool) {
 	return t[len(systemReminderOpen) : len(t)-len(systemReminderClose)], true
 }
 
-// JobNotice is the completion notice of a background job, as the job table
-// writes it.
+// JobNotice is a notice of a background job, as the job table writes it: the
+// completion notice, the stall notice and the notice of the background time
+// limit.
 type JobNotice struct {
 	JobID  string
 	Kind   string
 	Label  string
-	Status string // completed, failed or killed
-	// Detail is the short reason: "exit 2", "timeout", "signal: SIGSEGV". It
-	// is empty when the notice has none.
+	Status string // completed, failed, killed, or running for a stall notice
+	// Detail is the short reason: "exit 2", "timeout", "signal: SIGSEGV",
+	// "no output for 5 minutes", "background time limit". It is empty when the
+	// notice has none.
 	Detail string
 }
 
 var jobNoticeRE = regexp.MustCompile(`^Background job (\S+) \(([a-z]+): (.*)\) finished \[status: ([a-z]+)(?:, (.*))?\]\. Read its output with job_output\.$`)
 
-// ParseJobNotice reads the text of a completion notice.
+// The stall and limit notices write the label with %q, so a label may hold
+// a quote or a bracket; the quoted form ends the label without a guess.
+const quotedLabel = `("(?:[^"\\]|\\.)*")`
+
+var (
+	jobStallRE = regexp.MustCompile(`^Background command ` + quotedLabel + ` \(job (\S+)\) printed no output for (.+?)\. It still runs\. Read it with job_output, stop it with job_kill, or leave it running\.$`)
+	jobLimitRE = regexp.MustCompile(`^Background command ` + quotedLabel + ` was stopped after reaching its background time limit\. It was job (\S+)\. Read its output with job_output; start it again with a longer timeout if the work still needs it\.$`)
+)
+
+// ParseJobNotice reads the text of a completion notice, a stall notice or a
+// background time limit notice.
 func ParseJobNotice(text string) (JobNotice, bool) {
-	m := jobNoticeRE.FindStringSubmatch(strings.TrimSpace(text))
+	text = strings.TrimSpace(text)
+	if m := jobStallRE.FindStringSubmatch(text); m != nil {
+		label, err := strconv.Unquote(m[1])
+		if err != nil {
+			return JobNotice{}, false
+		}
+		return JobNotice{JobID: m[2], Kind: "bash", Label: label, Status: "running", Detail: "no output for " + m[3]}, true
+	}
+	if m := jobLimitRE.FindStringSubmatch(text); m != nil {
+		label, err := strconv.Unquote(m[1])
+		if err != nil {
+			return JobNotice{}, false
+		}
+		return JobNotice{JobID: m[2], Kind: "bash", Label: label, Status: "killed", Detail: "background time limit"}, true
+	}
+	m := jobNoticeRE.FindStringSubmatch(text)
 	if m == nil {
 		return JobNotice{}, false
 	}

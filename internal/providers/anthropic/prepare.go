@@ -3,7 +3,6 @@ package anthropic
 import (
 	"context"
 	"net/http"
-	"unicode/utf8"
 
 	"AskCore/internal/providers"
 	"AskCore/pkg/protocol"
@@ -58,7 +57,10 @@ func (p *adapter) compute(tm providers.Model, msgs []protocol.Message, opts prov
 	if err != nil {
 		return nil, err
 	}
-	pr.MaxTokens = clampMaxTokens(tm, opts, utf8.RuneCount(doc.body)/4)
+	// Bytes, not runes: CJK text costs more tokens per rune than ASCII.
+	est := len(doc.body) / 4
+	est += est/10 + 64
+	pr.MaxTokens = clampMaxTokens(tm, opts, est)
 	return pr, nil
 }
 

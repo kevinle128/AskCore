@@ -26,8 +26,10 @@ const (
 )
 
 // thinkingLevels is the order in which shift+tab cycles the thinking level.
+// default (no chosen level) is first, so the cycle goes back to it after the
+// last level.
 var thinkingLevels = []protocol.ThinkingLevel{
-	protocol.ThinkingOff, protocol.ThinkingMinimal, protocol.ThinkingLow, protocol.ThinkingMedium,
+	protocol.ThinkingDefault, protocol.ThinkingOff, protocol.ThinkingMinimal, protocol.ThinkingLow, protocol.ThinkingMedium,
 	protocol.ThinkingHigh, protocol.ThinkingXHigh, protocol.ThinkingMax,
 }
 

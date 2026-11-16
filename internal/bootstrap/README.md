@@ -6,6 +6,7 @@ Prompt context. The loader reads `AGENTS.md` and `CLAUDE.md` from the Ask home a
 
 - Git root discovery and the folder walk (`discover.go`)
 - Context file loading, dedup, the size caps and the reminder text (`load.go`, `read.go`, `truncate.go`)
+- Containment: a project file whose link target is outside the project root (the git root, or the cwd without one) is skipped with `SkipOutsideProject` and nothing is read from it. Files of the user dir are not checked.
 - `SYSTEM.md` and `APPEND_SYSTEM.md` precedence (`load_system.go`)
 - Embedded templates in `templates/`
 

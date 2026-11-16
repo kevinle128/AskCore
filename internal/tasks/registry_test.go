@@ -434,6 +434,21 @@ func TestStartFailsWithoutDir(t *testing.T) {
 	})
 }
 
+func TestStartOnClosedRegistryTakesNoID(t *testing.T) {
+	synctest.Test(t, func(t *testing.T) {
+		var calls atomic.Int32
+		rg := newRig(t, func(c *tasks.Config) {
+			c.NextID = func(k tasks.Kind) string { return fmt.Sprintf("%s-%d", k, calls.Add(1)) }
+		})
+		rg.reg.Close(nil)
+
+		_, err := rg.reg.Start(tasks.Spec{Kind: tasks.KindTimer, After: time.Second})
+
+		assert.ErrorIs(t, err, tasks.ErrClosed)
+		assert.Zero(t, calls.Load(), "a refused start used no ID")
+	})
+}
+
 func TestStartRejectsInvalidSpec(t *testing.T) {
 	body := func(context.Context, *tasks.Sink) tasks.Result { return tasks.Result{} }
 	cases := []struct {

@@ -125,7 +125,7 @@ func (p *completions) produce(ctx context.Context, a *providers.Assembler, m pro
 	witness := fantasykit.NewWitness(completionsStopKey)
 	baseClient := isolateClient(p.cfg.http, m.Headers)
 	if opts.Auth.Method == "api-key" {
-		baseClient = profileClient(p.cfg.http, m, key, false)
+		baseClient = profileClient(p.cfg.http, m, key, false, true)
 	}
 	httpClient := fantasykit.Client(baseClient, witness, idle.Touch)
 	if compat, ok := m.Completions(); ok && !compat.SupportsStreamOptions {
@@ -212,6 +212,9 @@ func (p *completions) produce(ctx context.Context, a *providers.Assembler, m pro
 type omitStreamOptionsRT struct{ base http.RoundTripper }
 
 func (t omitStreamOptionsRT) RoundTrip(req *http.Request) (*http.Response, error) {
+	if req.Body != nil {
+		defer func() { _ = req.Body.Close() }()
+	}
 	body, err := req.GetBody()
 	if err != nil {
 		return nil, err

@@ -62,10 +62,11 @@ func TokenPlanCompletions() Model {
 		MaxTokens:     384_000,
 		BaseURL:       TokenPlanCompletionsURL,
 		Compat: CompletionsCompat{
-			ThinkingFormat:        "qwen",
-			SupportsDeveloperRole: false,
-			SupportsStore:         false,
-			SupportsFinishReason:  true,
+			ThinkingFormat:          "qwen",
+			SupportsDeveloperRole:   false,
+			SupportsStore:           false,
+			SupportsReasoningEffort: true,
+			SupportsFinishReason:    true,
 		},
 	}
 }

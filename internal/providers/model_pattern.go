@@ -192,21 +192,26 @@ func unknownPattern(rows []Model, pattern string) error {
 	return unknownModel(text)
 }
 
+// patternLevels are the words of a ":level" suffix: default (no level is
+// chosen), then the clamp order. thinkingRank must not get default, because
+// ClampThinkingLevel never sees it.
+var patternLevels = append([]protocol.ThinkingLevel{protocol.ThinkingDefault}, thinkingRank...)
+
 func splitLevel(pattern string) (base string, level protocol.ThinkingLevel, ok bool) {
 	i := strings.LastIndex(pattern, ":")
 	if i < 0 {
 		return "", "", false
 	}
 	level = protocol.ThinkingLevel(pattern[i+1:])
-	if !slices.Contains(thinkingRank, level) {
+	if !slices.Contains(patternLevels, level) {
 		return "", "", false
 	}
 	return pattern[:i], level, true
 }
 
 func levelWords() string {
-	words := make([]string, 0, len(thinkingRank))
-	for _, l := range thinkingRank {
+	words := make([]string, 0, len(patternLevels))
+	for _, l := range patternLevels {
 		words = append(words, string(l))
 	}
 	return strings.Join(words, ", ")

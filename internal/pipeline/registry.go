@@ -274,10 +274,24 @@ func (r *Registry) PrepareRequest(ctx context.Context, in Request) (*RequestUpda
 	// still as it was stays out of the update, so no handler means a nil
 	// update.
 	orig := in
+	if len(hs) > 0 && orig.Context.Messages != nil {
+		// A handler may edit a message through a pointer or an element of its
+		// content. It gets a deep copy, so the original stays the comparison
+		// base and the stored messages stay as they were. A nil list stays
+		// nil, so an unchanged request still gives a nil update.
+		msgs := make([]protocol.Message, len(orig.Context.Messages))
+		for i, m := range orig.Context.Messages {
+			msgs[i] = protocol.CloneMessage(m)
+		}
+		in.Context.Messages = msgs
+	}
 	terminal := func(_ context.Context, in Request) (*RequestUpdate, error) {
 		var upd RequestUpdate
 		changed := false
-		if !sameMessages(in.Context.Messages, orig.Context.Messages) || in.Context.Tools != orig.Context.Tools {
+		// DeepEqual, not ==: a message holds slices, and == on them panics.
+		// With a handler the copy never shares a slice header with the
+		// original, so the compare walks every message.
+		if !reflect.DeepEqual(in.Context.Messages, orig.Context.Messages) || in.Context.Tools != orig.Context.Tools {
 			upd.Context, changed = &in.Context, true
 		}
 		if !reflect.DeepEqual(in.Model, orig.Model) {
@@ -292,12 +306,6 @@ func (r *Registry) PrepareRequest(ctx context.Context, in Request) (*RequestUpda
 		return &upd, nil
 	}
 	return runAround(ctx, hs, in, terminal, nil)
-}
-
-// sameMessages reports whether a and b are the same slice view. A handler that
-// copies equal messages counts as a change, which is harmless.
-func sameMessages(a, b []protocol.Message) bool {
-	return len(a) == len(b) && (len(a) == 0 || &a[0] == &b[0])
 }
 
 // ExecuteModel runs handlers around a complete, settled model attempt.
@@ -359,8 +367,11 @@ func (r *Registry) AfterTool(ctx context.Context, in ToolResultInfo) (*AfterTool
 			return out.Clone(), err
 		}
 	}
-	// The terminal keeps the result that the innermost handler passed on.
+	// The terminal keeps the result that the innermost handler passed on. The
+	// comparison base is a deep copy, so a handler that edits the content in
+	// place cannot change it.
 	orig := in
+	orig.Result = CloneToolResult(in.Result)
 	terminal := func(_ context.Context, in ToolResultInfo) (*AfterToolCallResult, error) {
 		if in.IsError == orig.IsError && reflect.DeepEqual(in.Result, orig.Result) {
 			return nil, nil

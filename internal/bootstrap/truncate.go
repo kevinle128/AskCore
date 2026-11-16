@@ -40,7 +40,7 @@ func build(files []loaded, skips []Skip) *protocol.ReminderText {
 			r.Frame("\nNotice: ")
 			r.Quote(s.Path)
 			r.Frame(" was cut short: the context files exceed 64 KiB.\n")
-		case SkipTooLarge, SkipUnreadable, SkipDuplicate:
+		case SkipTooLarge, SkipUnreadable, SkipDuplicate, SkipOutsideProject:
 		}
 	}
 	if omitted > 0 {
