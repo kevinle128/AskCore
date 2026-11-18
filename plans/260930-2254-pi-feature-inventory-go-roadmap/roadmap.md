@@ -363,41 +363,39 @@ Rules behind this order:
 
 ### H8: The session log
 
+- **Status:** delivered (2026-11-18). Plan: [`261118-1818-h8-session-log`](../261118-1818-h8-session-log/plan.md). Decision: [ADR 0006](../../docs/adr/0006-session-logs-as-jsonl-files.md). Flags and errors: [Sessions in cli.md](../../docs/cli.md#sessions).
 - **Waits on:** D10.
 - **Already delivered:** typed in-memory entries, the sole-writer log, request preparation capture, and D23 rebuild.
   See [session owners](../../internal/sessions/README.md) and [request log](../../internal/agent/request_log.go).
-- **Concept:** an append-only, typed entry tree is the only source of truth. The provider context is a projection of it.
+- **Concept:** an append-only, typed, linear log is the only source of truth. The provider context is a projection of it. A branch is a fork into a child session (H14), not a tree inside one file.
 - **Read in Pi:** `C:core/session-manager.ts`, `CD:session-format.md`, `C:core/agent-session.ts:1096-1125`.
 - **Owns:**
-  - Persist the implemented H-SESS-03 entry types in SQLite; do not define a second lifecycle entry model.
-  - H-SESS-06 (the context builder).
-  - Extend the implemented single-writer contract to SQLite transactions and cross-process ownership.
-  - H-SESS-10, P0 part (`-c`, `--session`).
-  - H-SESS-15 (a lock across processes: a SQLite lease row, so headless `ask -p` and the leader cannot write one session together). The lease contract:
-    - Acquire, renew and release are explicit. Each lease has an ownership generation.
-    - Every write transaction checks the generation, so a paused process that resumes after its lease expired cannot write after a new owner took the session.
-    - When a process loses ownership, it stops the run.
-    - Every database-owning mode (headless, leader, daemon) uses the same bounded busy timeout for SQLite, and one serialized migration path at startup (today migrations run only from the server module: `internal/app/app.go:43-44,87-88`).
-  - H-SESS-01, H-SESS-02 (P1, pulled: entry types kept, SQLite storage, schema version).
-  - H-COMPACT-13 (`context_edit`).
+  - Persist the implemented H-SESS-03 entry types as JSONL files behind `store.SessionStore`, plus `model_change`, `thinking_change` and `context_edit`; do not define a second lifecycle entry model.
+  - H-SESS-06 (the context builder): it stays in `agent` and applies `context_edit`.
+  - The single-writer contract across processes: an exclusive `flock` for each session plus the `seq` check on append.
+  - H-SESS-10, P0 part (`-c`, `--session`), plus `--no-session`. The TUI continues a session through `session/load`.
+  - H-SESS-15 (a lock across processes, so headless `ask -p`, the leader and `ask acp` cannot write one session together): `flock` with no expiry, no renewal and no generation; the kernel frees the lock when the holder dies.
+  - H-SESS-01, H-SESS-02 (P1, pulled: entry types kept, JSONL storage, header `version`; no migration chain).
+  - H-COMPACT-13 (`context_edit`): the entry type, its persistence and its projection. The writer of the entry belongs to H9 and H10.
   - Persist the implemented system snapshots, request deltas, and tool declarations for H10 checkpoints and D23 rebuild after resume.
-  - H-PROV-19, session restore part.
+  - H-PROV-19, session restore part: a restored model comes after `--model` and before the saved default.
   - The session header record in JSON mode.
-- **Packages:** `sessions`, `store`, `store/gormstore`, `migrations`.
+  - ACP `session/load` on `ask acp`, the leader and the in-process TUI.
+- **Moved to a later SQLite backend:** SQLite transactions, the busy timeout, the migration path at startup and the "migrations run once" test. They fit behind the same `store.SessionStore` and the same contract suite.
+- **Packages:** `sessions`, `store`, `store/jsonlstore`, `store/storetest`, `agent`, `app`, `acp`, `leader`, `tuiclient`, `cmd/tui`.
 - **Tests:**
   - Write ordering (E§24#10).
   - Resume restores the qualified provider/model, method provenance and effective thinking level; it never restores a token snapshot.
   - `context_edit` omits an entry from context and keeps it in history.
-  - Two processes cannot write one session.
-  - A paused writer whose lease expired cannot write after a new owner took the lease.
-  - Two processes write two different sessions at the same time without SQLite busy errors.
-  - Two processes start on a fresh database at the same time, and migrations run once.
+  - Two processes cannot write one session (real subprocesses and `flock`).
+  - A crashed holder frees the session at once; a stale writer is stopped by the `seq` check.
+  - Two processes write two different sessions at the same time without lock errors, and two processes create the first session of a fresh home.
   - After headless replaces a credential, a leader resolves the latest record for its next request; a method mismatch requires explicit selection instead of silently changing billing.
-  - Schema migration.
+- **Dropped:** the lease-expiry test and the schema migration test (no lease, no migration chain).
 - **Do not rebuild:**
   - `agent.state.messages` as the history (removed in 0.87.0).
   - The v4 lane store.
-- **Exit:** kill the process after a turn, resume with `-c`, and continue with the same model.
+- **Exit:** kill the process after a turn, resume with `-c`, and continue with the same model and thinking level.
 
 ### H9: Overflow detection and usage accounting
 
@@ -563,7 +561,7 @@ Rules behind this order:
 ### H14: Session tree
 
 - **Waits on:** H8 durable entries, H10 branch-summary primitives and H13a/H13b local ACP.
-- **Concept:** a session is a tree, not a list. Branches, forks and summaries of abandoned branches are operations on the entry log.
+- **Concept:** a session log is linear. A branch is a fork into a new session that points to its parent (header `parentSession` and `parentSeq`, already in the H8 file format). Forks and summaries of abandoned branches are operations on that link, not an in-file entry tree.
 - **Read in Pi:** `C:core/session-manager.ts:1579-1750,1856-1861`, `C:core/agent-session-runtime.ts`, `C:core/compaction/branch-summarization.ts`, `CD:sessions.md`.
 - **Owns:**
   - H-SESS-08 (navigation), H-SESS-09 (fork, clone), H-SESS-11 (session dir), H-SESS-12 (names, labels), H-SESS-16 (robustness), H-SESS-17 (custom state), H-SESS-20 (stats).
@@ -571,7 +569,7 @@ Rules behind this order:
   - H-SLASH-04 (session commands).
   - H-MODE-07, session commands, including the `get_entries{since}` cursor.
 - **Tests:**
-  - E§24#11 (fork and branch correctness).
+  - E§24#11 (fork correctness: the child holds the parent entries up to the cut point, and the parent does not change).
   - The pairing invariant after a fork.
 - **Exit:** fork, clone, resume and a branch summary work over the gateway.
 

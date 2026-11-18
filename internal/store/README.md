@@ -6,7 +6,8 @@ One file for each entity: the model (with `json` and `gorm` tags) and its store 
 
 - Models with `json`/`gorm` tags (they may use GORM types such as `gorm.DeletedAt`)
 - Store interfaces, small ones composed into large ones
-- The session store: the `session` and `session_entry` models and their interfaces (`session_store.go`, added with the session tree)
+- The session store interface `SessionStore` and its writer, `CreateMode` and errors (`session_store.go`). The implementations are `store/jsonlstore` (now) and `store/gormstore` (a later SQLite backend). `SessionStore` is not in `Stores`. The entry codec is in `internal/sessions`, so every backend shares it.
+- The contract suites of the session store (`storetest/`): `RunSessionWriter` for any `sessions.Writer` and `RunSessionStore` for any backend
 - `Stores` aggregate (`stores.go`)
 - Store errors such as `ErrNotFound` (`errors.go`)
 - Request-scope helpers on `context.Context`
@@ -16,6 +17,7 @@ One file for each entity: the model (with `json` and `gorm` tags) and its store 
 | Code | Put it in |
 |---|---|
 | GORM queries and the DB connection | `internal/store/gormstore` |
+| Session file layout, lock, and repair | `internal/store/jsonlstore` |
 | SQL schema | `migrations/` |
 | Credentials and settings | `internal/settings` (files, not database rows) |
 
@@ -29,8 +31,8 @@ One file for each entity: the model (with `json` and `gorm` tags) and its store 
 
 ## Imports
 
-- Allowed: standard library, `gorm.io/gorm` (types and tags only)
-- Denied: `internal/store/gormstore`, `internal/agent`; `internal/gateway`, `internal/http`, `internal/channels/<vendor>` (core packages do not import transport); `internal/acp`, `internal/leader` (adapters wrap the core, never the reverse); `internal/config`
+- Allowed: standard library, `internal/sessions` (session types), `gorm.io/gorm` (types and tags only)
+- Denied: `internal/store/gormstore`, `internal/store/jsonlstore`, `internal/agent`; `internal/gateway`, `internal/http`, `internal/channels/<vendor>` (core packages do not import transport); `internal/acp`, `internal/leader` (adapters wrap the core, never the reverse); `internal/config`
 
 ## Rules
 

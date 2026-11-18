@@ -88,7 +88,7 @@ func (f faultLog) Append(e ...sessions.Entry) (sessions.CommitRef, error) {
 
 type factoryOption struct {
 	tools []tools.Tool
-	log   func() sessions.Writer
+	log   func() (sessions.Writer, error)
 }
 
 // nativeFactory builds the Agent of a session the way the application does:
@@ -390,12 +390,12 @@ func TestACPStdioNoStartFailure(t *testing.T) {
 	var fail atomic.Bool
 	fail.Store(true)
 	var created atomic.Int32
-	logs := func() sessions.Writer {
+	logs := func() (sessions.Writer, error) {
 		// Only the first session gets the faulting log.
 		if created.Add(1) == 1 {
-			return faultLog{MemoryLog: &sessions.MemoryLog{}, fail: &fail}
+			return faultLog{MemoryLog: &sessions.MemoryLog{}, fail: &fail}, nil
 		}
-		return &sessions.MemoryLog{}
+		return &sessions.MemoryLog{}, nil
 	}
 	p := newStdioPeer(t, adapterConfig(nativeFactory(func() []faux.Step { return []faux.Step{faux.Say("ok")} }, factoryOption{log: logs})), peerOptions{})
 	require.Nil(t, p.call("initialize", map[string]any{"protocolVersion": 1}).Error)
@@ -562,10 +562,10 @@ func TestStdioDiagnosticsHoldNoInput(t *testing.T) {
 // A log that ends with a user message continues through the stdio connection:
 // the result follows every update of the continued run.
 func TestStdioContinueFromUserTail(t *testing.T) {
-	logs := func() sessions.Writer {
+	logs := func() (sessions.Writer, error) {
 		log := &sessions.MemoryLog{}
 		_, _ = log.Append(sessions.MessageEntry{Message: protocol.UserMessage{Content: []protocol.UserBlock{protocol.Text{Text: "question"}}}})
-		return log
+		return log, nil
 	}
 	p := newStdioPeer(t, adapterConfig(nativeFactory(func() []faux.Step { return []faux.Step{faux.Say("answer")} }, factoryOption{log: logs})), peerOptions{})
 	sid := p.start()

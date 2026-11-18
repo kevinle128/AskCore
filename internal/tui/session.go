@@ -332,11 +332,16 @@ func callContext() (context.Context, context.CancelFunc) {
 
 // ---- display helpers ----
 
-// ShortID shortens a session or leader id for display. The ids of the leader
-// are long random hex strings; four characters tell them apart on one machine.
+// ShortID shortens a session or leader id for display to four characters.
+// Random hex ids (the leader) differ anywhere, so it keeps the first four. A
+// session id is decimal digits that start with a time stamp: ids made close
+// together share their first digits, so it keeps the last four.
 func ShortID(id string) string {
 	id = strings.TrimPrefix(id, "sess_")
 	if r := []rune(id); len(r) > 8 {
+		if strings.Trim(id, "0123456789") == "" {
+			return string(r[len(r)-4:])
+		}
 		return string(r[:4])
 	}
 	return id

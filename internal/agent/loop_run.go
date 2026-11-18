@@ -3,7 +3,6 @@ package agent
 import (
 	"context"
 	"errors"
-	"fmt"
 	"slices"
 	"time"
 
@@ -238,7 +237,7 @@ func newLoop(ctx context.Context, ac pipeline.AgentContext, cfg LoopConfig, d dr
 // starts no later side effect, and the error reaches the caller of the run.
 func (l *loop) commit(entries ...sessions.Entry) error {
 	if _, err := l.log.Append(entries...); err != nil {
-		return fmt.Errorf("agent: write session log: %w", err)
+		return logWriteError(err)
 	}
 	return nil
 }

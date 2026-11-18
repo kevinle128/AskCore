@@ -352,6 +352,9 @@ const (
 	// changed, so the request was not sent. The client asks the user to
 	// choose the model again. An older client shows the text of the kind.
 	ACPErrConfig ACPErrorKind = "config"
+	// ACPErrSessionInUse means another process holds the stored session, or this
+	// host runs it already, so it cannot be loaded for writing.
+	ACPErrSessionInUse ACPErrorKind = "session_in_use"
 )
 
 // Ask-only codes use the reserved implementation range and avoid the codes
@@ -375,14 +378,21 @@ const (
 	// ACPCodeConfig is the code of a request that a changed model
 	// configuration stopped.
 	ACPCodeConfig = -32020
+	// ACPCodeSessionInUse is the code of a load of a session that is in use.
+	ACPCodeSessionInUse = -32021
 )
 
 // ACPRouteMetaKey is the _meta key of the route context. Only the leader router
-// writes it, and it replaces any value a client sends.
+// writes it on a request, and it replaces any value a client sends. The host
+// writes it back in two places: the driver generation in the result of
+// session/new and session/load, and the client id on the session/update frames
+// that replay the history of a load, which the router sends to that client only.
 const ACPRouteMetaKey = "ask.dev/route"
 
 // ACPRouteMeta is the route context the router adds to a forwarded request.
-// DriverGen is decimal text because SDK _meta numbers decode as float64.
+// DriverGen is decimal text because SDK _meta numbers decode as float64. On a
+// session/load it is zero when the router does not route the session yet, and
+// the generation of the live session when it does.
 type ACPRouteMeta struct {
 	ClientID string `json:"clientId"`
 	// SessionID is the session that the router checked the caller against. The
@@ -430,6 +440,8 @@ func ACPErrorCode(k ACPErrorKind) int {
 		return ACPCodeNotInitializedClient
 	case ACPErrConfig:
 		return ACPCodeConfig
+	case ACPErrSessionInUse:
+		return ACPCodeSessionInUse
 	default:
 		return -32603
 	}
@@ -481,6 +493,8 @@ func ACPErrorMessage(k ACPErrorKind) string {
 		return "initialize this connection first"
 	case ACPErrConfig:
 		return ModelConfigChanged
+	case ACPErrSessionInUse:
+		return "the session is open in another ask process (a leader keeps it after the TUI quits); open it with `ask -c`, or stop the leader with `ask leader stop`"
 	default:
 		return "internal error"
 	}

@@ -15,6 +15,7 @@ import (
 	"time"
 
 	"AskCore/internal/leader"
+	"AskCore/internal/tui"
 	"AskCore/pkg/protocol"
 
 	"github.com/stretchr/testify/require"
@@ -428,4 +429,199 @@ func TestLeaderE2EStopFallsBackToVerifiedSignal(t *testing.T) {
 	require.NoFileExists(t, paths.Socket)
 	held, _ := leader.LockHeld(paths)
 	require.False(t, held)
+}
+
+// loadOf continues the stored session id in cwd with the client, as the first
+// start of the TUI does.
+func loadOf(t *testing.T, c interface {
+	NewSession(context.Context, string, tui.NewSessionOptions) (tui.SessionInfo, error)
+}, cwd, id string) (tui.SessionInfo, error) {
+	t.Helper()
+	ctx, cancel := context.WithTimeout(context.Background(), clientWait)
+	defer cancel()
+	return c.NewSession(ctx, cwd, tui.NewSessionOptions{Load: id})
+}
+
+// sessionFiles lists the stored sessions of a home.
+func sessionFiles(t *testing.T, home string) []string {
+	t.Helper()
+	files, err := filepath.Glob(filepath.Join(home, "sessions", "*", "*.jsonl"))
+	require.NoError(t, err)
+	return files
+}
+
+// A client that loads a session which the leader runs joins it through attach,
+// gets the history, and takes no second lock. A session that its last client
+// left has no driver, so the next loader drives it.
+func TestLeaderLoadLiveSessionAttaches(t *testing.T) {
+	bin, home := newE2EHome(t)
+	cwd := t.TempDir()
+	a, acol := openLeaderClient(t, bin, home)
+	ctx, cancel := context.WithTimeout(context.Background(), clientWait)
+	defer cancel()
+	sess, err := a.NewSession(ctx, cwd, tui.NewSessionOptions{})
+	require.NoError(t, err)
+	_, err = a.Prompt("remember the apple")
+	require.NoError(t, err)
+	acol.waitFor("the reply", isType[tui.PromptDoneMsg])
+
+	b, bcol := openLeaderClient(t, bin, home)
+	joined, err := loadOf(t, b, cwd, sess.ID)
+	require.NoError(t, err, "a live session is joined, not refused")
+	require.Equal(t, sess.ID, joined.ID)
+	require.Equal(t, protocol.ACPRoleObserver, joined.Role, "the driver keeps the session")
+	_, snap := bcol.waitFor("the history", isType[tui.SnapshotMsg])
+	var texts []string
+	for _, e := range snap.(tui.SnapshotMsg).Entries {
+		if um, ok := e.Message.(protocol.UserMessage); ok {
+			for _, b := range um.Content {
+				if tx, ok := b.(protocol.Text); ok {
+					texts = append(texts, tx.Text)
+				}
+			}
+		}
+	}
+	require.Contains(t, texts, "remember the apple")
+	require.Len(t, sessionFiles(t, home), 1, "no second writer made a file")
+
+	// The driver leaves; nobody drives the live session until a client loads it.
+	require.NoError(t, a.Close())
+	require.Eventually(t, func() bool {
+		live, err := b.ListSessions(ctx)
+		return err == nil && len(live) == 1 && !live[0].HasDriver
+	}, clientWait, 20*time.Millisecond)
+	c, ccol := openLeaderClient(t, bin, home)
+	taken, err := loadOf(t, c, cwd, sess.ID)
+	require.NoError(t, err)
+	require.Equal(t, protocol.ACPRoleDriver, taken.Role, "a session with no driver goes to its loader")
+	_, err = c.Prompt("and the pear")
+	require.NoError(t, err)
+	ccol.waitFor("the second reply", isType[tui.PromptDoneMsg])
+	require.Len(t, sessionFiles(t, home), 1)
+}
+
+// A session that another process holds does not load into the leader. When
+// the holder dies the session loads at once.
+func TestLeaderLoadSecondProcessHoldsLock(t *testing.T) {
+	bin, home := newE2EHome(t)
+	cwd := t.TempDir()
+	run := exec.Command(bin, "-p", "hello")
+	run.Dir, run.Env = cwd, leaderEnv(home)
+	out, err := run.CombinedOutput()
+	require.NoError(t, err, string(out))
+	files := sessionFiles(t, home)
+	require.Len(t, files, 1)
+	id := strings.TrimSuffix(filepath.Base(files[0]), ".jsonl")
+
+	before, err := os.Stat(files[0])
+	require.NoError(t, err)
+	holder := exec.Command(bin, "-p", "--session", id, strings.Repeat("word ", 400))
+	holder.Dir, holder.Env = cwd, append(leaderEnv(home), "ASK_FAUX_TPS=5")
+	require.NoError(t, holder.Start())
+	t.Cleanup(func() {
+		_ = holder.Process.Kill()
+		_ = holder.Wait()
+	})
+	// The child appends its first entries before the model call and holds the
+	// lock until it ends, so a longer file shows the hold. The test does not
+	// probe the lock itself: taking it could make the child fail.
+	require.Eventually(t, func() bool {
+		info, err := os.Stat(files[0])
+		return err == nil && info.Size() > before.Size()
+	}, clientWait, 20*time.Millisecond, "the child holds the session")
+
+	c, _ := openLeaderClient(t, bin, home)
+	_, err = loadOf(t, c, cwd, id)
+	var re *tui.RequestError
+	require.ErrorAs(t, err, &re)
+	require.Equal(t, string(protocol.ACPErrSessionInUse), re.Kind)
+
+	// The terminal program ends with the reason, as it does for any start error,
+	// and does not start another session in its place.
+	a := startAskTerm(t, bin, home, askTermOptions{dir: cwd, args: []string{"--session", id}})
+	require.Equal(t, 1, a.waitExit(), a.stderr.String())
+	require.Contains(t, a.stderr.String(), "open in another ask process")
+	require.Len(t, sessionFiles(t, home), 1, "no other session was made")
+
+	require.NoError(t, holder.Process.Kill())
+	_ = holder.Wait()
+	info, err := loadOf(t, c, cwd, id)
+	require.NoError(t, err, "the end of the holder frees the session")
+	require.Equal(t, protocol.ACPRoleDriver, info.Role)
+}
+
+// `ask -c` starts the TUI on the newest session of the folder and shows the old
+// conversation. The leader still runs the session after the first quit (nobody
+// drives it, and the loader joins and takes it), or it has stopped (the loader
+// opens the file). With --no-leader the in-process agent loads the file.
+func TestInteractiveContinueShowsOldConversation(t *testing.T) {
+	for _, tc := range []struct {
+		name       string
+		stopLeader bool
+		noLeader   bool
+	}{{"session still live on the leader", false, false}, {"leader stopped between runs", true, false}, {"in-process agent", false, true}} {
+		t.Run(tc.name, func(t *testing.T) {
+			bin, home := newE2EHome(t)
+			cwd := t.TempDir()
+			var extra []string
+			if tc.noLeader {
+				extra = []string{"--no-leader"}
+			}
+			first := startAskTerm(t, bin, home, askTermOptions{dir: cwd, args: extra})
+			first.waitText("Ask anything")
+			// A new session stores its file at once, so the file shows that the
+			// session started and a prompt can be sent.
+			require.Eventually(t, func() bool { return len(sessionFiles(t, home)) == 1 }, clientWait, 20*time.Millisecond)
+			if !tc.noLeader {
+				requireLeaderLink(t, first, bin, home)
+			}
+			first.write("remember the apple\r")
+			first.waitFor("the reply", func(rows []string) bool { return hasRowPrefix(rows, replyPrefix+"remember the apple") })
+			first.waitReplyMeta("faux-1")
+			first.quitDetached()
+			if tc.stopLeader {
+				cmd := exec.Command(bin, "leader", "stop")
+				cmd.Env = leaderEnv(home)
+				out, err := cmd.CombinedOutput()
+				require.NoError(t, err, string(out))
+			}
+
+			second := startAskTerm(t, bin, home, askTermOptions{dir: cwd, args: append([]string{"-c"}, extra...)})
+			second.waitFor("the old prompt and reply", func(rows []string) bool {
+				return hasRowPrefix(rows, committedPrompt+"remember the apple") && hasRowPrefix(rows, replyPrefix+"remember the apple")
+			})
+			require.Len(t, sessionFiles(t, home), 1, "the continued session is the same file")
+
+			// The loader drives, so a new prompt runs on the old conversation.
+			second.write("and the pear\r")
+			second.waitFor("the second reply", func(rows []string) bool { return hasRowPrefix(rows, replyPrefix+"and the pear") })
+			second.quitDetached()
+			require.Len(t, sessionFiles(t, home), 1)
+		})
+	}
+}
+
+// With no session to continue, `ask -c` starts a new session.
+func TestInteractiveContinueWithoutSessionStartsNewOne(t *testing.T) {
+	bin, home := newE2EHome(t)
+	a := startAskTerm(t, bin, home, askTermOptions{args: []string{"-c"}})
+	a.waitText("Ask anything")
+	require.Eventually(t, func() bool { return len(sessionFiles(t, home)) == 1 }, clientWait, 20*time.Millisecond)
+	a.quitDetached()
+}
+
+// --no-session travels to the leader in the session options: the session runs
+// and saves nothing, and the host acknowledges the flag.
+func TestLeaderNoSessionSavesNothing(t *testing.T) {
+	bin, home := newE2EHome(t)
+	c, col := openLeaderClient(t, bin, home)
+	ctx, cancel := context.WithTimeout(context.Background(), clientWait)
+	defer cancel()
+	info, err := c.NewSession(ctx, t.TempDir(), tui.NewSessionOptions{Flags: protocol.ACPSessionOptions{NoSession: true}})
+	require.NoError(t, err)
+	require.False(t, info.FlagsIgnored, "the leader acknowledges the flag")
+	_, err = c.Prompt("this is not saved")
+	require.NoError(t, err)
+	col.waitFor("the reply", isType[tui.PromptDoneMsg])
+	require.Empty(t, sessionFiles(t, home))
 }

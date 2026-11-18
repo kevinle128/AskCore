@@ -36,6 +36,10 @@ const ACPAppliedOptionsMetaKey = "ask.dev/appliedOptions"
 // Models are the scope patterns and globs; they choose the start model when
 // Model is empty and give the cycle list. They replace the enabledModels
 // setting for the session.
+//
+// NoSession keeps the log of the session in memory: nothing is saved, so the
+// session cannot be loaded later. A host that does not know the field saves the
+// session, and the missing acknowledgement tells the client.
 type ACPSessionOptions struct {
 	SystemPrompt       string        `json:"systemPrompt,omitempty"`
 	AppendSystemPrompt []string      `json:"appendSystemPrompt,omitempty"`
@@ -44,6 +48,7 @@ type ACPSessionOptions struct {
 	Model              string        `json:"model,omitempty"`
 	Thinking           ThinkingLevel `json:"thinking,omitempty"`
 	Models             []string      `json:"models,omitempty"`
+	NoSession          bool          `json:"noSession,omitempty"`
 }
 
 // ACPAppliedOptions is the echo of the model options that the host applied to
@@ -75,6 +80,13 @@ func (o ACPSessionOptions) PromptBytes() int {
 
 // IsZero reports whether o carries no flag.
 func (o ACPSessionOptions) IsZero() bool {
-	return o.SystemPrompt == "" && len(o.AppendSystemPrompt) == 0 && len(o.Tools) == 0 && !o.NoTools &&
+	return o.SystemPrompt == "" && len(o.AppendSystemPrompt) == 0 && len(o.Tools) == 0 && !o.NoTools && !o.NoSession &&
 		o.ModelOptions().IsZero()
 }
+
+// ACPSessionIDMetaKey is the key in the _meta of the session/load result that
+// names the live session that the load joined, when its ID differs from the one
+// the client sent. A reset keeps the ID of a session and opens a new log under a
+// new ID, so a client can load the current log ID of a session that runs. The
+// client uses the named ID for every later call.
+const ACPSessionIDMetaKey = "ask.dev/sessionId"

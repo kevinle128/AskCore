@@ -31,10 +31,10 @@ var gatedProjectNames = []string{
 // in each ancestor of the root, except in the user home.
 var gatedAncestorEntry = filepath.Join(".agents", "skills")
 
-// canonicalPath returns the absolute, clean form of p with every symbolic
+// CanonicalPath returns the absolute, clean form of p with every symbolic
 // link resolved. When the links cannot be resolved (for example, the path does
 // not exist), it returns the clean absolute path.
-func canonicalPath(p string) (string, error) {
+func CanonicalPath(p string) (string, error) {
 	abs, err := filepath.Abs(p)
 	if err != nil {
 		return "", err
@@ -58,18 +58,18 @@ func ProjectRoot(cwd, askHome string) (root string, hasLayer bool, err error) {
 	if cwd == "" {
 		return "", false, errors.New("workspace: project root needs a working directory")
 	}
-	root, err = canonicalPath(cwd)
+	root, err = CanonicalPath(cwd)
 	if err != nil {
 		return "", false, fmt.Errorf("workspace: project root of %q: %w", cwd, err)
 	}
 	if askHome == "" {
 		return root, true, nil
 	}
-	home, err := canonicalPath(askHome)
+	home, err := CanonicalPath(askHome)
 	if err != nil {
 		return "", false, fmt.Errorf("workspace: Ask home %q: %w", askHome, err)
 	}
-	layer, err := canonicalPath(filepath.Join(root, projectDir))
+	layer, err := CanonicalPath(filepath.Join(root, projectDir))
 	if err != nil {
 		return "", false, fmt.Errorf("workspace: project folder of %q: %w", root, err)
 	}
@@ -108,7 +108,7 @@ func GatedFiles(root string, hasLayer bool, userHome string) ([]string, error) {
 	}
 	skipSkills := ""
 	if userHome != "" {
-		home, err := canonicalPath(userHome)
+		home, err := CanonicalPath(userHome)
 		if err != nil {
 			errs = append(errs, err)
 		} else {

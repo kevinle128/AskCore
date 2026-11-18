@@ -15,7 +15,9 @@ Control handlers and observers must not become a second loop or writer.
 | Captured retry policy and Pi projection | [recover.go](recover.go), [retry_events.go](retry_events.go) |
 | Safe request deltas and exact in-memory rebuild | [request_log.go](request_log.go) |
 | Tool snapshot, body pool, exclusive barriers, and ordered outcomes | [tool_coordinator.go](tool_coordinator.go), [loop_tools.go](loop_tools.go) |
-| Repair of an uncertain open turn without re-execution | [tool_repair.go](tool_repair.go) |
+| Repair of an uncertain open turn without re-execution; closing of the turn and cycle that a dead process left open | [tool_repair.go](tool_repair.go) |
+| Model and thinking entries at run start, and the selection that a resumed log holds | [selection_log.go](selection_log.go) |
+| ID of the log that the Agent writes now | [log_id.go](log_id.go) |
 | Cycle identity and termination reasons | [lifecycle.go](lifecycle.go) |
 | Ordered local listeners and posted events | [emit.go](emit.go) |
 | Consistent follow snapshot, stream baseline, cursor, and epoch | [follow.go](follow.go) |
@@ -38,9 +40,13 @@ Failed attempts record safe outcome, failure, usage, and binding facts.
 Their assistant content stays outside model history; visible streamed output remains visible through the Pi retry sequence.
 Retry must preserve the selected credential's method, profile, and billing class.
 
+`Config.NewContext` opens a log and can fail: `New` returns its error, and `Reset` returns it and keeps the current log. The first call may return a log that holds entries already (a resumed session); each later call returns a fresh log. The owner of the log decides where it is saved; the Agent only appends to it.
+When the Agent opens a log, it first closes what a dead process left open: an error result for each tool call with no result (`outcome unknown` when the log holds the intent to run it, else `not started`), the end of the turn, and the end of the cycle with the cause `interrupted`. A log that no process left open is not changed.
+At the start of each run the Agent appends a model entry and a thinking entry when the selection differs from the last logged one. `LoggedSelection` reads the selection back, so the owner of a resumed session can start on the same model and level. A failed append ends the run; a writer that lost its file says so in the error.
+
 Seed items are `protocol.CustomMessage` values that the owner supplies (context files, skill list).
 They are committed first in every fresh log, in `New` and in Reset, without an input ID and without events; the first Follow snapshot holds them and the request record rebuilds them like any other message.
-A seed item is skipped when the log already holds its `CustomType`, so a prefilled log is not seeded twice.
+A seed item is skipped when the newest logged item of its `CustomType` has the same content, so a prefilled log is not seeded twice. An item whose content changed is appended after the log: the logged history stays, and the model gets the new text.
 A log that holds only seed items is empty for `Continue`.
 `Continue` with an empty context, or with an assistant message at the tail, runs the input that is already queued. When none is queued, the run is marked as closing, so input that arrives later starts the next run and does not wait in an idle Agent.
 

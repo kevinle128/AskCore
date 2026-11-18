@@ -53,15 +53,20 @@ type Config struct {
 	// SessionID goes into every event envelope, and into
 	// Options.SessionID when that is empty.
 	SessionID string
-	// NewContext returns the log of a fresh conversation. New calls it
-	// once and Reset again. Nil means an in-memory sessions.MemoryLog. The
+	// NewContext opens a log. New calls it once and Reset again. The first
+	// call gives the log of the first conversation, which may hold entries
+	// already, for example a resumed session; each later call gives a fresh
+	// conversation. When it fails, New returns the error, and Reset returns it
+	// and keeps the current log. Nil means an in-memory sessions.MemoryLog. The
 	// Agent driver is the only caller of its Append.
-	NewContext func() sessions.Writer
+	NewContext func() (sessions.Writer, error)
 	// Seed is committed first in every fresh log, before any input: in New
 	// and in Reset. Each item needs a distinct, non-empty CustomType. An item
-	// whose CustomType the log already holds is skipped, so a prefilled log
-	// is never seeded twice. A log with only seed items counts as empty for
-	// Continue.
+	// that equals the newest logged item of its CustomType is skipped, so a
+	// prefilled log is never seeded twice. An item whose content changed since
+	// it was logged is appended after the log, so the model gets the new text
+	// and the logged history stays as it was. A log with only seed items
+	// counts as empty for Continue.
 	Seed []protocol.CustomMessage
 	// ListenerError receives the error or the panic of a listener. The failure
 	// is contained: the listener stays subscribed, the later listeners still get

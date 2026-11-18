@@ -448,7 +448,8 @@ func (c *Client) listLive(ctx context.Context, conn *rpc.Conn) ([]protocol.ACPLi
 // apply to this session only. Empty options send no _meta, and the host then
 // decides with its saved decision and its settings. When opts hold flags and
 // the host does not acknowledge them, the info says so: an older host drops the
-// key without an error.
+// key without an error. With opts.Load it continues that stored session with
+// session/load instead (see loadSession).
 func (c *Client) NewSession(ctx context.Context, cwd string, opts tui.NewSessionOptions) (tui.SessionInfo, error) {
 	conn, err := c.live()
 	if err != nil {
@@ -473,6 +474,9 @@ func (c *Client) NewSession(ctx context.Context, cwd string, opts tui.NewSession
 	if len(meta) > 0 {
 		params["_meta"] = meta
 	}
+	if opts.Load != "" {
+		return c.loadSession(ctx, conn, opts, abs, params)
+	}
 	if err := c.request(ctx, conn, "session/new", params, &out); err != nil {
 		return tui.SessionInfo{}, err
 	}
@@ -493,6 +497,78 @@ func (c *Client) NewSession(ctx context.Context, cwd string, opts tui.NewSession
 		return info, err
 	}
 	return info, nil
+}
+
+// loadSession continues the stored session opts.Load with session/load. The
+// host writes the history as session/update frames, which this client ignores:
+// the follow snapshot that comes next holds the same history in full. A session
+// that the leader runs already is joined, so the model flags do not apply to
+// it, and the load never closes a session on its own: it may belong to another
+// client.
+func (c *Client) loadSession(ctx context.Context, conn *rpc.Conn, opts tui.NewSessionOptions, abs string, params map[string]any) (tui.SessionInfo, error) {
+	params["sessionId"] = opts.Load
+	var out struct {
+		Meta map[string]any `json:"_meta"`
+	}
+	if err := c.request(ctx, conn, "session/load", params, &out); err != nil {
+		var re *tui.RequestError
+		if errors.As(err, &re) && re.Kind == string(protocol.ACPErrUnsupported) {
+			return tui.SessionInfo{}, errors.New("the leader does not support session load; restart it with ask leader stop")
+		}
+		return tui.SessionInfo{}, err
+	}
+	acked, _ := out.Meta[protocol.ACPSessionOptionsMetaKey].(bool)
+	id := opts.Load
+	if alias, _ := out.Meta[protocol.ACPSessionIDMetaKey].(string); alias != "" {
+		// The ID named the log that a live session writes now. The session
+		// keeps its own ID for every call.
+		id = alias
+	}
+	info := tui.SessionInfo{ID: id, Role: protocol.ACPRoleDriver, Cwd: abs, FlagsIgnored: !opts.Flags.IsZero() && !acked}
+	c.setSession(info)
+	role, err := c.loadedRole(ctx, conn, info.ID)
+	if err != nil {
+		return info, err
+	}
+	info.Role = role
+	c.setSession(info)
+	if err := c.follow(ctx, conn, info.ID, nil, followFresh); err != nil {
+		return info, err
+	}
+	return info, nil
+}
+
+// loadedRole tells the role of this client in a session that it loaded. The
+// router makes the loader the driver of a session that no client had. A session
+// that the leader ran already is joined as an observer; a joined session that
+// has no driver, because its last client quit, is taken, as the restore after
+// a lost link does. A session with a driver stays with it. An in-process agent
+// has one client, which drives.
+func (c *Client) loadedRole(ctx context.Context, conn *rpc.Conn, sid string) (string, error) {
+	if c.Info().Mode != tui.ModeLeader {
+		return protocol.ACPRoleDriver, nil
+	}
+	var att protocol.ACPAttachResult
+	if err := c.request(ctx, conn, protocol.ACPAttach, map[string]any{"sessionId": sid}, &att); err != nil {
+		return "", err
+	}
+	if att.Role == protocol.ACPRoleDriver {
+		return att.Role, nil
+	}
+	live, err := c.listLive(ctx, conn)
+	if err != nil {
+		return "", err
+	}
+	for _, l := range live {
+		if l.SessionID == sid && !l.HasDriver {
+			// A busy session refuses the take; the client then observes.
+			var res protocol.ACPTakeResult
+			if err := c.request(ctx, conn, protocol.ACPTake, map[string]any{"sessionId": sid}, &res); err == nil {
+				return protocol.ACPRoleDriver, nil
+			}
+		}
+	}
+	return att.Role, nil
 }
 
 // unappliedModelOption names the first model flag that flags hold and that

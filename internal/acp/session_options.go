@@ -17,7 +17,15 @@ func InvalidParams(detail string) error {
 	return newKindError(protocol.ACPErrInvalidParams, detail)
 }
 
-// flagsFromMeta reads the per-session flags of a session/new call. No key gives
+// InvalidState returns an error that the adapter sends as invalid_state with
+// detail in the message. detail MUST be fixed text, never raw client input or
+// the text of another error. A Factory uses it for a stored session that
+// cannot be opened as it is.
+func InvalidState(detail string) error {
+	return newKindError(protocol.ACPErrInvalidState, detail)
+}
+
+// flagsFromMeta reads the per-session flags of a session/new or session/load call. No key gives
 // the zero value. Unknown fields are ignored. A value of the wrong type, text
 // over ACPSessionPromptMaxBytes, a tool name that is not a plain name, a model
 // option over its bounds, or a thinking option that is not a level is an

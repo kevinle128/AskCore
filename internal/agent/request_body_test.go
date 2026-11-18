@@ -134,7 +134,7 @@ func newRealRun(t *testing.T, m providers.Model, edit func(*agent.Config)) *real
 		Tools:      registry(t, tools.Echo{}),
 		SessionID:  "s1",
 		Clock:      fixedClock,
-		NewContext: func() sessions.Writer { return log },
+		NewContext: func() (sessions.Writer, error) { return log, nil },
 	}
 	if edit != nil {
 		edit(&cfg)

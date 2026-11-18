@@ -303,6 +303,15 @@ linters:
           deny:
             - pkg: AskCore/internal/store/gormstore
               desc: only internal/app and cmd/server import the store implementation
+        jsonlstore-only-in-root:
+          list-mode: lax
+          files:
+            - "$all"
+            - "!**/internal/app/**"
+            - "!**/internal/store/jsonlstore/**"
+          deny:
+            - pkg: AskCore/internal/store/jsonlstore
+              desc: only internal/app imports the session file store
         config-only-in-root:
           list-mode: lax
           files:

@@ -18,6 +18,7 @@ import (
 	"AskCore/internal/auth"
 	"AskCore/internal/providers"
 	"AskCore/internal/settings"
+	"AskCore/internal/store"
 	"AskCore/internal/tools"
 	"AskCore/internal/workspace"
 	"AskCore/pkg/protocol"
@@ -134,6 +135,11 @@ func NewACPRuntime(p ACPParams) (*ACPRuntime, error) {
 	if err != nil {
 		return nil, err
 	}
+	// The session log makes no file until the first stored session.
+	sessionLog, err := NewSessionLog(home)
+	if err != nil {
+		return nil, err
+	}
 	// The model list and the model switch rebuild the snapshot when an input
 	// changed; every usable check and every request reads the stored one.
 	usable := usableRule(p.Initial, service, models.Snapshot)
@@ -148,7 +154,24 @@ func NewACPRuntime(p ACPParams) (*ACPRuntime, error) {
 	skillRows := map[string][]protocol.ACPSkill{}
 	modelStarts := map[string]*acp.ModelStart{}
 	cfg := acp.Config{
-		Factory: func(ctx context.Context, req acp.SessionRequest) (*agent.Agent, error) {
+		Factory: func(ctx context.Context, req acp.SessionRequest) (_ *agent.Agent, err error) {
+			// A load takes the write lock of the stored session first, so a
+			// session that is held or unknown fails before any other work. The
+			// lock is released on every failure until the agent owns the log.
+			logOpts := SessionLogOptions{CreateNow: true, NoSession: req.Flags.NoSession}
+			var restored *RestoredSelection
+			if req.Resume {
+				resumed, rerr := sessionLog.Resume(ctx, req.Cwd, req.ID)
+				if rerr != nil {
+					return nil, loadError(rerr)
+				}
+				defer func() {
+					if err != nil {
+						_ = resumed.Writer.Close()
+					}
+				}()
+				logOpts, restored = SessionLogOptions{Resume: resumed.Writer}, resumed.Selection
+			}
 			// The trust decision comes before any read of a project file. The
 			// flags and the trust override come from this request only.
 			override := p.TrustOverride
@@ -168,8 +191,16 @@ func NewACPRuntime(p ACPParams) (*ACPRuntime, error) {
 			stored := func() *modelSnapshot { return &snap }
 			c := newStartChoice(p.Initial, func() modelSnapshot { return snap }, usableRule(p.Initial, service, stored))
 			c.saved = func(context.Context) (string, error) { return session.Settings.DefaultModel, nil }
-			picked, err := c.choose(ctx, ModelOptions{Pattern: req.Flags.Model, Thinking: req.Flags.Thinking, Scope: req.Flags.Models}, session.Settings)
+			c.ready = func(ctx context.Context, m providers.Model, method string) error {
+				return nativeAuthReady(ctx, service, &snap, m, "", method)
+			}
+			picked, err := c.choose(ctx, ModelOptions{Pattern: req.Flags.Model, Thinking: req.Flags.Thinking, Scope: req.Flags.Models, Restored: restored}, session.Settings)
 			if err != nil {
+				if restored != nil && req.Flags.Model == "" && errors.Unwrap(err) != nil {
+					// The error wraps another one, which can hold text of the
+					// credential check. The client gets fixed text.
+					return nil, acp.InvalidParams("the login of the session model cannot be checked now; start with a model option")
+				}
 				// The text quotes the pattern of the client, which the
 				// adapter bounded to 256 bytes, and names catalog rows and
 				// level words only.
@@ -179,7 +210,7 @@ func NewACPRuntime(p ACPParams) (*ACPRuntime, error) {
 			// settings diagnostics, so the start notice and the warnings show
 			// them.
 			session.Settings.Diagnostics = slices.Concat(session.Settings.Diagnostics, snap.user.problems, picked.Diagnostics)
-			a, err := p.NewAgent(service, AgentSpec{SessionID: req.ID, Cwd: req.Cwd, Start: picked.Model, Session: session, Warn: warn, Models: view, Thinking: picked.Level})
+			a, err := p.NewAgent(service, AgentSpec{SessionID: req.ID, Cwd: req.Cwd, Start: picked.Model, Session: session, Warn: warn, Models: view, Thinking: picked.Level, Log: logOpts})
 			if err != nil {
 				return nil, startError(err)
 			}
@@ -344,6 +375,23 @@ func providerUsable(ctx context.Context, service *auth.Service, provider string)
 		}
 	}
 	return false
+}
+
+// loadError maps the failure of a stored session open to the kind that the
+// client sees. The text of a store error names paths and lines of the file, so
+// the client gets fixed text only.
+func loadError(err error) error {
+	switch {
+	case errors.Is(err, store.ErrSessionOwned):
+		return acp.ErrSessionInUse
+	case errors.Is(err, store.ErrSessionNotFound):
+		return acp.ErrUnknownSession
+	case errors.Is(err, store.ErrSessionFormatNewer):
+		return acp.InvalidState("the session was written by a newer ask; update ask to open it")
+	case errors.Is(err, store.ErrSessionCorrupt):
+		return acp.InvalidState("the session file cannot be read")
+	}
+	return err
 }
 
 // startError maps a session start failure that the client or its settings

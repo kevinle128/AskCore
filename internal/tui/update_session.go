@@ -36,6 +36,8 @@ type newSessionMsg struct {
 	gen  uint64
 	info SessionInfo
 	err  error
+	// load is set when the command asked for a stored session.
+	load bool
 }
 
 // promptCalledMsg is the result of the Prompt call. session is set when the
@@ -249,7 +251,11 @@ func (s *sessionView) onOpened(msg openedMsg) tea.Cmd {
 // does not matter here.
 func (s *sessionView) newSessionCmd(detach bool, trust protocol.ACPTrustOverride) tea.Cmd {
 	c, cwd, gen := s.client, s.cwd, s.gen
-	opts := NewSessionOptions{Trust: trust, Flags: s.session.Flags}
+	opts := NewSessionOptions{Trust: trust, Flags: s.session.Flags, Load: s.session.Load}
+	// A stored session is loaded by the first start only. A later start, such
+	// as /new, makes a new session.
+	loading := opts.Load != ""
+	s.session.Load = ""
 	return func() tea.Msg {
 		ctx, cancel := callContext()
 		defer cancel()
@@ -259,7 +265,7 @@ func (s *sessionView) newSessionCmd(detach bool, trust protocol.ACPTrustOverride
 			}
 		}
 		info, err := c.NewSession(ctx, cwd, opts)
-		return newSessionMsg{gen: gen, info: info, err: err}
+		return newSessionMsg{gen: gen, info: info, err: err, load: loading}
 	}
 }
 
@@ -277,6 +283,14 @@ func (s *sessionView) onNewSession(msg newSessionMsg) tea.Cmd {
 	}
 	if msg.err == nil {
 		s.start.session = msg.info.ID
+	}
+	if msg.err != nil && msg.load {
+		// The command line named a session. Another one would not be what the
+		// user asked for, so the program ends with the reason, as a failed
+		// open does.
+		s.startErr = msg.err
+		s.m.quitting = true
+		return tea.Quit
 	}
 	if msg.err != nil {
 		s.needNew = true

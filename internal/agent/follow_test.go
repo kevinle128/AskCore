@@ -356,7 +356,7 @@ func TestFollowJoinDuringResetGetsResync(t *testing.T) {
 	p, m := newFaux(t)
 	p.Set(faux.Say("one"), faux.Say("two"))
 	a := newAgent(t, p, m, func(c *agent.Config) {
-		c.NewContext = func() sessions.Writer { return &sessions.MemoryLog{} }
+		c.NewContext = func() (sessions.Writer, error) { return &sessions.MemoryLog{}, nil }
 	})
 	require.NoError(t, a.Prompt(context.Background(), user("a")))
 	f := a.Follow(agent.Cursor{})

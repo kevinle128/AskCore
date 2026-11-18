@@ -10,6 +10,7 @@ const (
 	callAuthenticate                 // forward with the client id and no session
 	callAccount                      // provider account call: forward with the client id, no session
 	callNewSession
+	callLoadSession // session/load: join a live session, or register the session before the host replays it
 	callFollow
 	callUnfollow
 	callTake
@@ -35,6 +36,7 @@ var policies = map[string]policy{
 	"initialize":   {kind: callInitialize},
 	"authenticate": {kind: callAuthenticate},
 	"session/new":  {kind: callNewSession},
+	"session/load": {kind: callLoadSession},
 
 	// Provider account calls. protocol.ACPProvidersReleaseClient is not here: only
 	// the router sends it, so a client that sends it gets unsupported.
@@ -78,8 +80,7 @@ var policies = map[string]policy{
 	protocol.ACPDetach:   {kind: callDetach},
 	protocol.ACPListLive: {kind: callListLive},
 
-	// Durable session calls have no owner yet.
-	"session/load":              {kind: callUnsupported},
+	// These durable session calls have no owner yet.
 	"session/resume":            {kind: callUnsupported},
 	"session/list":              {kind: callUnsupported},
 	"session/set_mode":          {kind: callUnsupported},

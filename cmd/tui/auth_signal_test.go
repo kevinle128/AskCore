@@ -290,7 +290,10 @@ func TestAuthCommandRestartDoesNotReuseUncertainRefreshGrant(t *testing.T) {
 			completeOAuth(t, p, false)
 			p.finish(t, true)
 			t.Setenv("ASK_AUTH_TIME_ADVANCE", "55m")
-			p = startOAuthCommand(t, home, server.URL, "", "--provider", "anthropic", "-p", "hello")
+			// The read-only home case would also fail the session file write, which
+			// stops the run before the refresh result is reported; this test is about
+			// the refresh grant, so the run saves no session.
+			p = startOAuthCommand(t, home, server.URL, "", "--provider", "anthropic", "--no-session", "-p", "hello")
 			_ = p.input.Close()
 			select {
 			case <-started:

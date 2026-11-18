@@ -352,7 +352,7 @@ func TestSlowPostHookDelaysLaterCommitsAndStarts(t *testing.T) {
 		c.Tools = registry(t, tool)
 		c.Pipeline = h
 		c.MaxParallelTools = 2
-		c.NewContext = func() sessions.Writer { return log }
+		c.NewContext = func() (sessions.Writer, error) { return log, nil }
 	})
 	defer func() { require.NoError(t, a.Dispose()) }()
 	done := make(chan error, 1)

@@ -25,6 +25,7 @@ import (
 	"AskCore/internal/leader"
 	"AskCore/internal/providers"
 	"AskCore/internal/providers/faux"
+	"AskCore/internal/sessions"
 	"AskCore/internal/settings"
 	"AskCore/internal/tools"
 	"AskCore/pkg/protocol"
@@ -889,4 +890,320 @@ func TestModelsReportsSavedDefault(t *testing.T) {
 	require.NoError(t, prefs.SetDefaultModel(context.Background(), id))
 	models = decodeInto[protocol.ACPModelsResult](t, a.must(protocol.ACPModels, map[string]any{"sessionId": sid}))
 	require.Equal(t, id, models.Default, "the list names the saved default whether or not it is usable")
+}
+
+// ---- session/load through the leader ----
+
+// savedFauxParams builds leader parameters whose sessions run a faux model and
+// save their log in the session folder of the home, as the product does.
+func savedFauxParams(t *testing.T, steps func() []faux.Step) LeaderParams {
+	t.Helper()
+	p := testACPParams(t)
+	p.NewAgent = func(_ *auth.Service, spec AgentSpec) (*agent.Agent, error) {
+		fp, err := faux.New(faux.WithChunk(1000, 1000))
+		if err != nil {
+			return nil, err
+		}
+		m, _ := fp.Model("faux-1")
+		fp.Set(steps()...)
+		cfg := agent.Config{SessionID: spec.SessionID, LoopConfig: agent.LoopConfig{
+			Model: m, Stream: fp.Stream, Cwd: spec.Cwd,
+			Options: providers.StreamOptions{APIKey: "test-key"},
+			Wait:    func(context.Context, time.Duration) error { return nil },
+		}}
+		return NewNativeAgent(NativeAgentConfig{Config: cfg, InitialStream: fp.Stream, InitialAPI: "faux", Home: p.Home, Log: spec.Log})
+	}
+	return LeaderParams{
+		ACPParams: p,
+		Server:    leader.ServerConfig{InstanceID: "inst-app", Build: "dev", RegisterTimeout: 2 * time.Second},
+	}
+}
+
+func loadArgs(sid, cwd string) map[string]any {
+	return map[string]any{"sessionId": sid, "cwd": cwd, "mcpServers": []any{}}
+}
+
+// updateTexts lists the session/update frames of one session that the client
+// got, as "kind:text", in arrival order, with the position of each.
+func (c *routingClient) updateTexts(sid string) []string {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	var out []string
+	for _, m := range c.msgs {
+		var method string
+		if json.Unmarshal(m["method"], &method) != nil || method != "session/update" {
+			continue
+		}
+		var p struct {
+			SessionID string `json:"sessionId"`
+			Update    struct {
+				Kind    string `json:"sessionUpdate"`
+				Content struct {
+					Text string `json:"text"`
+				} `json:"content"`
+			} `json:"update"`
+			Meta map[string]json.RawMessage `json:"_meta"`
+		}
+		if json.Unmarshal(m["params"], &p) != nil || p.SessionID != sid {
+			continue
+		}
+		if _, leaked := p.Meta[protocol.ACPRouteMetaKey]; leaked {
+			c.t.Errorf("the route context reached the client in an update")
+		}
+		out = append(out, p.Update.Kind+":"+p.Update.Content.Text)
+	}
+	return out
+}
+
+// position returns the index of the response of request id among the messages
+// that the client got, or -1.
+func (c *routingClient) responsePosition(id int64) int {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	for i, m := range c.msgs {
+		if _, isCall := m["method"]; !isCall && string(m["id"]) == fmt.Sprint(id) {
+			return i
+		}
+	}
+	return -1
+}
+
+func (c *routingClient) lastUpdatePosition() int {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	last := -1
+	for i, m := range c.msgs {
+		var method string
+		if json.Unmarshal(m["method"], &method) == nil && method == "session/update" {
+			last = i
+		}
+	}
+	return last
+}
+
+// TestLeaderRoutesLoadAndDeliversReplay loads a stored session that the leader
+// does not run. The history reaches the caller before the answer, and the
+// caller drives the session afterwards.
+func TestLeaderRoutesLoadAndDeliversReplay(t *testing.T) {
+	l := startLeader(t, savedFauxParams(t, saying("first reply", "second reply")))
+	cwd := canonicalDir(t)
+	a := l.client(nil)
+	sid := a.newSession(cwd)
+	a.must("session/prompt", promptArgs(sid))
+	a.must("session/close", map[string]any{"sessionId": sid})
+
+	b := l.client(nil)
+	id := b.request("session/load", loadArgs(sid, cwd))
+	res, e := b.await(id)
+	require.Nil(t, e, "%+v", e)
+	require.JSONEq(t, `{}`, string(res), "the route context stays inside the leader")
+	require.Equal(t, []string{"user_message_chunk:hello", "agent_message_chunk:first reply"}, b.updateTexts(sid))
+	require.Greater(t, b.responsePosition(id), b.lastUpdatePosition(), "the history comes before the answer")
+
+	live := decodeInto[protocol.ACPListLiveResult](t, b.must(protocol.ACPListLive, map[string]any{}))
+	require.Len(t, live.Sessions, 1)
+	require.Equal(t, protocol.ACPRoleDriver, live.Sessions[0].Role, "the caller of a load drives the session")
+	b.must("session/prompt", promptArgs(sid))
+	// The model script of the loaded agent starts again, so its reply is the first one.
+	require.Len(t, b.updateTexts(sid), 3, "the reply of the new turn follows the history")
+}
+
+// TestLeaderLoadOfRoutedSessionAttaches loads a session that the leader runs
+// already. The caller joins it as an observer with the history, the driver and
+// its follows are untouched, and no second writer opens.
+func TestLeaderLoadOfRoutedSessionAttaches(t *testing.T) {
+	l := startLeader(t, savedFauxParams(t, saying("first reply", "second reply")))
+	cwd := canonicalDir(t)
+	a, b := l.client(nil), l.client(nil)
+	sid := a.newSession(cwd)
+	a.must("session/prompt", promptArgs(sid))
+	aSeen := len(a.updateTexts(sid))
+
+	id := b.request("session/load", loadArgs(sid, cwd))
+	_, e := b.await(id)
+	require.Nil(t, e, "a live session is joined, not refused: %+v", e)
+	require.Equal(t, []string{"user_message_chunk:hello", "agent_message_chunk:first reply"}, b.updateTexts(sid))
+	require.Greater(t, b.responsePosition(id), b.lastUpdatePosition())
+	a.barrier()
+	require.Len(t, a.updateTexts(sid), aSeen, "the history of a load goes to the caller only")
+
+	attach := decodeInto[protocol.ACPAttachResult](t, b.must(protocol.ACPAttach, map[string]any{"sessionId": sid}))
+	require.Equal(t, protocol.ACPRoleObserver, attach.Role)
+	_, e = b.call("session/prompt", promptArgs(sid))
+	require.NotNil(t, e)
+	require.Equal(t, string(protocol.ACPErrNotDriver), e.Data.Kind)
+
+	// The joined caller sees the live events of the driver.
+	a.must("session/prompt", promptArgs(sid))
+	routingEventually(t, "live update reaches the joined observer", func() bool {
+		return len(b.updateTexts(sid)) > 2
+	})
+	require.Contains(t, b.updateTexts(sid), "agent_message_chunk:second reply")
+
+	// A session belongs to its folder: another folder does not join it.
+	_, e = b.call("session/load", loadArgs(sid, canonicalDir(t)))
+	require.NotNil(t, e)
+	require.Equal(t, string(protocol.ACPErrUnknownSession), e.Data.Kind)
+}
+
+// TestLeaderForgetsFailedLoad checks that the router drops the session it
+// registered for a load that the host refused.
+func TestLeaderForgetsFailedLoad(t *testing.T) {
+	l := startLeader(t, savedFauxParams(t, saying("x")))
+	cwd := canonicalDir(t)
+	a := l.client(nil)
+	_, e := a.call("session/load", loadArgs("1863000000000000001", cwd))
+	require.NotNil(t, e)
+	require.Equal(t, string(protocol.ACPErrUnknownSession), e.Data.Kind)
+	live := decodeInto[protocol.ACPListLiveResult](t, a.must(protocol.ACPListLive, map[string]any{}))
+	require.Empty(t, live.Sessions, "a failed load leaves no routed session")
+	_, e = a.call("session/prompt", promptArgs("1863000000000000001"))
+	require.NotNil(t, e)
+	require.Equal(t, string(protocol.ACPErrUnknownSession), e.Data.Kind)
+}
+
+// An id that is a path, not a name, is refused as an unknown session and
+// leaves no routed session behind.
+func TestLeaderLoadRefusesIdThatIsAPath(t *testing.T) {
+	l := startLeader(t, savedFauxParams(t, saying("x")))
+	cwd := canonicalDir(t)
+	a := l.client(nil)
+	for _, bad := range []string{"../x", "a/b", ".."} {
+		_, e := a.call("session/load", loadArgs(bad, cwd))
+		require.NotNil(t, e, bad)
+		require.Equal(t, string(protocol.ACPErrUnknownSession), e.Data.Kind, bad)
+	}
+	live := decodeInto[protocol.ACPListLiveResult](t, a.must(protocol.ACPListLive, map[string]any{}))
+	require.Empty(t, live.Sessions)
+}
+
+// TestLeaderLoadFailsWhileAnotherProcessHoldsSession has a lock holder outside
+// the leader, as an `ask -p --session` child is.
+func TestLeaderLoadFailsWhileAnotherProcessHoldsSession(t *testing.T) {
+	params := savedFauxParams(t, saying("reply"))
+	l := startLeader(t, params)
+	cwd := canonicalDir(t)
+	a := l.client(nil)
+	sid := a.newSession(cwd)
+	a.must("session/prompt", promptArgs(sid))
+	a.must("session/close", map[string]any{"sessionId": sid})
+
+	log, err := NewSessionLog(params.Home)
+	require.NoError(t, err)
+	held, err := log.Resume(context.Background(), cwd, sid)
+	require.NoError(t, err)
+
+	_, e := a.call("session/load", loadArgs(sid, cwd))
+	require.NotNil(t, e)
+	require.Equal(t, string(protocol.ACPErrSessionInUse), e.Data.Kind)
+	live := decodeInto[protocol.ACPListLiveResult](t, a.must(protocol.ACPListLive, map[string]any{}))
+	require.Empty(t, live.Sessions, "the refused load leaves no routed session")
+
+	require.NoError(t, held.Writer.Close())
+	a.must("session/load", loadArgs(sid, cwd))
+}
+
+// TestLeaderLoadFailureAfterOpenReleasesTheLock fails a load on a bad model
+// option, after the host took the session lock, and loads again.
+func TestLeaderLoadFailureAfterOpenReleasesTheLock(t *testing.T) {
+	l := startLeader(t, savedFauxParams(t, saying("reply")))
+	cwd := canonicalDir(t)
+	a := l.client(nil)
+	sid := a.newSession(cwd)
+	a.must("session/prompt", promptArgs(sid))
+	a.must("session/close", map[string]any{"sessionId": sid})
+
+	bad := loadArgs(sid, cwd)
+	bad["_meta"] = map[string]any{protocol.ACPSessionOptionsMetaKey: map[string]any{"model": "no-such-provider/no-such-model"}}
+	_, e := a.call("session/load", bad)
+	require.NotNil(t, e)
+	require.Equal(t, string(protocol.ACPErrInvalidParams), e.Data.Kind)
+
+	a.must("session/load", loadArgs(sid, cwd))
+}
+
+// A long stored history reaches the caller in full and in order, before the
+// answer. The queue of a client has no bound that could drop a frame.
+func TestLeaderLoadReplaysALongHistory(t *testing.T) {
+	params := savedFauxParams(t, saying("x"))
+	l := startLeader(t, params)
+	cwd := canonicalDir(t)
+	log, err := NewSessionLog(params.Home)
+	require.NoError(t, err)
+	w, err := log.NewContext(SessionLogOptions{CreateNow: true}, "1863000000000000777", cwd)()
+	require.NoError(t, err)
+	const turns = 3000
+	entries := []sessions.Entry{sessions.ModelChange{Model: sessions.ModelRef{Provider: "faux", API: "faux", ID: "faux-1"}}}
+	for i := range turns {
+		entries = append(entries,
+			sessions.MessageEntry{Message: protocol.UserMessage{Content: []protocol.UserBlock{protocol.Text{Text: fmt.Sprintf("question %d", i)}}}},
+			assistantEntry(fmt.Sprintf("answer %d", i)))
+	}
+	_, err = w.Append(entries...)
+	require.NoError(t, err)
+	require.NoError(t, w.Close())
+
+	a := l.client(nil)
+	id := a.request("session/load", loadArgs("1863000000000000777", cwd))
+	_, e := a.awaitWithin(id, 30*time.Second)
+	require.Nil(t, e, "%+v", e)
+	texts := a.updateTexts("1863000000000000777")
+	require.Len(t, texts, 2*turns)
+	require.Equal(t, "user_message_chunk:question 0", texts[0])
+	require.Equal(t, fmt.Sprintf("agent_message_chunk:answer %d", turns-1), texts[len(texts)-1])
+	require.Greater(t, a.responsePosition(id), a.lastUpdatePosition())
+}
+
+// newestStoredID returns the id of the newest session file of cwd, with or
+// without a reply.
+func newestStoredID(t *testing.T, log *SessionLog, cwd string) string {
+	t.Helper()
+	headers, err := log.store.List(context.Background(), cwd)
+	require.NoError(t, err)
+	require.NotEmpty(t, headers)
+	return headers[0].ID
+}
+
+// A reset keeps the ID of a live session and opens a new log under a new ID.
+// Loading the ID of that current log joins the live session, and the answer
+// names the session. A log of an earlier epoch has no writer any more, so it
+// loads as a session of its own.
+func TestLeaderLoadOfCurrentLogAfterResetJoinsLiveSession(t *testing.T) {
+	params := savedFauxParams(t, saying("one", "two", "three"))
+	l := startLeader(t, params)
+	cwd := canonicalDir(t)
+	log, err := NewSessionLog(params.Home)
+	require.NoError(t, err)
+	a := l.client(nil)
+	sid := a.newSession(cwd)
+	a.must("session/prompt", promptArgs(sid))
+	a.must(protocol.ACPReset, map[string]any{"sessionId": sid})
+	first := newestStoredID(t, log, cwd)
+	require.NotEqual(t, sid, first, "a reset opens a log with a new ID")
+	a.must("session/prompt", promptArgs(sid))
+	a.must(protocol.ACPReset, map[string]any{"sessionId": sid})
+	a.must("session/prompt", promptArgs(sid))
+	current := newestStoredID(t, log, cwd)
+	require.NotEqual(t, first, current)
+
+	b := l.client(nil)
+	var res struct {
+		Meta map[string]any `json:"_meta"`
+	}
+	id := b.request("session/load", loadArgs(current, cwd))
+	raw, e := b.await(id)
+	require.Nil(t, e, "the current log of a live session is joined, not refused: %+v", e)
+	require.NoError(t, json.Unmarshal(raw, &res))
+	require.Equal(t, sid, res.Meta[protocol.ACPSessionIDMetaKey], "the answer names the session")
+	require.Equal(t, []string{"user_message_chunk:hello", "agent_message_chunk:three"}, b.updateTexts(current), "the history is the current epoch")
+	live := decodeInto[protocol.ACPListLiveResult](t, b.must(protocol.ACPListLive, map[string]any{}))
+	require.Len(t, live.Sessions, 1, "no second session opened")
+	require.Equal(t, protocol.ACPRoleObserver, decodeInto[protocol.ACPAttachResult](t, b.must(protocol.ACPAttach, map[string]any{"sessionId": sid})).Role)
+
+	// The log of the first epoch is closed, so it loads on its own.
+	c := l.client(nil)
+	c.must("session/load", loadArgs(first, cwd))
+	live = decodeInto[protocol.ACPListLiveResult](t, c.must(protocol.ACPListLive, map[string]any{}))
+	require.Len(t, live.Sessions, 2)
+	require.Equal(t, []string{"user_message_chunk:hello", "agent_message_chunk:two"}, c.updateTexts(first))
 }

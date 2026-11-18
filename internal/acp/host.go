@@ -2,8 +2,6 @@ package acp
 
 import (
 	"context"
-	"crypto/rand"
-	"encoding/hex"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -14,6 +12,7 @@ import (
 	"time"
 
 	"AskCore/internal/agent"
+	"AskCore/internal/sessions"
 	"AskCore/pkg/protocol"
 )
 
@@ -39,7 +38,8 @@ var errStaleDriver = newKindError(protocol.ACPErrNotDriver, "the driver generati
 
 // SessionRequest holds what the Factory gets for one new session.
 type SessionRequest struct {
-	// ID is the session ID that the host made.
+	// ID is the session ID. The host makes it for a new session; for a load it
+	// is the stored session that the client named.
 	ID string
 	// Cwd is the absolute working directory that the client sent.
 	Cwd string
@@ -47,6 +47,8 @@ type SessionRequest struct {
 	Trust protocol.ACPTrustOverride
 	// Flags are the per-session flags of this session, or the zero value.
 	Flags protocol.ACPSessionOptions
+	// Resume says that ID is a stored session to continue, not a new one.
+	Resume bool
 }
 
 // Factory builds one independent Agent for a new session.
@@ -255,6 +257,17 @@ func (h *Host) Session(id string) (*Session, bool) {
 	return s, ok
 }
 
+// sessionByLogID returns the live session that writes the log with id now. A
+// reset keeps the session ID and changes the log ID.
+func (h *Host) sessionByLogID(id string) (*Session, bool) {
+	for _, s := range h.Sessions() {
+		if s.agent.LogID() == id {
+			return s, true
+		}
+	}
+	return nil, false
+}
+
 // Sessions returns the live sessions in no fixed order.
 func (h *Host) Sessions() []*Session {
 	h.mu.Lock()
@@ -274,15 +287,33 @@ func (h *Host) NewSession(ctx context.Context, cwd string) (*Session, error) {
 // NewSessionWith builds an Agent and publishes the session only when it is
 // whole. The host makes the session ID; the ID of req is not used.
 func (h *Host) NewSessionWith(ctx context.Context, req SessionRequest) (*Session, error) {
+	req.ID, req.Resume = sessions.NewID(), false
+	return h.openSession(ctx, req)
+}
+
+// LoadSessionWith builds an Agent on the stored session req.ID and publishes
+// it. It refuses a session that this host runs already: a second writer would
+// split the log. The Factory fails the same way for a session that another
+// process holds.
+func (h *Host) LoadSessionWith(ctx context.Context, req SessionRequest) (*Session, error) {
+	if req.ID == "" {
+		return nil, errUnknownSession
+	}
+	req.Resume = true
+	return h.openSession(ctx, req)
+}
+
+// openSession builds the Agent of req and publishes the session. req.ID is the
+// session ID.
+func (h *Host) openSession(ctx context.Context, req SessionRequest) (*Session, error) {
 	if err := h.beginOperation(); err != nil {
 		return nil, err
 	}
 	defer h.endOperation()
-	id, err := newSessionID()
-	if err != nil {
-		return nil, err
+	id := req.ID
+	if _, live := h.Session(id); live {
+		return nil, ErrSessionInUse
 	}
-	req.ID = id
 	a, err := h.factory(ctx, req)
 	if err != nil {
 		return nil, err
@@ -308,6 +339,11 @@ func (h *Host) NewSessionWith(ctx context.Context, req SessionRequest) (*Session
 		h.mu.Unlock()
 		_ = s.Close()
 		return nil, err
+	}
+	if _, dup := h.sessions[id]; dup {
+		h.mu.Unlock()
+		_ = s.Close()
+		return nil, ErrSessionInUse
 	}
 	h.sessions[id] = s
 	h.mu.Unlock()
@@ -342,14 +378,6 @@ func (h *Host) Close() error {
 		h.closeErr = errors.Join(errs...)
 	})
 	return h.closeErr
-}
-
-func newSessionID() (string, error) {
-	b := make([]byte, 8)
-	if _, err := rand.Read(b); err != nil {
-		return "", err
-	}
-	return "sess_" + hex.EncodeToString(b), nil
 }
 
 type queued struct {

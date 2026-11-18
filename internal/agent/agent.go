@@ -3,7 +3,6 @@ package agent
 import (
 	"context"
 	"errors"
-	"fmt"
 	"slices"
 	"sync"
 	"sync/atomic"
@@ -59,13 +58,16 @@ func mutationGuard(ctx context.Context) (func(), error) {
 // the loop claims at its turn and cycle boundaries.
 type Agent struct {
 	cfg        Config
-	newContext func() sessions.Writer
+	newContext func() (sessions.Writer, error)
 	clock      func() time.Time
 
 	// mu guards the fields below up to emitMu. It is never held while a
 	// handler, a provider, a tool, the log or a listener runs.
-	mu        sync.Mutex
-	source    *trackedLog
+	mu     sync.Mutex
+	source *trackedLog
+	// logged is the model and thinking level that the log of source holds. Only
+	// a run changes it, and Reset replaces it with the state of the new log.
+	logged    loggedSelection
 	active    *run // nil when idle
 	listeners []*listener
 	in        inbox
@@ -186,7 +188,7 @@ func New(cfg Config) (*Agent, error) {
 	}
 	a := &Agent{cfg: cfg, newContext: cfg.NewContext, clock: cfg.Clock}
 	if a.newContext == nil {
-		a.newContext = func() sessions.Writer { return &sessions.MemoryLog{} }
+		a.newContext = func() (sessions.Writer, error) { return &sessions.MemoryLog{}, nil }
 	}
 	if a.clock == nil {
 		a.clock = time.Now
@@ -203,12 +205,14 @@ func New(cfg Config) (*Agent, error) {
 	if cfg.Model.ID != "" && a.cfg.Options.Reasoning != "" {
 		a.cfg.Options.Reasoning = providers.ClampThinkingLevel(cfg.Model, a.cfg.Options.Reasoning)
 	}
-	src, err := a.openSource()
+	src, sel, err := a.openSource()
 	if err != nil {
-		_ = src.Close()
+		if src != nil {
+			_ = src.Close()
+		}
 		return nil, err
 	}
-	a.source = src
+	a.source, a.logged = src, sel
 	a.pub = published{epoch: newEpoch(), commitIndex: int(a.source.end.Load()), writer: a.source}
 	a.life, a.endLife = context.WithCancelCause(context.Background())
 	a.tasks = a.newRegistry(0)
@@ -543,15 +547,26 @@ func (a *Agent) swapContext() (logErr error, oldTasks *tasks.Registry, err error
 	// resetPublished reads seq, which the holder of emitMu owns.
 	a.emitMu.Lock()
 	defer a.emitMu.Unlock()
+	// A busy or disposed Agent fails before the new log is created.
 	a.mu.Lock()
-	if err := a.idleLocked(); err != nil {
-		a.mu.Unlock()
+	err = a.idleLocked()
+	a.mu.Unlock()
+	if err != nil {
 		return nil, nil, err
 	}
-	fresh, err := a.openSource()
+	// The new log is created, fsynced and seeded with mu released: the log
+	// does file I/O, and mu guards State, Notify and Subscribe. emitMu stays
+	// held, so no other swap runs. A run or Dispose can start in the window,
+	// so the state is checked again under mu before the swap.
+	fresh, sel, err := a.openSource()
+	a.mu.Lock()
+	if err == nil {
+		err = a.idleLocked()
+	}
 	if err != nil {
+		keep := a.source.Writer
 		a.mu.Unlock()
-		if fresh.Writer != a.source.Writer {
+		if fresh != nil && fresh.Writer != keep {
 			_ = fresh.Close()
 		}
 		return nil, nil, err
@@ -565,7 +580,7 @@ func (a *Agent) swapContext() (logErr error, oldTasks *tasks.Registry, err error
 	replaced := len(a.posted) > 0
 	a.posted = nil
 	old := a.source
-	a.source = fresh
+	a.source, a.logged = fresh, sel
 	a.resetPublished(a.source)
 	// A new generation turns off the event gate and the notice gate of the old
 	// registry at once. Its tasks still end, but nothing they say reaches the
@@ -752,14 +767,21 @@ func (a *Agent) execute(r *run, start loopFunc) error {
 		if err != nil {
 			return err
 		}
+		if err := a.logSelection(r.source); err != nil {
+			return err
+		}
 		d.in = runInputs{a: a, r: r}
 		d.clock = a.clock
 		d.onPreparationFailure = func() { r.preparationFailure = true }
 		return start(r.ctx, ac, cfg, d, emit)
 	})
 	if err != nil {
-		if repairErr := runGuarded(func() error { return repairTools(r.source, repairStart) }); repairErr != nil {
-			err = errors.Join(err, repairErr)
+		// A lost writer cannot take the repair entries either, so no append is
+		// tried; the error already tells the user to reopen the session.
+		if !errors.Is(err, sessions.ErrWriterLost) {
+			if repairErr := runGuarded(func() error { return repairTools(r.source, repairStart) }); repairErr != nil {
+				err = errors.Join(err, repairErr)
+			}
 		}
 		a.fail(r, err, emit)
 	}
@@ -776,7 +798,7 @@ func (a *Agent) execute(r *run, start loopFunc) error {
 func openLog(log sessions.Writer, snap sessions.SystemSnapshot) (driver, error) {
 	if last, ok := log.LastSystemSnapshot(); !ok || !sameSnapshot(last, snap) {
 		if _, err := log.Append(snap); err != nil {
-			return driver{}, fmt.Errorf("agent: write session log: %w", err)
+			return driver{}, logWriteError(err)
 		}
 	}
 	return driver{log: log, header: systemMessages(snap)}, nil
@@ -847,6 +869,9 @@ func (a *Agent) fail(r *run, cause error, emit Emit) {
 // is published. A write error is dropped: the run already failed and the
 // caller gets that error. The terminal error is not claimed to be saved.
 func (a *Agent) recordFailureStep(r *run, ev protocol.Event, cause error) {
+	if errors.Is(cause, sessions.ErrWriterLost) {
+		return
+	}
 	var entry sessions.Entry
 	switch e := ev.(type) {
 	case *protocol.MessageEnd:
