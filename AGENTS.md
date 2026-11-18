@@ -24,6 +24,7 @@ Version authority is `go.mod`.
 - Protobuf Tooling: buf
 - Dependency Injection: fx
 - ACP: `github.com/coder/acp-go-sdk` v0.13.5 (stable schema 0.13.5, wire v1); conformance evidence in `plans/reports/conformance-261007-h13a-sdk.md`
+- Session ids: `github.com/bwmarrin/snowflake` (BSD-2-Clause); installed version authority is `go.mod`
 - Native auth identity: `github.com/coreos/go-oidc/v3`; installed version authority is `go.mod`
 - Model wire layer: `charm.land/fantasy` (see `internal/providers/fantasykit`). `go.mod` replaces it with the owner's fork `github.com/kevinle128/fantasy` (forked from `charmbracelet/fantasy`), pinned to commit `f9c19ad3b1c6`. The fork is upstream `main` at commit `ef61b44` (`v0.46.0` plus the GPT-6 reasoning fix #386) plus:
   - OpenAI Responses: replay of encrypted reasoning, message IDs, phase, and function-call item IDs; error and finish details; the echoed service tier; extra body fields; strict stream completion checks (upstream pull request #412).
@@ -60,7 +61,7 @@ AskCore/
 │   ├── config/  logs/     # Config (viper) and zap logger
 │   ├── gateway/           # HTTP (echo) and gRPC servers, gRPC services; methods/ for WS RPC (not built)
 │   ├── http/              # REST handlers (import alias httpapi)
-│   ├── agent/ pipeline/ sessions/ bus/ workspace/    # Runtime core (implemented; workspace in part: project root, gated files, trust decision)
+│   ├── agent/ pipeline/ sessions/ bus/ workspace/    # Runtime core (implemented; sessions = typed log, codec, ids; workspace in part: project root, gated files, trust decision)
 │   ├── tasks/             # Per-Agent async task registry; completions wake the agent by push (docs/async-task-runtime.md)
 │   ├── scheduler/ cron/                              # Runtime core (scaffold)
 │   ├── auth/ settings/ providers/ tools/ sandbox/ jobs/   # Capabilities (implemented); sandbox = process runner, jobs = per-session job table; settings = user and project settings files and trust.json bytes
@@ -68,7 +69,7 @@ AskCore/
 │   ├── tui/ tuiclient/ tuiext/   # Terminal UI, its client implementation, extension host (tuiext is a scaffold)
 │   ├── skills/ bootstrap/    # Capabilities (implemented): SKILL.md metadata loader; AGENTS.md/CLAUDE.md and SYSTEM.md loaders
 │   ├── mcp/ memory/ hooks/ permissions/ crypto/ channels/ tracing/   # Scaffold or parked
-│   ├── store/             # Models + store interfaces; gormstore/ = GORM implementation
+│   ├── store/             # Models + store interfaces; gormstore/ = GORM implementation; jsonlstore/ = session log files; storetest/ = session-store contract suites
 │   ├── migrations/        # Migration runner
 │   └── cache/ messaging/ realtime/ validation/ testsupport/
 ├── migrations/            # SQL files (SQLite), embedded into the binary
@@ -124,6 +125,7 @@ The leader flows need a binary named `ask`. A client starts the leader from a bi
 - `ask acp` (`go run ./cmd/tui acp`) - Serve ACP v1 over stdio. One Agent per session.
   It dispatches before prompt and mode parsing. It takes only `--approve` (`-a`) or `--no-approve` (`-na`), which apply to every session of the process, and `--offline`. It takes none of the prompt, tool, and model flags; a client sends them per session in `_meta["ask.dev/session"]`.
   It uses `internal/app.ACPModule` with the shared native auth composition: no listener, no database, no leader, and no credential input on the protocol connection.
+  It saves each session as a file under `<ASK_HOME>/sessions` and serves `session/load` (`loadSession` in `initialize`); `noSession` in `_meta["ask.dev/session"]` keeps one session out of the store. A session held by another process answers `session_in_use`.
   Sign in on the host with `ask auth login`; `authenticate` only checks readiness. It serves no provider-setup methods, and `faux` needs `ASK_FAUX=1`.
   Exit codes: 0 input ended, 1 error or lost output, 130 SIGINT, 143 SIGTERM, 129 SIGHUP. See [the ACP owner](internal/acp/README.md#stdio-server).
 - `ask settings show [--json]` - Print the trust decision of the cwd, each settings key with its value and layer (`default`, `user`, `project`), each settings problem, the state of the user `models.json`, the key source of each provider (never the key), the context files (`AGENTS.md`, `CLAUDE.md`) with their size and skip reason, and the skills that did not load. It reads files only, starts no leader and no database, and never reads an untrusted project settings file. Exit codes: 0 done, 1 usage or read error, 130, 143, 129.
@@ -131,10 +133,12 @@ The leader flows need a binary named `ask`. A client starts the leader from a bi
 - `ask leader` - Run the local leader: one agent for all local clients on `<ASK_HOME>/leader.sock`, owner only.
   `ask leader status|list|stop` never start a leader. Clients start it on demand through `leader.ConnectOrSpawn`.
   A client of a newer build replaces an older leader that a client started, also when it is busy (its sessions and background jobs end). For `go run` builds the binary written last wins unless its bytes are the same. On Linux a leader that holds the lock without a socket is stopped.
+  The leader keeps a session, and its write lock, after the TUI quits, so `ask -p -c` on that session fails until `ask leader stop`.
   See [the leader owner](internal/leader/README.md).
 - `ask connect` - Line-oriented leader client (`ask connect --help`). It starts the leader when none runs and never falls back to an agent of its own.
 - `ask version --json` - Build, protocol versions and `commitTime` (or `devStamp` for a build without a VCS stamp) on one line; a client reads it before it starts a leader from that binary.
 - `ask -p "hello"` - Run a headless prompt in process and print the reply.
+  Every run saves its session as `<ASK_HOME>/sessions/<encoded-cwd>/<id>.jsonl` (id: snowflake decimal string; Unix only, one `flock` writer for each session). `-c`/`--continue` continues the newest session of the folder that has an assistant reply (with none, it starts a new session), `--session <id>` one session, and `--no-session` saves nothing; the TUI takes the same flags. A continued session starts on the logged model and level unless `--model` is given. `--mode json` writes a `session` record first. A write error stops the run, so a read-only `ASK_HOME` fails unless `--no-session`. See [Sessions](docs/cli.md#sessions) and [ADR 0006](docs/adr/0006-session-logs-as-jsonl-files.md).
   `--mode json` writes each agent event as one JSON line instead.
   `--system-prompt <text|file>`, `--append-system-prompt <text|file>`, `-t/--tools <names>`, and `-nt/--no-tools` set the system prompt and the built-in tools of one run. The TUI sends them to a leader or an in-process agent in `_meta["ask.dev/session"]`. The `defaultTools` setting is the saved tool selection. See [docs/cli.md](docs/cli.md#prompt-context-files-skills-and-tools).
   `faux` is the default provider (no `ASK_FAUX` needed), a scripted demo: `echo <text>` calls the echo tool, `fail <text>` ends in an assistant error, anything else is said back. `ASK_FAUX_TPS` paces it in tokens per second. `--provider` also takes `alibaba-token-plan`, `anthropic`, `openai`, `xai`, and the providers of `<ASK_HOME>/models.json`.

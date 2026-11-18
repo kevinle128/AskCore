@@ -37,6 +37,7 @@ const (
 	tagUnfollow
 	tagTake
 	tagClose
+	tagLoadSession
 )
 
 // maxEndedFollows is how many ended subscriptions the router remembers. The
@@ -64,6 +65,14 @@ type reqTag struct {
 	cwd       string
 	memberGen uint64
 	sub       string
+	// joined is set for a load of a session that the router already routes. The
+	// caller was not a member before and leaves again if the host refuses.
+	joined bool
+	// target is the session that the router routed for the call. A load of an
+	// unknown session sets registered as well: it made target and owns its
+	// loading state.
+	target     *session
+	registered bool
 }
 
 type member struct{ gen uint64 }
@@ -76,6 +85,10 @@ type session struct {
 	members     map[*client]struct{}
 	takePending bool
 	takeCaller  *client
+	// loading is set from the forward of a load until the host answers. The host
+	// has not committed a driver generation yet, so no other call may use the
+	// session.
+	loading bool
 }
 
 type follow struct {
@@ -270,6 +283,8 @@ func (r *router) onClientMsg(c *client, raw json.RawMessage) {
 		r.forward(c, m, protocol.ACPRouteMeta{ClientID: c.id}, nil)
 	case callNewSession:
 		r.handleNewSession(c, m)
+	case callLoadSession:
+		r.handleLoadSession(c, m)
 	case callListLive:
 		r.handleListLive(c, m)
 	default:
@@ -329,6 +344,53 @@ func (r *router) handleNewSession(c *client, m *rpcMessage) {
 		&reqTag{kind: tagNewSession, cwd: stringParam(params, "cwd")})
 }
 
+// handleLoadSession serves session/load. The host replays the history as
+// session/update frames before it answers, and the router sends a frame only to
+// a member of the session, so the caller joins before the forward.
+//
+// A session that the router routes already runs in the host. The caller joins it
+// as one more member and the host opens no second writer; the driver does not
+// change. Any other session is registered with the caller as driver now, and
+// forgotten again when the host refuses; the driver generation comes with the
+// answer.
+func (r *router) handleLoadSession(c *client, m *rpcMessage) {
+	if !m.hasID {
+		return
+	}
+	params, err := m.params()
+	sid := ""
+	if err == nil {
+		sid = stringParam(params, "sessionId")
+	}
+	if sid == "" {
+		r.fail(c, m, protocol.ACPErrInvalidParams)
+		return
+	}
+	if s := r.sessions[sid]; s != nil {
+		if s.loading {
+			r.fail(c, m, protocol.ACPErrBusy)
+			return
+		}
+		_, wasMember := c.members[sid]
+		r.addMember(c, s)
+		meta := protocol.ACPRouteMeta{ClientID: c.id, SessionID: sid, DriverGen: s.gen, LiveDriver: s.driver != nil}
+		tag := &reqTag{kind: tagLoadSession, session: sid, memberGen: c.members[sid].gen, joined: !wasMember, target: s}
+		if !r.forward(c, m, meta, tag) && !wasMember {
+			r.removeMember(c, s)
+		}
+		return
+	}
+	s := &session{id: sid, cwd: stringParam(params, "cwd"), driver: c, members: map[*client]struct{}{}, loading: true}
+	r.sessions[sid] = s
+	r.addMember(c, s)
+	tag := &reqTag{kind: tagLoadSession, session: sid, memberGen: c.members[sid].gen, target: s, registered: true}
+	// No driver generation exists yet; zero tells the host that the router does
+	// not route the session.
+	if !r.forward(c, m, protocol.ACPRouteMeta{ClientID: c.id, SessionID: sid, Capabilities: c.caps}, tag) {
+		r.forgetSession(s)
+	}
+}
+
 // handleSessionCall serves every method that names a session.
 func (r *router) handleSessionCall(c *client, m *rpcMessage, pol policy) {
 	params, err := m.params()
@@ -343,6 +405,10 @@ func (r *router) handleSessionCall(c *client, m *rpcMessage, pol policy) {
 	s := r.sessions[sid]
 	if s == nil {
 		r.fail(c, m, protocol.ACPErrUnknownSession)
+		return
+	}
+	if s.loading {
+		r.fail(c, m, protocol.ACPErrBusy)
 		return
 	}
 	_, isMember := c.members[sid]
@@ -681,6 +747,8 @@ func (r *router) onAgentResponse(m *rpcMessage) {
 	switch tag.kind {
 	case tagNewSession:
 		r.finishNewSession(c, restored, out, m, tag, failed)
+	case tagLoadSession:
+		r.finishLoadSession(c, restored, out, m, tag, failed)
 	case tagFollow:
 		r.finishFollow(c, restored, out, tag, failed)
 	case tagUnfollow:
@@ -764,6 +832,94 @@ func (r *router) finishNewSession(c *client, restored Restored, out, agentMsg *r
 	c.sendACP(stripRouteMeta(out), "", 0)
 }
 
+// finishLoadSession ends a load. A refusal removes the session that the load
+// registered, or the membership that a join added; the session that the host
+// ran before stays. After a success the session has the driver generation of
+// the host.
+func (r *router) finishLoadSession(c *client, restored Restored, out, agentMsg *rpcMessage, tag *reqTag, failed bool) {
+	s := r.sessions[tag.session]
+	present := c != nil && !restored.Dropped && !c.closed
+	if s == nil || s != tag.target {
+		// The host answered for a session that the router forgot meanwhile, and
+		// a session of the same ID may have been routed since. That one belongs
+		// to another call.
+		r.deliver(c, restored, restored.Msg)
+		return
+	}
+	if !tag.registered {
+		r.finishJoin(c, restored, out, tag, failed, present)
+		return
+	}
+	if failed {
+		r.forgetSession(s)
+		r.deliver(c, restored, restored.Msg)
+		return
+	}
+	if alias := loadedAlias(agentMsg); alias != "" && alias != tag.session {
+		r.finishAliasJoin(c, restored, out, s, alias, present)
+		return
+	}
+	gen, ok := routeGen(agentMsg)
+	if !ok {
+		r.log.Error("host load result has no driver generation")
+		r.forgetSession(s)
+		r.deliver(c, restored, errorResponse(out.id, protocol.ACPErrInternal))
+		return
+	}
+	s.gen, s.loading = gen, false
+	if present {
+		c.sendACP(stripRouteMeta(out), "", 0)
+	}
+	// A caller that left before the answer is no longer a member, and its
+	// driver role ended with it; the session lives and any client can attach.
+}
+
+// loadedAlias reads the ID of the live session that a load joined under another
+// ID: the ID of a log that the session writes after a reset.
+func loadedAlias(m *rpcMessage) string {
+	result, err := decodeObject(m.fields["result"])
+	if err != nil {
+		return ""
+	}
+	meta, err := decodeObject(result["_meta"])
+	if err != nil {
+		return ""
+	}
+	return stringParam(meta, protocol.ACPSessionIDMetaKey)
+}
+
+// finishAliasJoin ends a load that the host answered by joining the live
+// session alias. The router registered the asked ID so that the history had a
+// reader; it drops that entry and makes the caller a member of the live
+// session, as for a join by session ID. The answer names the session.
+func (r *router) finishAliasJoin(c *client, restored Restored, out *rpcMessage, loading *session, alias string, present bool) {
+	r.forgetSession(loading)
+	target := r.sessions[alias]
+	if target == nil {
+		r.log.Error("host load joined a session that the router does not route")
+		r.deliver(c, restored, errorResponse(out.id, protocol.ACPErrInternal))
+		return
+	}
+	if !present {
+		return
+	}
+	r.addMember(c, target)
+	c.sendACP(stripRouteMeta(out), "", 0)
+}
+
+// finishJoin ends a load of a session that the router already routed.
+func (r *router) finishJoin(c *client, restored Restored, out *rpcMessage, tag *reqTag, failed, present bool) {
+	s := r.sessions[tag.session]
+	if failed || !present {
+		if tag.joined && c != nil && c.members[tag.session].gen == tag.memberGen {
+			r.removeMember(c, s)
+		}
+		r.deliver(c, restored, restored.Msg)
+		return
+	}
+	c.sendACP(stripRouteMeta(out), "", 0)
+}
+
 func (r *router) finishFollow(c *client, restored Restored, out *rpcMessage, tag *reqTag, failed bool) {
 	if failed {
 		r.deliver(c, restored, restored.Msg)
@@ -843,6 +999,16 @@ func (r *router) onAgentNotification(m *rpcMessage) {
 			r.log.Debug("session update for an unknown session")
 			return
 		}
+		if target, ok := replayTarget(params); ok {
+			// The history of a load goes to the client that loaded, and to no
+			// other member that follows the session.
+			if c := r.clients[target]; c != nil && !c.closed {
+				if mem, member := c.members[s.id]; member {
+					c.sendACP(withoutRoute(m, params), s.id, mem.gen)
+				}
+			}
+			return
+		}
 		for c := range s.members {
 			c.sendACP(m.raw, s.id, c.members[s.id].gen)
 		}
@@ -894,4 +1060,44 @@ func (r *router) status() protocol.LeaderStatus {
 
 func sortLive(rows []protocol.ACPLiveSession) {
 	sort.Slice(rows, func(i, j int) bool { return rows[i].SessionID < rows[j].SessionID })
+}
+
+// replayTarget reads the client that a session/update names in its route
+// context. The host writes it on the history of a load, so that the router
+// sends the frame to that client only.
+func replayTarget(params map[string]json.RawMessage) (string, bool) {
+	meta, err := decodeObject(params["_meta"])
+	if err != nil {
+		return "", false
+	}
+	var route protocol.ACPRouteMeta
+	if json.Unmarshal(meta[protocol.ACPRouteMetaKey], &route) != nil || route.ClientID == "" {
+		return "", false
+	}
+	return route.ClientID, true
+}
+
+// withoutRoute returns the notification m without the route context, which the
+// client has no use for.
+func withoutRoute(m *rpcMessage, params map[string]json.RawMessage) json.RawMessage {
+	meta, err := decodeObject(params["_meta"])
+	if err != nil {
+		return m.raw
+	}
+	delete(meta, protocol.ACPRouteMetaKey)
+	out := make(map[string]json.RawMessage, len(params))
+	for k, v := range params {
+		out[k] = v
+	}
+	if len(meta) == 0 {
+		delete(out, "_meta")
+	} else {
+		out["_meta"] = marshalPlain(meta)
+	}
+	fields := make(map[string]json.RawMessage, len(m.fields))
+	for k, v := range m.fields {
+		fields[k] = v
+	}
+	fields["params"] = marshalPlain(out)
+	return marshalPlain(fields)
 }

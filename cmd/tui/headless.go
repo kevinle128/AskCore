@@ -2,7 +2,6 @@ package main
 
 import (
 	"context"
-	"crypto/rand"
 	"errors"
 	"fmt"
 	"io"
@@ -25,6 +24,8 @@ import (
 	"AskCore/internal/providers"
 	"AskCore/internal/providers/anthropic"
 	"AskCore/internal/sandbox"
+	"AskCore/internal/sessions"
+	"AskCore/internal/store"
 	"AskCore/internal/tasks"
 	"AskCore/internal/tools"
 	"AskCore/internal/workspace"
@@ -179,7 +180,20 @@ func runWithDependencies(argv []string, stdin io.Reader, stdout, stderr io.Write
 		report(stderr, "Error:", err)
 		return 1
 	}
-	start, service, view, err := printStartModel(&o, deps.getenv, newAuth, &session, stderr)
+	ps, err := openPrintSession(context.Background(), o, deps.getenv("ASK_HOME"), cwd, deps.now)
+	if err != nil {
+		report(stderr, "Error:", err)
+		return 1
+	}
+	// Until the agent owns the resumed log, a failed start must release its
+	// lock itself.
+	agentOwnsLog := false
+	defer func() {
+		if !agentOwnsLog {
+			ps.release()
+		}
+	}()
+	start, service, view, err := printStartModel(&o, deps.getenv, newAuth, &session, ps.restored, stderr)
 	if err != nil {
 		report(stderr, "Error:", err)
 		return 1
@@ -192,14 +206,16 @@ func runWithDependencies(argv []string, stdin io.Reader, stdout, stderr io.Write
 	}
 	o.bgLimit = printBackgroundLimit(deps.getenv)
 	ag, jt, err := newPrintAgent(o, deps.getenv, service, app.AgentSpec{
-		SessionID: newSessionID(), Cwd: cwd, Start: start, Session: session,
+		SessionID: ps.header.ID, Cwd: cwd, Start: start, Session: session,
 		Warn:   func(line string) { report(stderr, line) },
 		Models: view,
+		Log:    ps.log,
 	})
 	if err != nil {
 		report(stderr, "Error:", err)
 		return 1
 	}
+	agentOwnsLog = true
 	prompts, err := readPrompts(o, stdin, stdinTTY)
 	if err != nil {
 		report(stderr, "Error:", err)
@@ -207,6 +223,17 @@ func runWithDependencies(argv []string, stdin io.Reader, stdout, stderr io.Write
 			report(stderr, "Dispose:", err)
 		}
 		return 1
+	}
+	if mode == modeJSON {
+		// The header is the first line, before any event. It goes out before
+		// the agent can run, so no event can come first.
+		if err := writeSessionHeader(stdout, ps.header); err != nil {
+			report(stderr, "Error:", err)
+			if err := ag.Dispose(); err != nil {
+				report(stderr, "Dispose:", err)
+			}
+			return 1
+		}
 	}
 
 	w := waitConfig{jobs: jt, maxTurns: o.maxTurns, ceiling: envMillis(deps.getenv, printBgCeilingEnv, printCeiling)}
@@ -232,9 +259,10 @@ func runWithDependencies(argv []string, stdin io.Reader, stdout, stderr io.Write
 // as with --provider, --model and --thinking. The returned model is zero when
 // the demo model is chosen, so the run builds its agent as before. service is
 // nil when the run needs no credential.
-func printStartModel(o *options, getenv func(string) string, newAuth func() (*auth.Service, error), session *app.SessionStart, stderr io.Writer) (providers.Model, *auth.Service, *app.ModelView, error) {
+func printStartModel(o *options, getenv func(string) string, newAuth func() (*auth.Service, error), session *app.SessionStart, restored *app.RestoredSelection, stderr io.Writer) (providers.Model, *auth.Service, *app.ModelView, error) {
 	pattern := o.modelPattern()
 	opts := app.ModelOptions{Pattern: pattern, Thinking: o.thinking, Scope: o.models}
+	opts.Restored = restored
 	eff := session.Settings
 	// --provider faux keeps the run on the demo model: it needs no credential
 	// and no model list, and a scope cannot change its start model.
@@ -247,7 +275,8 @@ func printStartModel(o *options, getenv func(string) string, newAuth func() (*au
 	if strings.HasPrefix(pattern, anthropic.ProviderID+"/") {
 		opts.PreferAPI = providers.APIAnthropicMessages
 	}
-	needList := !demoOnly && (pattern != "" || len(opts.Scope) > 0 || len(eff.EnabledModels) > 0 || eff.DefaultModel != "")
+	needList := !demoOnly && (pattern != "" || len(opts.Scope) > 0 || len(eff.EnabledModels) > 0 || eff.DefaultModel != "" ||
+		(restored != nil && restored.Model.Provider != defaultProvider))
 	var service *auth.Service
 	var view *app.ModelView
 	if needList {
@@ -413,7 +442,7 @@ func newHeadlessAgentWithAuth(o options, getenv func(string) string, service *au
 	if err != nil {
 		return nil, nil, err
 	}
-	return newNativeAgent(o, getenv, service, app.AgentSpec{SessionID: newSessionID(), Cwd: cwd}, extra...)
+	return newNativeAgent(o, getenv, service, app.AgentSpec{SessionID: sessions.NewID(), Cwd: cwd}, extra...)
 }
 
 // newNativeAgent builds one independent agent for the session and directory.
@@ -543,7 +572,7 @@ func newNativeAgentOn(o options, getenv func(string) string, service *auth.Servi
 		cfg.Pipeline = pl
 	}
 	native := app.NativeAgentConfig{
-		Config: cfg, InitialStream: stream, Auth: service, Models: spec.Models,
+		Config: cfg, InitialStream: stream, Auth: service, Models: spec.Models, Log: spec.Log,
 		Env: func(k string) (string, bool) { v := getenv(k); return v, v != "" },
 	}
 	if o.provider == "faux" {
@@ -560,12 +589,68 @@ func newNativeAgentOn(o options, getenv func(string) string, service *auth.Servi
 	return ag, jt, nil
 }
 
-func newSessionID() string {
-	var b [16]byte
-	_, _ = rand.Read(b[:])
-	b[6] = (b[6] & 0x0f) | 0x40
-	b[8] = (b[8] & 0x3f) | 0x80
-	return fmt.Sprintf("%x-%x-%x-%x-%x", b[0:4], b[4:6], b[6:8], b[8:10], b[10:])
+// printSession is the session of a print-mode run: which one it is, how its
+// log is made, and what the log of a resumed session says about the model.
+type printSession struct {
+	// header is the header of the session. A run with --no-session has the
+	// header that a saved run would have; its id is the run id.
+	header   sessions.Header
+	log      app.SessionLogOptions
+	restored *app.RestoredSelection
+}
+
+// openPrintSession picks the session of a print-mode run from --continue,
+// --session and --no-session. --continue with no session to continue in cwd
+// gives a new session. A resumed session is opened here, so a held,
+// unknown or damaged session fails before any model work; the caller releases
+// it with release until the agent owns it. now may be nil.
+func openPrintSession(ctx context.Context, o options, home, cwd string, now func() time.Time) (printSession, error) {
+	if now == nil {
+		now = time.Now
+	}
+	canon, err := workspace.CanonicalPath(cwd)
+	if err != nil {
+		return printSession{}, err
+	}
+	if o.continueLast || o.sessionID != "" {
+		log, err := app.NewSessionLog(home)
+		if err != nil {
+			return printSession{}, err
+		}
+		r, err := log.Resume(ctx, cwd, o.sessionID)
+		switch {
+		case err == nil:
+			return printSession{header: r.Header, log: app.SessionLogOptions{Resume: r.Writer}, restored: r.Selection}, nil
+		case o.sessionID == "" && errors.Is(err, store.ErrSessionNotFound):
+			// --continue with no session to continue starts a new one. An id
+			// that the user named must exist.
+		default:
+			return printSession{}, err
+		}
+	}
+	created := now()
+	ps := printSession{header: sessions.Header{Version: sessions.FormatVersion, ID: sessions.NewID(), Cwd: canon, CreatedAt: created}}
+	ps.log = app.SessionLogOptions{NoSession: o.noSession, CreatedAt: created}
+	return ps, nil
+}
+
+// release closes a resumed log that no agent owns. The lock of the session
+// ends with it.
+func (p printSession) release() {
+	if p.log.Resume != nil {
+		_ = p.log.Resume.Close()
+	}
+}
+
+// writeSessionHeader writes the session record that starts the JSON mode
+// stream.
+func writeSessionHeader(w io.Writer, h sessions.Header) error {
+	line, err := sessions.EncodeHeader(h)
+	if err != nil {
+		return err
+	}
+	_, err = w.Write(append(line, '\n'))
+	return err
 }
 
 // runHeadless runs the prompts in order. Print mode prints the reply at the

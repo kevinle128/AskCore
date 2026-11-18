@@ -316,7 +316,7 @@ func TestHostResetRefusesInputUntilCutIsKnown(t *testing.T) {
 	var mu sync.Mutex
 	var got []seen
 	h := hostFixture(t, func(c *agent.Config) {
-		c.NewContext = func() sessions.Writer { return blockCloseLog{MemoryLog: &sessions.MemoryLog{}, ctl: ctl} }
+		c.NewContext = func() (sessions.Writer, error) { return blockCloseLog{MemoryLog: &sessions.MemoryLog{}, ctl: ctl}, nil }
 	}, func(_ context.Context, _, epoch string, ev protocol.Event) error {
 		mu.Lock()
 		got = append(got, seen{epoch, ev.Env().Seq})

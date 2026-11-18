@@ -310,7 +310,7 @@ func TestNoticePortKeepsUserMessageShape(t *testing.T) {
 	p, m := newFaux(t)
 	p.Set(faux.Say("noticed"))
 	log := &sessions.MemoryLog{}
-	a := newAgent(t, p, m, func(c *agent.Config) { c.NewContext = func() sessions.Writer { return log } })
+	a := newAgent(t, p, m, func(c *agent.Config) { c.NewContext = func() (sessions.Writer, error) { return log, nil } })
 	defer func() { require.NoError(t, a.Dispose()) }()
 
 	text := protocol.SystemReminder("Background job bash-1 finished")

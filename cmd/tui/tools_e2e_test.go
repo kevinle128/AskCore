@@ -29,6 +29,7 @@ import (
 	"AskCore/internal/app"
 	"AskCore/internal/jobs"
 	"AskCore/internal/providers/anthropic"
+	"AskCore/internal/sessions"
 )
 
 // The helpers below serve the end-to-end tests of the built-in tools. The
@@ -818,7 +819,7 @@ func TestPrintReadImageForNonVisionModelAddsNote(t *testing.T) {
 		return ""
 	}
 	o := options{provider: anthropic.ProviderID, model: anthropic.ModelID, transport: m}
-	ag, jt, err := newNativeAgentOn(o, getenv, nil, app.AgentSpec{SessionID: newSessionID(), Cwd: repo, Start: row}, stream)
+	ag, jt, err := newNativeAgentOn(o, getenv, nil, app.AgentSpec{SessionID: sessions.NewID(), Cwd: repo, Start: row}, stream)
 	require.NoError(t, err)
 
 	var stdout, stderr bytes.Buffer
@@ -1584,7 +1585,7 @@ func TestPrintExitKillsBackgroundJobs(t *testing.T) {
 func orphanJobAgent(t *testing.T, o options) {
 	t.Helper()
 	getenv := func(string) string { return "" }
-	ag, jt, err := newNativeAgentOn(o, getenv, nil, app.AgentSpec{SessionID: newSessionID(), Cwd: t.TempDir()}, nil)
+	ag, jt, err := newNativeAgentOn(o, getenv, nil, app.AgentSpec{SessionID: sessions.NewID(), Cwd: t.TempDir()}, nil)
 	require.NoError(t, err)
 	t.Cleanup(func() { _ = ag.Dispose() })
 	// Nobody waits for the job, so its end produces a notice.

@@ -794,7 +794,7 @@ func TestAbortDropsPendingSteering(t *testing.T) {
 		log := &sessions.MemoryLog{}
 		a = newAgent(t, p, m, func(c *agent.Config) {
 			c.Tools = registry(t, tool)
-			c.NewContext = func() sessions.Writer { return log }
+			c.NewContext = func() (sessions.Writer, error) { return log, nil }
 		})
 
 		require.NoError(t, a.Prompt(context.Background(), user("go")))
@@ -1042,7 +1042,7 @@ func TestQueuedMessageIsIsolatedFromCaller(t *testing.T) {
 	log := &sessions.MemoryLog{}
 	a := newAgent(t, p, m, func(c *agent.Config) {
 		c.Pipeline = hooks
-		c.NewContext = func() sessions.Writer { return log }
+		c.NewContext = func() (sessions.Writer, error) { return log, nil }
 	})
 	streaming := make(chan struct{})
 	a.Subscribe(signalOn("message_update(text_delta)", streaming))

@@ -49,7 +49,10 @@ func TestAfterToolContextAppendedAfterAllResults(t *testing.T) {
 	h.OnAfterTool(func(_ context.Context, in pipeline.ToolResultInfo, _ nextAfter) (*pipeline.AfterToolCallResult, error) {
 		return &pipeline.AfterToolCallResult{Terminate: ptr(true), AddedContext: []protocol.UserMessage{user("context " + in.Call.ID).(protocol.UserMessage)}}, nil
 	})
-	a := newAgent(t, p, m, func(c *agent.Config) { c.Pipeline = h; c.NewContext = func() sessions.Writer { return log } })
+	a := newAgent(t, p, m, func(c *agent.Config) {
+		c.Pipeline = h
+		c.NewContext = func() (sessions.Writer, error) { return log, nil }
+	})
 	defer func() { require.NoError(t, a.Dispose()) }()
 	require.NoError(t, a.Prompt(context.Background(), user("go")))
 	var ordered []string
@@ -86,7 +89,7 @@ func TestContextAfterToolAbortWaitsForNextSend(t *testing.T) {
 			a = newAgent(t, p, m, func(c *agent.Config) {
 				c.Tools = registry(t, tool)
 				c.Pipeline = h
-				c.NewContext = func() sessions.Writer { return log }
+				c.NewContext = func() (sessions.Writer, error) { return log, nil }
 			})
 			defer func() { require.NoError(t, a.Dispose()) }()
 			require.NoError(t, a.Prompt(context.Background(), user("go")))

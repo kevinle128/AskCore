@@ -34,7 +34,7 @@ func TestAdapterInitializeGateAndCapabilities(t *testing.T) {
 	p.ok("initialize", map[string]any{"protocolVersion": 1}, &res)
 	require.EqualValues(t, 1, res["protocolVersion"])
 	caps := res["agentCapabilities"].(map[string]any)
-	require.NotEqual(t, true, caps["loadSession"], "session/load is not available")
+	require.Equal(t, true, caps["loadSession"], "session/load is available")
 	prompt := caps["promptCapabilities"].(map[string]any)
 	require.Equal(t, true, prompt["image"])
 	require.NotEqual(t, true, prompt["audio"])
@@ -251,7 +251,7 @@ func TestAdapterRequestCancellationWithStringID(t *testing.T) {
 func TestAdapterNoStartFailureReturnsMappedErrorAndNextPromptIsFree(t *testing.T) {
 	secret := "log fixture failure"
 	cfg := testConfig(says("one", "two"), func(c *agent.Config) {
-		c.NewContext = func() sessions.Writer { return &hostBrokenLog{} }
+		c.NewContext = func() (sessions.Writer, error) { return &hostBrokenLog{}, nil }
 	})
 	p := newAdapterPeer(t, cfg, nil)
 	sid := p.start()
@@ -341,9 +341,7 @@ func TestAdapterDeferredMethodsAreExplicitlyUnsupported(t *testing.T) {
 		require.Equal(t, protocol.ACPErrUnsupported, f.errKind(t), m)
 		require.Equal(t, -32601, f.Error.Code)
 	}
-	f := p.call("session/load", map[string]any{"sessionId": sid, "cwd": "/", "mcpServers": []any{}})
-	require.Equal(t, -32601, f.Error.Code)
-	f = p.call("_ask/session/nope", map[string]any{"sessionId": sid})
+	f := p.call("_ask/session/nope", map[string]any{"sessionId": sid})
 	require.Equal(t, -32601, f.Error.Code)
 	for _, m := range []string{"session/list", "session/resume", "logout", "session/set_mode", "session/set_config_option"} {
 		f = p.call(m, map[string]any{"sessionId": sid, "cwd": "/", "modeId": "m", "configId": "c", "value": "v", "mcpServers": []any{}})

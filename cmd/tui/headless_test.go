@@ -23,6 +23,7 @@ import (
 
 	"AskCore/internal/agent"
 	"AskCore/internal/providers/anthropic"
+	"AskCore/internal/sessions"
 	"AskCore/internal/settings"
 	"AskCore/pkg/protocol"
 )
@@ -280,7 +281,7 @@ func TestPrintBadPaceEnv(t *testing.T) {
 	assert.Equal(t, result{"", "Error: ASK_FAUX_TPS must be a non-negative number, got \"fast\"\n", 1}, got)
 }
 
-var volatileFields = regexp.MustCompile(`"(ts|timestamp)":\d+|"(input|cacheWrite|totalTokens)":\d+|"runId":"[0-9a-f]{32}"|"sessionId":"[0-9a-fA-F-]{36}"|"(cycleId|attemptId)":"[0-9a-f]{32}"`)
+var volatileFields = regexp.MustCompile(`"(ts|timestamp)":\d+|"(input|cacheWrite|totalTokens)":\d+|"runId":"[0-9a-f]{32}"|"sessionId":"\d{19}"|"(cycleId|attemptId)":"[0-9a-f]{32}"`)
 
 // normalize replaces the clock, run, session, cycle and attempt id values, which change per run.
 // It also zeroes the faux token estimate of the input side, which grows with the length of the system prompt (it holds the cwd).
@@ -314,7 +315,7 @@ func TestHeadlessAssignsSessionID(t *testing.T) {
 	require.NoError(t, ag.Prompt(context.Background(), protocol.UserMessage{
 		Content: []protocol.UserBlock{protocol.Text{Text: "hello"}},
 	}))
-	assert.Regexp(t, `^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$`, sid)
+	assert.Regexp(t, `^\d{19}$`, sid)
 }
 
 func TestJSONHelloLines(t *testing.T) {
@@ -337,14 +338,24 @@ func TestJSONHelloLines(t *testing.T) {
 {"seq":15,"ts":0,"sessionId":"","runId":"R","type":"agent_end","messages":[{"role":"user","content":[{"type":"text","text":"hello"}],"timestamp":0},{"role":"assistant","content":[{"type":"text","text":"hello"}],"api":"faux","provider":"faux","model":"faux-1","thinkingLevel":"default","usage":{"input":2745,"output":2,"cacheRead":0,"cacheWrite":2745,"totalTokens":5492,"cost":{"input":0,"output":0,"cacheRead":0,"cacheWrite":0,"total":0}},"stopReason":"stop","timestamp":0}],"willRetry":false}
 {"seq":16,"ts":0,"sessionId":"","runId":"R","type":"agent_settled"}
 `
-	assert.Equal(t, result{normalize(want), "", 0}, result{normalize(got.stdout), got.stderr, got.code})
+	header, events, found := strings.Cut(got.stdout, "\n")
+	require.True(t, found)
+	_, err := sessions.DecodeHeader([]byte(header))
+	require.NoError(t, err, "the stream starts with the session record")
+	assert.Equal(t, result{normalize(want), "", 0}, result{normalize(events), got.stderr, got.code})
 }
 
 func decodeJSONL(t *testing.T, stdout string) []protocol.Event {
 	t.Helper()
 	require.True(t, strings.HasSuffix(stdout, "\n"), "the stream ends with LF")
 	var evs []protocol.Event
-	for _, line := range strings.Split(strings.TrimSuffix(stdout, "\n"), "\n") {
+	lines := strings.Split(strings.TrimSuffix(stdout, "\n"), "\n")
+	// A run of the whole command starts with the session record. A run of
+	// the stream alone has none.
+	if _, err := sessions.DecodeHeader([]byte(lines[0])); err == nil {
+		lines = lines[1:]
+	}
+	for _, line := range lines {
 		ev, err := protocol.DecodeEvent([]byte(line))
 		require.NoError(t, err, "line %q", line)
 		evs = append(evs, ev)

@@ -30,7 +30,10 @@ ask                       # full-screen TUI; connects to the local leader, start
 ask -p "Say hello."       # one prompt, headless; the default provider is the demo provider faux
 ask auth login --provider anthropic --method api-key   # save a provider sign-in
 ask -p "Say hello." --provider anthropic
+ask -c                    # continue the last saved session of this folder (also: ask -p -c "next")
 ```
+
+Every run saves its session under `<ASK_HOME>/sessions`. Use `--session <id>` to continue one session, and `--no-session` to save nothing; see [Sessions](docs/cli.md#sessions).
 
 With no usable provider, the TUI starts with no model. Type `/providers` to sign in. Details are in [docs/cli.md](docs/cli.md).
 

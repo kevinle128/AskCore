@@ -23,6 +23,7 @@ Start with the [project README](../README.md). Rules for changes and docs are in
 | [adr/0004-agent-owned-async-task-runtime.md](adr/0004-agent-owned-async-task-runtime.md) | The Agent owns async tasks and receives their completions by push through `Agent.Notify`. | contributor |
 | [adr/0004-leader-drivers-output-and-sdk-copy.md](adr/0004-leader-drivers-output-and-sdk-copy.md) | Leader drivers, output queues, version gate, patched ACP SDK copy. | contributor |
 | [adr/0005-shell-jobs-use-the-notify-port.md](adr/0005-shell-jobs-use-the-notify-port.md) | Shell jobs send their notices through the notify port of their conversation; `ask -p` waits for background work. | contributor |
+| [adr/0006-session-logs-as-jsonl-files.md](adr/0006-session-logs-as-jsonl-files.md) | Session logs are JSONL files behind `store.SessionStore`, with one `flock` for each session and snowflake ids; a SQLite backend can follow. | contributor |
 
 ## Package documentation
 

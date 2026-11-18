@@ -11,9 +11,9 @@ type callKey struct {
 	id        string
 }
 
-// repairTools completes only a still-open turn that this run opened.
-func repairTools(log sessions.Writer, start int) error {
-	entries := log.Entries()
+// openTurn returns the position of the TurnOpened that no TurnClosed follows,
+// or -1 when no turn is open.
+func openTurn(entries []sessions.Entry) int {
 	open := -1
 	for i, e := range entries {
 		switch e.(type) {
@@ -23,9 +23,69 @@ func repairTools(log sessions.Writer, start int) error {
 			open = -1
 		}
 	}
+	return open
+}
+
+// openCycle returns the ID of the cycle that no CycleClosed follows, or "".
+func openCycle(entries []sessions.Entry) string {
+	id := ""
+	for _, e := range entries {
+		switch v := e.(type) {
+		case sessions.CycleOpened:
+			id = v.CycleID
+		case sessions.CycleClosed:
+			if v.CycleID == id {
+				id = ""
+			}
+		}
+	}
+	return id
+}
+
+// repairTools completes only a still-open turn that this run opened.
+func repairTools(log sessions.Writer, start int) error {
+	entries := log.Entries()
+	open := openTurn(entries)
 	if open < start || open < 0 {
 		return nil
 	}
+	results := unfinishedToolResults(entries, open)
+	if len(results) == 0 {
+		return nil
+	}
+	if _, err := log.Append(results...); err != nil {
+		return fmt.Errorf("agent: repair tool results: %w", err)
+	}
+	return nil
+}
+
+// closeOpenScopes ends the turn and the cycle that a process left open in log,
+// as one commit: a result for each tool call of the turn that has none, then
+// the end of the turn, then the end of the cycle. A log that no process left
+// open is not changed.
+func closeOpenScopes(log sessions.Writer) error {
+	entries := log.Entries()
+	var repair []sessions.Entry
+	if open := openTurn(entries); open >= 0 {
+		repair = append(repair, unfinishedToolResults(entries, open)...)
+		repair = append(repair, sessions.TurnClosed{CycleID: entries[open].(sessions.TurnOpened).CycleID})
+	}
+	if id := openCycle(entries); id != "" {
+		repair = append(repair, sessions.CycleClosed{CycleID: id, Reason: string(ReasonAborted), Cause: causeInterrupted})
+	}
+	if len(repair) == 0 {
+		return nil
+	}
+	if _, err := log.Append(repair...); err != nil {
+		return logWriteError(err)
+	}
+	return nil
+}
+
+// unfinishedToolResults returns an error result for each tool call after the
+// turn that opened at position open and has no result: "outcome unknown" when
+// the log holds the intent to run it, else "not started".
+func unfinishedToolResults(entries []sessions.Entry, open int) []sessions.Entry {
 	recorded := map[callKey]bool{}
 	results := map[callKey]int{}
 	pending := map[string][]callKey{}
@@ -48,6 +108,7 @@ func repairTools(log sessions.Writer, start int) error {
 			}
 		}
 	}
+	var out []sessions.Entry
 	for i := open + 1; i < len(entries); i++ {
 		e, ok := entries[i].(sessions.MessageEntry)
 		if !ok {
@@ -67,10 +128,8 @@ func repairTools(log sessions.Writer, start int) error {
 			if recorded[key] {
 				text = "outcome unknown"
 			}
-			if _, err := log.Append(sessions.MessageEntry{Message: toolResultMessage(errorOutcome(c, text))}); err != nil {
-				return fmt.Errorf("agent: repair tool results: %w", err)
-			}
+			out = append(out, sessions.MessageEntry{Message: toolResultMessage(errorOutcome(c, text))})
 		}
 	}
-	return nil
+	return out
 }

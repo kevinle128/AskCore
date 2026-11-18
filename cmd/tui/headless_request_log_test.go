@@ -112,7 +112,7 @@ func TestJSONPrepareFailureHasNoUserMessageBeforeError(t *testing.T) {
 	registry := providers.NewRegistry()
 	registry.RegisterProvider(adapter)
 	log := &sessions.MemoryLog{}
-	ag, err := agent.New(agent.Config{Registry: registry, NewContext: func() sessions.Writer { return log }, LoopConfig: agent.LoopConfig{
+	ag, err := agent.New(agent.Config{Registry: registry, NewContext: func() (sessions.Writer, error) { return log, nil }, LoopConfig: agent.LoopConfig{
 		Model: anthropic.Model(), Prepare: func(providers.Model, providers.TranscriptRequest, providers.StreamOptions) (*providers.Prepared, error) {
 			return nil, errors.New("request preparation failed")
 		},

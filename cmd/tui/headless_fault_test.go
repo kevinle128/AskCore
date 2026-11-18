@@ -283,7 +283,7 @@ func testRefusedConnectionRecovery(t *testing.T, durable bool) {
 		require.NoError(t, storeErr)
 		service := &auth.Service{Store: store}
 		cfg := app.BindAuth(agent.Config{
-			Registry: registry, NewContext: func() sessions.Writer { return log },
+			Registry: registry, NewContext: func() (sessions.Writer, error) { return log, nil },
 			LoopConfig: agent.LoopConfig{Model: anthropic.Model(), Options: providers.StreamOptions{APIKey: "test-key", Reasoning: protocol.ThinkingMedium}, Wait: opts.wait},
 		}, service, registry)
 		ag, err = agent.New(cfg)

@@ -155,7 +155,7 @@ func runLifecycleFixture(t *testing.T, durable bool) {
 		require.NoError(t, storeErr)
 		service := &auth.Service{Store: store}
 		cfg := app.BindAuth(agent.Config{
-			Registry: registry, Tools: toolRegistry, NewContext: func() sessions.Writer { return log },
+			Registry: registry, Tools: toolRegistry, NewContext: func() (sessions.Writer, error) { return log, nil },
 			LoopConfig: agent.LoopConfig{Model: anthropic.Model(), Options: providers.StreamOptions{APIKey: "fixture-key", Reasoning: protocol.ThinkingMedium}, Wait: options.wait},
 		}, service, registry)
 		ag, err = agent.New(cfg)
@@ -365,7 +365,7 @@ func TestHeadlessPrintRetriesTransientFailureOnce(t *testing.T) {
 			}
 			log := &sessions.MemoryLog{}
 			var delays []time.Duration
-			ag, err := agent.New(agent.Config{Registry: registry, Tools: toolRegistry, NewContext: func() sessions.Writer { return log }, LoopConfig: agent.LoopConfig{Model: model, Wait: func(ctx context.Context, delay time.Duration) error { delays = append(delays, delay); return ctx.Err() }}})
+			ag, err := agent.New(agent.Config{Registry: registry, Tools: toolRegistry, NewContext: func() (sessions.Writer, error) { return log, nil }, LoopConfig: agent.LoopConfig{Model: model, Wait: func(ctx context.Context, delay time.Duration) error { delays = append(delays, delay); return ctx.Err() }}})
 			require.NoError(t, err)
 			var stdout, stderr bytes.Buffer
 			require.Equal(t, 0, runHeadless(ag, []string{"recover"}, mode, &stdout, &stderr, nil), stderr.String())

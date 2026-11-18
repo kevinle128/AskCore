@@ -110,12 +110,12 @@ func TestPrefilledLogIsNotSeededTwice(t *testing.T) {
 	t.Parallel()
 	p, m := newFaux(t)
 	log := &sessions.MemoryLog{}
-	_, err := log.Append(sessions.MessageEntry{Message: seedItem(protocol.CustomContextFiles, "old ctx")}, sessions.MessageEntry{Message: user("earlier")})
+	_, err := log.Append(sessions.MessageEntry{Message: seedItem(protocol.CustomContextFiles, "ctx")}, sessions.MessageEntry{Message: user("earlier")})
 	require.NoError(t, err)
 
 	a := newAgent(t, p, m, edits(withLog(log), withSeed(twoSeeds()...)))
 
-	assert.Equal(t, []string{"old ctx", "earlier", "skills"}, messageTexts(a.State().Messages), "only the missing type is added")
+	assert.Equal(t, []string{"ctx", "earlier", "skills"}, messageTexts(a.State().Messages), "only the missing type is added")
 	require.NoError(t, a.Reset())
 	assert.Len(t, log.Entries(), 3, "a shared log that holds both types gets nothing more")
 }
@@ -182,7 +182,7 @@ func TestSeedWriteFailureFailsNew(t *testing.T) {
 	p, m := newFaux(t)
 	_, err := agent.New(agent.Config{
 		LoopConfig: agent.LoopConfig{Model: m, Stream: p.Stream},
-		NewContext: func() sessions.Writer { return &failingLog{} },
+		NewContext: func() (sessions.Writer, error) { return &failingLog{}, nil },
 		Seed:       twoSeeds(),
 	})
 	require.ErrorContains(t, err, "disk full")

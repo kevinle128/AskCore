@@ -76,7 +76,7 @@ func TestRejectedInputIsAcknowledgedOnce(t *testing.T) {
 	log := &sessions.MemoryLog{}
 	a := newAgent(t, p, m, func(c *agent.Config) {
 		c.Pipeline = hooks
-		c.NewContext = func() sessions.Writer { return log }
+		c.NewContext = func() (sessions.Writer, error) { return log, nil }
 	})
 
 	require.NoError(t, a.Prompt(context.Background(), user("a"), user("b")))

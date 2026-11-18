@@ -263,4 +263,3 @@ func TestConnectFinishSignalDuringPromptIsNotConnectionLost(t *testing.T) {
 		_ = pw.Close()
 	}
 }
-

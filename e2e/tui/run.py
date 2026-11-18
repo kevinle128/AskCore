@@ -253,7 +253,7 @@ def product_hashes():
 ASK_CASES = ['ask-idle', 'ask-turn', 'ask-resize', 'ask-selector', 'ask-providers', 'ask-mouse',
              'ask-exit-quit', 'ask-exit-ctrl-c', 'ask-exit-sigterm', 'ask-exit-sighup',
              'ask-copy', 'ask-in-process', 'ask-trust-prompt', 'ask-trust-prompt-no-leader',
-             'ask-model-cycle', 'ask-thinking-default']
+             'ask-model-cycle', 'ask-thinking-default', 'ask-resume']
 # Cases that run with the in-process agent and start no leader.
 IN_PROCESS_CASES = {'ask-in-process', 'ask-trust-prompt-no-leader'}
 # In-process cases whose ASK_HOME is a symlink, which the leader connect refuses as an unsafe
@@ -1410,6 +1410,37 @@ def ask_thinking_default(session):
     return {'start': 'default', 'after_one_press': 'off', 'after_eight_presses': 'default'}
 
 
+def ask_resume(session):
+    """`ask -c` shows the conversation of the last run, and a new prompt continues it."""
+    idle_screen(session)
+    send_echo_turn(session)
+    session.quit()
+    # The first terminal session ends before the second starts, because the CLI shares one daemon.
+    session.close()
+    second = AskSession(session.cli, session.name + '-continue', session.backend, session.binary, session.work,
+                        session.artifacts / 'continue', cols=session.columns, rows=session.rows, env=session.env,
+                        env_names=session.env_names, ready=ask_ready, ready_timeout=30, args=('-c',))
+    try:
+        second.binary, second.env, second.home, second.work = session.binary, session.env, session.home, session.work
+        # The old prompt and its reply are on the screen; the tool step shows as one row.
+        state = second.wait(lambda s: any(row_text(line) == ECHO_REPLY for line in screen_lines(s)))
+        pane = pane_rows(screen_lines(state), second.columns)
+        assert any(line.lstrip(' ❯').startswith('echo out-01') for line in pane), f'the old prompt is missing: {pane!r}'
+        assert sum(bool(TOOL_ROW.match(line)) for line in pane) == 1, f'expected the old tool row: {pane!r}'
+        assert_link(second.binary, second.env, False)
+        second.capture('continued')
+        # The loader drives: a new prompt runs on the old conversation.
+        second.write('and the pear')
+        second.key('enter')
+        second.wait(lambda s: sum(row_text(line) == 'and the pear' for line in screen_lines(s)) >= 1 and
+                    len(USAGE_ROW.findall(s['text'])) >= 2, timeout=40)
+        second.wait_empty_prompt()
+        second.quit()
+    finally:
+        second.close()
+    return {'continued': 'old prompt, tool row and reply shown', 'new_prompt': 'answered'}
+
+
 CASES = {
     'ask-idle': (ask_idle, ASK_COLUMNS, ASK_ROWS, {}),
     'ask-turn': (ask_turn, ASK_COLUMNS, ASK_ROWS, {}),
@@ -1429,6 +1460,7 @@ CASES = {
     # The leader gets no model list from the network, so the scope comes from the file only.
     'ask-model-cycle': (ask_model_cycle, ASK_COLUMNS, ASK_ROWS, {'ASK_DISABLE_MODEL_REFRESH': '1'}),
     'ask-thinking-default': (ask_thinking_default, ASK_COLUMNS, ASK_ROWS, {'ASK_DISABLE_MODEL_REFRESH': '1'}),
+    'ask-resume': (ask_resume, ASK_COLUMNS, ASK_ROWS, {}),
 }
 assert list(CASES) == ASK_CASES
 

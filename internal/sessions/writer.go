@@ -1,6 +1,15 @@
 package sessions
 
-import "AskCore/pkg/protocol"
+import (
+	"errors"
+
+	"AskCore/pkg/protocol"
+)
+
+// ErrWriterLost is returned by Append when the writer can no longer append:
+// the stored log moved on (a sequence mismatch) or a write failed. The writer
+// stays failed until the session is opened again.
+var ErrWriterLost = errors.New("sessions: writer lost")
 
 // CommitRef says where an Append wrote: the entries of the call have the log
 // positions Start up to, but not including, End.

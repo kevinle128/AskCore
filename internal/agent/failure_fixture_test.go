@@ -39,7 +39,7 @@ func TestWriteFailureWithUncertainToolOutcomeRunsNoToolAgain(t *testing.T) {
 	}}
 	a := newAgent(t, p, model, func(config *agent.Config) {
 		config.Tools = registry(t, tool)
-		config.NewContext = func() sessions.Writer { return log }
+		config.NewContext = func() (sessions.Writer, error) { return log, nil }
 	})
 	t.Cleanup(func() { require.NoError(t, a.Dispose()) })
 

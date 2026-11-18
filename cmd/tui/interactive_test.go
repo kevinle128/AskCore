@@ -56,6 +56,10 @@ type askTerm struct {
 type askTermOptions struct {
 	// typeAhead is written to the terminal before the process starts.
 	typeAhead string
+	// args are the command line arguments of the process.
+	args []string
+	// dir is the working directory. Empty makes a new temporary one.
+	dir string
 }
 
 // interactiveEnv is the environment of an interactive test process.
@@ -83,8 +87,11 @@ func startAskTerm(t *testing.T, bin, home string, o askTermOptions, extraEnv ...
 		require.NoError(t, err)
 	}
 
-	cmd := exec.Command(bin)
-	cmd.Dir = t.TempDir()
+	cmd := exec.Command(bin, o.args...)
+	cmd.Dir = o.dir
+	if cmd.Dir == "" {
+		cmd.Dir = t.TempDir()
+	}
 	cmd.Stdin, cmd.Stdout, cmd.Stderr = slave, slave, a.stderr
 	cmd.Env = interactiveEnv(home, extraEnv...)
 	// The process has no controlling terminal. When the session leader of a

@@ -23,6 +23,14 @@ var (
 	// ErrOutputFailed marks a failure of the connection output.
 	ErrOutputFailed = errors.New("acp: output failed")
 
+	// ErrSessionInUse means a stored session cannot be opened for writing: this
+	// host runs it, or another process holds it. A Factory wraps its own error
+	// with it when the store reports an owned session.
+	ErrSessionInUse = errors.New("acp: session in use")
+	// ErrUnknownSession is the error that a Factory returns for a stored session
+	// that does not exist in the folder of the request.
+	ErrUnknownSession = errUnknownSession
+
 	errUnknownSession = errors.New("acp: unknown session")
 	errUnknownSub     = errors.New("acp: unknown subscription")
 	errNotInitialized = errors.New("acp: not initialized")
@@ -52,6 +60,8 @@ func classify(err error) protocol.ACPErrorKind {
 		return protocol.ACPErrUnknownSession
 	case errors.Is(err, errUnknownSub):
 		return protocol.ACPErrUnknownSubscription
+	case errors.Is(err, ErrSessionInUse):
+		return protocol.ACPErrSessionInUse
 	case errors.Is(err, errNotInitialized):
 		return protocol.ACPErrNotInitialized
 	case errors.Is(err, errUnsupported):

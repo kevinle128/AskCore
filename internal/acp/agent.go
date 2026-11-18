@@ -132,7 +132,10 @@ type outbound struct {
 	closer io.Closer
 }
 
-var _ sdk.Agent = (*Adapter)(nil)
+var (
+	_ sdk.Agent       = (*Adapter)(nil)
+	_ sdk.AgentLoader = (*Adapter)(nil)
+)
 
 // NewAdapter returns an adapter. Call Bind before the connection takes input.
 func NewAdapter(ctx context.Context, cfg Config) (*Adapter, error) {
@@ -245,13 +248,15 @@ func (a *Adapter) session(id string) (*Session, error) {
 
 // Initialize negotiates the wire version and lists what the adapter can do.
 // The adapter speaks version 1 whatever the client asks for. It lists no
-// capability that has no owner.
+// capability that has no owner. Every session is stored when the Factory saves
+// it, so session/load is listed.
 func (a *Adapter) Initialize(_ context.Context, _ sdk.InitializeRequest) (sdk.InitializeResponse, error) {
 	a.initialized.Store(true)
 	info := a.cfg.Info
 	return sdk.InitializeResponse{
 		ProtocolVersion: sdk.ProtocolVersion(WireVersion),
 		AgentCapabilities: sdk.AgentCapabilities{
+			LoadSession:         true,
 			PromptCapabilities:  sdk.PromptCapabilities{Image: true},
 			SessionCapabilities: sdk.SessionCapabilities{Close: &sdk.SessionCloseCapabilities{}},
 		},
@@ -297,38 +302,33 @@ func (a *Adapter) Authenticate(ctx context.Context, req sdk.AuthenticateRequest)
 	return sdk.AuthenticateResponse{}, nil
 }
 
-// NewSession builds one independent Agent and publishes the session.
-func (a *Adapter) NewSession(ctx context.Context, req sdk.NewSessionRequest) (sdk.NewSessionResponse, error) {
-	if err := a.gate(); err != nil {
-		return sdk.NewSessionResponse{}, requestError(err)
-	}
+// startRequest checks the parameters that session/new and session/load share
+// and reads their _meta.
+func (a *Adapter) startRequest(cwd string, mcp []sdk.McpServer, dirs []string, meta map[string]any) (route *protocol.ACPRouteMeta, trust protocol.ACPTrustOverride, flags protocol.ACPSessionOptions, err error) {
 	switch {
-	case len(req.McpServers) > 0:
-		return sdk.NewSessionResponse{}, requestError(newKindError(protocol.ACPErrInvalidParams, "mcp servers are not supported"))
-	case len(req.AdditionalDirectories) > 0:
-		return sdk.NewSessionResponse{}, requestError(newKindError(protocol.ACPErrInvalidParams, "additional directories are not supported"))
-	case !filepath.IsAbs(req.Cwd):
-		return sdk.NewSessionResponse{}, requestError(newKindError(protocol.ACPErrInvalidParams, "cwd must be an absolute path"))
+	case len(mcp) > 0:
+		return nil, "", flags, newKindError(protocol.ACPErrInvalidParams, "mcp servers are not supported")
+	case len(dirs) > 0:
+		return nil, "", flags, newKindError(protocol.ACPErrInvalidParams, "additional directories are not supported")
+	case !filepath.IsAbs(cwd):
+		return nil, "", flags, newKindError(protocol.ACPErrInvalidParams, "cwd must be an absolute path")
 	}
-	route, err := routeFromMeta(req.Meta)
+	route, err = routeFromMeta(meta)
 	if err == nil {
 		err = a.needRoute(route)
 	}
-	var trust protocol.ACPTrustOverride
 	if err == nil {
-		trust, err = trustFromMeta(req.Meta)
+		trust, err = trustFromMeta(meta)
 	}
-	var flags protocol.ACPSessionOptions
 	if err == nil {
-		flags, err = flagsFromMeta(req.Meta)
+		flags, err = flagsFromMeta(meta)
 	}
-	if err != nil {
-		return sdk.NewSessionResponse{}, requestError(err)
-	}
-	s, err := a.host.NewSessionWith(ctx, SessionRequest{Cwd: req.Cwd, Trust: trust, Flags: flags})
-	if err != nil {
-		return sdk.NewSessionResponse{}, requestError(err)
-	}
+	return route, trust, flags, err
+}
+
+// publish hands the start facts that the Factory made to the new session, and
+// clears the model when its provider cannot serve now.
+func (a *Adapter) publish(ctx context.Context, s *Session) {
 	if a.cfg.StartFallback != nil {
 		s.setFallback(a.cfg.StartFallback(s.ID))
 	}
@@ -349,25 +349,51 @@ func (a *Adapter) NewSession(ctx context.Context, req sdk.NewSessionRequest) (sd
 		}
 		s.commit.Unlock()
 	}
-	res := sdk.NewSessionResponse{SessionId: sdk.SessionId(s.ID)}
+}
+
+// startMeta is the _meta of the result of session/new and session/load: the
+// driver generation for the router, and the acknowledgement of the flags. adopt
+// says that the caller drives the session it made; a caller that joins a
+// session that runs already leaves its driver alone.
+func startMeta(s *Session, route *protocol.ACPRouteMeta, flags protocol.ACPSessionOptions, adopt bool) map[string]any {
+	var meta map[string]any
 	if route != nil {
 		// The router needs the generation that the host committed. The editor link has no router.
-		s.setDriver(route)
-		res.Meta = map[string]any{protocol.ACPRouteMetaKey: protocol.ACPRouteMeta{DriverGen: s.Gen()}}
+		if adopt {
+			s.setDriver(route)
+		}
+		meta = map[string]any{protocol.ACPRouteMetaKey: protocol.ACPRouteMeta{DriverGen: s.Gen()}}
 	}
 	if !flags.IsZero() {
-		if res.Meta == nil {
-			res.Meta = map[string]any{}
+		if meta == nil {
+			meta = map[string]any{}
 		}
-		res.Meta[protocol.ACPSessionOptionsMetaKey] = true
+		meta[protocol.ACPSessionOptionsMetaKey] = true
 		// The Factory applied the model options or failed the start, so the
 		// echo is the request. An older host sends no echo, which tells a
 		// client that it dropped them.
-		if applied := flags.ModelOptions(); !applied.IsZero() {
-			res.Meta[protocol.ACPAppliedOptionsMetaKey] = applied
+		if applied := flags.ModelOptions(); adopt && !applied.IsZero() {
+			meta[protocol.ACPAppliedOptionsMetaKey] = applied
 		}
 	}
-	return res, nil
+	return meta
+}
+
+// NewSession builds one independent Agent and publishes the session.
+func (a *Adapter) NewSession(ctx context.Context, req sdk.NewSessionRequest) (sdk.NewSessionResponse, error) {
+	if err := a.gate(); err != nil {
+		return sdk.NewSessionResponse{}, requestError(err)
+	}
+	route, trust, flags, err := a.startRequest(req.Cwd, req.McpServers, req.AdditionalDirectories, req.Meta)
+	if err != nil {
+		return sdk.NewSessionResponse{}, requestError(err)
+	}
+	s, err := a.host.NewSessionWith(ctx, SessionRequest{Cwd: req.Cwd, Trust: trust, Flags: flags})
+	if err != nil {
+		return sdk.NewSessionResponse{}, requestError(err)
+	}
+	a.publish(ctx, s)
+	return sdk.NewSessionResponse{SessionId: sdk.SessionId(s.ID), Meta: startMeta(s, route, flags, true)}, nil
 }
 
 // userMessage converts prompt blocks. It accepts text and image blocks only.

@@ -68,7 +68,7 @@ func TestDisposeIsMemoized(t *testing.T) {
 	boom := errors.New("close failed")
 	p, m := newFaux(t)
 	log := &closingLog{MemoryLog: &sessions.MemoryLog{}, err: boom}
-	a := newAgent(t, p, m, func(c *agent.Config) { c.NewContext = func() sessions.Writer { return log } })
+	a := newAgent(t, p, m, func(c *agent.Config) { c.NewContext = func() (sessions.Writer, error) { return log, nil } })
 	rec := &recorder{}
 	a.Subscribe(rec.emit)
 

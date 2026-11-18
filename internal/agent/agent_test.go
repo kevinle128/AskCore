@@ -388,7 +388,7 @@ func TestAgentContextSource(t *testing.T) {
 	var seen [][]string
 	a := newAgent(t, p, m, func(c *agent.Config) {
 		c.SystemPrompt = "be brief"
-		c.NewContext = func() sessions.Writer { return log }
+		c.NewContext = func() (sessions.Writer, error) { return log, nil }
 		registryOf(c).OnPrepareRequest(func(_ context.Context, r pipeline.Request, _ pipeline.Next[pipeline.Request, *pipeline.RequestUpdate]) (*pipeline.RequestUpdate, error) {
 			seen = append(seen, roles(r.Context.Messages))
 			return nil, nil
@@ -462,7 +462,7 @@ func TestAgentContinue(t *testing.T) {
 	p.Set(faux.Say("answer"))
 	log := &sessions.MemoryLog{}
 	a := newAgent(t, p, m, func(c *agent.Config) {
-		c.NewContext = func() sessions.Writer { return log }
+		c.NewContext = func() (sessions.Writer, error) { return log, nil }
 	})
 	rec := &recorder{}
 	a.Subscribe(rec.emit)
@@ -583,7 +583,7 @@ func TestPrepareRequestSeesProjectedContextFirst(t *testing.T) {
 	var seen []string
 	a := newAgent(t, p, m, func(c *agent.Config) {
 		c.SystemPrompt = "be brief"
-		c.NewContext = func() sessions.Writer { return log }
+		c.NewContext = func() (sessions.Writer, error) { return log, nil }
 		registryOf(c).OnPrepareRequest(func(_ context.Context, r pipeline.Request, _ pipeline.Next[pipeline.Request, *pipeline.RequestUpdate]) (*pipeline.RequestUpdate, error) {
 			seen = roles(r.Context.Messages)
 			return nil, nil
