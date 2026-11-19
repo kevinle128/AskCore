@@ -268,7 +268,9 @@ func TestStartErrorMapsClientCausedFailuresToInvalidParams(t *testing.T) {
 
 func TestSessionWarningsKeepEachSkillLineWithinTheByteLimitIncludingThePrefix(t *testing.T) {
 	// A multibyte name makes a cut inside a rune possible at any byte offset.
-	user := map[string]string{"skills/" + strings.Repeat("ü", 200) + "/SKILL.md": "no frontmatter"}
+	// 120 runes are 240 bytes: below the 255-byte file name limit of Linux,
+	// and the warning line with its path is still longer than 256 bytes.
+	user := map[string]string{"skills/" + strings.Repeat("ü", 120) + "/SKILL.md": "no frontmatter"}
 	tree := newSessionTree(t, nil, user)
 	start := tree.prepare(t, workspace.OverrideDeny, protocol.ACPSessionOptions{})
 

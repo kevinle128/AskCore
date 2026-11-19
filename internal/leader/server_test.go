@@ -290,8 +290,9 @@ func TestServerIdleShutdownWaitsForOpenQuestion(t *testing.T) {
 	req := a.waitIncoming("session/request_permission", 1)[0]
 
 	ask := func() protocol.LeaderFrame {
+		seen := controlAnswers(a)
 		a.write(protocol.LeaderFrame{Type: protocol.LeaderFrameControl, Payload: marshalPlain(protocol.LeaderControl{Command: protocol.LeaderControlShutdown, IfIdle: true})})
-		return waitFrameTypeAfter(t, a)
+		return waitControlAnswerAfter(t, a, seen)
 	}
 	f := ask()
 	require.Equal(t, protocol.LeaderFrameError, f.Type, "an open question is work, whatever the host says")
@@ -303,8 +304,10 @@ func TestServerIdleShutdownWaitsForOpenQuestion(t *testing.T) {
 
 	a.sendRaw(answer(req.id, "allow"))
 	eventually(t, "answered", func() bool { return len(h.agent.answersFor(`"q1"`)) == 1 })
-	f = ask()
-	require.Equal(t, protocol.LeaderFrameControlReply, f.Type)
+	// The router can still wait for the answer to a request of its own (the
+	// follow after session/new), so ask again until the leader is idle. A
+	// refused ifIdle shutdown leaves the leader running, so asking again is safe.
+	eventually(t, "shutdown accepted", func() bool { return ask().Type == protocol.LeaderFrameControlReply })
 	select {
 	case <-h.srv.Done():
 	case <-time.After(waitFor):
@@ -312,28 +315,36 @@ func TestServerIdleShutdownWaitsForOpenQuestion(t *testing.T) {
 	}
 }
 
-// waitFrameTypeAfter returns the next control answer (a reply or an error)
-// that arrives after the call, by counting the frames seen so far.
-func waitFrameTypeAfter(t *testing.T, c *testClient) protocol.LeaderFrame {
-	t.Helper()
-	isAnswer := func(f protocol.LeaderFrame) bool {
-		return f.Type == protocol.LeaderFrameControlReply || f.Type == protocol.LeaderFrameError
-	}
+// controlAnswers counts the control answers (a reply or an error) that c has
+// received so far. Count before the call is written: an answer can arrive
+// before a count made after the write, and the wait would then miss it.
+func controlAnswers(c *testClient) int {
 	c.mu.Lock()
-	seen := 0
+	defer c.mu.Unlock()
+	n := 0
 	for _, f := range c.frames {
-		if isAnswer(f) {
-			seen++
+		if isControlAnswer(f) {
+			n++
 		}
 	}
-	c.mu.Unlock()
+	return n
+}
+
+func isControlAnswer(f protocol.LeaderFrame) bool {
+	return f.Type == protocol.LeaderFrameControlReply || f.Type == protocol.LeaderFrameError
+}
+
+// waitControlAnswerAfter returns the first control answer after the first
+// seen answers.
+func waitControlAnswerAfter(t *testing.T, c *testClient, seen int) protocol.LeaderFrame {
+	t.Helper()
 	var out protocol.LeaderFrame
 	eventually(t, "control answer", func() bool {
 		c.mu.Lock()
 		defer c.mu.Unlock()
 		n := 0
 		for _, f := range c.frames {
-			if isAnswer(f) {
+			if isControlAnswer(f) {
 				n++
 				if n > seen {
 					out = f
