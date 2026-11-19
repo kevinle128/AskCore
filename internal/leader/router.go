@@ -921,7 +921,11 @@ func (r *router) finishJoin(c *client, restored Restored, out *rpcMessage, tag *
 		return
 	}
 	c.sendACP(stripRouteMeta(out), "", 0)
-	r.replayQuestions(c, s)
+	// A caller that detached while the load ran is no longer a member, so it
+	// must not see or answer the open questions.
+	if _, ok := c.members[s.id]; ok {
+		r.replayQuestions(c, s)
+	}
 }
 
 func (r *router) finishFollow(c *client, restored Restored, out *rpcMessage, tag *reqTag, failed bool) {

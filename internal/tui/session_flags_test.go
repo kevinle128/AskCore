@@ -109,3 +109,15 @@ func TestRefusedLoadOfOlderGenerationEndsTheProgram(t *testing.T) {
 	require.EqualError(t, m.StartError(), "connection lost")
 	require.True(t, m.quitting)
 }
+
+// A load that recorded its session before the link dropped does not end the
+// program: the reconnect restores that session.
+func TestFailedLoadOfOlderGenerationWithRecordedSessionKeepsRunning(t *testing.T) {
+	fc := newFakeClient()
+	m := New(Options{Client: fc, Profile: colorprofile.NoTTY, TickInterval: -1, Session: NewSessionOptions{Load: "42"}})
+	m.sv.gen = 3
+	cmd := m.sv.onNewSession(newSessionMsg{gen: 2, info: SessionInfo{ID: "42"}, err: errors.New("connection lost"), load: true})
+	require.Nil(t, cmd)
+	require.NoError(t, m.StartError())
+	require.False(t, m.quitting)
+}
