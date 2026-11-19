@@ -61,7 +61,7 @@ func (r *viewRig) sketchTurn(model string, tokens int64) {
 		assistantStart(model, 0),
 		textParts(0, reply),
 		assistantEndUsage(model, protocol.StopStop, 4200, usage, protocol.Text{Text: reply}),
-		&protocol.AgentEnd{}, &protocol.AgentSettled{},
+		&protocol.AgentEnd{}, settledAt(tokens),
 	)...)
 	r.h.waitText("take 1.2 s.")
 }
@@ -232,7 +232,7 @@ type footerState struct {
 func TestFooterRowForms(t *testing.T) {
 	inProcess := ConnInfo{Mode: ModeInProcess}
 	use := func(model string, tokens int64) func(s *sessionView) {
-		return func(s *sessionView) { s.modelID, s.ctxTokens = model, tokens }
+		return func(s *sessionView) { s.modelID, s.usage = model, ctxEstimate(tokens) }
 	}
 	// connected is the footer row of a session on gpt-5.4-mini. No link state
 	// changes it: the footer row names the work, not the connection.
@@ -250,7 +250,9 @@ func TestFooterRowForms(t *testing.T) {
 		{name: "unknown context window", set: use(opus49, 16_000),
 			at80: ` ⌂ ~/src/askcore                          anthropic/claude-opus-4-9 ◐ medium  ?`,
 			at40: "            anthropic/claude-opus-4-9 ?"},
-		{name: "context at 93 percent", set: func(s *sessionView) { s.modelID, s.ctxTokens, s.thinking = sonnet46, 930_000, protocol.ThinkingHigh },
+		{name: "context at 93 percent", set: func(s *sessionView) {
+			s.modelID, s.usage, s.thinking = sonnet46, ctxEstimate(930_000), protocol.ThinkingHigh
+		},
 			at80: ` ⌂ ~/src/askcore               anthropic/claude-sonnet-4-6 ◐ high  ▰▰▰▰▰▰▰▱ 93%`,
 			at40: "        anthropic/claude-sonnet-4-6 93%"},
 		{name: "link not up", set: func(s *sessionView) { s.opening, s.modelID = true, "" },
@@ -266,14 +268,14 @@ func TestFooterRowForms(t *testing.T) {
 			at80: ` ⌂ ~/src/askcore                                                       no model`,
 			at40: "                               no model"},
 		{name: "long directory gives way", set: func(s *sessionView) {
-			s.modelID, s.ctxTokens, s.thinking = sonnet46, 930_000, protocol.ThinkingHigh
+			s.modelID, s.usage, s.thinking = sonnet46, ctxEstimate(930_000), protocol.ThinkingHigh
 			s.cwd = "/home/u/src/github.com/kevinle128/askcore"
 		},
 			at80: ` ⌂ ~/…/askcore                 anthropic/claude-sonnet-4-6 ◐ high  ▰▰▰▰▰▰▰▱ 93%`,
 			at40: "        anthropic/claude-sonnet-4-6 93%"},
 		{name: "long model and long directory", set: func(s *sessionView) {
 			s.models = append(s.models, protocol.ACPModel{ModelID: tokenPlanFlash, Provider: "alibaba-token-plan", ID: "deepseek-v4.1-flash", ContextWindow: 128_000})
-			s.modelID, s.ctxTokens = tokenPlanFlash, 23_040
+			s.modelID, s.usage = tokenPlanFlash, ctxEstimate(23_040)
 			s.cwd = "/home/u/src/github.com/kevinle128/askcore"
 		},
 			at80: ` ⌂ ~/…/askcore             alibaba-token-plan/deepseek-v4.1-flash  ▰▱▱▱▱▱▱▱ 18%`,
@@ -310,7 +312,7 @@ func TestFooterRowNarrowingOrder(t *testing.T) {
 	m := footerModel(t, colorprofile.NoTTY)
 	s := m.sv
 	s.models = append(accountRows(), protocol.ACPModel{ModelID: tokenPlanFlash, Provider: "alibaba-token-plan", ID: "deepseek-v4.1-flash", ContextWindow: 128_000, Reasoning: true})
-	s.modelID, s.ctxTokens, s.thinking = tokenPlanFlash, 23_040, protocol.ThinkingHigh
+	s.modelID, s.usage, s.thinking = tokenPlanFlash, ctxEstimate(23_040), protocol.ThinkingHigh
 	s.cwd = "/home/u/src/github.com/kevinle128/askcore"
 	plain := func(w int) string { return strings.TrimRight(ansi.Strip(s.footerText(w)), " ") }
 
@@ -331,7 +333,7 @@ func TestFooterRowLastResortCut(t *testing.T) {
 	m := footerModel(t, colorprofile.NoTTY)
 	s := m.sv
 	s.models = append(accountRows(), protocol.ACPModel{ModelID: tokenPlanFlash, Provider: "alibaba-token-plan", ID: "deepseek-v4.1-flash", ContextWindow: 128_000})
-	s.modelID, s.ctxTokens = tokenPlanFlash, 23_040
+	s.modelID, s.usage = tokenPlanFlash, ctxEstimate(23_040)
 	got := strings.TrimRight(ansi.Strip(s.footerText(24)), " ")
 	require.Equal(t, "  alibaba-token-pl… 18%", got)
 	for w := 1; w <= 120; w++ {

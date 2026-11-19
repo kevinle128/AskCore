@@ -63,9 +63,16 @@ type Model struct {
 	Cost             Cost
 	// CostUnknown is true when no source gave a price for the model. Cost is
 	// then empty, and a session total that includes this model is incomplete.
+	// A row with no tiers is unknown too; PriceKnown reads both signs.
 	CostUnknown    bool
 	Compat         Compat
 	SamplingParams map[string]any
+}
+
+// PriceKnown reports whether the model has a price. A free model (tiers with
+// zero prices) is known. A row with no tiers, or one marked CostUnknown, is not.
+func (m Model) PriceKnown() bool {
+	return !m.CostUnknown && len(m.Cost.Tiers) > 0
 }
 
 func (m Model) Anthropic() (AnthropicCompat, bool) {

@@ -211,3 +211,29 @@ func TestModelUpdateEventCodec(t *testing.T) {
 	require.NoError(t, err)
 	assert.Equal(t, &ModelUpdate{Envelope: Envelope{Seq: 3, TS: 1, SessionID: "s"}}, back)
 }
+
+func TestAgentSettledUsageRoundTrip(t *testing.T) {
+	usage := &UsageTotals{
+		Total:         Usage{Input: 10, Output: 2, TotalTokens: 12},
+		Complete:      true,
+		CostComplete:  false,
+		ContextTokens: 42,
+		ContextWindow: 1000,
+	}
+	b, err := EncodeEvent(&AgentSettled{Envelope: env(3), Usage: usage})
+	require.NoError(t, err)
+	assert.Contains(t, string(b), `"usage":{"total":`)
+	assert.Contains(t, string(b), `"contextTokens":42`)
+
+	ev, err := DecodeEvent(b)
+	require.NoError(t, err)
+	assert.Equal(t, &AgentSettled{Envelope: env(3), Usage: usage}, ev)
+
+	// Without totals the field is left out, and a line without it decodes to nil.
+	b, err = EncodeEvent(&AgentSettled{Envelope: env(4)})
+	require.NoError(t, err)
+	assert.NotContains(t, string(b), "usage")
+	ev, err = DecodeEvent(b)
+	require.NoError(t, err)
+	assert.Nil(t, ev.(*AgentSettled).Usage)
+}

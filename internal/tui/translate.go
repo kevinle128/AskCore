@@ -644,11 +644,18 @@ func (t *Translator) writeError(code string, out *[]tea.Msg) {
 			msg = t.run.lastErr.text
 		}
 	}
-	if oneLine(msg) == "" {
-		msg = "The request failed."
-	}
 	kind, next := classifyError(code, provider)
-	emitAppend(out, t.nextID("e"), NewErrorBlock(ErrorHeadline(kind, sentence(providerErrorText(msg, provider))), next), true)
+	switch {
+	case code == codeContextWindow && oneLine(msg) == "":
+		msg = contextOverreportText
+	case code == codeContextWindow:
+		msg = contextOverflowText
+	case oneLine(msg) == "":
+		msg = "The request failed."
+	default:
+		msg = providerErrorText(msg, provider)
+	}
+	emitAppend(out, t.nextID("e"), NewErrorBlock(ErrorHeadline(kind, sentence(msg)), next), true)
 }
 
 func (t *Translator) writeNotice(kind, msg, next string, out *[]tea.Msg) {

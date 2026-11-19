@@ -78,8 +78,13 @@ type AutoRetryEnd struct {
 }
 
 // AgentSettled is the last event of a prompt. It follows agent_end, and a
-// reader of the stream waits for it before it sends the next prompt.
-type AgentSettled struct{ Envelope }
+// reader of the stream waits for it before it sends the next prompt. Usage holds
+// the session totals and the context estimate at that moment. It is nil when the
+// session has no model attempt.
+type AgentSettled struct {
+	Envelope
+	Usage *UsageTotals
+}
 
 // AgentDisposed is the last event of an Agent that was disposed. It follows
 // agent_settled of the run that disposal ended. The JSON stream of the CLI does

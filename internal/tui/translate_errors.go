@@ -15,21 +15,34 @@ type errorKind struct {
 }
 
 var errorKinds = map[string]errorKind{
-	"AUTH":                    {"auth", ""}, // the next action names the provider; see classifyError
-	"QUOTA":                   {"quota", "Check the plan or the credit of the account, then send again."},
-	"RATE_LIMIT":              {"rate limit", "Wait a moment, then send again."},
-	"CONTEXT_WINDOW_EXCEEDED": {"context", "The conversation is too long for this model. Start a new session with /new, then send again."},
-	"INVALID_REQUEST":         {"request", "Change the prompt or the model (ctrl+l), then send again."},
-	"SERVER":                  {"server", "The provider has a problem. Send again in a moment."},
-	"TIMEOUT":                 {"timeout", "Send again."},
-	"TRANSPORT":               {"network", "Check the network connection, then send again."},
-	"EMPTY_RESPONSE":          {"provider", "Send again."},
-	"STREAM_CLOSED":           {"provider", "Send again."},
-	"MALFORMED_RESPONSE":      {"provider", "Send again."},
-	"MODEL_CONFIG":            {"config", "Choose a model with ctrl+l or /model. Then send again."},
+	"AUTH":               {"auth", ""}, // the next action names the provider; see classifyError
+	"QUOTA":              {"quota", "Check the plan or the credit of the account, then send again."},
+	"RATE_LIMIT":         {"rate limit", "Wait a moment, then send again."},
+	codeContextWindow:    {"context", contextNext},
+	"INVALID_REQUEST":    {"request", "Change the prompt or the model (ctrl+l), then send again."},
+	"SERVER":             {"server", "The provider has a problem. Send again in a moment."},
+	"TIMEOUT":            {"timeout", "Send again."},
+	"TRANSPORT":          {"network", "Check the network connection, then send again."},
+	"EMPTY_RESPONSE":     {"provider", "Send again."},
+	"STREAM_CLOSED":      {"provider", "Send again."},
+	"MALFORMED_RESPONSE": {"provider", "Send again."},
+	"MODEL_CONFIG":       {"config", "Choose a model with ctrl+l or /model. Then send again."},
 }
 
 const genericNext = "Send again."
+
+// codeContextWindow is the failure code of a request that does not fit the
+// context window of the model.
+const codeContextWindow = "CONTEXT_WINDOW_EXCEEDED"
+
+// Texts of the context overflow. A provider that refused the request has an
+// error text, which these replace; a provider that answered and reported more
+// input than the window has none.
+const (
+	contextNext           = "Start a new session with /new, or choose a model with a larger window (ctrl+l). Then send again."
+	contextOverflowText   = "The conversation is larger than the context window of the model."
+	contextOverreportText = "The provider reported more input tokens than the context window of the model."
+)
 
 // classifyError returns the kind word and the next action for a failure code.
 // provider names the model provider of the failed request; the sign-in command

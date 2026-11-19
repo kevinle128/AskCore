@@ -18,7 +18,7 @@ JSON compatibility is deliberate: the public headless event projection remains P
 | The skill list method `_ask/session/skills` (`ACPSkillsResult`) and the text of a `/skill:<name>` prompt after expansion (`SkillInput`, and `SkillInputCommand` that reads it back for display) | [acp_skills.go](acp_skills.go), [skill_input.go](skill_input.go), tests in [acp_skills_test.go](acp_skills_test.go) |
 | ACP method names, `_ask/*` DTOs, error kinds and codes, event identity | [acp.go](acp.go), tests in [acp_test.go](acp_test.go); SDK and schema pins in [conformance report](../../plans/reports/conformance-261007-h13a-sdk.md); roadmap: [H13](../../plans/260930-2254-pi-feature-inventory-go-roadmap/roadmap.md) |
 | Leader socket frames, control and status payloads, protocol and frame limits (the optional `commitTime` and `devStamp` build stamps in register, registered, status and `ask version --json`), the `ask version --json` payload | [leader.go](leader.go), tests in [leader_test.go](leader_test.go); behavior in [internal/leader](../../internal/leader/README.md) |
-| Messages, content, usage, and tool declarations | [message.go](message.go), [content.go](content.go), [usage.go](usage.go), [tool.go](tool.go) |
+| Messages, content, usage, usage totals (`UsageTotals`), and tool declarations | [message.go](message.go), [content.go](content.go), [usage.go](usage.go), [tool.go](tool.go) |
 | Agent event types and sequencing envelope (`model_update` carries the model of an Agent; all fields empty means no model) | [events.go](events.go) |
 | Provider stream events and message reconstruction | [stream_events.go](stream_events.go), [builder.go](builder.go) |
 | Exact JSON and JSONL projection | [codec.go](codec.go) |
@@ -54,7 +54,7 @@ The final message is authoritative when streaming updates contained unfinished t
 A max-tokens completion cannot execute those incomplete calls.
 The [attempt owner](../../internal/agent/loop_stream.go) and [codec tests](codec_test.go) own this boundary.
 
-The headless JSON stream ends with agent_settled.
+The headless JSON stream ends with agent_settled. The event has an optional `usage` object (`UsageTotals`); a reader must accept its absence.
 Disposal then reaches Go observers as agent_disposed, which is omitted from that JSON stream.
 See [headless JSON writer](../../cmd/tui/headless_json.go) and [disposal fixture](../../cmd/tui/headless_lifecycle_test.go).
 Preparation failure is the deliberate compatibility exception: no user input is committed or published before the failure wrapper.

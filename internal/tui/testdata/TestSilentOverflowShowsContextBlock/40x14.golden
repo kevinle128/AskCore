@@ -1,0 +1,14 @@
+ ◢◤ ask
+────────────────────────────────────────
+  ✗ Error (context): The provider
+    reported more input tokens than
+    the context window of the model.
+    Start a new session with /new, or
+    choose a model with a larger
+    window (ctrl+l). Then send again.
+
+────────────────────────────────────────
+ ❯ Ask anything
+────────────────────────────────────────
+                    openai/gpt-5.5 101%
+ Tab blocks · / commands

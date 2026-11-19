@@ -152,6 +152,12 @@ type run struct {
 	// scopes that exist. Only the goroutine of the run touches them.
 	cycleID   string
 	attemptID string
+	// attemptStreamed is set when the open attempt published a content update.
+	attemptStreamed bool
+	// attemptPriceKnown is the price state of the model that the open attempt
+	// runs on. The configured model may differ after a request hook changed
+	// it, so the failure path reads this value and not the configuration.
+	attemptPriceKnown bool
 	// turnOpen is set between turn_start and turn_end, so the failure path
 	// commits TurnClosed only for a turn that is open.
 	turnOpen           bool
@@ -773,6 +779,7 @@ func (a *Agent) execute(r *run, start loopFunc) error {
 		d.in = runInputs{a: a, r: r}
 		d.clock = a.clock
 		d.onPreparationFailure = func() { r.preparationFailure = true }
+		d.onAttemptOpen = func(priceKnown bool) { r.attemptPriceKnown = priceKnown }
 		return start(r.ctx, ac, cfg, d, emit)
 	})
 	if err != nil {
@@ -785,10 +792,28 @@ func (a *Agent) execute(r *run, start loopFunc) error {
 		}
 		a.fail(r, err, emit)
 	}
-	if serr := emit(&protocol.AgentSettled{}); err == nil {
+	if serr := emit(&protocol.AgentSettled{Usage: a.settledUsage(r)}); err == nil {
 		err = serr
 	}
 	return err
+}
+
+// settledUsage is the usage payload of agent_settled: the fold of the session
+// log, with the context estimate and the window of the current model. It is nil
+// when the log has no model attempt.
+func (a *Agent) settledUsage(r *run) *protocol.UsageTotals {
+	entries := r.source.Entries()
+	rows, totals := sessions.FoldUsage(entries)
+	if len(rows) == 0 {
+		return nil
+	}
+	if tokens, ok := sessions.EstimateContext(entries); ok {
+		totals.ContextTokens = tokens
+	}
+	a.mu.Lock()
+	totals.ContextWindow = a.cfg.Model.ContextWindow
+	a.mu.Unlock()
+	return &totals
 }
 
 // openLog prepares the driver of a run on log. It commits snap when the log has
@@ -855,6 +880,7 @@ func (a *Agent) fail(r *run, cause error, emit Emit) {
 		}
 		if stop == protocol.StopError {
 			end.Code = providers.CodeOf(cause)
+			end.Cause = errorCause(end.Code)
 		}
 		events = append(events, end)
 	}
@@ -880,8 +906,11 @@ func (a *Agent) recordFailureStep(r *run, ev protocol.Event, cause error) {
 		}
 		entry = sessions.MessageEntry{Message: e.Message}
 	case *protocol.AttemptEnd:
-		settled := sessions.AttemptSettled{AttemptID: e.AttemptID, Outcome: e.Outcome}
+		settled := sessions.AttemptSettled{AttemptID: e.AttemptID, Outcome: e.Outcome, CostUnknown: !r.attemptPriceKnown}
 		if e.Outcome == attemptFailed {
+			// This attempt carries no usage, so it is a refused request only
+			// when it published no content before the failure.
+			settled.NoOutput = !r.attemptStreamed
 			settled.Failure = &sessions.Failure{Code: providers.CodeOf(cause), Text: providers.CleanDiagnostic(cause)}
 		}
 		entry = settled

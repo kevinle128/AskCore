@@ -17,8 +17,13 @@ func EncodeEvent(ev Event) ([]byte, error) {
 	switch e := ev.(type) {
 	case nil:
 		return nil, errors.New("protocol: event is nil")
-	case *AgentStart, *AgentSettled, *AgentDisposed:
+	case *AgentStart, *AgentDisposed:
 		return marshalJSON(struct{ envelopeWire }{newEnvelopeWire(e.Env(), e.EventType())})
+	case *AgentSettled:
+		return marshalJSON(struct {
+			envelopeWire
+			Usage *UsageTotals `json:"usage,omitempty"`
+		}{newEnvelopeWire(e.Env(), e.EventType()), e.Usage})
 	case *QueueUpdate:
 		steering, followUp := e.Steering, e.FollowUp
 		if steering == nil {
@@ -276,7 +281,13 @@ func DecodeEvent(data []byte) (Event, error) {
 	case TypeAgentStart:
 		return &AgentStart{Envelope: env}, nil
 	case TypeAgentSettled:
-		return &AgentSettled{Envelope: env}, nil
+		var w struct {
+			Usage *UsageTotals `json:"usage"`
+		}
+		if err := json.Unmarshal(data, &w); err != nil {
+			return nil, err
+		}
+		return &AgentSettled{Envelope: env, Usage: w.Usage}, nil
 	case TypeAgentDisposed:
 		return &AgentDisposed{Envelope: env}, nil
 	case TypeQueueUpdate:

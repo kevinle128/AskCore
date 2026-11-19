@@ -127,7 +127,7 @@ func TestACPWireResultsRoundTrip(t *testing.T) {
 	for _, v := range []any{
 		ACPStateResult{SessionID: "s", Epoch: "e", Running: true, ModelID: "p/m", ThinkingLevel: ThinkingMinimal, MessageCount: 3, Steering: []string{"i1"}, FollowUp: []string{}},
 		ACPModelsResult{Current: "p/m", Models: []ACPModel{{ModelID: "p/m", Provider: "p", ID: "m", API: "openai-completions", Input: []string{"text"}, ContextWindow: 10, MaxTokens: 5}}},
-		ACPUsageResult{Attempts: []ACPUsageRow{{AttemptID: "a", Outcome: "completed", Usage: &Usage{Input: 1, Reasoning: &one}}, {AttemptID: "b", Outcome: "failed"}}, Complete: false},
+		ACPUsageResult{Attempts: []ACPUsageRow{{AttemptID: "a", Outcome: "completed", Usage: &Usage{Input: 1, Reasoning: &one}}, {AttemptID: "b", Outcome: "failed"}}, UsageTotals: UsageTotals{Complete: false, ContextTokens: 7, ContextWindow: 10}},
 		ACPResetResult{SessionID: "s", Epoch: "e2"},
 		ACPContinueResult{StopReason: "end_turn"},
 	} {
@@ -155,7 +155,7 @@ func TestACPWireDeferredMethods(t *testing.T) {
 }
 
 func TestACPWireErrorMessages(t *testing.T) {
-	kinds := []ACPErrorKind{ACPErrUnknownSession, ACPErrUnknownSubscription, ACPErrNotInitialized, ACPErrBusy, ACPErrDisposed, ACPErrNoAPIKey, ACPErrModelAccess, ACPErrQueueFull, ACPErrInvalidModel, ACPErrInvalidContent, ACPErrInvalidParams, ACPErrInvalidState, ACPErrCancelled, ACPErrUnsupported, ACPErrOutputFailure, ACPErrInternal, ACPErrNoModel, ACPErrProviderBusy, ACPErrConfig}
+	kinds := []ACPErrorKind{ACPErrUnknownSession, ACPErrUnknownSubscription, ACPErrNotInitialized, ACPErrBusy, ACPErrDisposed, ACPErrNoAPIKey, ACPErrModelAccess, ACPErrQueueFull, ACPErrInvalidModel, ACPErrInvalidContent, ACPErrInvalidParams, ACPErrInvalidState, ACPErrCancelled, ACPErrUnsupported, ACPErrOutputFailure, ACPErrInternal, ACPErrNoModel, ACPErrProviderBusy, ACPErrConfig, ACPErrContextOverflow}
 	seen := map[string]ACPErrorKind{}
 	for _, k := range kinds {
 		m := ACPErrorMessage(k)

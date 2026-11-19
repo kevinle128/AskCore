@@ -282,10 +282,11 @@ PROVIDER_ROW = re.compile(r'^│ [❯ ] ● (.*?)\s*│$')
 STREAM_MARKERS = 100
 STREAM_PROMPT = ' '.join(f'm{i:03d}' for i in range(STREAM_MARKERS))
 # The header row holds the logo only. The footer row of the faux model: the directory, the model
-# with its thinking level when it has one, and the context bar; under 60 columns only the model and
-# the percent, right-aligned.
+# with its thinking level when it has one, the session cost after the first reply ($0.00 for the
+# free faux model, with a ≥ mark when the total is partial), and the context bar; under 60 columns
+# only the model and the percent, right-aligned.
 HEADER = ' ◢◤ ask'
-FOOTER_LONG = re.compile(r'^ ⌂ \S+ +faux/faux-1(?: ◐ \w+)?  [▰▱]{8} \d+%\s*$')
+FOOTER_LONG = re.compile(r'^ ⌂ \S+ +faux/faux-1(?: ◐ \w+)?(?:  (?:≥ )?\$\d+\.\d+)?  [▰▱]{8} \d+%\s*$')
 FOOTER_SHORT = re.compile(r'^ +faux/faux-1 \d+%\s*$')
 # Words and glyphs that named the link in the footer row. The directory is cut out first, because
 # the directory of a case can hold any word.

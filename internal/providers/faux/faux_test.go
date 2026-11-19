@@ -50,6 +50,7 @@ func TestModelLookupKeepsPerModelData(t *testing.T) {
 	assert.Equal(t, providers.Model{
 		ID: "small", Name: "small", API: "faux-api", Provider: "faux-host", Reasoning: true,
 		Input: []string{"text"}, ContextWindow: 1000, MaxTokens: 100,
+		Cost: providers.Cost{Tiers: []providers.Tier{{}}},
 	}, small)
 	plain, _ := p.Model("plain")
 	assert.Equal(t, "Plain", plain.Name)
@@ -827,4 +828,21 @@ func TestRequestRecordsClonePreparedPolicyAndRequiredBinding(t *testing.T) {
 	records[0].Options.RequireBinding.BillingHint = "caller changed"
 	require.Equal(t, "default", p.Requests()[0].Options.Prepared.RetryPolicy.Key)
 	require.Equal(t, "api-key", p.Requests()[0].Options.RequireBinding.BillingHint)
+}
+
+func TestFauxRowsAreFree(t *testing.T) {
+	p := newProvider(t, WithModels(ModelDef{ID: "a"}, ModelDef{ID: "b", ContextWindow: 1000}))
+	for _, id := range []string{"a", "b"} {
+		m, ok := p.Model(id)
+		require.True(t, ok)
+		assert.True(t, m.PriceKnown(), id)
+	}
+	def := newProvider(t)
+	m, ok := def.Model(defaultModelID)
+	require.True(t, ok)
+	assert.True(t, m.PriceKnown(), "the default model is free too")
+	def.Set(Say("hello"))
+	_, msg, err := play(t, def)
+	require.NoError(t, err)
+	assert.Equal(t, protocol.Cost{}, msg.Usage.Cost)
 }

@@ -1740,7 +1740,7 @@ func TestACPE2ERetryUsageProvider(t *testing.T) {
 	require.Len(t, u.Attempts, 2, "the failed and the answering attempt")
 	require.Equal(t, "failed", u.Attempts[0].Outcome)
 	require.Nil(t, u.Attempts[0].Usage, "the failed attempt reported no usage")
-	require.False(t, u.Complete, "a missing row makes the total a lower bound")
+	require.True(t, u.Complete, "a request refused before any output costs nothing, so the total stays complete")
 	require.NotNil(t, u.Attempts[1].Usage)
 	require.EqualValues(t, 10, u.Attempts[1].Usage.Input)
 	require.EqualValues(t, 3, u.Attempts[1].Usage.Output)

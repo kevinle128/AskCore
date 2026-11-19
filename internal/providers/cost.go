@@ -99,14 +99,28 @@ func CalculateCost(m Model, u protocol.Usage, tier ServiceTier) protocol.Cost {
 	return applyServiceTier(c, m.ID, tier)
 }
 
+// pickTier returns the price of the highest tier below tokens. When no tier
+// is below tokens (for example zero prompt tokens, or a first tier that starts
+// above zero) it returns the lowest tier, so a priced model never reports a
+// silent zero. Empty tiers give the zero price; PriceKnown tells the caller.
 func pickTier(tiers []Tier, tokens int64) Price {
-	bestAbove := int64(-1)
 	var price Price
+	if len(tiers) == 0 {
+		return price
+	}
+	found := false
+	var foundAbove int64
+	lowest := tiers[0]
 	for _, t := range tiers {
-		if t.Above < tokens && t.Above > bestAbove {
-			bestAbove = t.Above
-			price = t.Price
+		if t.Above < lowest.Above {
+			lowest = t
 		}
+		if t.Above < tokens && (!found || t.Above > foundAbove) {
+			found, foundAbove, price = true, t.Above, t.Price
+		}
+	}
+	if !found {
+		return lowest.Price
 	}
 	return price
 }

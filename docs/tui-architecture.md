@@ -90,7 +90,7 @@ The Bubble Tea renderer remains the terminal output owner.
 The TUI owns every row of the alternate screen.
 Top to bottom the rows are the header row, a rule, the block pane, queue rows, the status row, a rule, the prompt pane, a rule, the footer row and the shortcut bar.
 The header row holds the logo only.
-The footer row holds the status data: the working directory, the model as `<provider>/<model>` with its thinking level, and the context use. It shows no logo, no link state and no session cost. The status rail and the notices report a lost link, an observer or a detach; the screen does not tell a leader from the in-process agent.
+The footer row holds the status data: the working directory, the model as `<provider>/<model>` with its thinking level, the session cost (or the tokens when no price is known), and the context use. It shows no logo and no link state. The cost and the context use come from the totals and the context estimate of the server, not from a count on the screen. The status rail and the notices report a lost link, an observer or a detach; the screen does not tell a leader from the in-process agent.
 The [footer design](../plans/261028-1310-account-model-discovery/design.md) owns this order. The viewer takes the whole screen and shows neither the header row nor the footer row.
 The block pane takes all rows that no other part uses.
 Empty parts use no rows.

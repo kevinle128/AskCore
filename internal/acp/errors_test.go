@@ -72,3 +72,14 @@ func TestRunErrorModelConfigChangedHasConfigKind(t *testing.T) {
 	require.Equal(t, protocol.ACPErrorData{Kind: protocol.ACPErrConfig}, re.Data)
 	require.Equal(t, protocol.ACPErrInternal, classify(runError(Result{Reason: "error", Code: "SERVER"})))
 }
+
+// An overflow cycle has its own kind and a fixed text, so a client can offer a
+// new session instead of a retry. The stop reason stays the one of an error.
+func TestRunErrorContextOverflowHasOwnKind(t *testing.T) {
+	err := runError(Result{Reason: "error", Code: "CONTEXT_WINDOW_EXCEEDED"})
+	require.Equal(t, protocol.ACPErrContextOverflow, classify(err))
+	var re *sdk.RequestError
+	require.ErrorAs(t, requestError(err), &re)
+	require.Equal(t, "the conversation is larger than the context window of the model", re.Message)
+	require.Equal(t, protocol.ACPErrorData{Kind: protocol.ACPErrContextOverflow}, re.Data)
+}

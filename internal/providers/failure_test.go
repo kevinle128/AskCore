@@ -150,3 +150,34 @@ func TestCodeOfMapsSentinelsAndAssemblerFailTypesThem(t *testing.T) {
 	_, typed := providers.AsFailure(err)
 	assert.False(t, typed)
 }
+
+func TestStatus429WithOverflowWordingIsRateLimit(t *testing.T) {
+	code := providers.ClassifyProvider(429, "rate_limit_error", "", "prompt is too long: 250000 tokens > 200000 maximum")
+	assert.Equal(t, "RATE_LIMIT", code)
+}
+
+func TestStatus402WithOverflowWordingIsQuota(t *testing.T) {
+	code := providers.ClassifyProvider(402, "", "", "context_length_exceeded")
+	assert.Equal(t, "QUOTA", code)
+}
+
+func TestPayload413IsInvalidRequest(t *testing.T) {
+	assert.Equal(t, "INVALID_REQUEST", providers.ClassifyProvider(413, "request_too_large", "", "Request exceeds the maximum allowed number of bytes."))
+	assert.Equal(t, "INVALID_REQUEST", providers.ClassifyProvider(413, "", "", "payload too large"))
+	assert.Equal(t, "INVALID_REQUEST", providers.ClassifyProvider(413, "", "", ""))
+}
+
+func TestToken413IsOverflow(t *testing.T) {
+	assert.Equal(t, "CONTEXT_WINDOW_EXCEEDED", providers.ClassifyProvider(413, "", "", "prompt is too long: 250000 tokens > 200000 maximum"))
+}
+
+func TestToken413WithByteWordingIsOverflow(t *testing.T) {
+	assert.Equal(t, "CONTEXT_WINDOW_EXCEEDED",
+		providers.ClassifyProvider(413, "request_too_large", "", "prompt is too long and exceeds the maximum number of bytes"))
+}
+
+func TestNonOverflowTextStaysInvalidRequest(t *testing.T) {
+	for _, msg := range []string{"input exceeds maximum allowed value", "context window size must be positive"} {
+		assert.Equal(t, "INVALID_REQUEST", providers.ClassifyProvider(400, "invalid_request_error", "", msg), msg)
+	}
+}

@@ -98,3 +98,42 @@ func TestNormalizeUsage(t *testing.T) {
 	assert.Equal(t, int64(3), *got.Reasoning)
 	assert.Equal(t, int64(30), got.TotalTokens)
 }
+
+func TestPickTierFallsBackToLowestTier(t *testing.T) {
+	t.Parallel()
+	m := Model{Cost: Cost{Tiers: []Tier{
+		{Above: 0, Price: Price{Input: 1_000_000, Output: 4_000_000}},
+		{Above: 200_000, Price: Price{Input: 2_000_000, Output: 8_000_000}},
+	}}}
+	got := CalculateCost(m, protocol.Usage{Output: 1000}, "")
+	assert.Equal(t, int64(4000), got.Output, "zero prompt tokens price at the base tier")
+	assert.Equal(t, int64(4000), got.Total)
+
+	late := Model{Cost: Cost{Tiers: []Tier{
+		{Above: 100, Price: Price{Output: 3_000_000}},
+		{Above: 500, Price: Price{Output: 6_000_000}},
+	}}}
+	got = CalculateCost(late, protocol.Usage{Input: 10, Output: 1000}, "")
+	assert.Equal(t, int64(3000), got.Output, "a first tier that starts above the prompt size is the lowest tier")
+
+	assert.Equal(t, protocol.Cost{}, CalculateCost(Model{}, protocol.Usage{Input: 5, Output: 1000}, ""), "empty tiers give zero")
+}
+
+func TestPriceKnown(t *testing.T) {
+	t.Parallel()
+	free := Model{Cost: Cost{Tiers: []Tier{{Above: 0}}}}
+	cases := []struct {
+		name string
+		m    Model
+		want bool
+	}{
+		{"models.dev row with tiers", OpenAIGPT55(), true},
+		{"row marked CostUnknown", Model{CostUnknown: true, Cost: Cost{Tiers: []Tier{{Price: Price{Input: 1}}}}}, false},
+		{"hand row with no tiers", AnthropicSonnet46(), false},
+		{"models.json row with a cost", Model{Cost: Cost{Tiers: []Tier{{Above: 0, Price: Price{Input: 1, Output: 2}}}}}, true},
+		{"free row with zero prices in a tier", free, true},
+	}
+	for _, tc := range cases {
+		assert.Equal(t, tc.want, tc.m.PriceKnown(), tc.name)
+	}
+}

@@ -296,7 +296,7 @@ func renderGeneratedRows(b *strings.Builder) {
 			}
 		}
 		price := "?"
-		if !m.CostUnknown && len(m.Cost.Tiers) > 0 {
+		if m.PriceKnown() {
 			base := m.Cost.Tiers[0].Price
 			price = usd(base.Input) + " / " + usd(base.Output)
 		}

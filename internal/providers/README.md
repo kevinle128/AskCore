@@ -16,6 +16,8 @@ Keep authentication methods separate from provider identity; [access terms](../.
 | The merged model list of a session | [model_set.go](model_set.go) |
 | One settled stream result and message assembly | [stream.go](stream.go), [assembler.go](assembler.go) |
 | Typed failure codes and transport classification | [failure.go](failure.go), [errors.go](errors.go) |
+| Context overflow: provider texts, the throttling veto, and the usage test for a silent overflow | [overflow.go](overflow.go) |
+| Price of a request: tiers, `CalculateCost`, and `Model.PriceKnown` | [cost.go](cost.go), [model.go](model.go) |
 | Serving registration and captured retry policy | [registry.go](registry.go), [retry.go](retry.go) |
 | Safe effective preparation and real wire encoding | [prepare.go](prepare.go) |
 | History conversion, interrupted replay, and tool declarations | [convert.go](convert.go), [transform.go](transform.go), [transcript.go](transcript.go) |
@@ -53,7 +55,8 @@ The user model configuration is the last layer (`model_config.go`).
 The app maps the file to `ModelConfig` and gives it to `NewModelSet`; this package does not read files.
 `ModelConfig` has no key and no header field, because a row of a `ModelSet` is copied to many places.
 The order is: a provider `BaseURL`, then the custom rows, then the overrides.
-A custom row needs an API and no family rule; omitted fields take the defaults 128000 context, 16384 output, text input, reasoning off and zero prices.
+A custom row needs an API and no family rule; omitted fields take the defaults 128000 context, 16384 output, text input, reasoning off and zero prices (a known free price).
+A model has a known price when `Model.PriceKnown` is true: it has price tiers and is not marked `CostUnknown`. A row with no tiers has an unknown price, and the session totals then mark the cost as partial; the cost is never read as $0. The faux rows are free and known. Every wire adapter prices its usage with `CalculateCost`, the Anthropic adapter included ([anthropic/usage.go](anthropic/usage.go)). `pickTier` falls back to the lowest tier when no tier is below the prompt size.
 A custom row replaces the row with the same provider, id and API, and a known account list does not remove it.
 An override on a built-in row can set the name, the limits, the price and the input types, and can only turn thinking levels off; it cannot set the API or the compat.
 An override price (`PricePatch`) sets only the fields it names; the other fields come from the base price of the row, and a patch that sets no price keeps the price tiers.
@@ -82,6 +85,7 @@ The Prepared and PolicyOnly contracts are owned by prepare.go.
 Adapters return typed failures rather than deciding Agent lifecycle transitions.
 `Relay` wraps a stream, forwards every item unchanged and calls a hook with the result error before the terminal item reaches the consumer; its producer is the only goroutine, and it ends with the inner stream.
 The failure codes and Retry-After parsing are owned by failure.go.
+Context overflow has its own owner, overflow.go. The text patterns follow Pi and oh-my-pi, and the file names them with their licenses. A 429, 402, or 5xx status, a rate-limit or quota error, and a throttling text (`rate limit`, `too many requests`, `throttl`, the Bedrock `Throttling error:` prefix) are never overflow; the text rule applies only to the statuses 400, 413, 422, and 0 (an error in the stream). A limit that is not the context window (a count of images or items, the output size that the request asked for) stays `INVALID_REQUEST`, and this veto also overrides the overflow flag that an SDK sets from the text alone (`OverflowFlagVetoed`, used by [fantasykit](fantasykit/errors.go)). A 413 is overflow only when its text speaks of tokens; a byte-size 413 stays `INVALID_REQUEST`. `UsageOverflow` is the second form, a silent overflow: a reply that the provider accepted while its input is above the model window. Overflow is never retried, and the Agent ends the cycle with it.
 The Agent [recovery owner](../agent/recover.go) selects eligible retries and [sessions](../sessions/entry.go) owns their safe records.
 Provider SDK retries stay disabled so one recorded Agent attempt does not hide multiple wire requests.
 

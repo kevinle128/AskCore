@@ -142,6 +142,9 @@ func (l *loop) consumeAttempt(ctx context.Context, attemptID string, stream *pro
 			emitErr = l.emit(&protocol.MessageStart{Message: ev.Message})
 		case protocol.BlockEvent:
 			// Block events before start have no message to belong to.
+			if l.attempt != nil {
+				l.attempt.streamed = true
+			}
 			if addedPartial {
 				emitErr = l.emit(&protocol.MessageUpdate{AssistantMessageEvent: ev, Usage: item.Usage})
 			}

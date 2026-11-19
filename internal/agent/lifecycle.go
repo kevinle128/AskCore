@@ -79,11 +79,27 @@ func (c *cycleState) settleTurn(stop protocol.StopReason, code string) {
 	}
 }
 
+// settleOverflow ends the cycle as an error with the context-window code. It
+// replaces any earlier reason, as every other failed turn does.
+func (c *cycleState) settleOverflow() {
+	if c == nil {
+		return
+	}
+	c.reason = ReasonError
+	c.code = providers.CodeContextWindow
+}
+
 // attemptState is one model request. binding is the credential binding that
 // the stream reported.
 type attemptState struct {
 	id      string
 	binding providers.AuthBinding
+	// priceKnown is the price state of the request model when the attempt
+	// opened. A later model change does not alter what this attempt cost.
+	priceKnown bool
+	// streamed is set when the stream sent a content event. An attempt that
+	// failed with no content and no usage was refused before any output.
+	streamed bool
 }
 
 // openCycle starts a new cycle and publishes cycle_start. It comes before the
@@ -132,6 +148,7 @@ func (l *loop) closeCycle() error {
 	}
 	if c.reason == ReasonError {
 		end.Code = c.code
+		end.Cause = errorCause(c.code)
 	}
 	if err := l.commit(sessions.CycleClosed{CycleID: c.id, Reason: end.Reason, Cause: end.Cause, Code: end.Code}); err != nil {
 		return err
@@ -152,7 +169,10 @@ func (l *loop) cycleID() string {
 // leaves Number empty: the Agent counts the attempts of its session and fills
 // it in, as it fills the envelope.
 func (l *loop) openAttempt(id string, binding providers.AuthBinding) error {
-	l.attempt = &attemptState{id: id, binding: binding}
+	l.attempt = &attemptState{id: id, binding: binding, priceKnown: l.cfg.Model.PriceKnown()}
+	if l.onAttemptOpen != nil {
+		l.onAttemptOpen(l.attempt.priceKnown)
+	}
 	return l.emit(&protocol.AttemptStart{AttemptID: l.attempt.id, CycleID: l.cycleID()})
 }
 
@@ -165,11 +185,12 @@ func (l *loop) closeAttempt(final protocol.AssistantMessage, cause error) error 
 		return nil
 	}
 	l.attempt = nil
-	settled := sessions.AttemptSettled{AttemptID: a.id, Outcome: attemptOutcomeOf(final.StopReason)}
+	settled := sessions.AttemptSettled{AttemptID: a.id, Outcome: attemptOutcomeOf(final.StopReason), CostUnknown: !a.priceKnown}
 	if usageReported(final.Usage) {
 		usage := final.Usage.Clone()
 		settled.Usage = &usage
 	}
+	settled.NoOutput = settled.Outcome == attemptFailed && settled.Usage == nil && !a.streamed && !hasContent(final.Content)
 	if final.StopReason == protocol.StopError {
 		settled.Failure = &sessions.Failure{Code: providers.CodeOf(cause), Text: failureTextOf(final.ErrorMessage)}
 	}
@@ -189,6 +210,25 @@ func (l *loop) closeAttempt(final protocol.AssistantMessage, cause error) error 
 func usageReported(u protocol.Usage) bool {
 	return u.Input != 0 || u.Output != 0 || u.CacheRead != 0 || u.CacheWrite != 0 || u.TotalTokens != 0 ||
 		u.CacheWrite1h != nil || u.Reasoning != nil || u.Cost != protocol.Cost{}
+}
+
+// hasContent reports a block that carries text, thinking or a tool call.
+func hasContent(content []protocol.AssistantBlock) bool {
+	for _, b := range content {
+		switch v := b.(type) {
+		case protocol.Text:
+			if v.Text != "" {
+				return true
+			}
+		case protocol.Thinking:
+			if v.Thinking != "" {
+				return true
+			}
+		case protocol.ToolCall:
+			return true
+		}
+	}
+	return false
 }
 
 // failureTextOf cleans the error text of a message, which may be nil.
@@ -236,7 +276,19 @@ const (
 	// causeInterrupted names a cycle that a dead process left open: the next
 	// open of the session closes it.
 	causeInterrupted = "interrupted"
+	// causeContextOverflow names a cycle that ended because the prompt did not
+	// fit the model window, whether the provider said so or the usage showed it.
+	causeContextOverflow = "context_overflow"
 )
+
+// errorCause is the cause of a cycle that ended in an error with code. Only a
+// context overflow has one; every other error is told by its code alone.
+func errorCause(code string) string {
+	if code == providers.CodeContextWindow {
+		return causeContextOverflow
+	}
+	return ""
+}
 
 // abortCause names who cancelled ctx: "user" for Agent.Abort, "output" for
 // ErrOutputFailure, "disposed" for Agent.Dispose, "deadline" when a deadline

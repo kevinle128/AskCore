@@ -178,3 +178,27 @@ func TestResponsesContentlessStopIsEmptyResponse(t *testing.T) {
 	f := responsesFailure(t, answer(http.StatusOK, http.Header{"Content-Type": {"text/event-stream"}}, body))
 	assert.Equal(t, providers.CodeEmptyResponse, f.Code)
 }
+
+func TestCompletionsContextLengthExceededOn400IsOverflow(t *testing.T) {
+	f := completionsFailure(t, answer(http.StatusBadRequest, jsonHeader(),
+		`{"error":{"message":"Too long.","type":"invalid_request_error","code":"context_length_exceeded"}}`), 0)
+	assert.Equal(t, providers.CodeContextWindow, f.Code)
+}
+
+func TestCompletionsContextLengthExceededOn429IsRateLimit(t *testing.T) {
+	f := completionsFailure(t, answer(http.StatusTooManyRequests, jsonHeader(),
+		`{"error":{"message":"Too long.","type":"requests","code":"context_length_exceeded"}}`), 0)
+	assert.Equal(t, providers.CodeRateLimit, f.Code)
+}
+
+func TestResponsesContextLengthExceededOn400IsOverflow(t *testing.T) {
+	f := responsesFailure(t, answer(http.StatusBadRequest, jsonHeader(),
+		`{"error":{"message":"Your input exceeds the context window of this model.","type":"invalid_request_error","code":"context_length_exceeded"}}`))
+	assert.Equal(t, providers.CodeContextWindow, f.Code)
+}
+
+func TestResponsesContextLengthExceededOn429IsRateLimit(t *testing.T) {
+	f := responsesFailure(t, answer(http.StatusTooManyRequests, jsonHeader(),
+		`{"error":{"message":"Your input exceeds the context window of this model.","type":"requests","code":"context_length_exceeded"}}`))
+	assert.Equal(t, providers.CodeRateLimit, f.Code)
+}

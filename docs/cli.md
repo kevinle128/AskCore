@@ -61,7 +61,28 @@ Input rules:
 - More messages run as follow-up prompts, in order.
 - An unknown flag is an error.
 
-Exit codes: 0 done; 1 for an argument or setup error, and in print mode for an assistant error; `--mode json` exits 0 on an assistant error. In print mode the code comes from the last reply that the run printed. SIGINT, SIGTERM, and SIGHUP end the run, also during the wait for background work, with 130, 143, and 129.
+Exit codes: 0 done; 1 for an argument or setup error, and in print mode for an assistant error or a context overflow; `--mode json` exits 0 on an assistant error and on a context overflow. In print mode the code comes from the last reply that the run printed. SIGINT, SIGTERM, and SIGHUP end the run, also during the wait for background work, with 130, 143, and 129.
+
+### Context overflow and usage totals
+
+A context overflow ends the run with the failure code `CONTEXT_WINDOW_EXCEEDED` and the cycle cause `context_overflow`. Ask does not retry it and does not switch the model. There are two forms:
+
+- Explicit: the provider refuses the request because the prompt does not fit. Ask knows the common provider texts for this (the list follows Pi). A 429, 402, or 5xx status, a rate-limit or quota error, and a throttling text are never an overflow, whatever their wording. A limit that is not the context window, such as a count of images or the output size of the request, stays `INVALID_REQUEST`. A 413 is an overflow only when its text speaks of tokens or context. A 413 about bytes stays `INVALID_REQUEST`.
+- Silent: the provider answers, but the input tokens of the reply (input, cache read, and cache write) are above the context window of the model. A reply that stopped at the length limit with no output is also an overflow when the input is at 99% of the window or more. The reply stays in the session and the model history, and then the run ends with the overflow. A model row with a window that is too small gives false overflows. Set the right `contextWindow` in `models.json`.
+
+In print mode an overflow exits 1 and the text starts with `Context window exceeded:` on stderr. For an explicit overflow, stdout has no reply, and stderr has `Context window exceeded: <the error text of the provider>. Start a new session or choose a model with a larger context window.` For a silent overflow, stdout has the reply and stderr has the text `Context window exceeded: the provider reported more input tokens than the context window of the model. Start a new session or choose a model with a larger context window.`
+
+In `--mode json` the exit code stays 0. The event `cycle_end` has `"reason":"error"`, the `code`, and `"cause":"context_overflow"`. The last event, `agent_settled`, can carry an optional `usage` object with the totals of the session:
+
+| Field | Meaning |
+|---|---|
+| `total` | The sum of the usage of every model attempt of the session, also failed and retried attempts, also those of earlier runs of a continued session. |
+| `complete` | `true` when every attempt reported usage, or was refused before it streamed any output (a refused request costs nothing). `false` makes `total` a lower bound. |
+| `costComplete` | `true` when `complete` is `true` and every attempt had a known price. |
+| `contextTokens` | The estimate of the size of the next request: the usage of the last completed attempt plus one token for every 4 characters of the later messages. A missing field means unknown. |
+| `contextWindow` | The context window of the current model. A missing field means unknown. |
+
+The field is missing when the session has no model attempt. Ask has a price for a model when its row has price tiers. A row with no price tiers has an unknown price, and its cost counts as missing, not as $0. A model of `models.json` without `cost` is free. The `faux` provider is free. Ask prices the Anthropic Messages wire and the OpenAI wires. A session log that an older build wrote has no price mark, so its attempts count as priced.
 
 The demo provider `faux` is the default of `ask -p`. It runs a script: `echo <text>` calls the echo tool, `fail <text>` ends in an assistant error, and any other text is said back.
 
@@ -380,6 +401,8 @@ With a leader, `session/load` of a session that the leader runs already joins it
 
 `--approve` (`-a`) trusts the project of every session of this process, and `--no-approve` (`-na`) trusts none. Without a flag, each session decides with no UI (see [Project trust](#project-trust)). `--offline` turns the model refresh off, as `ASK_DISABLE_MODEL_REFRESH=1`. The two trust flags together, or any other argument, are an error. The command takes none of the prompt, tool, and model flags (`--system-prompt`, `--append-system-prompt`, `-t`, `-nt`, `--model`, `--models`, `--thinking`). A client sends them for one session in `_meta["ask.dev/session"]` (see [Flags in the TUI and with a leader](#flags-in-the-tui-and-with-a-leader)). The command answers `unsupported` for `_ask/trust/state` and `_ask/trust/set`, because an editor link has no trust question.
 
+`_ask/session/usage` returns one row for each model attempt (`attemptId`, `cycleId`, `outcome`, `usage`, and `costUnknown` when the model had no known price) and the totals of [Context overflow and usage totals](#context-overflow-and-usage-totals): `total`, `complete`, `costComplete`, `contextTokens`, and `contextWindow`. A run that ends in a context overflow answers `session/prompt` with the error kind `context_overflow` and the fixed text `the conversation is larger than the context window of the model`. For a silent overflow the reply is streamed first. A client can offer a new session or another model.
+
 Exit codes: 0 input ended, 1 error or lost output, 130, 143, 129. The owner is [internal/acp/README.md](../internal/acp/README.md).
 
 ## `ask settings`
@@ -536,6 +559,10 @@ Exit codes: 0 left, 1 error or lost leader (also when the input ends after a pro
 | `/skill:<name>` | Load a skill of this session (see [Skills](#skills)). One row for each skill, after the commands above, with its description. Enter puts `/skill:<name> ` in the editor and sends nothing, so you can add arguments and send. Typing `/sk` or `/skill:kk` shows only the rows that match. The rows come from the session and change with a new session. A leader that is older than this build gives no skill rows and no error. |
 
 While the command list is open, `Tab` completes the draft like a shell. When the rows share a longer prefix than the draft, `Tab` extends the draft to that prefix, and the list stays open on the rows that are left. Otherwise `Tab` fills the draft with the selected row: a `/skill:<name>` row gets a trailing space for arguments, and a built-in command gets none, so `Enter` then runs it. `↑` and `↓` move the selection, and the selection goes back to the first row after each completion. After `Esc` the list stays closed until the next edit, and `Tab` with the list closed moves focus to the block list. `Shift+Tab` still cycles the thinking level.
+
+The footer row shows the usage of the session between the thinking level and the context bar. It shows the cost (`$0.42`; `$0.00` for a free model). It shows `≥ $0.42` when part of the cost is not known, for example an attempt that reported no usage. When no price is known it shows the tokens, `↑1.2M ↓34k` (input and output), with `≥` when an attempt reported no usage. It shows nothing before the first usage. Under 60 columns the usage part is not shown. On a narrow row the end of the model id is cut first, down to 6 columns, and then the usage part drops. The percent and the bar are the context estimate of the server over the window of the model. The percent can pass 100.
+
+A context overflow shows `Error (context)` in the block pane with the next action to start a new session with `/new` or to choose a model with a larger window (`ctrl+l`). This differs from `Error (quota)` and from the `↻` retry note.
 
 With no usable provider the session has no model. The footer row shows `no model`, and a prompt is refused and stays in the editor. `/providers` opens the sign-in box. The leader checks an API key before it saves it (mode 0600 `auth.json`); it cannot check the Alibaba Token Plan key, so it saves that key as it is. The key is pasted into a masked input.
 

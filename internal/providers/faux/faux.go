@@ -172,6 +172,8 @@ func (p *Provider) buildModel(d ModelDef) providers.Model {
 		ID: d.ID, Name: d.Name, API: providers.API(p.api), Provider: p.provider,
 		Reasoning: d.Reasoning, Input: slices.Clone(d.Input),
 		ContextWindow: d.ContextWindow, MaxTokens: d.MaxTokens,
+		// The faux provider is a free demo, so its price is known and zero.
+		Cost: providers.Cost{Tiers: []providers.Tier{{}}},
 	}
 	if m.Name == "" {
 		m.Name = d.ID
@@ -199,6 +201,7 @@ func (p *Provider) Model(id string) (providers.Model, bool) {
 		return providers.Model{}, false
 	}
 	m.Input = slices.Clone(m.Input)
+	m.Cost.Tiers = slices.Clone(m.Cost.Tiers)
 	return m, true
 }
 

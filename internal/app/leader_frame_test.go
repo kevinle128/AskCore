@@ -38,7 +38,13 @@ func TestLeaderLargeFramesThroughRealHost(t *testing.T) {
 		}
 		return faux.Say(output), nil
 	}))
-	l := startLeader(t, fauxLeaderParamsWith(t, saying("unused"), func(c *agent.Config) { c.Stream = fp.Stream }))
+	l := startLeader(t, fauxLeaderParamsWith(t, saying("unused"), func(c *agent.Config) {
+		c.Stream = fp.Stream
+		// The faux model counts about one token for each four characters, so
+		// an 11 MiB prompt is far above its 128k window and the reply would end
+		// as a context overflow. This test is about frame size, not the window.
+		c.Model.ContextWindow = 1 << 30
+	}))
 	a, b := l.client(nil), l.client(nil)
 	sid := a.newSession("/w")
 	b.must(protocol.ACPAttach, map[string]any{"sessionId": sid})

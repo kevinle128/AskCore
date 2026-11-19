@@ -1,0 +1,24 @@
+ ◢◤ ask
+────────────────────────────────────────────────────────────────────────────────
+  ❯ summarize every file in internal/ and docs/                          14:11
+
+  The internal/ tree has 41 packages. The agent, pipeline and sessions
+  packages hold the runtime core.
+
+  gpt-5.5 · 41s · ↑1.0M ↓4.1k · $2.10
+
+  ✗ Error (context): The provider reported more input tokens than the context
+    window of the model.
+    Start a new session with /new, or choose a model with a larger window
+    (ctrl+l). Then send again.
+
+
+
+
+
+
+────────────────────────────────────────────────────────────────────────────────
+ ❯ Ask anything  ·  / commands  ·  ctrl+l model
+────────────────────────────────────────────────────────────────────────────────
+ ⌂ ~/src/askcore                    openai/gpt-5.5 ◐ high  $2.97  ▰▰▰▰▰▰▰▰ 101%
+ Tab blocks · ctrl+t thinking · ctrl+l model · / commands
