@@ -223,5 +223,8 @@ func sessionError(err error, cwd, id string) error {
 	case errors.Is(err, store.ErrSessionCorrupt):
 		return &StoreError{msg: fmt.Sprintf("session %s cannot be read: %v", id, err), err: err}
 	}
+	if id == "" {
+		return fmt.Errorf("sessions in %s: %w", cwd, err)
+	}
 	return fmt.Errorf("session %s: %w", id, err)
 }

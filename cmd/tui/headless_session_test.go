@@ -469,21 +469,31 @@ func (r *askRun) kill(t *testing.T) {
 }
 
 // sleepingTool returns the bash command that a fixture answer calls to hold a
-// turn open. The command records its pid and the test kills it when it ends,
-// so no sleep outlives the test.
-func sleepingTool(t *testing.T) string {
+// turn open, and a wait that returns once the command runs. The command records
+// its pid and the test kills it when it ends, so no sleep outlives the test.
+// The pid file is written whole, so the wait and the cleanup never read half
+// of it.
+func sleepingTool(t *testing.T) (string, func()) {
 	t.Helper()
 	pidFile := filepath.Join(t.TempDir(), "pid")
-	t.Cleanup(func() {
+	readPid := func() (int, bool) {
 		data, err := os.ReadFile(pidFile)
 		if err != nil {
-			return
+			return 0, false
 		}
-		if pid, err := strconv.Atoi(strings.TrimSpace(string(data))); err == nil {
+		pid, err := strconv.Atoi(strings.TrimSpace(string(data)))
+		return pid, err == nil
+	}
+	t.Cleanup(func() {
+		if pid, ok := readPid(); ok {
 			_ = syscall.Kill(pid, syscall.SIGKILL)
 		}
 	})
-	return "echo $$ > " + pidFile + "; exec sleep 100"
+	wait := func() {
+		t.Helper()
+		require.Eventually(t, func() bool { _, ok := readPid(); return ok }, 30*time.Second, 10*time.Millisecond, "the tool command did not start")
+	}
+	return "echo $$ > " + pidFile + ".tmp && mv " + pidFile + ".tmp " + pidFile + "; exec sleep 100", wait
 }
 
 type bodyLog struct {
@@ -512,7 +522,7 @@ func (b *bodyLog) get(t *testing.T, i int) map[string]any {
 // process continues the session on the same model and thinking level.
 func TestPrintResumeAfterKillKeepsModelAndThinking(t *testing.T) {
 	dir, home := canonicalTempDir(t), privateHome(t)
-	command := sleepingTool(t)
+	command, toolStarted := sleepingTool(t)
 	var seen bodyLog
 	f := newProviderFixture(t)
 	f.inference = func(n int, _ *http.Request, body []byte) (int, string, string) {
@@ -530,6 +540,7 @@ func TestPrintResumeAfterKillKeepsModelAndThinking(t *testing.T) {
 	var header sessions.Header
 	require.NoError(t, json.Unmarshal([]byte(first.waitLine(t, `"type":"session"`)), &header))
 	first.waitLine(t, `"type":"tool_execution_start"`)
+	toolStarted()
 	first.kill(t)
 
 	second := builtAsk(t, f, dir, []string{"ASK_HOME=" + home}, "-p", "-c", "next")
@@ -570,7 +581,7 @@ func cycleOfOpenTurn(t *testing.T, s loggedSession) string {
 
 func TestPrintSecondWriterFailsAtOnce(t *testing.T) {
 	dir, home := canonicalTempDir(t), privateHome(t)
-	command := sleepingTool(t)
+	command, toolStarted := sleepingTool(t)
 	f := newProviderFixture(t)
 	f.inference = func(_ int, _ *http.Request, _ []byte) (int, string, string) {
 		return toolReplyOf(t, "bash", map[string]any{"command": command})
@@ -579,6 +590,7 @@ func TestPrintSecondWriterFailsAtOnce(t *testing.T) {
 	var header sessions.Header
 	require.NoError(t, json.Unmarshal([]byte(holder.waitLine(t, `"type":"session"`)), &header))
 	holder.waitLine(t, `"type":"tool_execution_start"`)
+	toolStarted()
 
 	other := builtAsk(t, f, dir, []string{"ASK_HOME=" + home}, "-p", "--session", header.ID, "me too")
 	var stdout, stderr bytes.Buffer

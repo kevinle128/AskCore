@@ -9,6 +9,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"runtime"
 	"strconv"
 	"strings"
 	"syscall"
@@ -50,7 +51,6 @@ func TestSessionHelperProcess(t *testing.T) {
 			fmt.Fprintln(os.Stderr, err)
 			os.Exit(3)
 		}
-		_ = w
 		// A long-running child of the holder starts after the session is open.
 		// It outlives the holder, so it must not keep the lock.
 		child := exec.Command("sleep", "300")
@@ -60,6 +60,9 @@ func TestSessionHelperProcess(t *testing.T) {
 		}
 		fmt.Printf("LOCKED %d\n", child.Process.Pid)
 		time.Sleep(10 * time.Minute)
+		// The files of w close when the collector finds w unused, which would
+		// drop the lock while the holder still lives.
+		runtime.KeepAlive(w)
 	case "open":
 		_, err := s.Open(ctx, cwd, id)
 		switch {

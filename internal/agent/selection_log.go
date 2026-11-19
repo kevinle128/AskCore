@@ -65,10 +65,11 @@ func (a *Agent) logSelection(log sessions.Writer) error {
 // LoggedSelection returns what a session log says about the selection of its
 // last run, so a resumed session can continue on the same model and level. The
 // model and the level come from the newest ModelChange and ThinkingChange; a
-// log that has none of them gives the model and the reasoning level of the
+// ModelChange with no ThinkingChange gives the default level, and a log that
+// has none of them gives the model and the reasoning level of the
 // newest RequestDelta. The method is the login method of the newest settled
 // attempt that had a credential binding and ran on the restored model (the
-// same provider and id). A binding of another model says nothing about the
+// same provider, API, endpoint host and id). A binding of another model says nothing about the
 // restored one, for example a demo model that the user chose after an OAuth
 // run. The log never holds a requested method, so a log with no such binding
 // gives an empty one. ok is false when the log names no model.
@@ -96,11 +97,14 @@ func LoggedSelection(entries []sessions.Entry) (model sessions.ModelRef, method 
 			}
 		}
 	}
+	// A ModelChange with no ThinkingChange means the default level: a run logs
+	// no ThinkingChange for it. The RequestDelta level can be one that a hook
+	// set for one request, so it counts only for a log with neither entry.
+	if !changedModel && !changedLevel && haveDelta {
+		level = deltaLevel
+	}
 	if !changedModel && haveDelta {
 		model, changedModel = deltaModel, true
-	}
-	if !changedLevel && haveDelta {
-		level = deltaLevel
 	}
 	if changedModel {
 		for i := len(bound) - 1; i >= 0; i-- {
@@ -119,11 +123,14 @@ type boundAttempt struct {
 	binding   sessions.AuthBinding
 }
 
-// boundTo tells whether the attempt ran on model. An attempt whose request is
-// not in the log is judged by the provider of its binding.
+// boundTo tells whether the attempt ran on model. A login method binds to the
+// provider, the API and the endpoint, so a row with the same id on another API
+// or host is another model here. An attempt whose request is not in the log is
+// judged by the provider of its binding.
 func boundTo(b boundAttempt, attemptModel map[string]sessions.ModelRef, model sessions.ModelRef) bool {
 	if ref, ok := attemptModel[b.attemptID]; ok {
-		return ref.Provider == model.Provider && ref.ID == model.ID
+		return ref.Provider == model.Provider && ref.ID == model.ID &&
+			ref.API == model.API && ref.BaseURLHost == model.BaseURLHost
 	}
 	return b.binding.Provider == model.Provider
 }

@@ -273,3 +273,35 @@ func TestErrorKindSessionInUseHasFixedText(t *testing.T) {
 	require.Equal(t, protocol.ACPErrUnknownSession, classify(ErrUnknownSession))
 	var _ sdk.AgentLoader = (*Adapter)(nil)
 }
+
+func TestHistoryUpdatesSkipsRemindersAndShowsSkillCommands(t *testing.T) {
+	entries := []sessions.Entry{
+		sessions.MessageEntry{Message: protocol.UserMessage{Content: []protocol.UserBlock{protocol.Text{Text: protocol.SystemReminder("job 1 finished")}}}},
+		sessions.MessageEntry{Message: protocol.UserMessage{Content: []protocol.UserBlock{protocol.Text{Text: protocol.SkillInput("review", "/abs/skills/review/SKILL.md", "body", "now")}}}},
+	}
+	updates := historyUpdates(entries)
+	require.Len(t, updates, 1)
+	require.NotNil(t, updates[0].UserMessageChunk)
+	text := updates[0].UserMessageChunk.Content.Text
+	require.NotNil(t, text)
+	require.Equal(t, "/skill:review now", text.Text)
+}
+
+func TestHistoryUpdatesPairsRepeatedCallIDsInLogOrder(t *testing.T) {
+	call := protocol.ToolCall{ID: "c1", Name: "bash", Arguments: json.RawMessage(`{}`)}
+	entries := []sessions.Entry{
+		sessions.MessageEntry{Message: protocol.AssistantMessage{Content: []protocol.AssistantBlock{call}}},
+		sessions.MessageEntry{Message: protocol.ToolResultMessage{ToolCallID: "c1", ToolName: "bash"}},
+		sessions.MessageEntry{Message: protocol.AssistantMessage{Content: []protocol.AssistantBlock{call}}},
+	}
+	var starts []*sdk.SessionUpdateToolCall
+	for _, u := range historyUpdates(entries) {
+		if u.ToolCall != nil {
+			starts = append(starts, u.ToolCall)
+		}
+	}
+	require.Len(t, starts, 2)
+	require.Equal(t, sdk.ToolCallStatusCompleted, starts[0].Status)
+	// The second call with the same ID has no result yet.
+	require.Equal(t, sdk.ToolCallStatusInProgress, starts[1].Status)
+}

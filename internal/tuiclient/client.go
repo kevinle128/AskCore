@@ -524,13 +524,14 @@ func (c *Client) loadSession(ctx context.Context, conn *rpc.Conn, opts tui.NewSe
 		// keeps its own ID for every call.
 		id = alias
 	}
-	info := tui.SessionInfo{ID: id, Role: protocol.ACPRoleDriver, Cwd: abs, FlagsIgnored: !opts.Flags.IsZero() && !acked}
-	c.setSession(info)
-	role, err := c.loadedRole(ctx, conn, info.ID)
+	// The role is known before the session is recorded: a link that drops
+	// meanwhile must not leave a driver role that the restore would take back
+	// from the driver of a joined session.
+	role, err := c.loadedRole(ctx, conn, id)
 	if err != nil {
-		return info, err
+		return tui.SessionInfo{}, err
 	}
-	info.Role = role
+	info := tui.SessionInfo{ID: id, Role: role, Cwd: abs, FlagsIgnored: !opts.Flags.IsZero() && !acked}
 	c.setSession(info)
 	if err := c.follow(ctx, conn, info.ID, nil, followFresh); err != nil {
 		return info, err

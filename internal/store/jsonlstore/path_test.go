@@ -5,6 +5,7 @@ import (
 	"errors"
 	"strings"
 	"testing"
+	"unicode/utf8"
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -78,4 +79,13 @@ func TestSameCwdEncodingDifferentCwdIsRefused(t *testing.T) {
 	w, err = s.Open(ctx, first, "100000000000000001")
 	require.NoError(t, err)
 	require.NoError(t, w.Close())
+}
+
+func TestEncodeCwdCutKeepsWholeRunes(t *testing.T) {
+	// Each ü is two bytes, so the cut at an odd byte offset falls inside a
+	// rune when it is not backed up.
+	long := "/" + strings.Repeat("ü", 150)
+	name := encodeCwd(long)
+	assert.True(t, utf8.ValidString(name), "the folder name is valid UTF-8")
+	assert.LessOrEqual(t, len(name), maxDirName)
 }

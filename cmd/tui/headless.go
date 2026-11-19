@@ -180,6 +180,14 @@ func runWithDependencies(argv []string, stdin io.Reader, stdout, stderr io.Write
 		report(stderr, "Error:", err)
 		return 1
 	}
+	// The prompts are read before the session log is opened: a bad @file or a
+	// failed stdin read then leaves a resumed log untouched, and a slow pipe
+	// does not hold the lock of the session.
+	prompts, err := readPrompts(o, stdin, stdinTTY)
+	if err != nil {
+		report(stderr, "Error:", err)
+		return 1
+	}
 	ps, err := openPrintSession(context.Background(), o, deps.getenv("ASK_HOME"), cwd, deps.now)
 	if err != nil {
 		report(stderr, "Error:", err)
@@ -216,14 +224,6 @@ func runWithDependencies(argv []string, stdin io.Reader, stdout, stderr io.Write
 		return 1
 	}
 	agentOwnsLog = true
-	prompts, err := readPrompts(o, stdin, stdinTTY)
-	if err != nil {
-		report(stderr, "Error:", err)
-		if err := ag.Dispose(); err != nil {
-			report(stderr, "Dispose:", err)
-		}
-		return 1
-	}
 	if mode == modeJSON {
 		// The header is the first line, before any event. It goes out before
 		// the agent can run, so no event can come first.

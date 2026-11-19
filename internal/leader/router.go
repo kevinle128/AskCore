@@ -905,6 +905,9 @@ func (r *router) finishAliasJoin(c *client, restored Restored, out *rpcMessage, 
 	}
 	r.addMember(c, target)
 	c.sendACP(stripRouteMeta(out), "", 0)
+	// A client that joins late still sees the questions that are open, as
+	// after an attach.
+	r.replayQuestions(c, target)
 }
 
 // finishJoin ends a load of a session that the router already routed.
@@ -918,6 +921,7 @@ func (r *router) finishJoin(c *client, restored Restored, out *rpcMessage, tag *
 		return
 	}
 	c.sendACP(stripRouteMeta(out), "", 0)
+	r.replayQuestions(c, s)
 }
 
 func (r *router) finishFollow(c *client, restored Restored, out *rpcMessage, tag *reqTag, failed bool) {

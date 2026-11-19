@@ -1436,6 +1436,10 @@ def ask_resume(session):
                     len(USAGE_ROW.findall(s['text'])) >= 2, timeout=40)
         second.wait_empty_prompt()
         second.quit()
+    except Exception:
+        # The outer runner captures the first session, which is closed by now.
+        second.capture('failure')
+        raise
     finally:
         second.close()
     return {'continued': 'old prompt, tool row and reply shown', 'new_prompt': 'answered'}

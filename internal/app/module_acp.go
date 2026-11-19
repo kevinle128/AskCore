@@ -196,6 +196,10 @@ func NewACPRuntime(p ACPParams) (*ACPRuntime, error) {
 			}
 			picked, err := c.choose(ctx, ModelOptions{Pattern: req.Flags.Model, Thinking: req.Flags.Thinking, Scope: req.Flags.Models, Restored: restored}, session.Settings)
 			if err != nil {
+				if errors.Is(err, context.Canceled) || errors.Is(err, acp.ErrModelAccess) {
+					// The adapter answers these kinds with fixed text of its own.
+					return nil, err
+				}
 				if restored != nil && req.Flags.Model == "" && errors.Unwrap(err) != nil {
 					// The error wraps another one, which can hold text of the
 					// credential check. The client gets fixed text.

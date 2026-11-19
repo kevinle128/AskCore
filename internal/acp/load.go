@@ -32,6 +32,9 @@ func (a *Adapter) LoadSession(ctx context.Context, req sdk.LoadSessionRequest) (
 	if id == "" {
 		return sdk.LoadSessionResponse{}, requestError(newKindError(protocol.ACPErrInvalidParams, "session id is required"))
 	}
+	if flags.NoSession {
+		return sdk.LoadSessionResponse{}, requestError(newKindError(protocol.ACPErrInvalidParams, "a stored session cannot be loaded without saving"))
+	}
 	if err := a.checkRouteSession(route, id); err != nil {
 		return sdk.LoadSessionResponse{}, requestError(err)
 	}
@@ -57,8 +60,6 @@ func (a *Adapter) LoadSession(ctx context.Context, req sdk.LoadSessionRequest) (
 	case routed:
 		// The router believes that the host runs the session; the host does not.
 		return sdk.LoadSessionResponse{}, requestError(errUnknownSession)
-	case flags.NoSession:
-		return sdk.LoadSessionResponse{}, requestError(newKindError(protocol.ACPErrInvalidParams, "a stored session cannot be loaded without saving"))
 	}
 	s, err := a.host.LoadSessionWith(ctx, SessionRequest{ID: id, Cwd: req.Cwd, Trust: trust, Flags: flags})
 	if err != nil {
@@ -98,7 +99,7 @@ func (a *Adapter) joinLoaded(ctx context.Context, s *Session, asked string, rout
 // before the answer of the load, in log order. With a route they name the
 // calling client, so that the router sends them to it and to no other client
 // that follows the session. sessionID is the ID that the client asked for. A
-// write error fails the connection.
+// write error fails the connection; a cancelled request only stops the replay.
 //
 // Live events of a run that is active during a join are written by the session
 // writer on its own; they can interleave with the history, which a client
@@ -119,8 +120,18 @@ func (a *Adapter) replay(ctx context.Context, s *Session, sessionID string, rout
 		meta = map[string]any{protocol.ACPRouteMetaKey: protocol.ACPRouteMeta{ClientID: route.ClientID}}
 	}
 	for _, u := range updates {
-		if err := out.n.SessionUpdate(ctx, sdk.SessionNotification{SessionId: sdk.SessionId(sessionID), Update: u, Meta: meta}); err != nil {
-			a.host.latch(err)
+		if err := ctx.Err(); err != nil {
+			return err
+		}
+		// The frames go out on the host context: the SDK fails a write on a
+		// cancelled context, and the end of one request is no output failure.
+		if err := out.n.SessionUpdate(a.host.ctx, sdk.SessionNotification{SessionId: sdk.SessionId(sessionID), Update: u, Meta: meta}); err != nil {
+			if a.host.ctx.Err() == nil {
+				a.host.latch(err)
+				if f := a.host.Failure(); f != nil {
+					return f
+				}
+			}
 			return err
 		}
 	}
@@ -140,19 +151,37 @@ func sameDir(a, b string) bool {
 // historyUpdates maps the log of a session to the standard updates that rebuild
 // the conversation: user text and images, assistant text and thinking, and each
 // tool call with its final status followed by its result. Seed and notice
-// messages, and every entry that is not a message, are not part of what the
-// user saw, so they are not sent. A call with no result in the log is still
-// running.
+// messages, system reminders, and every entry that is not a message, are not
+// part of what the user saw, so they are not sent. A call with no result in the
+// log is still running.
+//
+// A call ID can repeat in a log, so each result settles the oldest call with
+// its ID that has no result yet, in log order.
 func historyUpdates(entries []sessions.Entry) []sdk.SessionUpdate {
-	results := map[string]protocol.ToolResultMessage{}
+	var results []*protocol.ToolResultMessage
+	pending := map[string][]int{}
 	for _, e := range entries {
-		if m, ok := e.(sessions.MessageEntry); ok {
-			if r, ok := m.Message.(protocol.ToolResultMessage); ok {
-				results[r.ToolCallID] = r
+		m, ok := e.(sessions.MessageEntry)
+		if !ok {
+			continue
+		}
+		switch msg := m.Message.(type) {
+		case protocol.AssistantMessage:
+			for _, b := range msg.Content {
+				if c, ok := b.(protocol.ToolCall); ok {
+					pending[c.ID] = append(pending[c.ID], len(results))
+					results = append(results, nil)
+				}
+			}
+		case protocol.ToolResultMessage:
+			if slots := pending[msg.ToolCallID]; len(slots) > 0 {
+				results[slots[0]] = &msg
+				pending[msg.ToolCallID] = slots[1:]
 			}
 		}
 	}
 	var out []sdk.SessionUpdate
+	call := 0
 	for _, e := range entries {
 		m, ok := e.(sessions.MessageEntry)
 		if !ok {
@@ -160,7 +189,9 @@ func historyUpdates(entries []sessions.Entry) []sdk.SessionUpdate {
 		}
 		switch msg := m.Message.(type) {
 		case protocol.UserMessage:
-			out = append(out, userUpdates(msg.Content)...)
+			if !protocol.IsSystemReminder(msg) {
+				out = append(out, userUpdates(msg.Content)...)
+			}
 		case protocol.AssistantMessage:
 			for _, b := range msg.Content {
 				switch v := b.(type) {
@@ -169,7 +200,8 @@ func historyUpdates(entries []sessions.Entry) []sdk.SessionUpdate {
 				case protocol.Thinking:
 					out = append(out, textUpdate(v.Thinking, true)...)
 				case protocol.ToolCall:
-					out = append(out, toolCallUpdates(v, results)...)
+					out = append(out, toolCallUpdates(v, results[call])...)
+					call++
 				}
 			}
 		}
@@ -182,8 +214,14 @@ func userUpdates(blocks []protocol.UserBlock) []sdk.SessionUpdate {
 	for _, b := range blocks {
 		switch v := b.(type) {
 		case protocol.Text:
-			if v.Text != "" {
-				out = append(out, sdk.UpdateUserMessageText(v.Text))
+			// A prompt that the agent expanded from "/skill:<name>" shows as the
+			// user typed it, not as the skill body and its path.
+			text := v.Text
+			if cmd, ok := protocol.SkillInputCommand(text); ok {
+				text = cmd
+			}
+			if text != "" {
+				out = append(out, sdk.UpdateUserMessageText(text))
 			}
 		case protocol.Image:
 			out = append(out, sdk.UpdateUserMessage(sdk.ImageBlock(v.Data, v.MimeType)))
@@ -194,8 +232,9 @@ func userUpdates(blocks []protocol.UserBlock) []sdk.SessionUpdate {
 
 // toolCallUpdates gives the tool_call of a call with the status that its result
 // settled on, then the tool_call_update with the result content.
-func toolCallUpdates(c protocol.ToolCall, results map[string]protocol.ToolResultMessage) []sdk.SessionUpdate {
-	r, done := results[c.ID]
+// A nil result means the call is still running.
+func toolCallUpdates(c protocol.ToolCall, r *protocol.ToolResultMessage) []sdk.SessionUpdate {
+	done := r != nil
 	status := sdk.ToolCallStatusInProgress
 	if done {
 		status = sdk.ToolCallStatusCompleted

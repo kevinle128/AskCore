@@ -232,3 +232,33 @@ func TestLoggedSelectionKeepsMethodAfterSwitchBack(t *testing.T) {
 	require.True(t, ok)
 	assert.Equal(t, "oauth", method)
 }
+
+func TestLoggedSelectionIgnoresDeltaLevelAfterModelChange(t *testing.T) {
+	entries := []sessions.Entry{
+		sessions.ModelChange{Model: sessions.ModelRef{Provider: "openai", API: "responses", ID: "m"}},
+		// A hook raised the level of this one request; the session stays on the
+		// default level.
+		sessions.RequestDelta{AttemptID: "a1", Model: sessions.ModelRef{Provider: "openai", API: "responses", ID: "m"}, Options: sessions.RequestOptions{Reasoning: protocol.ThinkingHigh}},
+	}
+
+	model, _, level, ok := agent.LoggedSelection(entries)
+
+	require.True(t, ok)
+	assert.Equal(t, "m", model.ID)
+	assert.Equal(t, protocol.ThinkingLevel(""), level)
+}
+
+func TestLoggedSelectionDropsMethodOfSameIDOnAnotherAPI(t *testing.T) {
+	responses := sessions.ModelRef{Provider: "openai", API: "responses", ID: "gpt"}
+	completions := sessions.ModelRef{Provider: "openai", API: "completions", ID: "gpt", BaseURLHost: "proxy.example"}
+	entries := []sessions.Entry{
+		sessions.RequestDelta{AttemptID: "a1", Model: responses},
+		settled("a1", "oauth"),
+		sessions.ModelChange{Model: completions},
+	}
+
+	_, method, _, ok := agent.LoggedSelection(entries)
+
+	require.True(t, ok)
+	assert.Empty(t, method, "a binding of another API or endpoint does not carry over")
+}

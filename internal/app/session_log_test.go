@@ -286,3 +286,9 @@ func TestSessionLogLatestSkipsSessionsWithoutAssistantReply(t *testing.T) {
 	require.ErrorIs(t, err, store.ErrSessionNotFound)
 	assert.Equal(t, "no session to continue in "+other, err.Error())
 }
+
+func TestSessionErrorWithoutIDNamesTheFolder(t *testing.T) {
+	err := sessionError(os.ErrPermission, "/work", "")
+	assert.Equal(t, "sessions in /work: "+os.ErrPermission.Error(), err.Error())
+	assert.ErrorIs(t, err, os.ErrPermission)
+}

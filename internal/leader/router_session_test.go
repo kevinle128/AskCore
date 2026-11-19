@@ -501,10 +501,10 @@ func TestRouterLoadCallerLeavesBeforeAnswer(t *testing.T) {
 	a.request("session/load", map[string]any{"sessionId": "s55", "cwd": "/w", "mcpServers": []any{}})
 	req := h.agent.waitRequests("session/load", 1)[0]
 	a.close()
-	eventually(t, "the client is gone", func() bool {
-		_, e := b.call(protocol.ACPListLive, map[string]any{})
-		return e == nil
-	})
+	a.waitClosed()
+	// The router must drop the caller before the host answers, so the answer
+	// finds no caller.
+	eventually(t, "the client is gone", func() bool { return h.clientCount() == 1 })
 	h.agent.result(req.ID, loadResult(2))
 
 	eventually(t, "the loaded session has no driver", func() bool {

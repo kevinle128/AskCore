@@ -5,6 +5,7 @@ import (
 	"encoding/hex"
 	"path/filepath"
 	"strings"
+	"unicode/utf8"
 )
 
 const (
@@ -30,7 +31,13 @@ func encodeCwd(cwd string) string {
 		return "--" + name + "--"
 	}
 	sum := sha256.Sum256([]byte(cwd))
-	return "--" + name[:maxDirName-4-17] + "-" + hex.EncodeToString(sum[:8]) + "--"
+	// The cut backs up to a rune start, so a multi-byte character is never
+	// split: a file system that takes only UTF-8 names refuses half of one.
+	limit := maxDirName - 4 - 17
+	for limit > 0 && !utf8.RuneStart(name[limit]) {
+		limit--
+	}
+	return "--" + name[:limit] + "-" + hex.EncodeToString(sum[:8]) + "--"
 }
 
 // validID reports whether id is safe to use as a file name. Ids come from the

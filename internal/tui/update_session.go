@@ -278,19 +278,21 @@ func (s *sessionView) onNewSession(msg newSessionMsg) tea.Cmd {
 	// the view never waits for ever.
 	s.starting = false
 	s.endTrustPre()
+	if msg.err != nil && msg.load {
+		// The command line named a session. Another one would not be what the
+		// user asked for, so the program ends with the reason, as a failed
+		// open does. This holds for an older generation too: a link that
+		// dropped during the load cleared the request, and no reconnect loads
+		// the session again.
+		s.startErr = msg.err
+		s.m.quitting = true
+		return tea.Quit
+	}
 	if msg.gen != s.gen {
 		return nil
 	}
 	if msg.err == nil {
 		s.start.session = msg.info.ID
-	}
-	if msg.err != nil && msg.load {
-		// The command line named a session. Another one would not be what the
-		// user asked for, so the program ends with the reason, as a failed
-		// open does.
-		s.startErr = msg.err
-		s.m.quitting = true
-		return tea.Quit
 	}
 	if msg.err != nil {
 		s.needNew = true

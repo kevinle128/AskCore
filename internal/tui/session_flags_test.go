@@ -97,3 +97,15 @@ func TestRefusedLoadEndsTheProgramWithTheReason(t *testing.T) {
 	require.Equal(t, []NewSessionOptions{{Load: "42"}}, fc.sentOptions())
 	require.Empty(t, m.ExitNote(), "a failed start is not a quit")
 }
+
+// A load that fails after the link dropped still ends the program: the drop
+// moved the generation, and no reconnect loads the session again.
+func TestRefusedLoadOfOlderGenerationEndsTheProgram(t *testing.T) {
+	fc := newFakeClient()
+	m := New(Options{Client: fc, Profile: colorprofile.NoTTY, TickInterval: -1, Session: NewSessionOptions{Load: "42"}})
+	m.sv.gen = 3
+	cmd := m.sv.onNewSession(newSessionMsg{gen: 2, err: errors.New("connection lost"), load: true})
+	require.NotNil(t, cmd)
+	require.EqualError(t, m.StartError(), "connection lost")
+	require.True(t, m.quitting)
+}
