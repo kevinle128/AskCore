@@ -122,7 +122,8 @@ type CycleStart struct {
 
 // CycleEnd closes an input cycle. Reason is one of completed, blocked,
 // max-tokens, aborted, error or continuation-limit. Cause is set only for
-// reason aborted and is one of user, deadline, output, disposed or canceled.
+// reason aborted and is one of user, deadline, output, disposed, canceled or
+// interrupted (a resumed session closes a cycle that a crash left open).
 // Code is set only for reason error: it is the code of the failure that ended
 // the cycle (RATE_LIMIT, AUTH, SERVER and so on, or UNKNOWN for an error that
 // holds no provider fact).

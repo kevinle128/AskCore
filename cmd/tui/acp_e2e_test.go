@@ -32,6 +32,7 @@ import (
 	"github.com/stretchr/testify/require"
 
 	"AskCore/internal/testsupport"
+	"AskCore/pkg/protocol"
 )
 
 const e2eWait = 30 * time.Second
@@ -456,9 +457,9 @@ func TestACPE2EInitialize(t *testing.T) {
 	require.NoError(t, json.Unmarshal(init.Result, &res))
 	require.Equal(t, 1, res.ProtocolVersion)
 	require.Equal(t, "ask", res.AgentInfo.Name)
-	require.False(t, res.AgentCapabilities.LoadSession, "no durable load is advertised")
+	require.True(t, res.AgentCapabilities.LoadSession, "session/load is advertised")
 	require.Equal(t, true, res.AgentCapabilities.PromptCapabilities["image"])
-	require.Equal(t, map[string]any{"close": map[string]any{}}, res.AgentCapabilities.Session, "only session/close is advertised; no list or resume")
+	require.Equal(t, map[string]any{"close": map[string]any{}}, res.AgentCapabilities.Session, "only session/close is advertised in the session capabilities; no list or resume")
 	ids := map[string]bool{}
 	for _, m := range res.AuthMethods {
 		ids[m.ID] = true
@@ -1210,7 +1211,6 @@ func TestACPE2EUnsupported(t *testing.T) {
 		kind   string
 		code   int
 	}{
-		{"session/load", map[string]any{"sessionId": sid, "cwd": t.TempDir(), "mcpServers": []any{}}, "", -32601},
 		{"session/list", map[string]any{}, "unsupported", -32601},
 		{"session/resume", map[string]any{"sessionId": sid, "cwd": t.TempDir()}, "unsupported", -32601},
 		{"session/set_mode", map[string]any{"sessionId": sid, "modeId": "x"}, "unsupported", -32601},
@@ -1241,6 +1241,112 @@ func TestACPE2EUnsupported(t *testing.T) {
 }
 
 // quietStderr requires that stderr holds connection notices only: no error, no panic.
+// e2eLoad is the parameters of session/load.
+func e2eLoad(sid, cwd string) map[string]any {
+	return map[string]any{"sessionId": sid, "cwd": cwd, "mcpServers": []any{}}
+}
+
+// updateKinds lists the kind and text of the session/update frames of a session.
+func (p *e2ePeer) updateKinds(sid string) []string {
+	var out []string
+	for _, f := range p.updates(sid) {
+		var n struct {
+			Update struct {
+				SessionUpdate string `json:"sessionUpdate"`
+				Content       struct {
+					Text string `json:"text"`
+				} `json:"content"`
+			} `json:"update"`
+		}
+		_ = json.Unmarshal(f.Params, &n)
+		out = append(out, n.Update.SessionUpdate+":"+n.Update.Content.Text)
+	}
+	return out
+}
+
+// A saved session is loaded by a new process: the history comes back as
+// updates before the answer, and the next prompt continues the conversation.
+func TestACPE2ELoadSessionAfterRestart(t *testing.T) {
+	home := filepath.Join(t.TempDir(), "ask-home")
+	require.NoError(t, os.MkdirAll(home, 0o700))
+	cwd := t.TempDir()
+
+	first := startE2E(t, e2eOptions{home: home, env: fastEnv()})
+	first.initialize()
+	var created struct {
+		SessionID string `json:"sessionId"`
+	}
+	first.ok("session/new", map[string]any{"cwd": cwd, "mcpServers": []any{}}, &created)
+	sid := created.SessionID
+	first.ok("session/prompt", e2ePrompt(sid, "remember the apple"), nil)
+	reply := first.text(sid)
+	require.NotEmpty(t, reply)
+	require.NoError(t, first.in.Close())
+	require.Equal(t, 0, first.waitExit())
+
+	second := startE2E(t, e2eOptions{home: home, env: fastEnv()})
+	second.initialize()
+	id := second.send("session/load", e2eLoad(sid, cwd))
+	f := second.await(id)
+	require.Nil(t, f.Error, "%+v", f.Error)
+	require.Equal(t, []string{"user_message_chunk:remember the apple", "agent_message_chunk:" + reply}, second.updateKinds(sid))
+	require.Greater(t, second.replyIndex(id), second.lastUpdateIndexOf(sid), "the history comes before the answer")
+
+	var before, after struct {
+		MessageCount int `json:"messageCount"`
+	}
+	second.ok("_ask/session/state", e2eSession(sid), &before)
+	second.ok("session/prompt", e2ePrompt(sid, "and the pear"), nil)
+	second.ok("_ask/session/state", e2eSession(sid), &after)
+	require.Equal(t, before.MessageCount+2, after.MessageCount, "the loaded conversation continues")
+	require.NoError(t, second.in.Close())
+	require.Equal(t, 0, second.waitExit())
+
+	// The second turn was saved on the same log.
+	third := startE2E(t, e2eOptions{home: home, env: fastEnv()})
+	third.initialize()
+	third.ok("session/load", e2eLoad(sid, cwd), nil)
+	require.Len(t, third.updateKinds(sid), 4)
+}
+
+// A session that another process holds, and a session of another folder, do not
+// load.
+func TestACPE2ELoadSessionRefusals(t *testing.T) {
+	home := filepath.Join(t.TempDir(), "ask-home")
+	require.NoError(t, os.MkdirAll(home, 0o700))
+	cwd := t.TempDir()
+
+	holder := startE2E(t, e2eOptions{home: home, env: fastEnv()})
+	holder.initialize()
+	var created struct {
+		SessionID string `json:"sessionId"`
+	}
+	holder.ok("session/new", map[string]any{"cwd": cwd, "mcpServers": []any{}}, &created)
+	sid := created.SessionID
+
+	other := startE2E(t, e2eOptions{home: home, env: fastEnv()})
+	other.initialize()
+	f := other.call("session/load", e2eLoad(sid, cwd))
+	require.Equal(t, "session_in_use", f.errKind(t))
+	require.Equal(t, protocol.ACPCodeSessionInUse, f.Error.Code)
+	require.Empty(t, other.updates(sid))
+	f = other.call("session/load", e2eLoad(sid, t.TempDir()))
+	require.Equal(t, "unknown_session", f.errKind(t), "a session of another folder is not found")
+	f = other.call("session/load", e2eLoad("1863000000000000009", cwd))
+	require.Equal(t, "unknown_session", f.errKind(t))
+	// An id is a name, never a path, so it cannot reach another file.
+	for _, bad := range []string{"../x", "a/b", "..", `a\b`, strings.Repeat("9", 4096)} {
+		f = other.call("session/load", e2eLoad(bad, cwd))
+		require.Equal(t, "unknown_session", f.errKind(t), bad)
+		require.NotContains(t, f.Error.Message, bad)
+	}
+
+	// The holder's end frees the session at once, also when it is killed.
+	require.NoError(t, holder.cmd.Process.Kill())
+	holder.waitExit()
+	require.Nil(t, other.call("session/load", e2eLoad(sid, cwd)).Error)
+}
+
 func quietStderr(t *testing.T, p *e2ePeer) {
 	t.Helper()
 	for _, l := range strings.Split(strings.TrimSpace(p.stderr.String()), "\n") {

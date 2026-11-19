@@ -197,7 +197,38 @@ type InputOutcome struct {
 	Reason   string `json:"reason,omitempty"`
 }
 
+// ModelChange records the model that later requests use. The Agent appends it
+// at run start when the selection differs from the last logged one, so a
+// resumed session continues on the same model.
+type ModelChange struct {
+	Model ModelRef `json:"model"`
+}
+
+// ThinkingChange records the thinking level that later requests use.
+type ThinkingChange struct {
+	Level protocol.ThinkingLevel `json:"level"`
+}
+
+// ContextReplacement is the message that stands in for an edited message in
+// the model context.
+type ContextReplacement struct {
+	Message protocol.Message `json:"message"`
+}
+
+// ContextEdit changes what the model sees of one earlier message without
+// changing the log: Target is the log position (seq) of a MessageEntry. A nil
+// Replacement omits the message from the model history; otherwise the
+// replacement takes its place. The history of the session still holds the
+// original. The latest edit of a target wins.
+type ContextEdit struct {
+	Target      int                 `json:"target"`
+	Replacement *ContextReplacement `json:"replacement,omitempty"`
+}
+
 func (MessageEntry) entry()   {}
+func (ModelChange) entry()    {}
+func (ThinkingChange) entry() {}
+func (ContextEdit) entry()    {}
 func (CycleOpened) entry()    {}
 func (CycleClosed) entry()    {}
 func (TurnOpened) entry()     {}
@@ -243,6 +274,14 @@ func Clone(e Entry) Entry {
 		return v
 	case SystemSnapshot:
 		v.Tools = CloneTools(v.Tools)
+		return v
+	case ModelChange:
+		v.Model.HeaderNames = append([]string(nil), v.Model.HeaderNames...)
+		return v
+	case ContextEdit:
+		if v.Replacement != nil {
+			v.Replacement = &ContextReplacement{Message: protocol.CloneMessage(v.Replacement.Message)}
+		}
 		return v
 	}
 	return e
@@ -292,14 +331,35 @@ func cloneMessages(msgs []protocol.Message) []protocol.Message {
 	return out
 }
 
-// MessagesOf returns the messages of the message entries in entries, in log
-// order, as deep copies. It is the model history that the entries give.
+// MessagesOf returns the model history that entries give, in log order, as
+// deep copies: the messages of the message entries after the context edits.
+// entries must start at log position 0, because an edit names its target by
+// position. An edit applies only to an earlier entry, and the latest edit of a
+// target wins. An omitted message is left out; a replaced message is swapped.
 func MessagesOf(entries []Entry) []protocol.Message {
-	out := make([]protocol.Message, 0, len(entries))
-	for _, e := range entries {
-		if m, ok := e.(MessageEntry); ok {
-			out = append(out, protocol.CloneMessage(m.Message))
+	var edits map[int]ContextEdit
+	for i, e := range entries {
+		if ed, ok := e.(ContextEdit); ok && ed.Target >= 0 && ed.Target < i {
+			if edits == nil {
+				edits = map[int]ContextEdit{}
+			}
+			edits[ed.Target] = ed
 		}
+	}
+	out := make([]protocol.Message, 0, len(entries))
+	for i, e := range entries {
+		m, ok := e.(MessageEntry)
+		if !ok {
+			continue
+		}
+		msg := m.Message
+		if ed, edited := edits[i]; edited {
+			if ed.Replacement == nil {
+				continue
+			}
+			msg = ed.Replacement.Message
+		}
+		out = append(out, protocol.CloneMessage(msg))
 	}
 	return out
 }

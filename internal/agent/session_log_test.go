@@ -38,7 +38,7 @@ func logged[T sessions.Entry](log sessions.Writer) []T {
 
 // withLog makes the Agent write to log.
 func withLog(log sessions.Writer) func(*agent.Config) {
-	return func(c *agent.Config) { c.NewContext = func() sessions.Writer { return log } }
+	return func(c *agent.Config) { c.NewContext = func() (sessions.Writer, error) { return log, nil } }
 }
 
 // edits chains config edits.
@@ -770,7 +770,7 @@ func TestAttemptUsageIsUnknownWhenProviderSentNone(t *testing.T) {
 					func(as *providers.Assembler) { as.Start(); as.Done(protocol.StopStop) })
 			},
 		},
-		NewContext: func() sessions.Writer { return log },
+		NewContext: func() (sessions.Writer, error) { return log, nil },
 	})
 	require.NoError(t, err)
 	require.NoError(t, a.Prompt(context.Background(), user("go")))
@@ -864,7 +864,7 @@ func testAdapterCredentialCanaries(t *testing.T) {
 	model := providers.TokenPlanMessages()
 	model.BaseURL = server.URL
 	log := &sessions.MemoryLog{}
-	a, err := agent.New(agent.Config{Registry: registry, NewContext: func() sessions.Writer { return log }, LoopConfig: agent.LoopConfig{Model: model, Options: providers.StreamOptions{APIKey: canaryAPIKey}, Wait: func(context.Context, time.Duration) error { return nil }}})
+	a, err := agent.New(agent.Config{Registry: registry, NewContext: func() (sessions.Writer, error) { return log, nil }, LoopConfig: agent.LoopConfig{Model: model, Options: providers.StreamOptions{APIKey: canaryAPIKey}, Wait: func(context.Context, time.Duration) error { return nil }}})
 	require.NoError(t, err)
 	defer func() { require.NoError(t, a.Dispose()) }()
 	rec := &recorder{}

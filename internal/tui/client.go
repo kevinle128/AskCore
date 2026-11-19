@@ -96,6 +96,11 @@ type NewSessionOptions struct {
 	// Flags are the prompt and tool flags of the command line. The zero value
 	// sends none.
 	Flags protocol.ACPSessionOptions
+	// Load is a stored session to continue. NewSession then sends session/load
+	// for it, with the same trust and flags, and makes it current. It is for the
+	// first session start of a command line that names a session; a session
+	// that /new or a lost session starts is always a new one.
+	Load string
 }
 
 // Client is what the UI needs from an agent. Calls block until they are

@@ -366,10 +366,10 @@ func (g *gateClock) open() {
 // preloaded returns an Agent edit whose log starts with a user message.
 func preloaded(text string) func(*agent.Config) {
 	return func(c *agent.Config) {
-		c.NewContext = func() sessions.Writer {
+		c.NewContext = func() (sessions.Writer, error) {
 			log := &sessions.MemoryLog{}
 			_, _ = log.Append(sessions.MessageEntry{Message: protocol.UserMessage{Content: []protocol.UserBlock{protocol.Text{Text: text}}}})
-			return log
+			return log, nil
 		}
 	}
 }

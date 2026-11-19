@@ -75,6 +75,10 @@ type AgentSpec struct {
 	// Thinking is the start thinking level of the session, or empty to keep
 	// the default of the agent constructor.
 	Thinking protocol.ThinkingLevel
+	// Log says how the session log is made: a resumed session, no saving, or
+	// an immediate store. The zero value saves a new session with its first
+	// assistant message.
+	Log SessionLogOptions
 }
 
 // PrepareSession does all the file reads of a session start. The trust

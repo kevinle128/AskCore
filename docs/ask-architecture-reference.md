@@ -51,7 +51,7 @@ Process model          leader (local router, client), acp (ACP adapter over the 
   ▼
 Runtime core            agent (two-level loop, steer and follow-up queues)
                         ├─ pipeline (typed control points)
-                        ├─ sessions (in-memory log; persistent tree planned), scheduler (planned lanes), bus (replay/follow), workspace
+                        ├─ sessions (typed log, codec, ids; saved by a store backend), scheduler (planned lanes), bus (replay/follow), workspace
   │
   ▼
 Capabilities            auth, providers, tools, mcp, skills, bootstrap, hooks, sandbox, tracing
@@ -59,6 +59,7 @@ Files under ~/.ask      settings (auth.json, settings.json, trust.json; project 
   │
   ▼
 Storage                 store (models + interfaces)  ◄──  store/gormstore (GORM implementation)
+                                                     ◄──  store/jsonlstore (session log files)
 
 pkg/protocol            Wire contract shared with clients (frames, methods, events, errors)
 proto/                  gRPC definitions (generated code only)
@@ -90,7 +91,7 @@ Go has no classes. A "class" is a struct with methods. The rule is **one package
 | `internal/skills` | SKILL.md metadata discovery; the skill list is sent as a user-role seed message | `internal/skills` |
 | `internal/bootstrap` | `AGENTS.md`/`CLAUDE.md` discovery, loading, escaping and size caps; `SYSTEM.md` and `APPEND_SYSTEM.md` precedence; `templates/` is a data folder for embedded `.md` templates (not a Go package) | `internal/bootstrap` |
 | `internal/memory` | parked | `internal/memory` |
-| `internal/sessions` | typed in-memory log; persistent tree and branch projection remain planned | `internal/sessions` |
+| `internal/sessions` | typed log, entry codec, session ids, and the in-memory writer; saved by a `store.SessionStore` backend; fork into a child session remains planned | `internal/sessions` |
 | `internal/scheduler` | lanes and concurrency limits | `internal/scheduler` |
 | `internal/tasks` | per-Agent registry of async tasks: lifetime, terminal transition, output sink, notice, output sweep; see [ADR 0004](adr/0004-agent-owned-async-task-runtime.md) and its [README](../internal/tasks/README.md) | |
 | `internal/bus` | bounded replay ring and followers; publication belongs to agent | `internal/bus` |
@@ -104,6 +105,8 @@ Go has no classes. A "class" is a struct with methods. The rule is **one package
 | `internal/channels` | channel manager, `BaseChannel`; one subfolder for each platform, added when needed | `internal/channels` |
 | `internal/store` | data models and store interfaces, `Stores` aggregate | `internal/store` |
 | `internal/store/gormstore` | GORM implementation of the store interfaces, DB connection | `internal/store/pg`, `sqlitestore` |
+| `internal/store/jsonlstore` | JSONL file implementation of `store.SessionStore`: file layout, `flock`, torn-tail repair (see [ADR 0006](adr/0006-session-logs-as-jsonl-files.md)) | |
+| `internal/store/storetest` | contract suites that every session-store backend and the in-memory writer must pass | |
 | `internal/tracing` | traces and spans for runs, LLM calls, tool calls; `otelexport/` for OTLP | `internal/tracing` |
 | `internal/cache`, `messaging`, `realtime`, `validation`, `migrations` | Redis, asynq, centrifuge, validator, migration runner clients | infra clients in their own package, as in dewee |
 | `internal/testsupport` | shared test helpers | |
@@ -134,7 +137,7 @@ Ask has no `thirdparty/` folder. A vendor goes to the package of the capability 
 ## 4. Where interfaces live
 
 1. **A main interface is in the package that owns the concept**, usually in `types.go`: `tools.Tool`, `providers.Provider`, `agent.Agent`, `pipeline.Around`, `channels.Channel`, `hooks.Handler`, `sandbox.Clock`, `tracing.SpanExporter`.
-2. **Storage interfaces are in `internal/store`**, one file for each entity (`<entity>_store.go`). The implementation is in `store/gormstore`. `store.Stores` collects all store interfaces. A large interface is made from small ones (dewee `AgentStore` at `internal/store/agent_store.go:912-973`), and a consumer asks for the smallest one that it needs.
+2. **Storage interfaces are in `internal/store`**, one file for each entity (`<entity>_store.go`). The database implementation is in `store/gormstore`. `store.Stores` collects the database store interfaces. The session store (`store.SessionStore`) is not part of `store.Stores`: its implementation is `store/jsonlstore`, and a SQLite backend can follow behind the same interface. A large interface is made from small ones (dewee `AgentStore` at `internal/store/agent_store.go:912-973`), and a consumer asks for the smallest one that it needs.
 3. **A small private interface is at the consumer**, lower-case, in the file that uses it (dewee `humanHandoffAgentStore` at `internal/tools/human_handoff.go:27`).
 
 Create an interface only when there is a real second implementation or a test seam.
@@ -186,7 +189,7 @@ Exception: the soft-delete marker `DeletedAt gorm.DeletedAt` carries `json:"-"`.
 One Agent serves one session and owns one active execution driver.
 Control handlers can change decisions; observers must not become a second execution owner.
 The session log is the execution record, and the model context is a projection of its message entries.
-SQLite persistence and branch selection remain roadmap work; the current writer is in memory.
+The log is saved as JSONL files behind `store.SessionStore` (decision in [ADR 0006](adr/0006-session-logs-as-jsonl-files.md)); `sessions.MemoryLog` is the in-memory writer for tests and `--no-session`. A branch is a later fork into a child session; the log itself is linear.
 
 | Boundary | Owner | Reason |
 |---|---|---|
@@ -375,7 +378,7 @@ Allowed: `tools` imports `providers`, `sandbox`, `jobs` and `workspace`. `jobs` 
 | Rule | Denied imports |
 |---|---|
 | Handlers call store interfaces only | `http`, `gateway`, `gateway/methods` must not import `store/gormstore`, `gorm.io`, `database/sql` |
-| One composition root | Only `internal/app` and `cmd/server` import `store/gormstore` |
+| One composition root | Only `internal/app` and `cmd/server` import `store/gormstore`. Only `internal/app` imports `store/jsonlstore` (`jsonlstore-only-in-root` in `.golangci.yml`) |
 | Core does not import adapters | `agent`, `pipeline`, `tools`, `sandbox`, `jobs`, `workspace`, `providers`, `store`, `sessions`, `hooks`, `bus` must not import `acp`, `leader` |
 | Config through constructors | Only `internal/app` and `cmd/*` import `internal/config`. Runtime settings and credentials are files that `internal/settings` owns |
 | Providers receive resolved credentials | Providers must not import `internal/auth` or `internal/settings` |
@@ -398,6 +401,7 @@ Allowed: `tools` imports `providers`, `sandbox`, `jobs` and `workspace`. `jobs` 
 | A new user setting or credential | `internal/settings/` | |
 | Native login, refresh, or account access | `internal/auth/` | Reuse the app composition and existing provider adapters |
 | A new ACP method or update mapping | `internal/acp/`, types in `pkg/protocol` | |
+| A new session store backend | implementation in `internal/store/<backend>/`, passing `storetest.RunSessionStore`; one constructor in `internal/app` | the interface stays `store.SessionStore`; codec stays in `internal/sessions` |
 | A new persisted entity | model and interface in `internal/store/<entity>_store.go`, implementation in `internal/store/gormstore/<entity>.go`, SQL in `migrations/` | add the interface to `store.Stores` |
 | A new REST endpoint | `internal/http/<resource>.go` | call `store` interfaces or core packages; DTO only under section 6 |
 | A new WS RPC method | name in `pkg/protocol`, handler in `internal/gateway/methods/<resource>.go` | |
@@ -411,7 +415,7 @@ Allowed: `tools` imports `providers`, `sandbox`, `jobs` and `workspace`. `jobs` 
 
 ## 10. Database and entry points
 
-- **Database:** SQLite for both daemon and cloud mode (user decision, 2026-09-30). One migration folder, `migrations/`. PostgreSQL and its own migration folder are added only when cloud mode needs them.
+- **Database:** server data uses SQLite for both daemon and cloud mode (user decision, 2026-09-30). One migration folder, `migrations/`. Session logs are JSONL files in every mode (see [ADR 0006](adr/0006-session-logs-as-jsonl-files.md)); a SQLite session backend can follow behind `store.SessionStore`. PostgreSQL and its own migration folder are added only when cloud mode needs them.
 - **Entry points:** two binaries (user decision, 2026-09-30).
   `cmd/server` is the daemon (`ask-server`); operational commands (for example `migrate`) are flags or subcommands of it.
   `cmd/tui` is the `ask` binary (user decision, 2026-10-01, Grok model).

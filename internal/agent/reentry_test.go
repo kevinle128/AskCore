@@ -246,12 +246,12 @@ func TestResetClosesOldLogAndDisposeClosesCurrent(t *testing.T) {
 	var logs []*closingLog
 	var mu sync.Mutex
 	a := newAgent(t, p, m, func(c *agent.Config) {
-		c.NewContext = func() sessions.Writer {
+		c.NewContext = func() (sessions.Writer, error) {
 			mu.Lock()
 			defer mu.Unlock()
 			l := &closingLog{MemoryLog: &sessions.MemoryLog{}}
 			logs = append(logs, l)
-			return l
+			return l, nil
 		}
 	})
 

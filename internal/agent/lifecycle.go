@@ -233,6 +233,9 @@ const (
 	causeOutput   = "output"
 	// causeDisposed names the cancel of Agent.Dispose.
 	causeDisposed = "disposed"
+	// causeInterrupted names a cycle that a dead process left open: the next
+	// open of the session closes it.
+	causeInterrupted = "interrupted"
 )
 
 // abortCause names who cancelled ctx: "user" for Agent.Abort, "output" for

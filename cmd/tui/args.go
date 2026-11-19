@@ -82,6 +82,13 @@ type options struct {
 	// them to the host in session/new _meta, and print mode applies them
 	// itself.
 	session protocol.ACPSessionOptions
+	// continueLast resumes the newest session of the working directory that has
+	// an assistant reply, or starts a new one when there is none.
+	continueLast bool
+	// sessionID resumes the session with this id.
+	sessionID string
+	// noSession keeps the run out of the session store.
+	noSession bool
 }
 
 // diagnostic is one parse problem. Any error ends the program with exit 1; a
@@ -147,6 +154,13 @@ var valueFlags = map[string]func(o *options, v string) *diagnostic{
 		text, d := promptFlagText("--append-system-prompt", v)
 		o.session.AppendSystemPrompt = append(o.session.AppendSystemPrompt, text)
 		return d
+	},
+	"--session": func(o *options, v string) *diagnostic {
+		if v == "" {
+			return &diagnostic{err: true, msg: "--session requires a session id"}
+		}
+		o.sessionID = v
+		return nil
 	},
 	"--tools":  addToolNames,
 	"-t":       addToolNames,
@@ -252,6 +266,10 @@ func parseArgs(argv []string) (options, []diagnostic) {
 			o.noLeader = true
 		case arg == "--offline":
 			o.offline = true
+		case arg == "--continue" || arg == "-c":
+			o.continueLast = true
+		case arg == "--no-session":
+			o.noSession = true
 		case arg == "--no-tools" || arg == "-nt":
 			o.session.NoTools = true
 		case trustFlags[arg] != "":
@@ -291,6 +309,14 @@ func parseArgs(argv []string) (options, []diagnostic) {
 		fail("%s", err)
 	} else {
 		o.trust = t
+	}
+	switch {
+	case o.continueLast && o.sessionID != "":
+		fail("--continue cannot be used with --session")
+	case o.noSession && o.continueLast:
+		fail("--no-session cannot be used with --continue")
+	case o.noSession && o.sessionID != "":
+		fail("--no-session cannot be used with --session")
 	}
 	if _, err := tools.FlagSelection(o.session.Tools, o.session.NoTools); err != nil {
 		fail("%s", err)
@@ -374,6 +400,9 @@ Options:
                         Add text after the system prompt; repeat it to add more
   --tools, -t <names>   Built-in tools to keep, comma separated (for example read,grep)
   --no-tools, -nt       Keep no built-in tools
+  --continue, -c        Continue the newest saved session of this folder (new one if none)
+  --session <id>        Continue the saved session with this id
+  --no-session          Do not save this run (not with --continue or --session)
   --no-leader           TUI: run the agent in this process; do not connect to or start a leader
   --approve, -a         Trust the project settings of this folder for this run; saves nothing
   --no-approve, -na     Do not trust the project settings of this folder for this run

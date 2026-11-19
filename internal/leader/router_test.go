@@ -194,8 +194,9 @@ func TestRouterUnknownAndMalformedCalls(t *testing.T) {
 	require.Equal(t, -32602, e.Code)
 	_, e = a.call("fs/read_text_file", map[string]any{"sessionId": sid})
 	require.Equal(t, -32601, e.Code, "a method without a policy has no authority")
-	_, e = a.call("session/load", map[string]any{"sessionId": sid})
-	require.Equal(t, -32601, e.Code)
+	_, e = a.call("session/load", map[string]any{})
+	require.Equal(t, -32602, e.Code, "a load names its session")
+	require.Empty(t, h.agent.requests("session/load"))
 	require.Empty(t, h.agent.requests("fs/read_text_file"))
 
 	a.sendRaw(json.RawMessage(`{"jsonrpc":"1.0","id":9,"method":"session/prompt"}`))

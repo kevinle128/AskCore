@@ -89,7 +89,7 @@ func (*hostBrokenLog) Append(...sessions.Entry) (sessions.CommitRef, error) {
 func TestHostNoStartFailureStillWaitsForSettled(t *testing.T) {
 	var mu sync.Mutex
 	var kinds []string
-	h := hostFixture(t, func(c *agent.Config) { c.NewContext = func() sessions.Writer { return &hostBrokenLog{} } }, func(_ context.Context, _, _ string, e protocol.Event) error {
+	h := hostFixture(t, func(c *agent.Config) { c.NewContext = func() (sessions.Writer, error) { return &hostBrokenLog{}, nil } }, func(_ context.Context, _, _ string, e protocol.Event) error {
 		mu.Lock()
 		defer mu.Unlock()
 		kinds = append(kinds, e.EventType())

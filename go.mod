@@ -10,6 +10,7 @@ require (
 	charm.land/lipgloss/v2 v2.0.6
 	github.com/alecthomas/chroma/v2 v2.27.0
 	github.com/bufbuild/buf v1.71.0
+	github.com/bwmarrin/snowflake v0.3.0
 	github.com/centrifugal/centrifuge v0.38.0
 	github.com/charmbracelet/colorprofile v0.4.3
 	github.com/charmbracelet/openai-go v0.0.0-20260921175203-216db9e71b83

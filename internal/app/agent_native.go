@@ -9,6 +9,7 @@ import (
 	"AskCore/internal/providers/openai"
 	"AskCore/internal/settings"
 	"AskCore/internal/tasks"
+	"AskCore/internal/workspace"
 	"context"
 	"errors"
 	"fmt"
@@ -39,6 +40,9 @@ type NativeAgentConfig struct {
 	// read the key and the headers of the user models.json from it. Nil reads
 	// no user file.
 	Models *ModelView
+	// Log says how the session log is made. It applies only when
+	// Config.NewContext is nil: a caller that supplies its own log keeps it.
+	Log SessionLogOptions
 }
 
 // NewNativeAgent creates one independent Agent with all supported native wires.
@@ -56,6 +60,17 @@ func NewNativeAgent(in NativeAgentConfig) (*agent.Agent, error) {
 	}
 	if !info.IsDir() {
 		return nil, fmt.Errorf("native agent: cwd must be a directory")
+	}
+	if cfg.NewContext == nil && !in.Log.NoSession {
+		log, err := NewSessionLog(homeOf(in))
+		if err != nil {
+			return nil, err
+		}
+		cwd, err := workspace.CanonicalPath(cfg.Cwd)
+		if err != nil {
+			return nil, err
+		}
+		cfg.NewContext = log.NewContext(in.Log, cfg.SessionID, cwd)
 	}
 	if cfg.TaskDir == "" {
 		cfg.TaskDir = taskDir(in, cfg.SessionID)
@@ -103,6 +118,16 @@ func NewNativeAgent(in NativeAgentConfig) (*agent.Agent, error) {
 	return agent.New(cfg)
 }
 
+// homeOf returns the Ask home that in names: Home, else ASK_HOME of Env, else
+// empty, which settings.ResolveHome turns into the process ASK_HOME or ~/.ask.
+func homeOf(in NativeAgentConfig) string {
+	home := in.Home
+	if home == "" && in.Env != nil {
+		home, _ = in.Env("ASK_HOME")
+	}
+	return home
+}
+
 // sweepTasksOnce makes the first Agent of the process remove the task output of
 // old sessions. It runs once, so no timer or poll is needed.
 var sweepTasksOnce sync.Once
@@ -121,11 +146,7 @@ func taskDir(in NativeAgentConfig, session string) string {
 		slog.Warn("task output disabled: session ID is not a plain name", "session", session)
 		return ""
 	}
-	home := in.Home
-	if home == "" && in.Env != nil {
-		home, _ = in.Env("ASK_HOME")
-	}
-	home, err := settings.ResolveHome(home)
+	home, err := settings.ResolveHome(homeOf(in))
 	if err != nil {
 		slog.Warn("task output disabled", "error", err)
 		return ""

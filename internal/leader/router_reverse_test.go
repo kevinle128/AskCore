@@ -486,3 +486,18 @@ func TestRouterTerminalIDOfAnotherSessionIsNotTaken(t *testing.T) {
 	b.barrier()
 	require.Empty(t, b.incoming("terminal/output"), "the terminal of A stays with A")
 }
+
+func TestRouterReplaysPendingQuestionOnLoadJoin(t *testing.T) {
+	h := startHarness(t)
+	a, c := h.ready(nil), h.ready(nil)
+	sid := a.newSession("/w")
+	h.agent.send(permissionRequest("q7", sid))
+	theCall(t, a, "session/request_permission")
+
+	// A plain ACP client joins with session/load and never attaches.
+	c.mustCall("session/load", map[string]any{"sessionId": sid, "cwd": "/w", "mcpServers": []any{}})
+	reqC := theCall(t, c, "session/request_permission")
+
+	c.sendRaw(answer(reqC.id, "allow"))
+	waitAnswers(t, h, `"q7"`, 1)
+}

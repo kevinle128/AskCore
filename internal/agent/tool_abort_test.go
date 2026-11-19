@@ -63,7 +63,7 @@ func TestAbortClassifiesByBodyInvocationNotCallRecord(t *testing.T) {
 	a = newAgent(t, p, m, func(c *agent.Config) {
 		c.Tools = registry(t, tool)
 		c.Pipeline = h
-		c.NewContext = func() sessions.Writer { return log }
+		c.NewContext = func() (sessions.Writer, error) { return log, nil }
 	})
 	defer func() { require.NoError(t, a.Dispose()) }()
 	require.NoError(t, a.Prompt(context.Background(), user("go")))
@@ -204,7 +204,7 @@ func TestAbortDuringToolBatchEndsWithAbortedAssistantMessageAndNoModelCall(t *te
 	}}
 	a = newAgent(t, p, m, func(c *agent.Config) {
 		c.Tools = registry(t, tool)
-		c.NewContext = func() sessions.Writer { return log }
+		c.NewContext = func() (sessions.Writer, error) { return log, nil }
 	})
 	defer func() { require.NoError(t, a.Dispose()) }()
 	var attempts, turns, aborted int
@@ -334,7 +334,7 @@ func TestToolWriterPanicDrainsBodiesBeforeRepairAndFailureTail(t *testing.T) {
 	}}}
 	a := newAgent(t, p, m, func(c *agent.Config) {
 		c.Tools = registry(t, tool)
-		c.NewContext = func() sessions.Writer { return log }
+		c.NewContext = func() (sessions.Writer, error) { return log, nil }
 	})
 	defer func() { require.NoError(t, a.Dispose()) }()
 	done := make(chan error, 1)

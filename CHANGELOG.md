@@ -8,6 +8,12 @@ The format follows [Keep a Changelog 1.1.0](https://keepachangelog.com/en/1.1.0/
 
 ### Added
 
+- **Sessions:** `ask -p`, the TUI, the leader, and `ask acp` save each session as a JSONL file under `<ASK_HOME>/sessions/<folder>/`. A write error stops the run, so a read-only `ASK_HOME` fails a run unless it uses `--no-session`.
+- **CLI:** `-c` / `--continue` continues the newest saved session of the folder that has an assistant reply (with none, it starts a new session), `--session <id>` continues one session, and `--no-session` saves nothing. They work in `ask -p` and in the TUI. A continued session starts on the model and thinking level of its log, unless `--model` is given.
+- **CLI:** A session has one writer. A second process that opens a held session exits 1 at once with the cause and the way out (a leader keeps a session after the TUI quits). A process that dies frees its session at once. Unix only.
+- **CLI:** `ask -p --mode json` writes a `session` record with the session id as its first line.
+- **Sessions:** A continued session closes what a stopped process left open: a tool call with no result gets an error result, and the open turn ends. The cycle end has the cause `interrupted`.
+- **Protocol:** `ask acp` and the leader answer `session/load`. `initialize` lists `loadSession`. The agent replays the history as `session/update` and then answers. A session that another process holds answers `session_in_use`. `_meta["ask.dev/session"]` takes `noSession`. A load of a session that the leader runs joins it, and the answer names it in `_meta["ask.dev/sessionId"]`.
 - **Background jobs:** A background `bash` job that prints no output for 5 minutes sends the model a stall notice and the job runs on. The TUI draws `still running · no output for 5 minutes`. `ASK_BG_STALL_MS` changes the time; `0` turns the notice off.
 - **CLI:** `--system-prompt <text|file>` replaces the default system prompt, and `--append-system-prompt <text|file>` adds text after it. A value that names an existing file is read as a file. All prompt text of the flags is at most 256 KiB.
 - **CLI:** `-t` / `--tools <names>` keeps only the named built-in tools, and `-nt` / `--no-tools` keeps none. A name that is not a built-in tool, or `-t` together with `-nt`, exits 1.
@@ -74,6 +80,7 @@ The format follows [Keep a Changelog 1.1.0](https://keepachangelog.com/en/1.1.0/
 
 ### Changed
 
+- **Sessions:** A session id is the decimal text of a snowflake id, in every mode (it was a UUID in `ask -p` and `sess_` and hex in the leader). The TUI shows the last 4 digits of such an id in `/sessions` and in its notes.
 - **Protocol:** `_ask/session/state`, `_ask/session/set_model`, and `_ask/session/set_thinking` answer `default`, not `off`, when no thinking level is chosen, and `set_thinking` takes `default`. `ASK_REASONING_LEVEL`, the `thinkingLevel` of an assistant message (also in `ask -p --mode json`), and the `PrepareRequest` hook view say `default` too.
 - **Background jobs:** The leader, `ask acp`, and the in-process TUI now stop a `bash` background job after 2 hours (`ASK_BG_LIMIT_MS`; `0` turns the limit off), and the TUI draws a line when a limit stops a job. Monitors keep their own timeouts.
 - **CLI:** `--model <id>` without `--provider` now resolves the id across all providers; before, it used the `faux` provider. `--provider P --model <id>` works as before.

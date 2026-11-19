@@ -45,6 +45,9 @@ The mode is chosen in this order:
 | `--append-system-prompt <text\|file>` | Add text at the end of the system prompt. Repeat the flag to add more. |
 | `-t`, `--tools <names>` | Keep only these built-in tools. Give a comma list, for example `read,grep`. Repeat the flag to add more names. |
 | `-nt`, `--no-tools` | Keep no built-in tool. Use it alone: with `-t` it is an error. |
+| `-c`, `--continue` | Continue the newest saved session of the current folder that has an assistant reply. With none, start a new session. See [Sessions](#sessions). It cannot be used with `--session` or `--no-session`. |
+| `--session <id>` | Continue the saved session with this id. The session must belong to the current folder. It cannot be used with `-c` or `--no-session`. |
+| `--no-session` | Do not save this run. Nothing is written under `<ASK_HOME>/sessions`. It cannot be used with `-c` or `--session`. |
 | `--no-leader` | TUI only. Run the agent in this process. Do not connect to a leader and do not start one. Use it to debug the agent, because the tools then run in this process. Print mode already runs in process and ignores the flag. |
 | `-a`, `--approve` | Trust the project of the current folder for this run. The TUI then shows no trust question. Nothing is saved. See [Project trust](#project-trust). |
 | `-na`, `--no-approve` | Do not trust the project of the current folder for this run. Nothing is saved. The two flags together are an error (exit 1). |
@@ -67,13 +70,14 @@ The demo provider `faux` is the default of `ask -p`. It runs a script: `echo <te
 `ask -p`, the TUI, the leader, and `ask acp` choose the start model of a session in this order:
 
 1. `--provider` and `--model`. A pattern that does not resolve ends the run with exit 1 (in the TUI the session start fails with the same text).
-2. The scope: `--models`, else the `enabledModels` setting. When the saved `defaultModel` is in the scope and its provider is usable, it is the start model. Else the first scope entry of a usable provider is the start model.
-3. The saved `defaultModel` (the value that `/model` saves). The project layer counts only when the project is trusted.
-4. `ask -p` runs on `faux`. The TUI, the leader, and `ask acp` take the first model of a usable provider.
+2. The model and the thinking level that the log of a continued session holds (see [Sessions](#sessions)). `--models` and `enabledModels` do not change this choice. The model must be in the model list, and its login method must still work; if not, the start fails and the text asks for `--model`.
+3. The scope: `--models`, else the `enabledModels` setting. When the saved `defaultModel` is in the scope and its provider is usable, it is the start model. Else the first scope entry of a usable provider is the start model.
+4. The saved `defaultModel` (the value that `/model` saves). The project layer counts only when the project is trusted.
+5. `ask -p` runs on `faux`. The TUI, the leader, and `ask acp` take the first model of a usable provider.
 
 When the saved default is not in the model list, or its provider has no credential, `ask -p` writes one line to stderr, for example `Warning: default model <id> is not usable (no credential); using faux/faux-1@faux.`, and runs on `faux`.
 
-The level is `--thinking`, else the `:level` of the pattern or of the scope entry. With neither, no level is chosen, and Ask shows the level as `default`. When the start model has no thinking, a requested level is dropped (`default` and `off` are never dropped). `ask -p` then writes `Warning: <provider>/<id> has no thinking; level <level> is not used.`, and the TUI shows the same text as a session notice. The run continues with thinking off.
+The level is `--thinking`, else the `:level` of the pattern or of the scope entry, else the logged level of a continued session (not when `--model` is given). With none of these, no level is chosen, and Ask shows the level as `default`. When the start model has no thinking, a requested level is dropped (`default` and `off` are never dropped). `ask -p` then writes `Warning: <provider>/<id> has no thinking; level <level> is not used.`, and the TUI shows the same text as a session notice. The run continues with thinking off.
 
 A requested start level then fits the levels of the model, with the same rule as `/model` and the thinking key of the TUI. A level that the model does not have becomes the nearest lower level that it has. Some models cannot turn thinking off (`grok-4.7`, `gpt-6-astra`, `gpt-6.1-sol`). For these models, off becomes the lowest effort of the model, in `ask -p`, the TUI, the leader, and `ask acp`.
 
@@ -248,15 +252,59 @@ The context file line is a summary, and its detail is in `ask settings show`. `a
 
 ### Flags in the TUI and with a leader
 
-The TUI sends the prompt and tool flags to its host with `session/new`, in `_meta["ask.dev/session"]` (`systemPrompt`, `appendSystemPrompt`, `tools`, `noTools`). The prompt flags hold text, not paths. The flags apply to every session that this TUI process opens, also after `/new`. They are not saved.
+The TUI sends the prompt and tool flags to its host with `session/new`, in `_meta["ask.dev/session"]` (`systemPrompt`, `appendSystemPrompt`, `tools`, `noTools`, and `noSession` for `--no-session`). The prompt flags hold text, not paths. The flags apply to every session that this TUI process opens, also after `/new`. They are not saved.
 
 The TUI sends `--model`, `--thinking`, and `--models` for its first session in the same object (`model`, `thinking`, `models`). The host resolves them against its own model list and echoes the options that it applied in the result `_meta["ask.dev/appliedOptions"]`. When the TUI sent one of these fields and the echo does not have it, the session start fails with `the leader did not apply --model; restart it with this build` (or `--thinking`, `--models`). Thus a leader that is older than this build never drops `--model` without a message. Stop it with `ask leader stop`, or use `--no-leader`.
 
 A leader that is older than this build ignores the key without an error. The TUI then shows `Warning: the leader ignored the prompt and tool flags of this command line (it is older than this build). They are not applied in this session.` The session runs with more tools and with the default prompt. Stop the old leader with `ask leader stop`, or use `--no-leader`.
 
-`ask acp` does not take these flags. An ACP client that starts a session can send `_meta["ask.dev/session"]` with the object `{"systemPrompt": "...", "appendSystemPrompt": ["..."], "tools": ["read"], "noTools": false, "model": "anthropic/claude-sonnet-4-6:high", "thinking": "low", "models": ["anthropic/*"]}`. The host applies it to that session only. A value that is not an object, a field of the wrong type, prompt text over 256 KiB in total, a tool name that is not valid, both `tools` and `noTools`, a `model` or a `models` entry over 256 bytes, more than 64 `models` entries, or a `thinking` that is not a level word answers `invalid_params`. When the host applied non-empty flags, the result `_meta` has `ask.dev/session: true`, and `ask.dev/appliedOptions` echoes the model options that it applied.
+`ask acp` does not take these flags. An ACP client that starts a session can send `_meta["ask.dev/session"]` with the object `{"systemPrompt": "...", "appendSystemPrompt": ["..."], "tools": ["read"], "noTools": false, "model": "anthropic/claude-sonnet-4-6:high", "thinking": "low", "models": ["anthropic/*"], "noSession": false}`. The host applies it to that session only. A value that is not an object, a field of the wrong type, prompt text over 256 KiB in total, a tool name that is not valid, both `tools` and `noTools`, a `model` or a `models` entry over 256 bytes, more than 64 `models` entries, or a `thinking` that is not a level word answers `invalid_params`. When the host applied non-empty flags, the result `_meta` has `ask.dev/session: true`, and `ask.dev/appliedOptions` echoes the model options that it applied. `noSession: true` keeps that session out of the session store, so a client cannot load it later. A host of an older build does not know the field and saves the session; it also sends no `ask.dev/session: true`, which tells the client.
 
 `_ask/session/get_available_models` returns `scope` (the cycle list in order: the exact model id and the level of each entry) and `diagnostics` (the problems of the user `models.json` that the list read). `_ask/session/set_model` takes an optional `thinkingLevel` and sets the model and the level in one call.
+
+## Sessions
+
+`ask -p`, the TUI (with a leader or in process), the leader, and `ask acp` save each session as a file. The decision and its limits are in [ADR 0006](adr/0006-session-logs-as-jsonl-files.md). The file format and the repair rules are in [the store README](../internal/store/jsonlstore/README.md).
+
+- Files: `<ASK_HOME>/sessions/<encoded-cwd>/<id>.jsonl` (the log) and `<id>.lock` (the write lock, never removed). `<encoded-cwd>` is the canonical folder with `/`, `\`, and `:` changed to `-`, between `--` and `--`. A name over 200 bytes is cut and gets a hash. Ask makes the folders with mode 0700 and the files with mode 0600.
+- Id: the decimal text of a snowflake id, for example `1863…` (19 digits). As text, an id made later sorts after an id made earlier. A session id for `--session` can have only ASCII letters, digits, `-`, and `_`, and at most 64 characters. The TUI shows the last 4 digits of an id that has only digits, in `/sessions` and in its notes. The line `ask: session <id>` that stays in the shell after the TUI has the full id.
+- A new session gets its file with the first assistant message. A session that gets no reply leaves no file. A session that `ask acp` or the TUI starts (also after `/new`) gets its file at once, so its id can be loaded later.
+- `/new` in the TUI keeps the session of the connection and opens a new log with a new id. `-c` finds that log after it has an assistant reply; before that, `-c` skips it.
+- A write error stops the run with exit 1. So `ask -p` fails when Ask cannot write `ASK_HOME` (for example, a read-only folder), unless you use `--no-session`. The text says so: ``agent: the session file can no longer be written and must be reopened; run with `--no-session` to run without saving: ...``.
+- The model and the thinking level of each run are saved in the log, so a continued session starts on them (see [Start model](#start-model)). The log does not hold a credential. A session also keeps its first context files and skill list. At a continue, Ask adds the text of a context file that has changed since, and the model gets the new text.
+- Ask closes what a stopped process left open: a tool call with no result gets an error result (`outcome unknown` or `not started`), and the open turn and cycle end. The cycle ends with the cause `interrupted`.
+
+### Continue a session
+
+| Flag | Result |
+|---|---|
+| `-c`, `--continue` | Continue the newest session of the canonical current folder that holds an assistant reply. A session that was stored and never answered is skipped. With no such session, `-c` starts a new session, as a run without a flag does. |
+| `--session <id>` | Continue the session with this id. A session of another folder is not found. |
+| `--no-session` | Save nothing. In the TUI it applies to every session that this process opens. |
+
+The three flags work in `ask -p` and in the interactive TUI. A pair of them is an error (exit 1): `--continue cannot be used with --session`, `--no-session cannot be used with --continue`, or `--no-session cannot be used with --session`. `ask acp` takes none of them; a client uses `session/load` and `noSession` (see [Flags in the TUI and with a leader](#flags-in-the-tui-and-with-a-leader)).
+
+A continue that cannot start (`--session` or `-c`) ends the run with exit 1 and one line on stderr, before any model request:
+
+| Cause | Text |
+|---|---|
+| An id of `--session` that the folder does not have | `Error: no session <id> in <cwd>` |
+| Another process holds the session | ``Error: session <id> is open in another ask process (a leader keeps it after the TUI quits); open it in the TUI with `ask -c`, or stop the leader with `ask leader stop` `` |
+| A newer build wrote the file | `Error: session <id> was written by a newer ask; update ask to open it` |
+| The file is damaged before a valid turn end | `Error: session <id> cannot be read: ...` |
+| The model of the log is not in the model list, or its login method is gone | `Error: ... pass --model to pick a model` |
+
+Only one process can write a session. The leader keeps a session, and its lock, after the TUI quits, so `ask -p -c` on that session fails with the second text. Stop the leader with `ask leader stop`, or continue with the TUI, which joins the live session. A holder that dies (also with SIGKILL) frees the lock at once.
+
+In `--mode json`, the first line is the session record, before any event: `{"type":"session","version":1,"id":"…","cwd":"…","createdAt":"…"}`. With `-c` it is the record of the continued session. With `--no-session` it holds the id of the run, and no file exists.
+
+The TUI shows the old conversation when it starts with `-c` or `--session`. When a leader runs the session already (another TUI has it open), the TUI joins it: the flags such as `--model` do not apply to a live session. A leader of an older build answers `the leader does not support session load; restart it with ask leader stop`, and the TUI exits with 1. `--no-leader` always works.
+
+Known limits:
+
+- Unix only. The write lock is `flock`.
+- Joining a live session does not apply `--model` or any other flag.
+- On a join, the history goes to the new client while a run can still write live output, so the two can interleave.
 
 ## `ask auth`
 
@@ -318,6 +366,17 @@ ask acp --help
 ```
 
 The command serves ACP v1 as JSON-RPC lines on stdin and stdout. Diagnostics go to stderr. It opens no listener and no database. Each session has its own agent. No credentials pass over the connection: sign in first with `ask auth login`.
+
+The command saves sessions (see [Sessions](#sessions)) and serves `session/load`: `initialize` lists `loadSession`. A client sends `session/load` with `sessionId` and an absolute `cwd`, and with the same `_meta` keys as `session/new`. The agent takes the write lock, writes the history as `session/update` notifications (user text and images, assistant text and thinking, and each tool call with its final status and result), and then answers. Seed text (context files, skill list) and notices are not part of the history. The session continues on the model and level of its log unless the `_meta` names a model. These errors can answer a load:
+
+| Kind | Cause |
+|---|---|
+| `session_in_use` | Another process holds the session, or this process runs it already. The text names the cause and the way out: a leader keeps a session after the TUI quits, so continue with `ask -c` or stop the leader with `ask leader stop`. |
+| `unknown_session` | The folder has no stored session with that id. |
+| `invalid_params` | A bad `cwd` or `_meta`, a missing id, or `noSession: true` on a load. |
+| `invalid_state` | A newer build wrote the file, or the file cannot be read. The text is fixed and holds no path. |
+
+With a leader, `session/load` of a session that the leader runs already joins it: the caller gets the history, and the driver, the model, and the run do not change, so flags in the `_meta` do not apply. A client can also send the current log id of a live session (the id changes after `/new`). Then the result `_meta` has `ask.dev/sessionId` with the id of the live session, and the client uses that id for later calls. A leader of an older build answers `unsupported`; stop it with `ask leader stop`. The history of a join goes to the caller only. A run that is active during a join can write live output between the history frames.
 
 `--approve` (`-a`) trusts the project of every session of this process, and `--no-approve` (`-na`) trusts none. Without a flag, each session decides with no UI (see [Project trust](#project-trust)). `--offline` turns the model refresh off, as `ASK_DISABLE_MODEL_REFRESH=1`. The two trust flags together, or any other argument, are an error. The command takes none of the prompt, tool, and model flags (`--system-prompt`, `--append-system-prompt`, `-t`, `-nt`, `--model`, `--models`, `--thinking`). A client sends them for one session in `_meta["ask.dev/session"]` (see [Flags in the TUI and with a leader](#flags-in-the-tui-and-with-a-leader)). The command answers `unsupported` for `_ask/trust/state` and `_ask/trust/set`, because an editor link has no trust question.
 
@@ -462,12 +521,14 @@ Exit codes: 0 left, 1 error or lost leader (also when the input ends after a pro
 
 `ask` with no arguments on a terminal opens the TUI on the alternate screen. It connects to the local leader and starts one when none runs. Only when the first connect fails does it run an agent in process. With `--no-leader` it always runs the agent in process and starts no leader. The screen does not show the difference: `/providers` and `/sessions` answer `Needs the leader; this session runs in process.`, and `ask leader status` reports `no leader is running`. The TUI never switches to an in-process agent later. On exit the terminal is restored and the line `ask: session <id>` stays in the shell.
 
+`ask -c` and `ask --session <id>` open the TUI on a stored session: the first session start loads it, and the screen shows the old conversation. A later `/new` starts a new session. When the load fails, the program ends with the reason and exit 1, and does not start another session. See [Sessions](#sessions).
+
 | Command | Purpose |
 |---|---|
 | `/model` | Select a model. The list has only the models of usable providers. The choice is saved as `defaultModel` in the user `settings.json`. The save is refused, and the file does not change, when the trusted project settings set another `defaultModel`, or when the user file is not safe or has a known key with a bad value. The model switch still applies. |
 | `/providers` | Add or remove a provider sign-in. It needs the leader. |
-| `/new` | Start a new session in this directory. |
-| `/sessions` | Watch another live session. It needs the leader. |
+| `/new` | Start a new session in this directory. It opens a new log (see [Sessions](#sessions)). |
+| `/sessions` | Watch another live session. It needs the leader. A row shows the last 4 digits of a session id that has only digits. |
 | `/trust` | Show the saved trust decision of this folder and change it: trust this folder, trust the parent folder, do not trust, or forget the saved choice. The change applies to the next session. An older leader answers `/trust is not available`. |
 | `/take` | Take control of this session. |
 | `/copy` | Copy the last reply. It uses a native command first, then OSC 52 up to 75 KiB. |

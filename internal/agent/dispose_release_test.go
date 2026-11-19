@@ -33,7 +33,7 @@ func TestDisposeRunsReleaseAfterToolsDrain(t *testing.T) {
 	}}
 	a := newAgent(t, p, m, func(c *agent.Config) {
 		c.Tools = registry(t, tool)
-		c.NewContext = func() sessions.Writer { return log }
+		c.NewContext = func() (sessions.Writer, error) { return log, nil }
 		c.Release = func() error {
 			releaseSawReturn.Store(toolReturned.Load())
 			logClosedBeforeRelease.Store(log.closes.Load() > 0)

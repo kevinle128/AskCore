@@ -24,6 +24,7 @@ import (
 	"AskCore/internal/app"
 	"AskCore/internal/jobs"
 	"AskCore/internal/providers/anthropic"
+	"AskCore/internal/sessions"
 	"AskCore/internal/tasks"
 	"AskCore/pkg/protocol"
 )
@@ -108,7 +109,7 @@ func tokenPlanOptions(rt http.RoundTripper) options {
 // at the end of the test.
 func newTestSession(t *testing.T, o options, getenv func(string) string) (*agent.Agent, *jobs.Table) {
 	t.Helper()
-	ag, jt, err := newNativeAgent(o, getenv, nil, app.AgentSpec{SessionID: newSessionID(), Cwd: t.TempDir()})
+	ag, jt, err := newNativeAgent(o, getenv, nil, app.AgentSpec{SessionID: sessions.NewID(), Cwd: t.TempDir()})
 	require.NoError(t, err)
 	t.Cleanup(func() { _ = ag.Dispose() })
 	return ag, jt
@@ -140,7 +141,7 @@ func TestNativeAgentKeepsExtraTools(t *testing.T) {
 	model := &scriptedModel{}
 	o := tokenPlanOptions(model)
 	extra := &stuckTool{started: make(chan struct{}), release: make(chan struct{})}
-	ag, jt, err := newNativeAgent(o, nativeEnv(nil), nil, app.AgentSpec{SessionID: newSessionID(), Cwd: t.TempDir()}, extra)
+	ag, jt, err := newNativeAgent(o, nativeEnv(nil), nil, app.AgentSpec{SessionID: sessions.NewID(), Cwd: t.TempDir()}, extra)
 	require.NoError(t, err)
 	t.Cleanup(func() { _ = ag.Dispose() })
 	require.NotNil(t, jt)

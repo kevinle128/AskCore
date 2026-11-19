@@ -348,3 +348,234 @@ func TestServerPingPong(t *testing.T) {
 		return false
 	})
 }
+
+// ---- session/load ----
+
+// replayFor is a session/update that the host addressed to one client, as it
+// writes the history of a load.
+func replayFor(sid, clientID, text string) json.RawMessage {
+	return notification("session/update", map[string]any{
+		"sessionId": sid,
+		"_meta":     map[string]any{protocol.ACPRouteMetaKey: protocol.ACPRouteMeta{ClientID: clientID}},
+		"update":    map[string]any{"sessionUpdate": "agent_message_chunk", "content": map[string]any{"type": "text", "text": text}},
+	})
+}
+
+func loadResult(gen uint64) map[string]any {
+	return map[string]any{"_meta": map[string]any{protocol.ACPRouteMetaKey: protocol.ACPRouteMeta{DriverGen: gen}}}
+}
+
+// A load of a session that the router does not know registers it with the
+// caller as driver before the forward, so the history that the host writes
+// first has a reader.
+func TestRouterLoadRegistersSessionBeforeForward(t *testing.T) {
+	h := startHarness(t)
+	h.agent.setSilent("session/load", true)
+	a := h.ready(nil)
+	id := a.request("session/load", map[string]any{"sessionId": "s77", "cwd": "/w", "mcpServers": []any{}})
+	req := h.agent.waitRequests("session/load", 1)[0]
+	require.Equal(t, "s77", req.Route.SessionID)
+	require.Zero(t, req.Route.DriverGen, "no generation exists before the host answers")
+
+	h.agent.send(replayFor("s77", req.Route.ClientID, "old"))
+	a.waitIncoming("session/update", 1)
+	got := a.incoming("session/update")[0]
+	meta, _ := decodeObject(mustParams(t, got)["_meta"])
+	require.NotContains(t, meta, protocol.ACPRouteMetaKey, "the route context stays inside the leader")
+
+	h.agent.result(req.ID, loadResult(5))
+	res, e := a.await(id)
+	require.Nil(t, e)
+	require.JSONEq(t, `{}`, string(res))
+
+	// The caller drives with the generation that the host committed.
+	a.mustCall("session/prompt", map[string]any{"sessionId": "s77", "prompt": []any{}})
+	prompt := h.agent.waitRequests("session/prompt", 1)[0]
+	require.Equal(t, uint64(5), prompt.Route.DriverGen)
+	require.True(t, prompt.Route.LiveDriver)
+}
+
+func mustParams(t *testing.T, m *rpcMessage) map[string]json.RawMessage {
+	t.Helper()
+	p, err := m.params()
+	require.NoError(t, err)
+	return p
+}
+
+// The history of a load goes to the client that loaded, not to the other
+// members of a session that the router routes already.
+func TestRouterLoadOfRoutedSessionAttachesAndReplaysToCallerOnly(t *testing.T) {
+	h := startHarness(t)
+	a, b := h.ready(nil), h.ready(nil)
+	sid := a.newSession("/w")
+	h.agent.setSilent("session/load", true)
+
+	id := b.request("session/load", map[string]any{"sessionId": sid, "cwd": "/w", "mcpServers": []any{}})
+	req := h.agent.waitRequests("session/load", 1)[0]
+	require.Equal(t, sid, req.Route.SessionID)
+	require.Equal(t, uint64(1), req.Route.DriverGen, "a routed session carries its generation")
+	require.Equal(t, "c2", req.Route.ClientID)
+
+	h.agent.send(replayFor(sid, "c2", "old"))
+	h.agent.send(h.agent.update(sid, "live"))
+	h.agent.result(req.ID, loadResult(1))
+	_, e := b.await(id)
+	require.Nil(t, e)
+	b.waitIncoming("session/update", 2)
+	a.waitIncoming("session/update", 1)
+	a.barrier()
+	require.Len(t, a.incoming("session/update"), 1, "only the live event reaches the driver")
+	require.Equal(t, protocol.ACPRoleObserver, b.attach(sid).Role, "the joined caller observes; the driver stays")
+
+	// A second load by the driver leaves it driver.
+	h.agent.setSilent("session/load", false)
+	a.mustCall("session/load", map[string]any{"sessionId": sid, "cwd": "/w", "mcpServers": []any{}})
+	require.Equal(t, protocol.ACPRoleDriver, a.attach(sid).Role)
+}
+
+// No other call may use a session while its first load is open.
+func TestRouterRefusesCallsWhileLoadIsOpen(t *testing.T) {
+	h := startHarness(t)
+	h.agent.setSilent("session/load", true)
+	a, b := h.ready(nil), h.ready(nil)
+	a.request("session/load", map[string]any{"sessionId": "s88", "cwd": "/w", "mcpServers": []any{}})
+	h.agent.waitRequests("session/load", 1)
+
+	for _, call := range []struct {
+		c      *testClient
+		method string
+	}{{a, "session/prompt"}, {b, protocol.ACPAttach}, {b, "session/load"}, {b, protocol.ACPState}} {
+		_, e := call.c.call(call.method, map[string]any{"sessionId": "s88", "cwd": "/w", "mcpServers": []any{}, "prompt": []any{}})
+		require.NotNil(t, e, call.method)
+		require.Equal(t, protocol.ACPCodeBusy, e.Code, call.method)
+	}
+	require.Empty(t, h.agent.requests("session/prompt"))
+	require.Len(t, h.agent.requests("session/load"), 1)
+}
+
+func TestRouterForgetsSessionWhenLoadFails(t *testing.T) {
+	h := startHarness(t)
+	h.agent.setSilent("session/load", true)
+	a := h.ready(nil)
+	id := a.request("session/load", map[string]any{"sessionId": "s99", "cwd": "/w", "mcpServers": []any{}})
+	req := h.agent.waitRequests("session/load", 1)[0]
+	h.agent.send(errorResponse(req.ID, protocol.ACPErrSessionInUse))
+	_, e := a.await(id)
+	require.NotNil(t, e)
+	require.Equal(t, protocol.ACPCodeSessionInUse, e.Code)
+	require.Equal(t, string(protocol.ACPErrSessionInUse), e.Data.Kind)
+
+	var live protocol.ACPListLiveResult
+	require.NoError(t, json.Unmarshal(a.mustCall(protocol.ACPListLive, map[string]any{}), &live))
+	require.Empty(t, live.Sessions)
+	_, e = a.call("session/prompt", map[string]any{"sessionId": "s99", "prompt": []any{}})
+	require.Equal(t, -32002, e.Code)
+}
+
+// A failed join removes the membership that the join added and keeps the
+// session and its driver.
+func TestRouterFailedJoinKeepsSessionAndDriver(t *testing.T) {
+	h := startHarness(t)
+	a, b := h.ready(nil), h.ready(nil)
+	sid := a.newSession("/w")
+	h.agent.setSilent("session/load", true)
+	id := b.request("session/load", map[string]any{"sessionId": sid, "cwd": "/other", "mcpServers": []any{}})
+	req := h.agent.waitRequests("session/load", 1)[0]
+	h.agent.send(errorResponse(req.ID, protocol.ACPErrSessionInUse))
+	_, e := b.await(id)
+	require.NotNil(t, e)
+
+	h.agent.send(h.agent.update(sid, "later"))
+	a.waitIncoming("session/update", 1)
+	b.barrier()
+	require.Empty(t, b.incoming("session/update"), "the refused caller did not stay a member")
+	require.Equal(t, protocol.ACPRoleDriver, a.attach(sid).Role)
+}
+
+// The caller leaves while the host loads. The host still has the session, so the
+// router keeps it without a driver.
+func TestRouterLoadCallerLeavesBeforeAnswer(t *testing.T) {
+	h := startHarness(t)
+	h.agent.setSilent("session/load", true)
+	a, b := h.ready(nil), h.ready(nil)
+	a.request("session/load", map[string]any{"sessionId": "s55", "cwd": "/w", "mcpServers": []any{}})
+	req := h.agent.waitRequests("session/load", 1)[0]
+	a.close()
+	a.waitClosed()
+	// The router must drop the caller before the host answers, so the answer
+	// finds no caller.
+	eventually(t, "the client is gone", func() bool { return h.clientCount() == 1 })
+	h.agent.result(req.ID, loadResult(2))
+
+	eventually(t, "the loaded session has no driver", func() bool {
+		var live protocol.ACPListLiveResult
+		if json.Unmarshal(b.mustCall(protocol.ACPListLive, map[string]any{}), &live) != nil {
+			return false
+		}
+		return len(live.Sessions) == 1 && !live.Sessions[0].HasDriver
+	})
+	require.Equal(t, protocol.ACPRoleObserver, b.attach("s55").Role)
+}
+
+// The host can answer a load by joining the live session under its own ID (the
+// asked ID was the log that the session writes after a reset). The router drops
+// the entry that it made for the asked ID and joins the caller to the session.
+func TestRouterLoadAnsweredByAliasJoinsLiveSession(t *testing.T) {
+	h := startHarness(t)
+	a, b := h.ready(nil), h.ready(nil)
+	sid := a.newSession("/w")
+	h.agent.setSilent("session/load", true)
+	id := b.request("session/load", map[string]any{"sessionId": "log-9", "cwd": "/w", "mcpServers": []any{}})
+	req := h.agent.waitRequests("session/load", 1)[0]
+	h.agent.send(replayFor("log-9", req.Route.ClientID, "old"))
+	meta := loadResult(1)
+	meta["_meta"].(map[string]any)[protocol.ACPSessionIDMetaKey] = sid
+	h.agent.result(req.ID, meta)
+	res, e := b.await(id)
+	require.Nil(t, e)
+	require.Contains(t, string(res), sid)
+	require.NotContains(t, string(res), protocol.ACPRouteMetaKey)
+	b.waitIncoming("session/update", 1)
+
+	var live protocol.ACPListLiveResult
+	require.NoError(t, json.Unmarshal(b.mustCall(protocol.ACPListLive, map[string]any{}), &live))
+	require.Len(t, live.Sessions, 1, "the asked ID is not left behind")
+	require.Equal(t, protocol.ACPRoleObserver, b.attach(sid).Role)
+	h.agent.send(h.agent.update(sid, "live"))
+	b.waitIncoming("session/update", 2)
+}
+
+// A slow answer to a join must not be taken as the answer of a later load of
+// the same session ID. The session closes and is loaded again while the join
+// is still open at the host.
+func TestRouterStaleJoinAnswerDoesNotFinishLaterLoad(t *testing.T) {
+	h := startHarness(t)
+	a, b, c := h.ready(nil), h.ready(nil), h.ready(nil)
+	sid := a.newSession("/w")
+	h.agent.setSilent("session/load", true)
+
+	joinID := b.request("session/load", map[string]any{"sessionId": sid, "cwd": "/w", "mcpServers": []any{}})
+	join := h.agent.waitRequests("session/load", 1)[0]
+
+	a.mustCall("session/close", map[string]any{"sessionId": sid})
+
+	c.request("session/load", map[string]any{"sessionId": sid, "cwd": "/w", "mcpServers": []any{}})
+	load := h.agent.waitRequests("session/load", 2)[1]
+	require.Zero(t, load.Route.DriverGen, "the second load is a first load for the router")
+
+	h.agent.result(join.ID, loadResult(7))
+	_, e := b.await(joinID)
+	require.Nil(t, e)
+
+	_, e = c.call("session/prompt", map[string]any{"sessionId": sid, "prompt": []any{}})
+	require.NotNil(t, e)
+	require.Equal(t, protocol.ACPCodeBusy, e.Code, "the load of the second caller is still open")
+
+	h.agent.result(load.ID, loadResult(9))
+	eventually(t, "the load ends with its own generation", func() bool {
+		_, e := c.call("session/prompt", map[string]any{"sessionId": sid, "prompt": []any{}})
+		return e == nil
+	})
+	prompt := h.agent.waitRequests("session/prompt", 1)[0]
+	require.Equal(t, uint64(9), prompt.Route.DriverGen)
+}

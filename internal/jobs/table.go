@@ -678,8 +678,8 @@ func (t *Table) own(j *Job) {
 	// Wait for a stall notice that is being sent, so it comes before the end
 	// of the job: before done, the completion notice and the idle signal.
 	j.stallEnded.Store(true)
-	j.stallMu.Lock() //nolint:staticcheck // the empty critical section waits for the callback
-	j.stallMu.Unlock()
+	j.stallMu.Lock()
+	j.stallMu.Unlock() //nolint:staticcheck // the empty critical section waits for the callback
 	if j.mon != nil {
 		j.mon.finish()
 	}

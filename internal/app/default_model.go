@@ -29,6 +29,9 @@ type startChoice struct {
 	usable func(ctx context.Context, provider string) bool
 	// saved returns the saved default model id, or "".
 	saved func(ctx context.Context) (string, error)
+	// ready checks that m can be served with the login method of a resumed
+	// session. Nil skips the check.
+	ready func(ctx context.Context, m providers.Model, method string) error
 }
 
 // newStartChoice builds the start choice over the model list that current
@@ -78,6 +81,9 @@ type ModelOptions struct {
 	// names one id on more than one API. Empty keeps such a pattern
 	// ambiguous.
 	PreferAPI providers.API
+	// Restored is the selection that the log of a resumed session holds, or
+	// nil. It comes after Pattern and before the scope and the saved default.
+	Restored *RestoredSelection
 }
 
 // ModelChoice is the start model of a session and what the choice found.
@@ -123,6 +129,9 @@ func ChooseStartModel(ctx context.Context, view *ModelView, service *auth.Servic
 	}
 	c := newStartChoice(initial, func() modelSnapshot { return *snap }, usableRule(initial, service, func() *modelSnapshot { return snap }))
 	c.saved = func(context.Context) (string, error) { return eff.DefaultModel, nil }
+	c.ready = func(ctx context.Context, m providers.Model, method string) error {
+		return nativeAuthReady(ctx, service, snap, m, "", method)
+	}
 	return c.choose(ctx, opts, eff)
 }
 
@@ -144,10 +153,14 @@ func fallbackReasonText(r protocol.ACPFallbackReason) string {
 //
 //  1. the model of opts.Pattern; a pattern that does not resolve is an error.
 //     A thinking level suffix that is not a level is an unknown model here;
-//  2. the scope (opts.Scope, else the enabledModels setting): the saved
+//  2. the model of a resumed session (opts.Restored), with its level. The scope
+//     start pick does not apply then. A model that the list no longer has, or
+//     a login method that is not available any more, is an error: the user
+//     picks a model with --model;
+//  3. the scope (opts.Scope, else the enabledModels setting): the saved
 //     default when it is in the scope and usable, else the first scope row
 //     of a usable provider;
-//  3. the saved default, then the first usable model (see pick).
+//  4. the saved default, then the first usable model (see pick).
 //
 // The level is opts.Thinking, else the level of the pattern or of the scope
 // entry. When the chosen model has no thinking, a requested level other than
@@ -173,6 +186,12 @@ func (c startChoice) choose(ctx context.Context, opts ModelOptions, eff settings
 			return ModelChoice{}, err
 		}
 		out.Model, level = r.Model, r.Level
+	case opts.Restored != nil:
+		m, err := c.restoredModel(ctx, *opts.Restored)
+		if err != nil {
+			return ModelChoice{}, err
+		}
+		out.Model, level = m, opts.Restored.Level
 	default:
 		if sm, ok := c.pickScoped(ctx, scoped); ok {
 			out.Model, level = sm.Model, sm.Level
@@ -189,6 +208,28 @@ func (c startChoice) choose(ctx context.Context, opts ModelOptions, eff settings
 	}
 	out.Level = level
 	return out, nil
+}
+
+// restoredModel resolves the model of a resumed session and checks that its
+// login method is still available. The error names the old model and method
+// and tells the user to pick a model.
+func (c startChoice) restoredModel(ctx context.Context, r RestoredSelection) (providers.Model, error) {
+	ref := providers.Ref{Provider: r.Model.Provider, ID: r.Model.ID, API: providers.API(r.Model.API)}
+	m, err := c.find(ref)
+	if err != nil {
+		return providers.Model{}, fmt.Errorf("the model of the session, %s/%s, is not in the model list; pass --model to pick a model", r.Model.Provider, r.Model.ID)
+	}
+	if r.Method == "" || c.ready == nil {
+		return m, nil
+	}
+	err = c.ready(ctx, m, r.Method)
+	switch {
+	case err == nil:
+		return m, nil
+	case errors.Is(err, auth.ErrMethod), errors.Is(err, auth.ErrNoCredential):
+		return providers.Model{}, fmt.Errorf("the session used %s/%s with the login method %q, which is not available now; pass --model to pick a model", r.Model.Provider, r.Model.ID, r.Method)
+	}
+	return providers.Model{}, fmt.Errorf("check the login of the session model %s/%s: %w", r.Model.Provider, r.Model.ID, err)
 }
 
 // pickScoped returns the saved default when it is in the scope and can be

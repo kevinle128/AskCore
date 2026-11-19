@@ -2,6 +2,7 @@ package main
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"io"
 	"os"
@@ -16,6 +17,8 @@ import (
 	"golang.org/x/sys/unix"
 	"golang.org/x/term"
 
+	"AskCore/internal/app"
+	"AskCore/internal/store"
 	"AskCore/internal/tui"
 	"AskCore/pkg/protocol"
 )
@@ -49,6 +52,8 @@ type terminalConfig struct {
 	// flags are the per-session flags of the command line. Every session that
 	// the TUI opens sends them to its host.
 	flags protocol.ACPSessionOptions
+	// load is the stored session that the first start continues, or empty.
+	load string
 }
 
 // runInteractive is the entry for `ask` on a terminal without a prompt. It
@@ -73,6 +78,11 @@ func runInteractive(stdin io.Reader, stdout, stderr io.Writer, deps runDependenc
 		report(stderr, "Error:", err)
 		return 1
 	}
+	load, err := interactiveLoadID(context.Background(), o, deps.getenv("ASK_HOME"), cwd)
+	if err != nil {
+		report(stderr, "Error:", err)
+		return 1
+	}
 	home, _ := os.UserHomeDir()
 	exe, _ := os.Executable()
 	clientOpts := tuiClientOptions{callerExe: exe, noLeader: o.noLeader, env: spawnLeaderEnv(o.offline, os.Environ)}
@@ -81,6 +91,7 @@ func runInteractive(stdin io.Reader, stdout, stderr io.Writer, deps runDependenc
 		thinkingFold: thinkingFoldSetting(deps.getenv("ASK_HOME")),
 		trust:        o.trust,
 		flags:        interactiveSessionFlags(o),
+		load:         load,
 		open: func(ctx context.Context) (tui.Client, error) {
 			// No warning callback: a line written to the terminal while the
 			// program draws would break the screen.
@@ -105,13 +116,37 @@ func spawnLeaderEnv(offline bool, environ func() []string) []string {
 
 // interactiveSessionFlags are the session options of the command line: the
 // prompt and tool flags, the model pattern (with --provider as its provider
-// part), --thinking and --models.
+// part), --thinking, --models and --no-session.
 func interactiveSessionFlags(o options) protocol.ACPSessionOptions {
 	flags := o.session
 	flags.Model = o.modelPattern()
 	flags.Thinking = o.thinking
 	flags.Models = o.models
+	flags.NoSession = o.noSession
 	return flags
+}
+
+// interactiveLoadID returns the stored session that the first start of the TUI
+// continues: the id of --session, or the newest session of cwd for --continue.
+// It is empty when the command line names none, and for --continue in a cwd
+// with no session to continue: the TUI then starts a new session. The host
+// checks the id of --session when it loads it.
+func interactiveLoadID(ctx context.Context, o options, home, cwd string) (string, error) {
+	switch {
+	case o.sessionID != "":
+		return o.sessionID, nil
+	case !o.continueLast:
+		return "", nil
+	}
+	log, err := app.NewSessionLog(home)
+	if err != nil {
+		return "", err
+	}
+	id, err := log.Latest(ctx, cwd)
+	if errors.Is(err, store.ErrSessionNotFound) {
+		return "", nil
+	}
+	return id, err
 }
 
 // clientSlot holds the client that the open command produced, so the entry can
@@ -217,7 +252,7 @@ func runTerminal(c terminalConfig) (code int) {
 		// warns about it where a key or a code is typed.
 		TraceFile:    os.Getenv("TEA_TRACE"),
 		ThinkingFold: c.thinkingFold,
-		Session:      tui.NewSessionOptions{Trust: c.trust, Flags: c.flags},
+		Session:      tui.NewSessionOptions{Trust: c.trust, Flags: c.flags, Load: c.load},
 	})
 	// Bubble Tea would end SIGTERM with exit code 0 and ignores SIGHUP, so ask
 	// handles the signals itself.

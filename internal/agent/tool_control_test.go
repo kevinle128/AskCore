@@ -282,7 +282,10 @@ func TestCallIsRecordedBeforeBeforeTool(t *testing.T) {
 		}
 		return &pipeline.BeforeToolCallResult{Block: true}, nil
 	})
-	a := newAgent(t, p, m, func(c *agent.Config) { c.Pipeline = h; c.NewContext = func() sessions.Writer { return log } })
+	a := newAgent(t, p, m, func(c *agent.Config) {
+		c.Pipeline = h
+		c.NewContext = func() (sessions.Writer, error) { return log, nil }
+	})
 	defer func() { require.NoError(t, a.Dispose()) }()
 	require.NoError(t, a.Prompt(context.Background(), user("go")))
 	require.True(t, found)
@@ -348,7 +351,7 @@ func TestRepairNeverRunsToolAgain(t *testing.T) {
 	}}
 	a := newAgent(t, p, m, func(c *agent.Config) {
 		c.Tools = registry(t, tool)
-		c.NewContext = func() sessions.Writer { return log }
+		c.NewContext = func() (sessions.Writer, error) { return log, nil }
 	})
 	defer func() { require.NoError(t, a.Dispose()) }()
 	require.ErrorIs(t, a.Prompt(context.Background(), user("go")), disk)
@@ -405,7 +408,7 @@ func TestRepairUsesRecordedCallNotBodyInvocation(t *testing.T) {
 	a := newAgent(t, p, m, func(c *agent.Config) {
 		c.Tools = registry(t, tool)
 		c.Pipeline = h
-		c.NewContext = func() sessions.Writer { return log }
+		c.NewContext = func() (sessions.Writer, error) { return log, nil }
 	})
 	defer func() { require.NoError(t, a.Dispose()) }()
 	require.ErrorIs(t, a.Prompt(context.Background(), user("go")), disk)
@@ -425,7 +428,7 @@ func TestRepairWriteFailureKeepsOriginalCause(t *testing.T) {
 	log := &multiFailureLog{first: original, second: repair, count: &calls}
 	a := newAgent(t, p, m, func(c *agent.Config) {
 		c.Tools = registry(t, okTool("t"))
-		c.NewContext = func() sessions.Writer { return log }
+		c.NewContext = func() (sessions.Writer, error) { return log, nil }
 	})
 	defer func() { require.NoError(t, a.Dispose()) }()
 	err := a.Prompt(context.Background(), user("go"))
@@ -549,7 +552,7 @@ func TestPersistentWriterPanicIsContainedDuringRepair(t *testing.T) {
 	log := &persistentToolResultPanicLog{}
 	a := newAgent(t, p, m, func(c *agent.Config) {
 		c.Tools = registry(t, okTool("t"))
-		c.NewContext = func() sessions.Writer { return log }
+		c.NewContext = func() (sessions.Writer, error) { return log, nil }
 	})
 	defer func() { require.NoError(t, a.Dispose()) }()
 	settled := 0
