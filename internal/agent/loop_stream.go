@@ -232,6 +232,11 @@ func (l *loop) normalizeOutcome(final protocol.AssistantMessage, cause error) pr
 	case protocol.StopAborted:
 		final.Content = interruptedContent(final.Content)
 	}
+	if providers.UsageOverflow(l.cfg.Model, final) {
+		// The calls of a silent overflow never run; a closed turn must not
+		// keep them without results.
+		final.Content = withoutToolCalls(final.Content)
+	}
 	return final
 }
 

@@ -24,7 +24,7 @@ func (s *sessionView) onRestored(v SessionRestoredMsg) tea.Cmd {
 	s.reconnect = reconnectView{}
 	s.useSession(v.Session)
 	s.appendBlock(restoredNote{text: "Reconnected. Session " + ShortID(v.Session.ID) + " restored."})
-	return tea.Batch(s.refreshCmd(false), s.onBoxReconnected())
+	return tea.Batch(s.refreshCmd(false), s.onBoxReconnected(), s.followedUsageCmd())
 }
 
 // onGone handles a session that the leader no longer has, for example after a

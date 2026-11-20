@@ -120,12 +120,17 @@ func isOverflowText(status int, errType, errCode, message string) bool {
 // and a throttling text are not an overflow, whatever the SDK guessed from the
 // text.
 func OverflowFlagVetoed(status int, errType, errCode, message string) bool {
-	if status == http.StatusTooManyRequests || status == http.StatusPaymentRequired || status >= 500 ||
-		overflowVetoText(errType, errCode, message) {
+	if !overflowTextStatus(status) || overflowVetoText(errType, errCode, message) {
 		return true
 	}
+	detail := errType + " " + errCode + " " + message
+	for _, re := range notContextPatterns {
+		if re.MatchString(detail) {
+			return true
+		}
+	}
 	switch ClassifyProvider(status, errType, errCode, message) {
-	case CodeRateLimit, CodeQuota:
+	case CodeAuth, CodeRateLimit, CodeQuota:
 		return true
 	}
 	return false

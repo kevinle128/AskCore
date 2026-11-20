@@ -478,6 +478,7 @@ func (t *Translator) onAssistantEnd(e *protocol.MessageEnd, am protocol.Assistan
 		t.run.hadReply = true
 	}
 
+	t.run.lastErr = nil
 	switch am.StopReason {
 	case protocol.StopError:
 		msg := ""
@@ -646,7 +647,7 @@ func (t *Translator) writeError(code string, out *[]tea.Msg) {
 	}
 	kind, next := classifyError(code, provider)
 	switch {
-	case code == codeContextWindow && oneLine(msg) == "":
+	case code == codeContextWindow && t.run.lastErr == nil && oneLine(t.run.finalError) == "":
 		msg = contextOverreportText
 	case code == codeContextWindow:
 		msg = contextOverflowText

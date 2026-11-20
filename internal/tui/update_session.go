@@ -317,7 +317,7 @@ func (s *sessionView) onNewSession(msg newSessionMsg) tea.Cmd {
 	}
 	s.useSession(msg.info)
 	s.warnFlagsIgnored(msg.info)
-	return tea.Batch(s.refreshCmd(true), s.skillsCmd())
+	return tea.Batch(s.refreshCmd(true), s.skillsCmd(), s.followedUsageCmd())
 }
 
 const flagsIgnoredText = "Warning: the leader ignored the prompt and tool flags of this command line (it is older than this build). They are not applied in this session."
@@ -608,7 +608,7 @@ func (s *sessionView) onPromptCalled(msg promptCalledMsg) tea.Cmd {
 		s.start.session = msg.session.ID
 		s.useSession(*msg.session)
 		s.warnFlagsIgnored(*msg.session)
-		cmd = tea.Batch(s.refreshCmd(true), s.skillsCmd())
+		cmd = tea.Batch(s.refreshCmd(true), s.skillsCmd(), s.followedUsageCmd())
 	}
 	s.send.calling = false
 	if msg.err != nil {
@@ -856,6 +856,16 @@ func (s *sessionView) usageCmd() tea.Cmd {
 		}
 		return out
 	}
+}
+
+// followedUsageCmd reads the usage totals again after useSession when the
+// snapshot of the session came first: the call that the snapshot started
+// carries the old generation, so onUsage drops its answer.
+func (s *sessionView) followedUsageCmd() tea.Cmd {
+	if s.followed == "" || s.followed != s.sess.ID {
+		return nil
+	}
+	return s.usageCmd()
 }
 
 // onUsage takes the usage totals. A failed call keeps the last values: the

@@ -95,7 +95,7 @@ func TestACPWireEventIdentity(t *testing.T) {
 }
 
 func TestACPWireErrorCodes(t *testing.T) {
-	kinds := []ACPErrorKind{ACPErrUnknownSession, ACPErrUnknownSubscription, ACPErrNotInitialized, ACPErrBusy, ACPErrDisposed, ACPErrNoAPIKey, ACPErrModelAccess, ACPErrQueueFull, ACPErrInvalidModel, ACPErrInvalidContent, ACPErrCancelled, ACPErrUnsupported, ACPErrOutputFailure, ACPErrNoModel, ACPErrProviderBusy}
+	kinds := []ACPErrorKind{ACPErrUnknownSession, ACPErrUnknownSubscription, ACPErrNotInitialized, ACPErrBusy, ACPErrDisposed, ACPErrNoAPIKey, ACPErrModelAccess, ACPErrQueueFull, ACPErrInvalidModel, ACPErrInvalidContent, ACPErrCancelled, ACPErrUnsupported, ACPErrOutputFailure, ACPErrNoModel, ACPErrProviderBusy, ACPErrContextOverflow}
 	seen := map[int]ACPErrorKind{}
 	for _, k := range kinds {
 		c := ACPErrorCode(k)

@@ -385,6 +385,9 @@ const (
 	ACPCodeConfig = -32020
 	// ACPCodeSessionInUse is the code of a load of a session that is in use.
 	ACPCodeSessionInUse = -32021
+	// ACPCodeContextOverflow is the code of a conversation that does not fit
+	// the context window of the model.
+	ACPCodeContextOverflow = -32022
 )
 
 // ACPRouteMetaKey is the _meta key of the route context. Only the leader router
@@ -447,6 +450,8 @@ func ACPErrorCode(k ACPErrorKind) int {
 		return ACPCodeConfig
 	case ACPErrSessionInUse:
 		return ACPCodeSessionInUse
+	case ACPErrContextOverflow:
+		return ACPCodeContextOverflow
 	default:
 		return -32603
 	}

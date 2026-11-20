@@ -632,6 +632,9 @@ func TestReconnectStatesGoldens(t *testing.T) {
 
 	t.Run("restored", func(t *testing.T) {
 		r := prep(t)
+		// The leader holds the totals of the session; the restore reads them again.
+		r.fc.setUsage(ctxEstimate(sketchUsage().TotalTokens))
+		before := r.fc.count("usage")
 		r.fc.push(DisconnectedMsg{Err: errors.New("eof")}, ConnectedMsg{Info: r.fc.Info()},
 			SessionRestoredMsg{Session: SessionInfo{ID: testSessionID, Role: protocol.ACPRoleDriver}, Resumed: true},
 			SnapshotMsg{SessionID: testSessionID, Resumed: true})
@@ -640,6 +643,7 @@ func TestReconnectStatesGoldens(t *testing.T) {
 		r.h.settle()
 		requireRows(t, r.h.grid(), promptTail("❯ also check the lock timeout", leftFooter, rightIdle))
 		requireContentGolden(t, r.h)
+		require.Greater(t, r.fc.count("usage"), before, "the restored session reads its usage again")
 
 		// A block that was produced during the outage arrives once.
 		r.event(flat(

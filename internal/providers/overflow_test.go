@@ -63,6 +63,9 @@ func TestOverflowFlagVetoedByStatusTypeAndText(t *testing.T) {
 	assert.True(t, providers.OverflowFlagVetoed(400, "", "", "Too many requests"))
 	assert.False(t, providers.OverflowFlagVetoed(400, "invalid_request_error", "", "prompt is too long"))
 	assert.False(t, providers.OverflowFlagVetoed(413, "", "", ""))
+	assert.True(t, providers.OverflowFlagVetoed(401, "authentication_error", "", "prompt is too long"))
+	assert.True(t, providers.OverflowFlagVetoed(404, "", "", "prompt is too long"))
+	assert.True(t, providers.OverflowFlagVetoed(400, "", "", "too many tokens requested for output"))
 }
 
 func TestUsageOverflowThresholds(t *testing.T) {

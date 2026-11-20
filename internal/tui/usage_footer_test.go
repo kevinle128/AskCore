@@ -471,3 +471,24 @@ func TestQuotaRetryAndOverflowLookDifferent(t *testing.T) {
 	require.NotEqual(t, screens["quota"], screens["retry"])
 	require.NotEqual(t, screens["retry"], screens["overflow"])
 }
+
+func TestSilentOverflowAfterRetriedFailureKeepsOverreportText(t *testing.T) {
+	r := overflowRig(t, 80, 24)
+	reply := "The internal/ tree has 41 packages."
+	used := protocol.Usage{Input: 1_000_000, Output: 4_100}
+	r.event(flat(
+		&protocol.AgentStart{},
+		userAt(overflowPrompt, sketchTime(14, 11)),
+		assistantStart("gpt-5.5", 0),
+		failedReply("openai", "HTTP 429: rate limited"),
+		assistantStart("gpt-5.5", 0),
+		textParts(0, reply),
+		assistantEndUsage("gpt-5.5", protocol.StopStop, 41_000, used, protocol.Text{Text: reply}),
+		&protocol.CycleEnd{Reason: "error", Code: "CONTEXT_WINDOW_EXCEEDED"}, &protocol.AgentEnd{},
+		&protocol.AgentSettled{Usage: &overflowTotals},
+	)...)
+	r.h.waitText("Then send again.")
+	rows := strings.Join(r.rows(), "\n")
+	require.Contains(t, rows, "Error (context): The provider reported more input tokens than the context")
+	require.NotContains(t, rows, "The conversation is larger than the context window")
+}

@@ -357,8 +357,8 @@ func (st *configState) applyPatch(path string, m Model, p ModelPatch) (Model, bo
 			st.problem(path+".cost", "a price must not be negative")
 		} else {
 			// A price that the patch omits stays unknown on a row whose
-			// prices are unknown.
-			out.Cost, out.CostUnknown, applied = Cost{Tiers: []Tier{{Above: 0, Price: price}}}, m.CostUnknown && !all, true
+			// prices are unknown (marked so, or with no tiers).
+			out.Cost, out.CostUnknown, applied = Cost{Tiers: []Tier{{Above: 0, Price: price}}}, !m.PriceKnown() && !all, true
 		}
 	}
 	if len(p.Input) > 0 {

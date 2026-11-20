@@ -249,7 +249,7 @@ func acpModel(m providers.Model) protocol.ACPModel {
 	return protocol.ACPModel{
 		ModelID: modelID(m), Provider: m.Provider, ID: m.ID, Name: m.Name, API: string(m.API),
 		Reasoning: m.Reasoning, Input: append([]string{}, m.Input...),
-		ContextWindow: m.ContextWindow, MaxTokens: m.MaxTokens, CostUnknown: m.CostUnknown,
+		ContextWindow: m.ContextWindow, MaxTokens: m.MaxTokens, CostUnknown: !m.PriceKnown(),
 	}
 }
 

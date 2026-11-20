@@ -92,6 +92,11 @@ func (l *loop) settleAndRecover(msg protocol.AssistantMessage, cause error, prov
 		l.retryPending = true
 		return msg, l.retryEvents(scheduled)
 	}
+	// finishAttempt empties the content of an error reply; the settlement
+	// still needs to know that the attempt produced output.
+	if l.attempt != nil && hasContent(msg.Content) {
+		l.attempt.streamed = true
+	}
 	var err error
 	msg, err = l.finishAttempt(msg)
 	if err != nil {

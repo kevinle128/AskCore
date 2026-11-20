@@ -91,6 +91,10 @@ func TestSilentOverflowRunsNoToolCalls(t *testing.T) {
 
 	assert.Empty(t, eventsOf[*protocol.ToolExecutionStart](rec))
 	assert.Empty(t, logged[sessions.ToolCall](log), "no call is recorded as started")
+	for _, b := range lastAssistant(t, a.State().Messages).Content {
+		_, isCall := b.(protocol.ToolCall)
+		assert.False(t, isCall, "the logged reply keeps no call that never ran")
+	}
 	assert.Equal(t, "context_overflow", eventsOf[*protocol.CycleEnd](rec)[0].Cause)
 }
 
