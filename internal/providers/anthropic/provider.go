@@ -318,6 +318,7 @@ func (p *adapter) produce(ctx context.Context, a *providers.Assembler, m provide
 		Witness:   witness,
 		MapStop:   mapStop,
 		Reasoning: reasoningMeta,
+		Usage:     foldUsage(m),
 	})
 	if !a.Settled() {
 		if ctx.Err() != nil {

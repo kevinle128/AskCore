@@ -461,6 +461,21 @@ func TestInteractiveEarlyInputKept(t *testing.T) {
 	a.requireRestored()
 }
 
+// The footer row shows the usage of the session after a reply. The faux
+// provider has a free tier, so its cost is $0.00.
+func TestInteractiveFooterShowsCostAfterReply(t *testing.T) {
+	bin, home := newE2EHome(t)
+	a := startAskTerm(t, bin, home, askTermOptions{})
+	a.waitText("Ask anything")
+	requireLeaderLink(t, a, bin, home)
+	require.False(t, footerHas(a.rows(), "$"), "no cost before the first reply: %q", footerRowOf(a.rows()))
+	a.write("hello there\r")
+	a.waitFor("the cost in the footer row", func(rows []string) bool { return footerHas(rows, "$0.00") })
+	a.write("\x04")
+	require.Equal(t, 0, a.waitExit(), a.stderr.String())
+	a.requireRestored()
+}
+
 func TestInteractiveShiftEnterInsertsNewline(t *testing.T) {
 	bin, home := newE2EHome(t)
 	a := startAskTerm(t, bin, home, askTermOptions{})

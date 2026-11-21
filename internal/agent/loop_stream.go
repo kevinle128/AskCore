@@ -142,6 +142,9 @@ func (l *loop) consumeAttempt(ctx context.Context, attemptID string, stream *pro
 			emitErr = l.emit(&protocol.MessageStart{Message: ev.Message})
 		case protocol.BlockEvent:
 			// Block events before start have no message to belong to.
+			if l.attempt != nil {
+				l.attempt.streamed = true
+			}
 			if addedPartial {
 				emitErr = l.emit(&protocol.MessageUpdate{AssistantMessageEvent: ev, Usage: item.Usage})
 			}
@@ -228,6 +231,11 @@ func (l *loop) normalizeOutcome(final protocol.AssistantMessage, cause error) pr
 		final.Content = withoutToolCalls(final.Content)
 	case protocol.StopAborted:
 		final.Content = interruptedContent(final.Content)
+	}
+	if providers.UsageOverflow(l.cfg.Model, final) {
+		// The calls of a silent overflow never run; a closed turn must not
+		// keep them without results.
+		final.Content = withoutToolCalls(final.Content)
 	}
 	return final
 }

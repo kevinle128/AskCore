@@ -29,9 +29,10 @@ type CycleOpened struct {
 }
 
 // CycleClosed records the end of an input cycle. Cause is one of the fixed
-// words of cycle_end.cause, and is empty unless the cycle was aborted. Code is
-// the failure code of cycle_end.code, and is empty unless the cycle ended in
-// an error.
+// words of cycle_end.cause. It is set for an aborted cycle, and for an error
+// cycle that ended in a context overflow (the word context_overflow); it is
+// empty otherwise. Code is the failure code of cycle_end.code, and is empty
+// unless the cycle ended in an error.
 type CycleClosed struct {
 	CycleID string `json:"cycleId"`
 	Reason  string `json:"reason"`
@@ -66,6 +67,15 @@ type AttemptSettled struct {
 	// Usage is nil when the usage of the attempt is unknown.
 	Usage   *protocol.Usage `json:"usage,omitempty"`
 	Failure *Failure        `json:"failure,omitempty"`
+	// CostUnknown is true when the model of the request had no known price, so
+	// the cost in Usage is not a real figure. A log that was written without
+	// the field counts as priced.
+	CostUnknown bool `json:"costUnknown,omitempty"`
+	// NoOutput is true when the attempt ended before the provider streamed any
+	// output. With a nil Usage it records a refused request (for example an
+	// HTTP 429 or 500 before any stream), which the provider does not bill.
+	// A log that was written without the field counts as "output unknown".
+	NoOutput bool `json:"noOutput,omitempty"`
 	// Binding is the credential binding that the request used. It is nil when
 	// no credential was bound (a faux provider, or a binding that failed).
 	Binding *AuthBinding `json:"binding,omitempty"`

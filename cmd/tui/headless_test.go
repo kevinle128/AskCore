@@ -281,10 +281,10 @@ func TestPrintBadPaceEnv(t *testing.T) {
 	assert.Equal(t, result{"", "Error: ASK_FAUX_TPS must be a non-negative number, got \"fast\"\n", 1}, got)
 }
 
-var volatileFields = regexp.MustCompile(`"(ts|timestamp)":\d+|"(input|cacheWrite|totalTokens)":\d+|"runId":"[0-9a-f]{32}"|"sessionId":"\d{19}"|"(cycleId|attemptId)":"[0-9a-f]{32}"`)
+var volatileFields = regexp.MustCompile(`"(ts|timestamp)":\d+|"(input|cacheWrite|totalTokens|contextTokens)":\d+|"runId":"[0-9a-f]{32}"|"sessionId":"\d{19}"|"(cycleId|attemptId)":"[0-9a-f]{32}"`)
 
 // normalize replaces the clock, run, session, cycle and attempt id values, which change per run.
-// It also zeroes the faux token estimate of the input side, which grows with the length of the system prompt (it holds the cwd).
+// It also zeroes the faux token estimate of the input side and the context estimate, which grow with the length of the system prompt (it holds the cwd).
 func normalize(jsonl string) string {
 	return volatileFields.ReplaceAllStringFunc(jsonl, func(s string) string {
 		if strings.HasPrefix(s, `"runId"`) {
@@ -336,7 +336,7 @@ func TestJSONHelloLines(t *testing.T) {
 {"seq":13,"ts":0,"sessionId":"","runId":"R","type":"turn_end","cycleId":"C","message":{"role":"assistant","content":[{"type":"text","text":"hello"}],"api":"faux","provider":"faux","model":"faux-1","thinkingLevel":"default","usage":{"input":2745,"output":2,"cacheRead":0,"cacheWrite":2745,"totalTokens":5492,"cost":{"input":0,"output":0,"cacheRead":0,"cacheWrite":0,"total":0}},"stopReason":"stop","timestamp":0},"toolResults":[]}
 {"seq":14,"ts":0,"sessionId":"","runId":"R","type":"cycle_end","cycleId":"C","reason":"completed"}
 {"seq":15,"ts":0,"sessionId":"","runId":"R","type":"agent_end","messages":[{"role":"user","content":[{"type":"text","text":"hello"}],"timestamp":0},{"role":"assistant","content":[{"type":"text","text":"hello"}],"api":"faux","provider":"faux","model":"faux-1","thinkingLevel":"default","usage":{"input":2745,"output":2,"cacheRead":0,"cacheWrite":2745,"totalTokens":5492,"cost":{"input":0,"output":0,"cacheRead":0,"cacheWrite":0,"total":0}},"stopReason":"stop","timestamp":0}],"willRetry":false}
-{"seq":16,"ts":0,"sessionId":"","runId":"R","type":"agent_settled"}
+{"seq":16,"ts":0,"sessionId":"","runId":"R","type":"agent_settled","usage":{"total":{"input":0,"output":2,"cacheRead":0,"cacheWrite":0,"totalTokens":0,"cost":{"input":0,"output":0,"cacheRead":0,"cacheWrite":0,"total":0}},"complete":true,"costComplete":true,"contextTokens":0,"contextWindow":128000}}
 `
 	header, events, found := strings.Cut(got.stdout, "\n")
 	require.True(t, found)

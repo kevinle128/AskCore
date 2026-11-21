@@ -18,7 +18,7 @@ Control handlers and observers must not become a second loop or writer.
 | Repair of an uncertain open turn without re-execution; closing of the turn and cycle that a dead process left open | [tool_repair.go](tool_repair.go) |
 | Model and thinking entries at run start, and the selection that a resumed log holds | [selection_log.go](selection_log.go) |
 | ID of the log that the Agent writes now | [log_id.go](log_id.go) |
-| Cycle identity and termination reasons | [lifecycle.go](lifecycle.go) |
+| Cycle identity and termination reasons, the overflow cause, and the attempt settlement with its price and output marks | [lifecycle.go](lifecycle.go) |
 | Ordered local listeners and posted events | [emit.go](emit.go) |
 | Consistent follow snapshot, stream baseline, cursor, and epoch | [follow.go](follow.go) |
 | System prompt and tool declaration changes | [systemprompt.go](systemprompt.go), [loop_tool_changes.go](loop_tool_changes.go) |
@@ -39,6 +39,9 @@ The sole-writer and safe request-record constraints are in [sessions](../session
 Failed attempts record safe outcome, failure, usage, and binding facts.
 Their assistant content stays outside model history; visible streamed output remains visible through the Pi retry sequence.
 Retry must preserve the selected credential's method, profile, and billing class.
+
+A context overflow ends the run. The reason stage marks the turn as an overflow when the failure code is `CONTEXT_WINDOW_EXCEEDED` or when `providers.UsageOverflow` says the reported input filled the window (a silent overflow). The turn then runs no tool and the decision stage ends the run with reason `error`, code `CONTEXT_WINDOW_EXCEEDED` and cause `context_overflow`. There is no retry and no model switch. A silent overflow keeps its reply in the log and in the model history, and its attempt stays `completed`.
+Each attempt is settled with `costUnknown` (the price state of the request model when it opened) and, for a failure with no usage and no streamed output, `noOutput`. `agent_settled` carries the totals of `sessions.FoldUsage`, the context estimate and the window of the current model; it has none when the log has no model attempt.
 
 `Config.NewContext` opens a log and can fail: `New` returns its error, and `Reset` returns it and keeps the current log. The first call may return a log that holds entries already (a resumed session); each later call returns a fresh log. The owner of the log decides where it is saved; the Agent only appends to it.
 When the Agent opens a log, it first closes what a dead process left open: an error result for each tool call with no result (`outcome unknown` when the log holds the intent to run it, else `not started`), the end of the turn, and the end of the cycle with the cause `interrupted`. A log that no process left open is not changed.

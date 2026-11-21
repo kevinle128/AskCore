@@ -13,11 +13,16 @@ The log is saved by a backend behind `store.SessionStore` (today the JSONL files
 | In-memory writer (tests, `--no-session`) | [memory.go](memory.go) |
 | Line format of a session file: header, one envelope for each entry, wire type names, `ignorable`, format version | [codec.go](codec.go) |
 | Session id: the decimal text of a snowflake id | [id.go](id.go) |
+| The one fold of `AttemptSettled` entries into usage rows and totals (`FoldUsage`) | [usage.go](usage.go) |
+| The estimate of the next request size (`EstimateContext`) | [context_estimate.go](context_estimate.go) |
 | Exact model request reconstruction | [Agent request log](../agent/request_log.go) |
 
 Lifecycle, input outcome, request delta, retry, and tool intent records are log facts rather than ordinary model messages.
 `ModelChange` and `ThinkingChange` record the selection that later requests use, so a resumed session continues on the same model and level. `ContextEdit` changes what the model sees of an earlier message and keeps the message in the history; no code writes it yet.
 Read entry.go for the machine contract; do not define duplicate fields in a persistence adapter.
+
+Usage has one source: the `AttemptSettled` entries. `FoldUsage` is the only place that adds them, and ACP, the JSON stream of `ask -p` and the TUI all call it, so their totals agree. The usage on a message entry is for display and is never summed. An attempt that failed before any output and reported no usage counts as zero (`AttemptSettled.NoOutput`); any other attempt with no usage makes the totals partial. `AttemptSettled.CostUnknown` records that the model had no known price when the attempt ran, which makes the cost partial. A log that was written without these two optional fields counts as priced, with output unknown. No entry type was added for usage.
+`EstimateContext` is the one estimate of the next request size: the usage of the last completed attempt after the last `ContextEdit`, plus one token for every 4 characters of the messages after it (an image counts as 4800 characters, an error reply as 0). Without such an attempt it estimates the system snapshot and all messages. It uses no tokenizer, so it is rough.
 
 ## Decisions and constraints
 

@@ -175,11 +175,17 @@ type sessionView struct {
 	baseline protocol.ACPCursor
 	// starts are the block ids of the fallback and dropped-level notices that
 	// wait for the state.
-	starts    [][2]string
-	trace     string
-	thinking  protocol.ThinkingLevel
-	thinkTry  protocol.ThinkingLevel
-	ctxTokens int64
+	starts   [][2]string
+	trace    string
+	thinking protocol.ThinkingLevel
+	thinkTry protocol.ThinkingLevel
+	// usage is the last usage total of the session; the zero value means none is
+	// known. usageSeq numbers the usage calls, and usageApplied is the number of
+	// the call whose answer was applied last, so an answer that arrives late
+	// does not replace a newer one.
+	usage        protocol.UsageTotals
+	usageSeq     uint64
+	usageApplied uint64
 	// modelReq numbers the set-model requests. Only the answer to the latest
 	// request, in the generation it started in, changes the model.
 	modelReq uint64

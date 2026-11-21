@@ -632,6 +632,9 @@ func TestReconnectStatesGoldens(t *testing.T) {
 
 	t.Run("restored", func(t *testing.T) {
 		r := prep(t)
+		// The leader holds the totals of the session; the restore reads them again.
+		r.fc.setUsage(ctxEstimate(sketchUsage().TotalTokens))
+		before := r.fc.count("usage")
 		r.fc.push(DisconnectedMsg{Err: errors.New("eof")}, ConnectedMsg{Info: r.fc.Info()},
 			SessionRestoredMsg{Session: SessionInfo{ID: testSessionID, Role: protocol.ACPRoleDriver}, Resumed: true},
 			SnapshotMsg{SessionID: testSessionID, Resumed: true})
@@ -640,6 +643,7 @@ func TestReconnectStatesGoldens(t *testing.T) {
 		r.h.settle()
 		requireRows(t, r.h.grid(), promptTail("❯ also check the lock timeout", leftFooter, rightIdle))
 		requireContentGolden(t, r.h)
+		require.Greater(t, r.fc.count("usage"), before, "the restored session reads its usage again")
 
 		// A block that was produced during the outage arrives once.
 		r.event(flat(
@@ -916,14 +920,14 @@ func TestFooterUsageThresholds(t *testing.T) {
 	}
 	for _, c := range cases {
 		m := footerModel(t, colorprofile.TrueColor)
-		m.sv.ctxTokens = 128_000 * c.pct / 100
+		m.sv.usage = ctxEstimate(128_000 * c.pct / 100)
 		row := m.sv.footerText(80)
 		require.Contains(t, row, m.theme.Render(c.role, c.bar), "%d%%", c.pct)
 	}
 
 	t.Run("short form under 60 columns", func(t *testing.T) {
 		m := footerModel(t, colorprofile.NoTTY)
-		m.sv.ctxTokens = 23_040
+		m.sv.usage = ctxEstimate(23_040)
 		require.Equal(t, "        alibaba/deepseek-v4.1-flash 18% ", ansi.Strip(m.sv.footerText(40)),
 			"the end of the model id gives way; the provider stays whole")
 		require.Equal(t, 40, displayWidth(m.sv.footerText(40)))
@@ -931,6 +935,7 @@ func TestFooterUsageThresholds(t *testing.T) {
 
 	t.Run("wide characters at 40x14", func(t *testing.T) {
 		r := startView(t, 40, 14)
+		r.fc.setUsage(ctxEstimate(23_040))
 		r.event(flat(
 			&protocol.AgentStart{},
 			userAt("giải thích lỗi 日本語のテスト", sketchTime(14, 5)),
@@ -938,7 +943,9 @@ func TestFooterUsageThresholds(t *testing.T) {
 			update(protocol.TextStartEvent{ContentIndex: 0}),
 			update(protocol.TextDeltaEvent{ContentIndex: 0, Delta: "The 日本語 test fails because each wide character uses two columns."}),
 			assistantEndUsage("deepseek-v4.1-flash", protocol.StopStop, 500, sketchUsage(), protocol.Text{Text: "The 日本語 test fails because each wide character uses two columns."}),
+			&protocol.TurnEnd{},
 		)...)
+		r.h.waitText("18%")
 		r.clock.advance(3 * time.Second)
 		r.event(&protocol.QueueUpdate{})
 		r.h.waitText("┊ ◌ Working… 3s · esc")
@@ -994,7 +1001,7 @@ func TestFooterReasoningModelShowsLevel(t *testing.T) {
 	m := footerModel(t, colorprofile.NoTTY)
 	s := m.sv
 	s.modelID, s.thinking = opusModel, protocol.ThinkingMedium
-	s.ctxTokens = 210_000
+	s.usage = ctxEstimate(210_000)
 	require.Equal(t, footerRow(80, leftFooter, "anthropic/claude-opus-5-5 ◐ medium  ▰▰▱▱▱▱▱▱ 21% "), ansi.Strip(m.sv.footerText(80)))
 }
 

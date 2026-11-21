@@ -61,7 +61,7 @@ func sampleEntries() map[string]sessions.Entry {
 		"cycle_closed":    sessions.CycleClosed{CycleID: "c1", Reason: "aborted", Cause: "user", Code: "X"},
 		"turn_opened":     sessions.TurnOpened{CycleID: "c1"},
 		"turn_closed":     sessions.TurnClosed{CycleID: "c1"},
-		"attempt_settled": sessions.AttemptSettled{AttemptID: "a1", Outcome: "failed", Usage: &protocol.Usage{Input: 1}, Failure: &sessions.Failure{Code: "AUTH", Text: "no"}, Binding: &sessions.AuthBinding{Provider: "openai", Method: "oauth"}},
+		"attempt_settled": sessions.AttemptSettled{AttemptID: "a1", Outcome: "failed", Usage: &protocol.Usage{Input: 1}, CostUnknown: true, NoOutput: true, Failure: &sessions.Failure{Code: "AUTH", Text: "no"}, Binding: &sessions.AuthBinding{Provider: "openai", Method: "oauth"}},
 		"tool_call":       sessions.ToolCall{AssistantEntry: 4, CallID: "call-1"},
 		"retry_scheduled": sessions.RetryScheduled{RetryID: "r1", CycleID: "c1", Turn: 1, Provider: "openai", PolicyKey: "k", Retry: 1, MaxRetries: 3, DelayMs: 500, Failure: sessions.Failure{Code: "SERVER", Text: "x"}},
 		"retry_started":   sessions.RetryStarted{RetryID: "r1", Retry: 1},
@@ -241,4 +241,17 @@ func keys[V any](m map[string]V) []string {
 	}
 	sort.Strings(out)
 	return out
+}
+
+func TestAttemptSettledWithoutCostUnknownDecodes(t *testing.T) {
+	line := []byte(`{"seq":3,"type":"attempt_settled","data":{"attemptId":"a1","outcome":"completed","usage":{"input":5,"output":1,"cacheRead":0,"cacheWrite":0,"totalTokens":6,"cost":{"input":0,"output":0,"cacheRead":0,"cacheWrite":0,"total":0}}}}`)
+	seq, e, err := sessions.DecodeEntry(line)
+	require.NoError(t, err)
+	assert.Equal(t, 3, seq)
+	got, ok := e.(sessions.AttemptSettled)
+	require.True(t, ok)
+	assert.False(t, got.CostUnknown)
+	assert.False(t, got.NoOutput)
+	require.NotNil(t, got.Usage)
+	assert.Equal(t, int64(5), got.Usage.Input)
 }

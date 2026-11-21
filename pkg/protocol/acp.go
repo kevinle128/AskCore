@@ -305,14 +305,16 @@ type ACPUsageRow struct {
 	CycleID   string `json:"cycleId,omitempty"`
 	Outcome   string `json:"outcome"`
 	Usage     *Usage `json:"usage,omitempty"`
+	// CostUnknown is true when the model of the attempt had no known price.
+	CostUnknown bool `json:"costUnknown,omitempty"`
 }
 
-// ACPUsageResult lists the attempts and the sum of the known values.
-// Complete is false when any attempt has no reported usage, so Total is then a lower bound.
+// ACPUsageResult lists the attempts and the totals of their usage. The
+// embedded totals say how far the sum can be trusted (Complete, CostComplete)
+// and carry the context estimate of the next request.
 type ACPUsageResult struct {
 	Attempts []ACPUsageRow `json:"attempts"`
-	Total    Usage         `json:"total"`
-	Complete bool          `json:"complete"`
+	UsageTotals
 }
 
 // ACPErrorKind names a failure once for every method.
@@ -338,6 +340,9 @@ const (
 	ACPErrUnsupported    ACPErrorKind = "unsupported"
 	ACPErrOutputFailure  ACPErrorKind = "output_failure"
 	ACPErrInternal       ACPErrorKind = "internal"
+	// ACPErrContextOverflow means the conversation does not fit the context
+	// window of the model. A client offers a new session or another model.
+	ACPErrContextOverflow ACPErrorKind = "context_overflow"
 
 	// ACPErrNoModel means the session has no model, so no run can start.
 	ACPErrNoModel ACPErrorKind = "no_model"
@@ -380,6 +385,9 @@ const (
 	ACPCodeConfig = -32020
 	// ACPCodeSessionInUse is the code of a load of a session that is in use.
 	ACPCodeSessionInUse = -32021
+	// ACPCodeContextOverflow is the code of a conversation that does not fit
+	// the context window of the model.
+	ACPCodeContextOverflow = -32022
 )
 
 // ACPRouteMetaKey is the _meta key of the route context. Only the leader router
@@ -442,6 +450,8 @@ func ACPErrorCode(k ACPErrorKind) int {
 		return ACPCodeConfig
 	case ACPErrSessionInUse:
 		return ACPCodeSessionInUse
+	case ACPErrContextOverflow:
+		return ACPCodeContextOverflow
 	default:
 		return -32603
 	}
@@ -493,6 +503,8 @@ func ACPErrorMessage(k ACPErrorKind) string {
 		return "initialize this connection first"
 	case ACPErrConfig:
 		return ModelConfigChanged
+	case ACPErrContextOverflow:
+		return "the conversation is larger than the context window of the model"
 	case ACPErrSessionInUse:
 		return "the session is open in another ask process (a leader keeps it after the TUI quits); open it with `ask -c`, or stop the leader with `ask leader stop`"
 	default:

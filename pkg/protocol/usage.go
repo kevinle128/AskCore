@@ -33,3 +33,22 @@ func (u Usage) Clone() Usage {
 	u.Reasoning = clonePtr(u.Reasoning)
 	return u
 }
+
+// UsageTotals is the sum of the usage of every model attempt of a session,
+// with the facts that tell how far the sum can be trusted.
+type UsageTotals struct {
+	// Total adds the usage of every attempt that reported usage, also a failed
+	// or retried attempt.
+	Total Usage `json:"total"`
+	// Complete is true when every attempt either reported usage or was refused
+	// before any output (and so cost nothing).
+	Complete bool `json:"complete"`
+	// CostComplete is true when Complete is true and every attempt that
+	// reported usage had a known price.
+	CostComplete bool `json:"costComplete"`
+	// ContextTokens is the estimate of the size of the next request. 0 means
+	// unknown.
+	ContextTokens int64 `json:"contextTokens,omitempty"`
+	// ContextWindow is the window of the current model. 0 means unknown.
+	ContextWindow int `json:"contextWindow,omitempty"`
+}

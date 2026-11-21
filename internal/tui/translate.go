@@ -478,6 +478,7 @@ func (t *Translator) onAssistantEnd(e *protocol.MessageEnd, am protocol.Assistan
 		t.run.hadReply = true
 	}
 
+	t.run.lastErr = nil
 	switch am.StopReason {
 	case protocol.StopError:
 		msg := ""
@@ -644,11 +645,18 @@ func (t *Translator) writeError(code string, out *[]tea.Msg) {
 			msg = t.run.lastErr.text
 		}
 	}
-	if oneLine(msg) == "" {
-		msg = "The request failed."
-	}
 	kind, next := classifyError(code, provider)
-	emitAppend(out, t.nextID("e"), NewErrorBlock(ErrorHeadline(kind, sentence(providerErrorText(msg, provider))), next), true)
+	switch {
+	case code == codeContextWindow && t.run.lastErr == nil && oneLine(t.run.finalError) == "":
+		msg = contextOverreportText
+	case code == codeContextWindow:
+		msg = contextOverflowText
+	case oneLine(msg) == "":
+		msg = "The request failed."
+	default:
+		msg = providerErrorText(msg, provider)
+	}
+	emitAppend(out, t.nextID("e"), NewErrorBlock(ErrorHeadline(kind, sentence(msg)), next), true)
 }
 
 func (t *Translator) writeNotice(kind, msg, next string, out *[]tea.Msg) {

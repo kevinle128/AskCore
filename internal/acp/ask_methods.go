@@ -249,7 +249,7 @@ func acpModel(m providers.Model) protocol.ACPModel {
 	return protocol.ACPModel{
 		ModelID: modelID(m), Provider: m.Provider, ID: m.ID, Name: m.Name, API: string(m.API),
 		Reasoning: m.Reasoning, Input: append([]string{}, m.Input...),
-		ContextWindow: m.ContextWindow, MaxTokens: m.MaxTokens, CostUnknown: m.CostUnknown,
+		ContextWindow: m.ContextWindow, MaxTokens: m.MaxTokens, CostUnknown: !m.PriceKnown(),
 	}
 }
 
@@ -473,8 +473,9 @@ func (a *Adapter) remove(ctx context.Context, raw json.RawMessage) (any, error) 
 	return protocol.ACPRemoveResult{Removed: s.Agent().Remove(req.InputID)}, nil
 }
 
-// usage reports the exact usage of each model attempt from the session log.
-// It is a read of committed rows, not a billing store.
+// usage reports the exact usage of each model attempt from the session log,
+// their totals and the context estimate for the current model. It is a read of
+// committed rows, not a billing store.
 func (a *Adapter) usage(_ context.Context, raw json.RawMessage) (any, error) {
 	s, err := a.sessionOf(raw)
 	if err != nil {
@@ -482,7 +483,25 @@ func (a *Adapter) usage(_ context.Context, raw json.RawMessage) (any, error) {
 	}
 	f := s.Agent().Follow(agent.Cursor{})
 	f.Events.Close()
-	return usageResult(f.Entries), nil
+	return usageResult(f.Entries, s.Agent().State().Model.ContextWindow), nil
+}
+
+// usageResult is the shared fold of the log. window is the context window of
+// the current model; 0 means unknown. A row holds the outcome and the usage
+// only: the failure of an attempt is not part of it.
+func usageResult(entries []sessions.Entry, window int) protocol.ACPUsageResult {
+	rows, totals := sessions.FoldUsage(entries)
+	if tokens, ok := sessions.EstimateContext(entries); ok {
+		totals.ContextTokens = tokens
+	}
+	totals.ContextWindow = window
+	res := protocol.ACPUsageResult{Attempts: make([]protocol.ACPUsageRow, 0, len(rows)), UsageTotals: totals}
+	for _, r := range rows {
+		res.Attempts = append(res.Attempts, protocol.ACPUsageRow{
+			AttemptID: r.AttemptID, CycleID: r.CycleID, Outcome: r.Outcome, Usage: r.Usage, CostUnknown: r.CostUnknown,
+		})
+	}
+	return res
 }
 
 // skills lists the skills that the session can load with "/skill:<name>".
@@ -492,60 +511,6 @@ func (a *Adapter) skills(_ context.Context, raw json.RawMessage) (any, error) {
 		return nil, err
 	}
 	return protocol.ACPSkillsResult{Skills: s.skillsNow()}, nil
-}
-
-// usageResult projects the attempt rows of a session log. A row holds the
-// outcome and the usage only: the failure of an attempt is not part of it.
-func usageResult(entries []sessions.Entry) protocol.ACPUsageResult {
-	res := protocol.ACPUsageResult{Attempts: []protocol.ACPUsageRow{}, Complete: true}
-	cycle := ""
-	for _, e := range entries {
-		switch v := e.(type) {
-		case sessions.CycleOpened:
-			cycle = v.CycleID
-		case sessions.CycleClosed:
-			cycle = ""
-		case sessions.AttemptSettled:
-			row := protocol.ACPUsageRow{AttemptID: v.AttemptID, CycleID: cycle, Outcome: v.Outcome}
-			if v.Usage != nil {
-				u := v.Usage.Clone()
-				row.Usage = &u
-				addUsage(&res.Total, u)
-			} else {
-				res.Complete = false
-			}
-			res.Attempts = append(res.Attempts, row)
-		}
-	}
-	return res
-}
-
-// addUsage adds u to dst. An optional counter stays unset until one attempt
-// reports it.
-func addUsage(dst *protocol.Usage, u protocol.Usage) {
-	dst.Input += u.Input
-	dst.Output += u.Output
-	dst.CacheRead += u.CacheRead
-	dst.CacheWrite += u.CacheWrite
-	dst.TotalTokens += u.TotalTokens
-	dst.Cost.Input += u.Cost.Input
-	dst.Cost.Output += u.Cost.Output
-	dst.Cost.CacheRead += u.Cost.CacheRead
-	dst.Cost.CacheWrite += u.Cost.CacheWrite
-	dst.Cost.Total += u.Cost.Total
-	dst.CacheWrite1h = addOptional(dst.CacheWrite1h, u.CacheWrite1h)
-	dst.Reasoning = addOptional(dst.Reasoning, u.Reasoning)
-}
-
-func addOptional(dst, v *int64) *int64 {
-	if v == nil {
-		return dst
-	}
-	sum := *v
-	if dst != nil {
-		sum += *dst
-	}
-	return &sum
 }
 
 // take makes the calling client the driver of a session. The leader router

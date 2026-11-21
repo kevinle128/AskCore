@@ -121,6 +121,9 @@ type replyPrinter struct {
 	first   bool // the reply of the last prompt was printed
 	seen    int
 	code    int
+	// overflowRuns holds the runs that ended a cycle with a context overflow.
+	// cycle_end comes before the agent_settled of its run.
+	overflowRuns map[string]bool
 }
 
 func newReplyPrinter(ag *agent.Agent, out, stderr io.Writer, prompts int) *replyPrinter {
@@ -140,6 +143,20 @@ func (p *replyPrinter) promptRun(runID string) {
 	}
 }
 
+// cycleEnded records a run whose cycle ended with a context overflow, so that
+// settled can give the exit code and the text of that failure.
+func (p *replyPrinter) cycleEnded(ev *protocol.CycleEnd) {
+	if ev.Cause != contextOverflowCause {
+		return
+	}
+	p.mu.Lock()
+	defer p.mu.Unlock()
+	if p.overflowRuns == nil {
+		p.overflowRuns = map[string]bool{}
+	}
+	p.overflowRuns[ev.Env().RunID] = true
+}
+
 // settled writes the reply of the run that emitted agent_settled: the reply of
 // the last prompt, then the reply of each run after it. Runs before the last
 // prompt print nothing, as before the wait existed.
@@ -149,6 +166,8 @@ func (p *replyPrinter) settled(runID string) {
 	}
 	msgs := p.ag.State().Messages
 	p.mu.Lock()
+	overflow := p.overflowRuns[runID]
+	delete(p.overflowRuns, runID)
 	var part []protocol.Message
 	switch {
 	case !p.first:
@@ -167,7 +186,7 @@ func (p *replyPrinter) settled(runID string) {
 	p.mu.Unlock()
 
 	// The write runs without the lock: it can block on a full stdout.
-	code := printReply(part, p.out, p.stderr)
+	code := printReply(part, overflow, p.out, p.stderr)
 	p.mu.Lock()
 	p.code = code
 	p.mu.Unlock()

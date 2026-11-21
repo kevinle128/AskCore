@@ -76,9 +76,13 @@ type Emit func(protocol.Event) error
 // there first and publishes its event after.
 type driver struct {
 	onPreparationFailure func()
-	clock                func() time.Time
-	log                  sessions.Writer
-	header               []protocol.Message
+	// onAttemptOpen reports the price state of the model that an attempt
+	// runs on, so the failure path can settle an attempt that the loop could
+	// not close.
+	onAttemptOpen func(priceKnown bool)
+	clock         func() time.Time
+	log           sessions.Writer
+	header        []protocol.Message
 	// in is the source of queued input. Nil means a loop with no queues.
 	in inputSource
 }
@@ -205,6 +209,7 @@ type loop struct {
 	stagedInputCount     int
 	claimed              []input
 	onPreparationFailure func()
+	onAttemptOpen        func(priceKnown bool)
 	retryNumber          int
 	retryBudgets         map[string]retryBudget
 	lastSettlement       sessions.AttemptSettled
@@ -229,7 +234,7 @@ func newLoop(ctx context.Context, ac pipeline.AgentContext, cfg LoopConfig, d dr
 	if clock == nil {
 		clock = time.Now
 	}
-	return &loop{usedToolIDs: used, clock: clock, ctx: ctx, cfg: cfg, log: d.log, header: d.header, in: d.in, onPreparationFailure: d.onPreparationFailure, ac: ac, emit: emit}
+	return &loop{usedToolIDs: used, clock: clock, ctx: ctx, cfg: cfg, log: d.log, header: d.header, in: d.in, onPreparationFailure: d.onPreparationFailure, onAttemptOpen: d.onAttemptOpen, ac: ac, emit: emit}
 }
 
 // commit writes entries to the log in one step. The driver calls it before it

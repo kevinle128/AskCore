@@ -99,7 +99,9 @@ func classifyProviderError(err error, pe *fantasy.ProviderError, extraCode strin
 	if pe.AuthError {
 		return providers.NewFailure(providers.CodeAuth, status, retryAfter(pe), text, err)
 	}
-	if pe.ContextTooLargeErr {
+	// The SDK sets the flag from the text alone, so a 429, a 402 or a throttling
+	// text must override it.
+	if pe.ContextTooLargeErr && !providers.OverflowFlagVetoed(status, detail.typ, detail.code, message) {
 		return providers.NewFailure(providers.CodeContextWindow, status, retryAfter(pe), text, err)
 	}
 	inBand := status == 0 && (detail.typ != "" || detail.code != "" || detail.message != "" || pe.TransientError)

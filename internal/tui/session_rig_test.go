@@ -31,6 +31,7 @@ type fakeClient struct {
 	models    protocol.ACPModelsResult
 	state     protocol.ACPStateResult
 	usage     protocol.ACPUsageResult
+	usageErr  error
 	// skills is the answer of Skills. skillsErr fails it, as a leader that
 	// predates the call does.
 	skills    protocol.ACPSkillsResult
@@ -127,7 +128,6 @@ func newFakeClient() *fakeClient {
 		sessionID:   testSessionID,
 		models:      protocol.ACPModelsResult{Current: deepseekModel, Models: testCatalog()},
 		state:       protocol.ACPStateResult{SessionID: testSessionID, ModelID: deepseekModel, ThinkingLevel: protocol.ThinkingOff},
-		usage:       protocol.ACPUsageResult{Total: protocol.Usage{Cost: protocol.Cost{Total: 40_000}}, Complete: true},
 		removeFails: map[string]bool{}, setModelErr: map[string]error{}, setModelGate: map[string]chan struct{}{},
 	}
 }
@@ -363,11 +363,18 @@ func thinkingRank(l protocol.ThinkingLevel) int {
 	return 0
 }
 
+func (f *fakeClient) setUsage(u protocol.UsageTotals) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	f.usage = protocol.ACPUsageResult{UsageTotals: u}
+	f.usageErr = nil
+}
+
 func (f *fakeClient) Usage(context.Context) (protocol.ACPUsageResult, error) {
 	f.record("usage")
 	f.mu.Lock()
 	defer f.mu.Unlock()
-	return f.usage, nil
+	return f.usage, f.usageErr
 }
 
 func (f *fakeClient) Skills(context.Context) (protocol.ACPSkillsResult, error) {
@@ -671,6 +678,18 @@ func sketchUsage() protocol.Usage {
 	return protocol.Usage{Input: 12_400, Output: 1_800, TotalTokens: 23_040, Cost: protocol.Cost{Total: 4_000}}
 }
 
+// ctxEstimate is a usage total that holds only the context estimate: the
+// footer shows the meter and no usage part.
+func ctxEstimate(tokens int64) protocol.UsageTotals {
+	return protocol.UsageTotals{ContextTokens: tokens}
+}
+
+// settledAt is the end of a run whose usage holds only the context estimate.
+func settledAt(tokens int64) *protocol.AgentSettled {
+	u := ctxEstimate(tokens)
+	return &protocol.AgentSettled{Usage: &u}
+}
+
 func firstTurnEvents() []protocol.Event {
 	return flat(
 		&protocol.AgentStart{},
@@ -678,7 +697,7 @@ func firstTurnEvents() []protocol.Event {
 		assistantStart("deepseek-v4.1-flash", 0),
 		textParts(0, sketchReply[:60], sketchReply[60:]),
 		assistantEndUsage("deepseek-v4.1-flash", protocol.StopStop, 4200, sketchUsage(), protocol.Text{Text: sketchReply}),
-		&protocol.AgentEnd{}, &protocol.AgentSettled{},
+		&protocol.AgentEnd{}, settledAt(sketchUsage().TotalTokens),
 	)
 }
 

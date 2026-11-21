@@ -376,7 +376,7 @@ Rules behind this order:
   - H-SESS-10, P0 part (`-c`, `--session`), plus `--no-session`. The TUI continues a session through `session/load`.
   - H-SESS-15 (a lock across processes, so headless `ask -p`, the leader and `ask acp` cannot write one session together): `flock` with no expiry, no renewal and no generation; the kernel frees the lock when the holder dies.
   - H-SESS-01, H-SESS-02 (P1, pulled: entry types kept, JSONL storage, header `version`; no migration chain).
-  - H-COMPACT-13 (`context_edit`): the entry type, its persistence and its projection. The writer of the entry belongs to H9 and H10.
+  - H-COMPACT-13 (`context_edit`): the entry type, its persistence and its projection. The writer of the entry belongs to H10 only (H9 has no compaction and no retry; moved 2026-11-20).
   - Persist the implemented system snapshots, request deltas, and tool declarations for H10 checkpoints and D23 rebuild after resume.
   - H-PROV-19, session restore part: a restored model comes after `--model` and before the saved default.
   - The session header record in JSON mode.
@@ -399,6 +399,8 @@ Rules behind this order:
 
 ### H9: Overflow detection and usage accounting
 
+- **Status:** delivered (2026-11-20). Plan: [`261120-0002-h9-overflow-usage`](../261120-0002-h9-overflow-usage/plan.md). Docs: [Context overflow and usage totals in cli.md](../../docs/cli.md#context-overflow-and-usage-totals).
+- **Approved change to H-RETRY-10 (user, 2026-11-20):** met by the existing `AttemptSettled` entries and the shared fold (`sessions.FoldUsage`); no new entry type. Optional fields `costUnknown` and `noOutput` were added to `AttemptSettled`.
 - **Already delivered:** queues, abort, typed transient retry, billing binding pins, and final agent_settled placement.
   See [Agent owners](../../internal/agent/README.md) and [provider failures](../../internal/providers/failure.go).
 - **Concept:** keep context overflow separate from transient failures and account for all completed work.

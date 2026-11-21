@@ -5,6 +5,7 @@ import (
 	"slices"
 
 	"AskCore/internal/pipeline"
+	"AskCore/internal/providers"
 	"AskCore/internal/sessions"
 	"AskCore/internal/tools"
 	"AskCore/pkg/protocol"
@@ -49,6 +50,10 @@ type turnState struct {
 	// the request, and the act stage runs calls against it, so the declared
 	// and the executable tools are the same even if the registry changes.
 	tools *tools.Snapshot
+	// overflow is set when the prompt did not fit the model window: the
+	// provider said so, or the reported usage shows it. The reply stays in the
+	// log, but the turn runs no tool and the run ends.
+	overflow bool
 }
 
 // failed reports a message that ended in an error or an abort. Such a turn
@@ -204,6 +209,7 @@ func (reasonStage) run(l *loop) (flow, error) {
 	}
 	l.newMessages = append(l.newMessages, msg)
 	l.ts.msg = msg
+	l.ts.overflow = l.failureCode == providers.CodeContextWindow || providers.UsageOverflow(l.cfg.Model, msg)
 	return flowNext, nil
 }
 
@@ -213,7 +219,7 @@ type actStage struct{}
 func (actStage) name() string { return "act" }
 
 func (actStage) run(l *loop) (flow, error) {
-	if l.ts.failed() {
+	if l.ts.failed() || l.ts.overflow {
 		return flowNext, nil
 	}
 	calls := toolCalls(l.ts.msg)
@@ -265,6 +271,9 @@ func (decideStage) run(l *loop) (flow, error) {
 	ts := &l.ts
 	l.turns++
 	l.cycle.settleTurn(ts.msg.StopReason, l.failureCode)
+	if ts.overflow {
+		l.cycle.settleOverflow()
+	}
 	decision, err := l.finishTurn(*l.turn(ts.msg, ts.results))
 	if err != nil {
 		return flowEndRun, err
@@ -272,10 +281,10 @@ func (decideStage) run(l *loop) (flow, error) {
 	if err := l.closeTurn(ts.msg, ts.results); err != nil {
 		return flowEndRun, err
 	}
-	// The decision of CompleteStep does not count for a failed message: the
-	// run ends without a queue claim. An explicit End also ends the run before
-	// StopTurn, so StopTurn can never override it.
-	if ts.failed() || decision == pipeline.End {
+	// The decision of CompleteStep does not count for a failed message or an
+	// overflow: the run ends without a queue claim. An explicit End also ends
+	// the run before StopTurn, so StopTurn can never override it.
+	if ts.failed() || ts.overflow || decision == pipeline.End {
 		return flowEndRun, nil
 	}
 	// The turn boundary takes all steering messages, after the whole tool

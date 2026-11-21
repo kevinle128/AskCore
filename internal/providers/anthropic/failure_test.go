@@ -263,3 +263,15 @@ func TestAnthropicMissingKeyIsAuthFailureAndSendsNothing(t *testing.T) {
 	assert.Equal(t, providers.CodeAuth, f.Code)
 	assert.Zero(t, calls)
 }
+
+func TestAnthropic429WithOverflowWordingIsRateLimit(t *testing.T) {
+	f := failureOf(t, respond(http.StatusTooManyRequests, jsonHeader(),
+		`{"type":"error","error":{"type":"rate_limit_error","message":"prompt is too long: 250000 tokens > 200000 maximum"}}`))
+	assert.Equal(t, providers.CodeRateLimit, f.Code, "the 429 status is never an overflow")
+}
+
+func TestAnthropicPayload413IsInvalidRequest(t *testing.T) {
+	f := failureOf(t, respond(http.StatusRequestEntityTooLarge, jsonHeader(),
+		`{"type":"error","error":{"type":"request_too_large","message":"Request exceeds the maximum allowed number of bytes."}}`))
+	assert.Equal(t, providers.CodeInvalidRequest, f.Code)
+}

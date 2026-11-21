@@ -541,7 +541,7 @@ func TestModelConfigChangedErrorBlock(t *testing.T) {
 			userAt("and on macOS?", sketchTime(14, 6)),
 			assistantStart("qwen3-coder:30b", 0),
 			&protocol.MessageEnd{Envelope: at(0), Message: m},
-			&protocol.CycleEnd{Reason: "error", Code: "MODEL_CONFIG"}, &protocol.AgentEnd{}, &protocol.AgentSettled{},
+			&protocol.CycleEnd{Reason: "error", Code: "MODEL_CONFIG"}, &protocol.AgentEnd{}, settledAt(15_360),
 		)...)
 		r.h.waitText("Then send again.")
 		return r

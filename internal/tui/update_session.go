@@ -118,6 +118,17 @@ type refreshMsg struct {
 	models      *protocol.ACPModelsResult
 }
 
+// usageMsg is the result of the usage call. totals is nil when the call failed.
+// The answer is used only while the session, the run and the call number are
+// still current.
+type usageMsg struct {
+	gen     uint64
+	runSeq  uint64
+	token   uint64
+	session string
+	totals  *protocol.UsageTotals
+}
+
 // skillsMsg is the result of the skills call for the session of generation
 // gen. A failed call carries no rows.
 type skillsMsg struct {
@@ -196,6 +207,8 @@ func (s *sessionView) update(msg tea.Msg) tea.Cmd {
 		cmd = s.onTake(msg)
 	case refreshMsg:
 		s.onRefresh(msg)
+	case usageMsg:
+		s.onUsage(msg)
 	case skillsMsg:
 		s.onSkills(msg)
 	case provListedMsg:
@@ -304,7 +317,7 @@ func (s *sessionView) onNewSession(msg newSessionMsg) tea.Cmd {
 	}
 	s.useSession(msg.info)
 	s.warnFlagsIgnored(msg.info)
-	return tea.Batch(s.refreshCmd(true), s.skillsCmd())
+	return tea.Batch(s.refreshCmd(true), s.skillsCmd(), s.followedUsageCmd())
 }
 
 const flagsIgnoredText = "Warning: the leader ignored the prompt and tool flags of this command line (it is older than this build). They are not applied in this session."
@@ -406,13 +419,13 @@ func (s *sessionView) maybeStartNotices() {
 
 // ---- snapshot and events ----
 
-// resetSessionState forgets the run, the queue and the context use of the session
+// resetSessionState forgets the run, the queue and the usage of the session
 // that the view followed before.
 func (s *sessionView) resetSessionState() {
 	s.run = runView{seq: s.run.seq + 1}
 	s.queue = queueView{seq: s.queue.seq + 1}
 	s.failure = nil
-	s.ctxTokens = 0
+	s.usage = protocol.UsageTotals{}
 }
 
 // replaceTranscript drops the blocks. The pane draws the history again as the
@@ -466,35 +479,10 @@ func (s *sessionView) onSnapshot(v SnapshotMsg) tea.Cmd {
 		return nil
 	}
 	s.apply(s.trl.Snapshot(v))
-	if tokens := snapshotContext(v); tokens > 0 {
-		s.ctxTokens = tokens
-	}
 	if refresh {
-		return s.refreshCmd(false)
+		return tea.Batch(s.refreshCmd(false), s.usageCmd())
 	}
 	return nil
-}
-
-// snapshotContext is the context use of the last reply in a snapshot.
-func snapshotContext(v SnapshotMsg) int64 {
-	var tokens int64
-	for _, e := range v.Entries {
-		if e.Kind != "message" {
-			continue
-		}
-		if am, ok := assistantOf(e.Message); ok {
-			tokens = usageTokens(am.Usage)
-		}
-	}
-	return tokens
-}
-
-// usageTokens is the number of tokens a reply used in the context window.
-func usageTokens(u protocol.Usage) int64 {
-	if u.TotalTokens > 0 {
-		return u.TotalTokens
-	}
-	return u.Input + u.Output + u.CacheRead + u.CacheWrite
 }
 
 func (s *sessionView) onSessionEvent(v SessionEventMsg) tea.Cmd {
@@ -518,17 +506,19 @@ func (s *sessionView) onSessionEvent(v SessionEventMsg) tea.Cmd {
 		}
 	case *protocol.AutoRetryEnd, *protocol.AttemptStart:
 		s.run.retry = nil
-	case *protocol.MessageEnd:
-		if am, ok := assistantOf(e.Message); ok {
-			if tokens := usageTokens(am.Usage); tokens > 0 {
-				s.ctxTokens = tokens
-			}
-		}
+	case *protocol.TurnEnd:
+		cmd = s.usageCmd()
 	case *protocol.QueueUpdate:
 		s.onQueueUpdate(e)
 	case *protocol.AgentSettled:
 		s.endRun()
 		cmd = s.refreshCmd(false)
+		if e.Usage != nil {
+			s.usage = *e.Usage
+		} else {
+			// A peer that predates the totals in this event: read them.
+			cmd = tea.Batch(cmd, s.usageCmd())
+		}
 	case *protocol.AgentDisposed:
 		s.endRun()
 	case *protocol.ModelUpdate:
@@ -618,7 +608,7 @@ func (s *sessionView) onPromptCalled(msg promptCalledMsg) tea.Cmd {
 		s.start.session = msg.session.ID
 		s.useSession(*msg.session)
 		s.warnFlagsIgnored(*msg.session)
-		cmd = tea.Batch(s.refreshCmd(true), s.skillsCmd())
+		cmd = tea.Batch(s.refreshCmd(true), s.skillsCmd(), s.followedUsageCmd())
 	}
 	s.send.calling = false
 	if msg.err != nil {
@@ -824,8 +814,8 @@ func (s *sessionView) onDequeued(msg dequeuedMsg) {
 
 // ---- state refresh ----
 
-// refreshCmd reads the state and, when asked, the model catalog. The screen
-// shows no session cost, so it does not read the usage totals.
+// refreshCmd reads the state and, when asked, the model catalog. The usage
+// totals have their own call, usageCmd.
 func (s *sessionView) refreshCmd(withModels bool) tea.Cmd {
 	c, gen := s.client, s.gen
 	runSeq, queueSeq, modelSeq := s.run.seq, s.queue.seq, s.modelSeq
@@ -848,6 +838,44 @@ func (s *sessionView) refreshCmd(withModels bool) tea.Cmd {
 		}
 		return out
 	}
+}
+
+// usageCmd reads the usage totals of the followed session. The answer is
+// dropped when the session or the run has changed since the call started.
+func (s *sessionView) usageCmd() tea.Cmd {
+	c, gen, runSeq, followed := s.client, s.gen, s.run.seq, s.followed
+	s.usageSeq++
+	token := s.usageSeq
+	return func() tea.Msg {
+		ctx, cancel := callContext()
+		defer cancel()
+		out := usageMsg{gen: gen, runSeq: runSeq, token: token, session: followed}
+		if res, err := c.Usage(ctx); err == nil {
+			totals := res.UsageTotals
+			out.totals = &totals
+		}
+		return out
+	}
+}
+
+// followedUsageCmd reads the usage totals again after useSession when the
+// snapshot of the session came first: the call that the snapshot started
+// carries the old generation, so onUsage drops its answer.
+func (s *sessionView) followedUsageCmd() tea.Cmd {
+	if s.followed == "" || s.followed != s.sess.ID {
+		return nil
+	}
+	return s.usageCmd()
+}
+
+// onUsage takes the usage totals. A failed call keeps the last values: the
+// usage part is display only and has no error text.
+func (s *sessionView) onUsage(msg usageMsg) {
+	if msg.totals == nil || msg.gen != s.gen || msg.runSeq != s.run.seq ||
+		msg.session != s.followed || msg.token < s.usageApplied {
+		return
+	}
+	s.usage, s.usageApplied = *msg.totals, msg.token
 }
 
 func (s *sessionView) onRefresh(msg refreshMsg) {

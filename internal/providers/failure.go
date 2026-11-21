@@ -187,7 +187,7 @@ func ClassifyProvider(status int, errType, errCode, message string) string {
 		return CodeQuota
 	case status == http.StatusTooManyRequests || errType == "rate_limit_error" || errCode == "rate_limit_exceeded":
 		return CodeRateLimit
-	case isContextWindowDetail(detail):
+	case isOverflowText(status, errType, errCode, message):
 		return CodeContextWindow
 	case status == http.StatusBadRequest || status == http.StatusRequestEntityTooLarge || errType == "invalid_request_error":
 		return CodeInvalidRequest
@@ -207,26 +207,10 @@ var (
 		regexp.MustCompile(`(?i)\b(?:balance|credits?)[\s_-]+(?:exhausted|depleted)\b`),
 		regexp.MustCompile(`(?i)\bout[\s_-]+of[\s_-]+(?:credits?|budget)\b`),
 	}
-	contextPatterns = []*regexp.Regexp{
-		regexp.MustCompile(`(?i)(?:^|[^a-z0-9])context[\s_-](?:length|window)[\s_-](?:exceed(?:ed|s)?|overflow(?:ed)?|limit[\s_-]exceeded)(?:$|[^a-z0-9])`),
-		regexp.MustCompile(`(?i)\b(?:maximum|max)(?:\s+(?:allowed|supported))?\s+context\s+(?:length|window)\b`),
-		regexp.MustCompile(`(?i)\b(?:request|prompt|input|messages?)\s+(?:is\s+|are\s+)?too\s+(?:large|long)\s+for\s+(?:(?:this|the)\s+)?(?:model(?:'s)?\s+)?context(?:\s+window)?\b`),
-		regexp.MustCompile(`(?i)\b(?:input|prompt|request)\s+(?:is\s+)?too\s+(?:long|large)\s+for\s+(?:this|the)\s+model\b`),
-		regexp.MustCompile(`(?i)\b(?:input|prompt|request|messages?)\b.{0,40}\b(?:exceed(?:s|ed)?|overflows?|is\s+larger\s+than)\b.{0,40}\b(?:the\s+)?(?:model(?:'s)?\s+)?context(?:\s+(?:length|window))?\b`),
-	}
 )
 
 func isQuotaDetail(detail string) bool {
 	for _, re := range quotaPatterns {
-		if re.MatchString(detail) {
-			return true
-		}
-	}
-	return false
-}
-
-func isContextWindowDetail(detail string) bool {
-	for _, re := range contextPatterns {
 		if re.MatchString(detail) {
 			return true
 		}

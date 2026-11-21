@@ -234,6 +234,12 @@ func TestOverrideCostMergesFieldsAndKeepsTiersWithoutPrice(t *testing.T) {
 	zero := int64(0)
 	full := build(providers.ModelPatch{Cost: &providers.PricePatch{Input: &zero, Output: &zero, CacheRead: &zero, CacheWrite: &zero}})
 	assert.False(t, full.CostUnknown)
+
+	tierless := unknown
+	tierless.CostUnknown = false
+	base = tierless
+	partialTierless := build(providers.ModelPatch{Cost: &providers.PricePatch{Input: ptr(int64(5))}})
+	assert.False(t, partialTierless.PriceKnown(), "a row with no tiers keeps omitted prices unknown")
 }
 
 func TestOverrideRefusesBadValuesAndKeepsTheRow(t *testing.T) {

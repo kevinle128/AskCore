@@ -78,8 +78,13 @@ type AutoRetryEnd struct {
 }
 
 // AgentSettled is the last event of a prompt. It follows agent_end, and a
-// reader of the stream waits for it before it sends the next prompt.
-type AgentSettled struct{ Envelope }
+// reader of the stream waits for it before it sends the next prompt. Usage holds
+// the session totals and the context estimate at that moment. It is nil when the
+// session has no model attempt.
+type AgentSettled struct {
+	Envelope
+	Usage *UsageTotals
+}
 
 // AgentDisposed is the last event of an Agent that was disposed. It follows
 // agent_settled of the run that disposal ended. The JSON stream of the CLI does
@@ -121,9 +126,10 @@ type CycleStart struct {
 }
 
 // CycleEnd closes an input cycle. Reason is one of completed, blocked,
-// max-tokens, aborted, error or continuation-limit. Cause is set only for
-// reason aborted and is one of user, deadline, output, disposed, canceled or
-// interrupted (a resumed session closes a cycle that a crash left open).
+// max-tokens, aborted, error or continuation-limit. Cause is set for reason
+// aborted and is one of user, deadline, output, disposed, canceled or
+// interrupted (a resumed session closes a cycle that a crash left open). It is
+// also set to context_overflow for reason error when the context overflowed.
 // Code is set only for reason error: it is the code of the failure that ended
 // the cycle (RATE_LIMIT, AUTH, SERVER and so on, or UNKNOWN for an error that
 // holds no provider fact).

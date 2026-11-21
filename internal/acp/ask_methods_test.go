@@ -483,7 +483,7 @@ func TestAdapterUsageProjectionSumsKnownValuesOnly(t *testing.T) {
 		sessions.CycleOpened{CycleID: "c2"},
 		sessions.AttemptSettled{AttemptID: "a3", Outcome: "completed", Usage: &protocol.Usage{Input: 4, Reasoning: &two, Cost: protocol.Cost{Total: 6}}},
 	}
-	res := usageResult(entries)
+	res := usageResult(entries, 0)
 	require.Len(t, res.Attempts, 3)
 	require.Equal(t, "c1", res.Attempts[0].CycleID)
 	require.Equal(t, "c1", res.Attempts[1].CycleID)
@@ -523,4 +523,29 @@ func TestParseModelIDReadsProviderIDAndAPI(t *testing.T) {
 		require.Equal(t, protocol.ACPErrInvalidModel, classify(err), in)
 		require.Equal(t, string(protocol.ACPErrInvalidModel)+": model id is not provider/id@api", err.Error(), in)
 	}
+}
+
+// The ACP method reads the one shared fold: a refused request with no output
+// costs nothing, an unpriced attempt marks the cost as incomplete, and the
+// context estimate and the window of the model come with the totals.
+func TestAdapterUsageUsesSharedFoldAndEstimate(t *testing.T) {
+	entries := []sessions.Entry{
+		sessions.CycleOpened{CycleID: "c1"},
+		sessions.AttemptSettled{AttemptID: "a1", Outcome: "failed", NoOutput: true, Failure: &sessions.Failure{Code: "SERVER", Text: "private text"}},
+		sessions.AttemptSettled{AttemptID: "a2", Outcome: "completed", CostUnknown: true, Usage: &protocol.Usage{Input: 400, Output: 100, TotalTokens: 500}},
+	}
+	res := usageResult(entries, 1000)
+	require.Len(t, res.Attempts, 2)
+	require.Nil(t, res.Attempts[0].Usage)
+	require.False(t, res.Attempts[0].CostUnknown)
+	require.True(t, res.Attempts[1].CostUnknown)
+	require.True(t, res.Complete, "a refused request with no output costs nothing")
+	require.False(t, res.CostComplete, "an unpriced attempt makes the cost a lower bound")
+	require.EqualValues(t, 500, res.ContextTokens)
+	require.Equal(t, 1000, res.ContextWindow)
+	b, err := json.Marshal(res)
+	require.NoError(t, err)
+	require.Contains(t, string(b), `"costUnknown":true`)
+	require.Contains(t, string(b), `"costComplete":false`)
+	require.Contains(t, string(b), `"contextWindow":1000`)
 }

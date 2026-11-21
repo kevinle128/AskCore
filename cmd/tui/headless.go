@@ -683,8 +683,14 @@ func runHeadlessWait(ag *agent.Agent, prompts []string, mode runMode, stdout, st
 	}}
 	unsubscribe := ag.Subscribe(func(ev protocol.Event) error {
 		limit.observe(ev)
-		if _, ok := ev.(*protocol.AgentSettled); ok && mode == modePrint {
-			printer.settled(ev.Env().RunID)
+		if mode != modePrint {
+			return nil
+		}
+		switch v := ev.(type) {
+		case *protocol.CycleEnd:
+			printer.cycleEnded(v)
+		case *protocol.AgentSettled:
+			printer.settled(v.Env().RunID)
 		}
 		return nil
 	})

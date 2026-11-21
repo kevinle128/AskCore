@@ -63,6 +63,11 @@ func (a *Agent) emit(r *run, ev protocol.Event) error {
 		a.attempts++
 		e.Number = a.attempts
 		r.attemptID = e.AttemptID
+		r.attemptStreamed = false
+	case *protocol.MessageUpdate:
+		if r.attemptID != "" {
+			r.attemptStreamed = true
+		}
 	case *protocol.AttemptEnd:
 		r.attemptID = ""
 	}

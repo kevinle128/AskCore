@@ -126,6 +126,9 @@ func runError(res Result) error {
 	if res.Code == providers.CodeModelConfig {
 		return newKindError(protocol.ACPErrConfig, "")
 	}
+	if res.Code == providers.CodeContextWindow {
+		return newKindError(protocol.ACPErrContextOverflow, "")
+	}
 	return newKindError(protocol.ACPErrInternal, "model request failed: "+safeCode(res.Code))
 }
 
